@@ -40,10 +40,11 @@ const statusLabels: Record<string, string> = {
 
 const navItems = [
   { label: 'Overview', href: '', enabled: true },
-  { label: 'Documents', href: '/documents', enabled: false },
+  { label: 'Documents', href: '/documents', enabled: true },
   { label: 'Clinical Data', href: '/clinical', enabled: false },
-  { label: 'Procedures', href: '/procedures', enabled: false },
-  { label: 'Invoices', href: '/invoices', enabled: false },
+  { label: 'Procedures', href: '/procedures', enabled: true },
+  { label: 'Billing', href: '/billing', enabled: true },
+  { label: 'Timeline', href: '/timeline', enabled: true },
 ]
 
 export function CaseSidebar({ caseData }: { caseData: CaseData }) {
