@@ -113,3 +113,23 @@ export async function saveDocumentMetadata(input: {
   revalidatePath(`/patients/${input.caseId}/documents`)
   return { data }
 }
+
+export async function getDocumentDownloadUrl(filePath: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase.storage
+    .from('case-documents')
+    .createSignedUrl(filePath, 3600, { download: true })
+
+  if (error) return { error: error.message }
+  return { url: data.signedUrl }
+}
+
+export async function getDocumentPreviewUrl(filePath: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase.storage
+    .from('case-documents')
+    .createSignedUrl(filePath, 3600)
+
+  if (error) return { error: error.message }
+  return { url: data.signedUrl }
+}
