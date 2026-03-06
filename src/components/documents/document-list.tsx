@@ -6,8 +6,8 @@ import { Search, X, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DocumentCard } from '@/components/documents/document-card'
+import { UploadSheet } from '@/components/documents/upload-sheet'
 
 const docTypeOptions = [
   { value: 'all', label: 'All Types' },
@@ -25,7 +25,10 @@ const statusOptions = [
 
 interface Document {
   id: string
+  case_id: string
   file_name: string
+  file_path: string
+  mime_type: string | null
   document_type: string
   status: string
   created_at: string
@@ -33,9 +36,15 @@ interface Document {
   uploaded_by: { full_name: string } | null
 }
 
-export function DocumentList({ documents }: { documents: Document[] }) {
+interface DocumentListProps {
+  documents: Document[]
+  caseId: string
+}
+
+export function DocumentList({ documents, caseId }: DocumentListProps) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [docType, setDocType] = useState('all')
   const [status, setStatus] = useState('all')
 
@@ -80,15 +89,10 @@ export function DocumentList({ documents }: { documents: Document[] }) {
             className="pl-9"
           />
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button disabled>
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Document
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Coming Soon</TooltipContent>
-        </Tooltip>
+        <Button onClick={() => setUploadOpen(true)}>
+          <Upload className="h-4 w-4 mr-2" />
+          Upload Document
+        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -149,6 +153,8 @@ export function DocumentList({ documents }: { documents: Document[] }) {
           ))}
         </div>
       )}
+
+      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} />
     </div>
   )
 }

@@ -1,6 +1,8 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
+import { revalidatePath } from 'next/cache'
 
 export async function listDocuments(caseId: string, filters?: {
   search?: string
@@ -45,4 +47,69 @@ export async function getDocumentCount(caseId: string) {
 
   if (error) return { error: error.message, count: 0 }
   return { count: count ?? 0 }
+}
+
+export async function getUploadSession(data: DocumentUploadMeta) {
+  const parsed = documentUploadMetaSchema.safeParse(data)
+  if (!parsed.success) {
+    return { error: parsed.error.flatten().fieldErrors }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: caseData, error: caseError } = await supabase
+    .from('cases')
+    .select('id')
+    .eq('id', parsed.data.caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (caseError || !caseData) return { error: 'Case not found' }
+
+  const sanitized = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const storagePath = `cases/${parsed.data.caseId}/${Date.now()}-${sanitized}`
+
+  return {
+    data: {
+      storagePath,
+      userId: user.id,
+    },
+  }
+}
+
+export async function saveDocumentMetadata(input: {
+  caseId: string
+  documentType: string
+  fileName: string
+  filePath: string
+  fileSizeBytes: number
+  mimeType: string
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .insert({
+      case_id: input.caseId,
+      document_type: input.documentType,
+      file_name: input.fileName,
+      file_path: input.filePath,
+      file_size_bytes: input.fileSizeBytes,
+      mime_type: input.mimeType,
+      status: 'pending_review',
+      uploaded_by_user_id: user.id,
+      created_by_user_id: user.id,
+      updated_by_user_id: user.id,
+    })
+    .select()
+    .single()
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/patients/${input.caseId}/documents`)
+  return { data }
 }
