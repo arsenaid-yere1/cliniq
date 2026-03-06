@@ -1,24 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import dynamic from 'next/dynamic'
-import { pdfjs } from 'react-pdf'
+import { Document, Page, pdfjs } from 'react-pdf'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
-
-const Document = dynamic(() => import('react-pdf').then((mod) => mod.Document), { ssr: false })
-const Page = dynamic(() => import('react-pdf').then((mod) => mod.Page), { ssr: false })
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 interface PdfPreviewProps {
   url: string
@@ -40,6 +33,11 @@ export function PdfPreview({ url, fileName, open, onOpenChange }: PdfPreviewProp
         <Document
           file={url}
           onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+          loading={
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          }
         >
           <Page pageNumber={currentPage} width={700} />
         </Document>
