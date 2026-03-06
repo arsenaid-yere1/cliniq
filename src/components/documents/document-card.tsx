@@ -3,11 +3,16 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { FileText } from 'lucide-react'
+import { FileText, Trash2 } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { getDocumentDownloadUrl, getDocumentPreviewUrl } from '@/actions/documents'
+import { getDocumentDownloadUrl, getDocumentPreviewUrl, removeDocument } from '@/actions/documents'
 import { PdfPreview } from './pdf-preview'
 import { ImagePreview } from './image-preview'
 
@@ -53,6 +58,7 @@ interface DocumentCardProps {
 export function DocumentCard({ document }: DocumentCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [isRemoving, setIsRemoving] = useState(false)
 
   const isPdf = document.mime_type === 'application/pdf'
   const isImage = document.mime_type?.startsWith('image/')
@@ -75,6 +81,17 @@ export function DocumentCard({ document }: DocumentCardProps) {
       return
     }
     window.open(result.url!, '_blank')
+  }
+
+  async function handleRemove() {
+    setIsRemoving(true)
+    const result = await removeDocument(document.id)
+    setIsRemoving(false)
+    if ('error' in result && result.error) {
+      toast.error(result.error)
+      return
+    }
+    toast.success('Document removed')
   }
 
   return (
@@ -117,6 +134,27 @@ export function DocumentCard({ document }: DocumentCardProps) {
             >
               Download
             </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove document?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove &quot;{document.file_name}&quot; from this case. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRemove} disabled={isRemoving}>
+                    {isRemoving ? 'Removing...' : 'Remove'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </CardContent>
       </Card>

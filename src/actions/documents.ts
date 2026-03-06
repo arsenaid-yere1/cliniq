@@ -124,6 +124,28 @@ export async function getDocumentDownloadUrl(filePath: string) {
   return { url: data.signedUrl }
 }
 
+export async function removeDocument(documentId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('id', documentId)
+    .is('deleted_at', null)
+    .select('case_id')
+    .single()
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/patients/${data.case_id}/documents`)
+  return { data }
+}
+
 export async function getDocumentPreviewUrl(filePath: string) {
   const supabase = await createClient()
   const { data, error } = await supabase.storage
