@@ -33,14 +33,18 @@ export function PdfPreview({ url, fileName, open, onOpenChange }: PdfPreviewProp
         setPageWidth(containerRef.current.clientWidth)
       }
     }
-    measure()
+    // Small delay to ensure dialog is laid out before measuring
+    const timer = setTimeout(measure, 50)
     window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', measure)
+    }
   }, [open])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[90vw] max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="truncate">{fileName}</DialogTitle>
         </DialogHeader>
