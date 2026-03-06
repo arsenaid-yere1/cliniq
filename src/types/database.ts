@@ -495,6 +495,126 @@ export type Database = {
           },
         ]
       }
+      mri_extractions: {
+        Row: {
+          ai_confidence: string | null
+          ai_model: string | null
+          body_region: string | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          document_id: string
+          extracted_at: string | null
+          extraction_attempts: number
+          extraction_error: string | null
+          extraction_notes: string | null
+          extraction_status: string
+          findings: Json
+          id: string
+          impression_summary: string | null
+          mri_date: string | null
+          provider_overrides: Json
+          raw_ai_response: Json | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          schema_version: number
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          body_region?: string | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id: string
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          findings?: Json
+          id?: string
+          impression_summary?: string | null
+          mri_date?: string | null
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          body_region?: string | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id?: string
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          findings?: Json
+          id?: string
+          impression_summary?: string | null
+          mri_date?: string | null
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mri_extractions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mri_extractions_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mri_extractions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mri_extractions_reviewed_by_user_id_fkey"
+            columns: ["reviewed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mri_extractions_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           address_line1: string | null

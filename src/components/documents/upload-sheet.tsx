@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { createTusUpload } from '@/lib/tus-upload'
 import { getUploadSession, saveDocumentMetadata } from '@/actions/documents'
+import { extractMriReport } from '@/actions/mri-extractions'
 import {
   ALLOWED_MIME_TYPES, MAX_FILE_SIZE, type DocumentType,
 } from '@/lib/validations/document'
@@ -151,6 +152,22 @@ export function UploadSheet({ caseId, open, onOpenChange }: UploadSheetProps) {
 
         updateFile(stagedFile.id, { status: 'complete', progress: 100 })
         completedCount++
+
+        // Trigger MRI extraction in background (non-blocking)
+        if (stagedFile.documentType === 'mri_report' && metaResult.data) {
+          extractMriReport(metaResult.data.id).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('MRI findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
       } catch (err) {
         updateFile(stagedFile.id, {
           status: 'error',
