@@ -183,11 +183,15 @@ export async function approveChiroExtraction(extractionId: string) {
     })
     .eq('id', extractionId)
     .is('deleted_at', null)
-    .select('case_id')
+    .select('case_id, document_id')
     .single()
 
   if (error) return { error: error.message }
+
+  await syncDocumentReviewed(supabase, data.document_id, user.id)
+
   revalidatePath(`/patients/${data.case_id}/clinical`)
+  revalidatePath(`/patients/${data.case_id}/documents`)
   return { data }
 }
 
@@ -212,12 +216,34 @@ export async function saveAndApproveChiroExtraction(
     })
     .eq('id', extractionId)
     .is('deleted_at', null)
-    .select('case_id')
+    .select('case_id, document_id')
     .single()
 
   if (error) return { error: error.message }
+
+  await syncDocumentReviewed(supabase, data.document_id, user.id)
+
   revalidatePath(`/patients/${data.case_id}/clinical`)
+  revalidatePath(`/patients/${data.case_id}/documents`)
   return { data }
+}
+
+// --- Sync document status to reviewed ---
+
+async function syncDocumentReviewed(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  documentId: string,
+  userId: string,
+) {
+  await supabase
+    .from('documents')
+    .update({
+      status: 'reviewed',
+      reviewed_by_user_id: userId,
+      reviewed_at: new Date().toISOString(),
+      updated_by_user_id: userId,
+    })
+    .eq('id', documentId)
 }
 
 // --- Reject extraction ---
