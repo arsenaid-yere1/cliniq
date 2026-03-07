@@ -156,7 +156,7 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
       ) : (
         <div className="grid gap-3">
           {filtered.map((doc) => (
-            <DocumentCard key={doc.id} document={doc} />
+            <DocumentCard key={doc.id} document={doc} onRemoved={refreshDocuments} />
           ))}
         </div>
       )}

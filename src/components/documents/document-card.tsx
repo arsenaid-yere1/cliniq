@@ -53,9 +53,10 @@ interface DocumentCardProps {
     notes: string | null
     uploaded_by: { full_name: string } | null
   }
+  onRemoved?: () => void
 }
 
-export function DocumentCard({ document }: DocumentCardProps) {
+export function DocumentCard({ document, onRemoved }: DocumentCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const [isRemoving, setIsRemoving] = useState(false)
@@ -92,6 +93,7 @@ export function DocumentCard({ document }: DocumentCardProps) {
       return
     }
     toast.success('Document removed')
+    onRemoved?.()
   }
 
   return (
