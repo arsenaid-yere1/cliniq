@@ -35,9 +35,10 @@ interface UploadSheetProps {
   caseId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onUploadComplete?: () => void
 }
 
-export function UploadSheet({ caseId, open, onOpenChange }: UploadSheetProps) {
+export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: UploadSheetProps) {
   const [files, setFiles] = useState<StagedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
 
@@ -197,6 +198,7 @@ export function UploadSheet({ caseId, open, onOpenChange }: UploadSheetProps) {
 
     if (completedCount > 0) {
       toast.success(`${completedCount} document(s) uploaded`)
+      onUploadComplete?.()
     }
   }
 

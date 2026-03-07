@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useDebouncedCallback } from 'use-debounce'
 import { Search, X, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -42,6 +43,7 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ documents, caseId }: DocumentListProps) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -154,7 +156,7 @@ export function DocumentList({ documents, caseId }: DocumentListProps) {
         </div>
       )}
 
-      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} />
+      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={() => router.refresh()} />
     </div>
   )
 }
