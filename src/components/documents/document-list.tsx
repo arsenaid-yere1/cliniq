@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useMemo, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
 import { Search, X, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -9,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DocumentCard } from '@/components/documents/document-card'
 import { UploadSheet } from '@/components/documents/upload-sheet'
+import { listDocuments } from '@/actions/documents'
 
 const docTypeOptions = [
   { value: 'all', label: 'All Types' },
@@ -42,13 +42,18 @@ interface DocumentListProps {
   caseId: string
 }
 
-export function DocumentList({ documents, caseId }: DocumentListProps) {
-  const router = useRouter()
+export function DocumentList({ documents: initialDocuments, caseId }: DocumentListProps) {
+  const [documents, setDocuments] = useState(initialDocuments)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [docType, setDocType] = useState('all')
   const [status, setStatus] = useState('all')
+
+  const refreshDocuments = useCallback(async () => {
+    const { data } = await listDocuments(caseId)
+    if (data) setDocuments(data)
+  }, [caseId])
 
   const debouncedSetSearch = useDebouncedCallback((value: string) => {
     setDebouncedSearch(value)
@@ -156,7 +161,7 @@ export function DocumentList({ documents, caseId }: DocumentListProps) {
         </div>
       )}
 
-      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={() => router.refresh()} />
+      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={refreshDocuments} />
     </div>
   )
 }
