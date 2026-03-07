@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { listDocuments } from '@/actions/documents'
 import { DocumentList } from '@/components/documents/document-list'
 
