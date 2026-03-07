@@ -156,7 +156,7 @@ export function DocumentList({ documents, caseId }: DocumentListProps) {
         </div>
       )}
 
-      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={() => router.refresh()} />
+      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={() => { console.log('[DocumentList] onUploadComplete fired, calling router.refresh()'); router.refresh() }} />
     </div>
   )
 }

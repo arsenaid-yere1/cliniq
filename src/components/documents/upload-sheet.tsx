@@ -198,6 +198,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
 
     if (completedCount > 0) {
       toast.success(`${completedCount} document(s) uploaded`)
+      console.log('[UploadSheet] calling onUploadComplete, completedCount:', completedCount)
       onUploadComplete?.()
     }
   }
