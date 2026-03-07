@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { createTusUpload } from '@/lib/tus-upload'
 import { getUploadSession, saveDocumentMetadata } from '@/actions/documents'
 import { extractMriReport } from '@/actions/mri-extractions'
+import { extractChiroReport } from '@/actions/chiro-extractions'
 import {
   ALLOWED_MIME_TYPES, MAX_FILE_SIZE, type DocumentType,
 } from '@/lib/validations/document'
@@ -160,6 +161,22 @@ export function UploadSheet({ caseId, open, onOpenChange }: UploadSheetProps) {
               toast.error(`Extraction failed: ${extractResult.error}`)
             } else {
               toast.success('MRI findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
+
+        // Trigger Chiro extraction in background (non-blocking)
+        if (stagedFile.documentType === 'chiro_report' && metaResult.data) {
+          extractChiroReport(metaResult.data.id).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('Chiro findings extracted', {
                 action: {
                   label: 'View',
                   onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
