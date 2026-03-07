@@ -108,12 +108,12 @@ The reject functions (`rejectMriExtraction`, `rejectChiroExtraction`) are intent
 - [x] App builds: `npm run build`
 
 #### Manual Verification:
-- [ ] Upload an MRI report → wait for extraction → go to clinical page → approve extraction → navigate to documents page → document shows green "Reviewed" badge
-- [ ] Upload a chiro report → wait for extraction → go to clinical page → save & approve with edits → navigate to documents page → document shows green "Reviewed" badge
-- [ ] Upload a report → wait for extraction → reject extraction → document still shows amber "Pending Review" badge
-- [ ] On documents page, filter by status "Reviewed" → only approved/edited extraction documents appear
-- [ ] On documents page, filter by status "Pending Review" → unapproved documents appear
-- [ ] Documents of type "Other" (no extraction) remain permanently in "Pending Review" (expected behavior for MVP)
+- [x] Upload an MRI report → wait for extraction → go to clinical page → approve extraction → navigate to documents page → document shows green "Reviewed" badge
+- [x] Upload a chiro report → wait for extraction → go to clinical page → save & approve with edits → navigate to documents page → document shows green "Reviewed" badge
+- [x] Upload a report → wait for extraction → reject extraction → document still shows amber "Pending Review" badge
+- [x] On documents page, filter by status "Reviewed" → only approved/edited extraction documents appear
+- [x] On documents page, filter by status "Pending Review" → unapproved documents appear
+- [x] Documents of type "Other" (no extraction) remain permanently in "Pending Review" (expected behavior for MVP)
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation from the human that the manual testing was successful.
 
