@@ -178,37 +178,39 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
       onUploadComplete?.()
     }
 
-    // Fire extractions after refresh to avoid blocking router.refresh()
-    for (const extraction of pendingExtractions) {
-      if (extraction.type === 'mri') {
-        extractMriReport(extraction.documentId).then((extractResult) => {
-          if ('error' in extractResult && extractResult.error) {
-            toast.error(`Extraction failed: ${extractResult.error}`)
-          } else {
-            toast.success('MRI findings extracted', {
-              action: {
-                label: 'View',
-                onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
-              },
-            })
-          }
-        })
+    // Fire extractions outside React's transition tracking to avoid blocking router.refresh()
+    setTimeout(() => {
+      for (const extraction of pendingExtractions) {
+        if (extraction.type === 'mri') {
+          extractMriReport(extraction.documentId).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('MRI findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
+        if (extraction.type === 'chiro') {
+          extractChiroReport(extraction.documentId).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('Chiro findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
       }
-      if (extraction.type === 'chiro') {
-        extractChiroReport(extraction.documentId).then((extractResult) => {
-          if ('error' in extractResult && extractResult.error) {
-            toast.error(`Extraction failed: ${extractResult.error}`)
-          } else {
-            toast.success('Chiro findings extracted', {
-              action: {
-                label: 'View',
-                onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
-              },
-            })
-          }
-        })
-      }
-    }
+    }, 0)
   }
 
   function handleClose(open: boolean) {
