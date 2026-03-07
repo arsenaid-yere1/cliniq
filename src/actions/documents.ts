@@ -142,7 +142,23 @@ export async function removeDocument(documentId: string) {
 
   if (error) return { error: error.message }
 
+  // Cascade soft-delete to linked clinical extractions
+  const now = new Date().toISOString()
+  await Promise.all([
+    supabase
+      .from('chiro_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
+    supabase
+      .from('mri_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
+  ])
+
   revalidatePath(`/patients/${data.case_id}/documents`)
+  revalidatePath(`/patients/${data.case_id}/clinical`)
   return { data }
 }
 

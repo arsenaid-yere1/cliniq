@@ -241,6 +241,7 @@ async function syncDocumentReviewed(
       updated_by_user_id: userId,
     })
     .eq('id', documentId)
+    .is('deleted_at', null)
 }
 
 // --- Reject extraction ---
