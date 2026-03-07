@@ -101,6 +101,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
     }
 
     let completedCount = 0
+    const pendingExtractions: Array<{ type: 'mri' | 'chiro'; documentId: string }> = []
 
     for (const stagedFile of staged) {
       try {
@@ -155,36 +156,12 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
         updateFile(stagedFile.id, { status: 'complete', progress: 100 })
         completedCount++
 
-        // Trigger MRI extraction in background (non-blocking)
+        // Queue extractions to run after refresh
         if (stagedFile.documentType === 'mri_report' && metaResult.data) {
-          extractMriReport(metaResult.data.id).then((extractResult) => {
-            if ('error' in extractResult && extractResult.error) {
-              toast.error(`Extraction failed: ${extractResult.error}`)
-            } else {
-              toast.success('MRI findings extracted', {
-                action: {
-                  label: 'View',
-                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
-                },
-              })
-            }
-          })
+          pendingExtractions.push({ type: 'mri', documentId: metaResult.data.id })
         }
-
-        // Trigger Chiro extraction in background (non-blocking)
         if (stagedFile.documentType === 'chiro_report' && metaResult.data) {
-          extractChiroReport(metaResult.data.id).then((extractResult) => {
-            if ('error' in extractResult && extractResult.error) {
-              toast.error(`Extraction failed: ${extractResult.error}`)
-            } else {
-              toast.success('Chiro findings extracted', {
-                action: {
-                  label: 'View',
-                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
-                },
-              })
-            }
-          })
+          pendingExtractions.push({ type: 'chiro', documentId: metaResult.data.id })
         }
       } catch (err) {
         updateFile(stagedFile.id, {
@@ -198,8 +175,39 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
 
     if (completedCount > 0) {
       toast.success(`${completedCount} document(s) uploaded`)
-      console.log('[UploadSheet] calling onUploadComplete, completedCount:', completedCount)
       onUploadComplete?.()
+    }
+
+    // Fire extractions after refresh to avoid blocking router.refresh()
+    for (const extraction of pendingExtractions) {
+      if (extraction.type === 'mri') {
+        extractMriReport(extraction.documentId).then((extractResult) => {
+          if ('error' in extractResult && extractResult.error) {
+            toast.error(`Extraction failed: ${extractResult.error}`)
+          } else {
+            toast.success('MRI findings extracted', {
+              action: {
+                label: 'View',
+                onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+              },
+            })
+          }
+        })
+      }
+      if (extraction.type === 'chiro') {
+        extractChiroReport(extraction.documentId).then((extractResult) => {
+          if ('error' in extractResult && extractResult.error) {
+            toast.error(`Extraction failed: ${extractResult.error}`)
+          } else {
+            toast.success('Chiro findings extracted', {
+              action: {
+                label: 'View',
+                onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+              },
+            })
+          }
+        })
+      }
     }
   }
 
