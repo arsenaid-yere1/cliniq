@@ -178,7 +178,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
       onUploadComplete?.()
     }
 
-    // Fire extractions outside React's transition tracking to avoid blocking router.refresh()
+    // Fire extractions outside React's transition tracking to avoid blocking list refresh
     setTimeout(() => {
       for (const extraction of pendingExtractions) {
         if (extraction.type === 'mri') {

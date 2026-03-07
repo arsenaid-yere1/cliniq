@@ -33,72 +33,45 @@ When one or more files finish uploading successfully, the document list automati
 
 ## Implementation Approach
 
-Use Next.js `router.refresh()` to re-run the server component after uploads complete. This is the idiomatic Next.js App Router approach — it re-executes the server component's data fetching without a full page reload, and React reconciles the new server-rendered output with the existing client state.
+**Original plan**: Use `router.refresh()` to re-run the server component after uploads complete.
 
-## Phase 1: Add Refresh After Upload
+**Problem discovered**: `router.refresh()` was blocked by long-running extraction server actions (`extractMriReport`/`extractChiroReport`) in React's transition queue — even with `setTimeout` and reordering, React tracked them as pending transitions.
 
-### Changes Required:
+**Final approach**: `DocumentList` manages documents as client-side state (initialized from server props) and calls the `listDocuments` server action directly to re-fetch after upload or delete. Extractions are deferred via `setTimeout(fn, 0)` to avoid blocking the refresh.
 
-#### 1. Add `onUploadComplete` callback to UploadSheet
-**File**: `src/components/documents/upload-sheet.tsx`
-**Changes**: Add an optional `onUploadComplete` prop and call it when uploads finish successfully.
+## Changes Made
 
-```tsx
-// Update the props interface (line 34-38):
-interface UploadSheetProps {
-  caseId: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onUploadComplete?: () => void
-}
+### 1. `src/components/documents/upload-sheet.tsx`
+- Added `onUploadComplete?: () => void` prop
+- Moved extraction calls to `pendingExtractions` array, fired via `setTimeout` after `onUploadComplete`
+- This ensures list refresh happens before slow extractions start
 
-// Update the component signature (line 40):
-export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: UploadSheetProps) {
+### 2. `src/components/documents/document-list.tsx`
+- Documents are now client state: `useState(initialDocuments)`
+- Added `refreshDocuments` callback that calls `listDocuments(caseId)` directly
+- Passed `refreshDocuments` to `UploadSheet` via `onUploadComplete` and to each `DocumentCard` via `onRemoved`
 
-// After the toast on line 198-200, call the callback:
-if (completedCount > 0) {
-  toast.success(`${completedCount} document(s) uploaded`)
-  onUploadComplete?.()
-}
-```
-
-#### 2. Call `router.refresh()` in DocumentList when uploads complete
-**File**: `src/components/documents/document-list.tsx`
-**Changes**: Import `useRouter`, call `router.refresh()` via the `onUploadComplete` callback.
-
-```tsx
-// Add import (top of file):
-import { useRouter } from 'next/navigation'
-
-// Inside the component, add router (after line 44):
-const router = useRouter()
-
-// Update the UploadSheet usage (line 157):
-<UploadSheet
-  caseId={caseId}
-  open={uploadOpen}
-  onOpenChange={setUploadOpen}
-  onUploadComplete={() => router.refresh()}
-/>
-```
+### 3. `src/components/documents/document-card.tsx`
+- Added `onRemoved?: () => void` prop
+- Called `onRemoved?.()` after successful document removal
 
 ### Success Criteria:
 
 #### Automated Verification:
 - [x] Type checking passes: `npx tsc --noEmit`
 - [x] Linting passes: `npm run lint`
-- [ ] Build succeeds: `npm run build`
 
 #### Manual Verification:
 - [ ] Upload a single file → document appears in the list without manual refresh
 - [ ] Upload multiple files → all documents appear after uploads complete
+- [ ] Delete a document → it disappears from the list without manual refresh
 - [ ] Upload with errors (all fail) → no unnecessary refresh triggered
 - [ ] Filters and search state in DocumentList are preserved after refresh
 - [ ] Upload sheet can be reopened and used again after a successful upload cycle
 
 ## References
 
-- Next.js router.refresh() docs: re-runs server components without losing client state
 - Upload sheet: `src/components/documents/upload-sheet.tsx`
 - Document list: `src/components/documents/document-list.tsx`
+- Document card: `src/components/documents/document-card.tsx`
 - Documents page: `src/app/(dashboard)/patients/[caseId]/documents/page.tsx`
