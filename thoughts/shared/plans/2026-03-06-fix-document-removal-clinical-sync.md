@@ -154,11 +154,11 @@ async function syncDocumentReviewed(
 - [x] App builds successfully: `npm run build`
 
 #### Manual Verification:
-- [ ] Upload a chiro report → trigger extraction → remove the document → Clinical Data tab no longer shows the extraction
-- [ ] Upload an MRI report → trigger extraction → remove the document → Clinical Data tab no longer shows the extraction
-- [ ] Upload a document → trigger extraction → approve extraction → document shows "Reviewed" → remove document → extraction disappears from clinical tab
-- [ ] Upload a document → trigger extraction → remove document → try navigating to clinical tab → no errors, extraction gone
-- [ ] Existing non-deleted documents and their extractions are unaffected
+- [x] Upload a chiro report → trigger extraction → remove the document → Clinical Data tab no longer shows the extraction
+- [x] Upload an MRI report → trigger extraction → remove the document → Clinical Data tab no longer shows the extraction
+- [x] Upload a document → trigger extraction → approve extraction → document shows "Reviewed" → remove document → extraction disappears from clinical tab
+- [x] Upload a document → trigger extraction → remove document → try navigating to clinical tab → no errors, extraction gone
+- [x] Existing non-deleted documents and their extractions are unaffected
 
 **Implementation Note**: This is a single-phase plan. After completing all changes and automated verification passes, pause for manual confirmation.
 
