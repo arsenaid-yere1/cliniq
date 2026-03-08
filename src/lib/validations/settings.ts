@@ -14,3 +14,12 @@ export const clinicInfoSchema = z.object({
 })
 
 export type ClinicInfoFormValues = z.infer<typeof clinicInfoSchema>
+
+export const providerInfoSchema = z.object({
+  display_name: z.string().min(1, 'Provider name is required'),
+  credentials: z.string().optional(),
+  license_number: z.string().optional(),
+  npi_number: z.string().optional(),
+})
+
+export type ProviderInfoFormValues = z.infer<typeof providerInfoSchema>

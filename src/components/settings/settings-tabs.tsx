@@ -2,15 +2,18 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ClinicInfoForm } from './clinic-info-form'
+import { ProviderInfoForm } from './provider-info-form'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
+type ProviderProfile = Database['public']['Tables']['provider_profiles']['Row']
 
 interface SettingsTabsProps {
   clinicSettings: ClinicSettings | null
+  providerProfile: ProviderProfile | null
 }
 
-export function SettingsTabs({ clinicSettings }: SettingsTabsProps) {
+export function SettingsTabs({ clinicSettings, providerProfile }: SettingsTabsProps) {
   return (
     <Tabs defaultValue="clinic-info" className="space-y-6">
       <TabsList>
@@ -25,7 +28,7 @@ export function SettingsTabs({ clinicSettings }: SettingsTabsProps) {
       </TabsContent>
 
       <TabsContent value="provider-info">
-        <p className="text-sm text-muted-foreground">Provider info settings coming soon.</p>
+        <ProviderInfoForm initialData={providerProfile} />
       </TabsContent>
 
       <TabsContent value="clinic-logo">
