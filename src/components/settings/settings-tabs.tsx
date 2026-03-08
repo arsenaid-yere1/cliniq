@@ -3,6 +3,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ClinicInfoForm } from './clinic-info-form'
 import { ProviderInfoForm } from './provider-info-form'
+import { ClinicLogoUpload } from './clinic-logo-upload'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
@@ -32,7 +33,7 @@ export function SettingsTabs({ clinicSettings, providerProfile }: SettingsTabsPr
       </TabsContent>
 
       <TabsContent value="clinic-logo">
-        <p className="text-sm text-muted-foreground">Logo upload coming soon.</p>
+        <ClinicLogoUpload initialLogoPath={clinicSettings?.logo_storage_path ?? null} />
       </TabsContent>
 
       <TabsContent value="signature">
