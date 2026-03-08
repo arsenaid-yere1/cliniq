@@ -1,0 +1,248 @@
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { createHash } from 'node:crypto'
+import { generateCaseSummaryFromData, type SummaryInputData } from '@/lib/claude/generate-summary'
+import { caseSummaryEditSchema, type CaseSummaryEditValues } from '@/lib/validations/case-summary'
+
+// --- Helper: compute source data hash ---
+
+function computeSourceHash(inputData: SummaryInputData): string {
+  const serialized = JSON.stringify(inputData)
+  return createHash('sha256').update(serialized).digest('hex')
+}
+
+// --- Helper: gather all approved source data for a case ---
+
+async function gatherSourceData(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+): Promise<{ data: SummaryInputData | null; error: string | null }> {
+  const [caseRes, mriRes, chiroRes] = await Promise.all([
+    supabase
+      .from('cases')
+      .select('accident_type, accident_date, accident_description')
+      .eq('id', caseId)
+      .is('deleted_at', null)
+      .single(),
+    supabase
+      .from('mri_extractions')
+      .select('body_region, mri_date, findings, impression_summary, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('chiro_extractions')
+      .select('report_type, report_date, treatment_dates, diagnoses, treatment_modalities, functional_outcomes, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+  ])
+
+  if (caseRes.error || !caseRes.data) {
+    return { data: null, error: 'Failed to fetch case details' }
+  }
+
+  const mriExtractions = mriRes.data || []
+  const chiroExtractions = chiroRes.data || []
+
+  if (mriExtractions.length === 0 && chiroExtractions.length === 0) {
+    return { data: null, error: 'No approved extractions found. Approve at least one MRI or chiro extraction first.' }
+  }
+
+  return {
+    data: {
+      caseDetails: caseRes.data,
+      mriExtractions,
+      chiroExtractions,
+    },
+    error: null,
+  }
+}
+
+// --- Generate summary ---
+
+export async function generateCaseSummary(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Gather source data
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId)
+  if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
+
+  // Soft-delete existing summary
+  await supabase
+    .from('case_summaries')
+    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+
+  // Insert processing record
+  const sourceHash = computeSourceHash(inputData)
+  const { data: record, error: insertError } = await supabase
+    .from('case_summaries')
+    .insert({
+      case_id: caseId,
+      generation_status: 'processing',
+      generation_attempts: 1,
+      source_data_hash: sourceHash,
+      created_by_user_id: user.id,
+      updated_by_user_id: user.id,
+    })
+    .select('id')
+    .single()
+
+  if (insertError || !record) {
+    revalidatePath(`/patients/${caseId}`)
+    return { error: 'Failed to create summary record' }
+  }
+
+  // Call Claude
+  let result = await generateCaseSummaryFromData(inputData)
+
+  // One retry on failure (same pattern as mri-extractions.ts)
+  if (result.error || !result.data) {
+    const retry = await generateCaseSummaryFromData(inputData)
+
+    if (retry.error || !retry.data) {
+      await supabase
+        .from('case_summaries')
+        .update({
+          generation_status: 'failed',
+          generation_error: retry.error || result.error || 'Unknown error',
+          generation_attempts: 2,
+          raw_ai_response: retry.rawResponse || result.rawResponse || null,
+          updated_by_user_id: user.id,
+        })
+        .eq('id', record.id)
+
+      revalidatePath(`/patients/${caseId}`)
+      return { error: retry.error || result.error || 'Summary generation failed after 2 attempts' }
+    }
+
+    // Retry succeeded
+    result = retry
+  }
+
+  // Write success
+  const data = result.data!
+  await supabase
+    .from('case_summaries')
+    .update({
+      chief_complaint: data.chief_complaint,
+      imaging_findings: data.imaging_findings,
+      prior_treatment: data.prior_treatment,
+      symptoms_timeline: data.symptoms_timeline,
+      suggested_diagnoses: data.suggested_diagnoses,
+      ai_model: 'claude-sonnet-4-6',
+      ai_confidence: data.confidence,
+      extraction_notes: data.extraction_notes,
+      raw_ai_response: result.rawResponse || null,
+      generation_status: 'completed',
+      generated_at: new Date().toISOString(),
+      source_data_hash: sourceHash,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', record.id)
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { id: record.id } }
+}
+
+// --- Get summary ---
+
+export async function getCaseSummary(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('case_summaries')
+    .select('*')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (error && error.code !== 'PGRST116') {
+    return { error: 'Failed to fetch summary' }
+  }
+
+  return { data: data || null }
+}
+
+// --- Check staleness ---
+
+export async function checkSummaryStaleness(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: summary } = await supabase
+    .from('case_summaries')
+    .select('source_data_hash')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!summary) return { data: { isStale: false } }
+
+  const { data: inputData } = await gatherSourceData(supabase, caseId)
+  if (!inputData) return { data: { isStale: false } }
+
+  const currentHash = computeSourceHash(inputData)
+  return { data: { isStale: currentHash !== summary.source_data_hash } }
+}
+
+// --- Save edits ---
+
+export async function saveCaseSummaryEdits(caseId: string, formValues: CaseSummaryEditValues) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const validated = caseSummaryEditSchema.safeParse(formValues)
+  if (!validated.success) return { error: 'Invalid form data' }
+
+  const { error } = await supabase
+    .from('case_summaries')
+    .update({
+      provider_overrides: validated.data,
+      review_status: 'edited',
+      reviewed_by_user_id: user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: 'Failed to save edits' }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
+
+// --- Approve summary ---
+
+export async function approveCaseSummary(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('case_summaries')
+    .update({
+      review_status: 'approved',
+      reviewed_by_user_id: user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: 'Failed to approve summary' }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
