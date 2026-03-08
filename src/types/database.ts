@@ -170,6 +170,119 @@ export type Database = {
           },
         ]
       }
+      case_summaries: {
+        Row: {
+          ai_confidence: string | null
+          ai_model: string | null
+          case_id: string
+          chief_complaint: string | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          extraction_notes: string | null
+          generated_at: string | null
+          generation_attempts: number
+          generation_error: string | null
+          generation_status: string
+          id: string
+          imaging_findings: Json
+          prior_treatment: Json
+          provider_overrides: Json
+          raw_ai_response: Json | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          source_data_hash: string | null
+          suggested_diagnoses: Json
+          symptoms_timeline: Json
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id: string
+          chief_complaint?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          extraction_notes?: string | null
+          generated_at?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          generation_status?: string
+          id?: string
+          imaging_findings?: Json
+          prior_treatment?: Json
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          source_data_hash?: string | null
+          suggested_diagnoses?: Json
+          symptoms_timeline?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id?: string
+          chief_complaint?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          extraction_notes?: string | null
+          generated_at?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          generation_status?: string
+          id?: string
+          imaging_findings?: Json
+          prior_treatment?: Json
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          source_data_hash?: string | null
+          suggested_diagnoses?: Json
+          symptoms_timeline?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_summaries_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_summaries_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_summaries_reviewed_by_user_id_fkey"
+            columns: ["reviewed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_summaries_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cases: {
         Row: {
           accident_date: string | null
@@ -268,6 +381,207 @@ export type Database = {
           },
           {
             foreignKeyName: "cases_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chiro_extractions: {
+        Row: {
+          ai_confidence: string | null
+          ai_model: string | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          diagnoses: Json
+          document_id: string
+          extracted_at: string | null
+          extraction_attempts: number
+          extraction_error: string | null
+          extraction_notes: string | null
+          extraction_status: string
+          functional_outcomes: Json
+          id: string
+          plateau_statement: Json
+          provider_overrides: Json
+          raw_ai_response: Json | null
+          report_date: string | null
+          report_type: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          schema_version: number
+          treatment_dates: Json
+          treatment_modalities: Json
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          document_id: string
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          functional_outcomes?: Json
+          id?: string
+          plateau_statement?: Json
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          report_date?: string | null
+          report_type?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          treatment_dates?: Json
+          treatment_modalities?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          document_id?: string
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          functional_outcomes?: Json
+          id?: string
+          plateau_statement?: Json
+          provider_overrides?: Json
+          raw_ai_response?: Json | null
+          report_date?: string | null
+          report_type?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          treatment_dates?: Json
+          treatment_modalities?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chiro_extractions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chiro_extractions_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chiro_extractions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chiro_extractions_reviewed_by_user_id_fkey"
+            columns: ["reviewed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chiro_extractions_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clinic_settings: {
+        Row: {
+          address_line1: string | null
+          address_line2: string | null
+          city: string | null
+          clinic_name: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          email: string | null
+          id: string
+          logo_storage_path: string | null
+          phone: string | null
+          state: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+          website: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          clinic_name: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          logo_storage_path?: string | null
+          phone?: string | null
+          state?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address_line1?: string | null
+          address_line2?: string | null
+          city?: string | null
+          clinic_name?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          logo_storage_path?: string | null
+          phone?: string | null
+          state?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_settings_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinic_settings_updated_by_user_id_fkey"
             columns: ["updated_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -818,6 +1132,73 @@ export type Database = {
           {
             foreignKeyName: "procedures_updated_by_user_id_fkey"
             columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_profiles: {
+        Row: {
+          created_at: string
+          created_by_user_id: string | null
+          credentials: string | null
+          deleted_at: string | null
+          display_name: string
+          id: string
+          license_number: string | null
+          npi_number: string | null
+          signature_storage_path: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: string | null
+          credentials?: string | null
+          deleted_at?: string | null
+          display_name: string
+          id?: string
+          license_number?: string | null
+          npi_number?: string | null
+          signature_storage_path?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string | null
+          credentials?: string | null
+          deleted_at?: string | null
+          display_name?: string
+          id?: string
+          license_number?: string | null
+          npi_number?: string | null
+          signature_storage_path?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_profiles_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_profiles_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_profiles_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
