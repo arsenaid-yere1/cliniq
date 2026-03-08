@@ -34,6 +34,7 @@ export function ClinicInfoForm({ initialData }: ClinicInfoFormProps) {
       state: initialData?.state ?? '',
       zip_code: initialData?.zip_code ?? '',
       phone: initialData?.phone ?? '',
+      fax: initialData?.fax ?? '',
       email: initialData?.email ?? '',
       website: initialData?.website ?? '',
     },
@@ -138,19 +139,34 @@ export function ClinicInfoForm({ initialData }: ClinicInfoFormProps) {
           />
         </div>
 
-        <FormField
-          control={form.control}
-          name="phone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Phone</FormLabel>
-              <FormControl>
-                <Input {...field} type="tel" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Phone</FormLabel>
+                <FormControl>
+                  <Input {...field} type="tel" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="fax"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fax</FormLabel>
+                <FormControl>
+                  <Input {...field} type="tel" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={form.control}

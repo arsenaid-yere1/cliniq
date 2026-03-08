@@ -527,6 +527,7 @@ export type Database = {
           created_by_user_id: string | null
           deleted_at: string | null
           email: string | null
+          fax: string | null
           id: string
           logo_storage_path: string | null
           phone: string | null
@@ -545,6 +546,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           email?: string | null
+          fax?: string | null
           id?: string
           logo_storage_path?: string | null
           phone?: string | null
@@ -563,6 +565,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           email?: string | null
+          fax?: string | null
           id?: string
           logo_storage_path?: string | null
           phone?: string | null
