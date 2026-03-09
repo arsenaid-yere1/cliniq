@@ -265,6 +265,27 @@ export async function finalizeInitialVisitNote(caseId: string) {
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
+  // Clean up previous document if re-finalizing (prevents duplicate documents)
+  if (note.document_id) {
+    const { data: oldDoc } = await supabase
+      .from('documents')
+      .select('id, file_path')
+      .eq('id', note.document_id)
+      .is('deleted_at', null)
+      .single()
+
+    if (oldDoc) {
+      await supabase
+        .from('documents')
+        .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
+        .eq('id', oldDoc.id)
+
+      if (oldDoc.file_path) {
+        await supabase.storage.from('case-documents').remove([oldDoc.file_path])
+      }
+    }
+  }
+
   // Render PDF
   const { renderInitialVisitPdf } = await import('@/lib/pdf/render-initial-visit-pdf')
   const pdfBuffer = await renderInitialVisitPdf({
