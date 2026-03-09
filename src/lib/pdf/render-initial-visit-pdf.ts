@@ -13,13 +13,14 @@ function getMimeType(path: string): string {
 
 async function imageToBase64(data: Blob, mime: string): Promise<string> {
   const buffer = Buffer.from(await data.arrayBuffer())
-  // @react-pdf/renderer doesn't support SVG — convert to PNG via sharp
-  if (mime === 'image/svg+xml') {
+  // Normalize all images to PNG for @react-pdf/renderer compatibility
+  // (SVG is unsupported, JPEG can have rendering issues in some versions)
+  if (mime !== 'image/png') {
     const sharp = (await import('sharp')).default
     const pngBuffer = await sharp(buffer).png().toBuffer()
     return `data:image/png;base64,${pngBuffer.toString('base64')}`
   }
-  return `data:${mime};base64,${buffer.toString('base64')}`
+  return `data:image/png;base64,${buffer.toString('base64')}`
 }
 
 interface RenderPdfInput {

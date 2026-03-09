@@ -59,7 +59,7 @@ const sectionEntries: [keyof InitialVisitPdfData, string][] = [
 
 const styles = StyleSheet.create({
   page: { padding: 50, fontSize: 10, fontFamily: 'Helvetica', lineHeight: 1.5 },
-  clinicHeader: { textAlign: 'center', marginBottom: 10 },
+  clinicHeader: { textAlign: 'center', alignItems: 'center', marginBottom: 10 },
   clinicName: { fontSize: 14, fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   clinicDetail: { fontSize: 9, color: '#444' },
   separator: { borderBottom: '1 solid #ccc', marginVertical: 10 },
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
   signatureImage: { height: 40, width: 120, marginBottom: 4 },
   providerName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   providerDetail: { fontSize: 9, color: '#666' },
-  logo: { height: 50, marginBottom: 6, alignSelf: 'center' as const },
+  logo: { width: 150, height: 50, marginBottom: 6 },
 })
 
 export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
