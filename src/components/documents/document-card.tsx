@@ -19,6 +19,7 @@ import { ImagePreview } from './image-preview'
 const docTypeLabels: Record<string, string> = {
   mri_report: 'MRI Report',
   chiro_report: 'Chiro Report',
+  pain_management: 'Pain Management',
   generated: 'Generated',
   other: 'Other',
 }
@@ -26,6 +27,7 @@ const docTypeLabels: Record<string, string> = {
 const docTypeColors: Record<string, string> = {
   mri_report: 'bg-purple-100 text-purple-800 border-purple-200',
   chiro_report: 'bg-blue-100 text-blue-800 border-blue-200',
+  pain_management: 'bg-orange-100 text-orange-800 border-orange-200',
   generated: 'bg-green-100 text-green-800 border-green-200',
   other: 'bg-gray-100 text-gray-800 border-gray-200',
 }
