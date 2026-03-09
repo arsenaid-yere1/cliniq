@@ -60,28 +60,43 @@ const sectionEntries: [keyof InitialVisitPdfData, string][] = [
 const styles = StyleSheet.create({
   page: { padding: 50, fontSize: 10, fontFamily: 'Helvetica', lineHeight: 1.5 },
   clinicHeader: { textAlign: 'center', alignItems: 'center', marginBottom: 10 },
-  clinicName: { fontSize: 14, fontFamily: 'Helvetica-Bold', marginBottom: 2 },
   clinicDetail: { fontSize: 9, color: '#444' },
-  separator: { borderBottom: '1 solid #ccc', marginVertical: 10 },
+  separator: { borderBottomWidth: 1, borderBottomColor: '#ccc', borderBottomStyle: 'solid', marginTop: 10, marginBottom: 10 },
   patientInfoRow: { flexDirection: 'row', marginBottom: 2 },
   patientLabel: { fontFamily: 'Helvetica-Bold', marginRight: 4 },
-  sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 12, marginBottom: 4 },
-  sectionBody: { fontSize: 10, lineHeight: 1.5 },
-  signatureBlock: { marginTop: 20 },
+  sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
+  sectionBody: { fontSize: 10, lineHeight: 1.6 },
+  signatureBlock: { marginTop: 24 },
   signatureImage: { height: 40, width: 120, marginBottom: 4 },
   providerName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   providerDetail: { fontSize: 9, color: '#666' },
   logo: { height: 80, marginBottom: 6 },
 })
 
+/**
+ * Renders a section's body text, splitting on double-newlines into separate
+ * paragraphs so @react-pdf can properly wrap and paginate long content.
+ */
+function SectionBody({ content }: { content: string }) {
+  const paragraphs = content.split(/\n\n+/)
+  return (
+    <View>
+      {paragraphs.map((para, i) => (
+        <Text key={i} style={[styles.sectionBody, i > 0 ? { marginTop: 6 } : {}]}>
+          {para}
+        </Text>
+      ))}
+    </View>
+  )
+}
+
 export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
   return (
     <Document>
-      <Page size="LETTER" style={styles.page}>
+      <Page size="LETTER" style={styles.page} wrap>
         {/* Clinic Header */}
         <View style={styles.clinicHeader}>
           {data.clinicLogoBase64 && <Image src={data.clinicLogoBase64} style={styles.logo} />}
-          {/* Clinic name omitted — logo contains it */}
           {data.clinicAddress && <Text style={styles.clinicDetail}>{data.clinicAddress}</Text>}
           {(data.clinicPhone || data.clinicFax) && (
             <Text style={styles.clinicDetail}>
@@ -109,8 +124,9 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
         {/* Introduction — special heading */}
         {data.introduction && (
           <View>
-            <Text style={styles.sectionHeading}>To Whom it May Concern</Text>
-            <Text style={styles.sectionBody}>{data.introduction}</Text>
+            {/* Keep heading with start of body — avoid orphaned heading at page bottom */}
+            <Text style={styles.sectionHeading} minPresenceAhead={40}>To Whom it May Concern</Text>
+            <SectionBody content={data.introduction} />
           </View>
         )}
 
@@ -119,9 +135,9 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
           const content = data[key] as string | null
           if (!content) return null
           return (
-            <View key={key} wrap={false}>
-              <Text style={styles.sectionHeading}>{label}</Text>
-              <Text style={styles.sectionBody}>{content}</Text>
+            <View key={key}>
+              <Text style={styles.sectionHeading} minPresenceAhead={40}>{label}</Text>
+              <SectionBody content={content} />
             </View>
           )
         })}
@@ -129,7 +145,7 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
         <View style={styles.separator} />
 
         {/* Signature Block */}
-        <View style={styles.signatureBlock}>
+        <View style={styles.signatureBlock} wrap={false}>
           <Text style={styles.sectionBody}>Respectfully,</Text>
           {data.providerSignatureBase64 && <Image src={data.providerSignatureBase64} style={styles.signatureImage} />}
           {data.providerName && (
