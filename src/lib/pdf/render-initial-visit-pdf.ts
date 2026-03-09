@@ -4,6 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { format, differenceInYears } from 'date-fns'
 import React from 'react'
 
+function getMimeType(path: string): string {
+  if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+  // SVG is not supported by @react-pdf/renderer, skip it
+  return ''
+}
+
 interface RenderPdfInput {
   note: Record<string, unknown>
   caseId: string
@@ -36,29 +43,42 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     .is('deleted_at', null)
     .maybeSingle()
 
-  // Fetch logo as base64 (if exists)
+  // Fetch logo as base64 (if exists — only PNG/JPEG supported by @react-pdf/renderer)
   let clinicLogoBase64: string | undefined
+  console.log('[PDF] logo_storage_path:', clinicSettings?.logo_storage_path ?? 'NOT SET')
   if (clinicSettings?.logo_storage_path) {
-    const { data: logoData } = await supabase.storage
-      .from('clinic-assets')
-      .download(clinicSettings.logo_storage_path)
-    if (logoData) {
-      const buffer = Buffer.from(await logoData.arrayBuffer())
-      const mime = clinicSettings.logo_storage_path.endsWith('.png') ? 'image/png' : 'image/jpeg'
-      clinicLogoBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+    const mime = getMimeType(clinicSettings.logo_storage_path)
+    console.log('[PDF] Logo mime type resolved:', mime || 'UNSUPPORTED')
+    if (mime) {
+      const { data: logoData, error: logoError } = await supabase.storage
+        .from('clinic-assets')
+        .download(clinicSettings.logo_storage_path)
+      if (logoError) {
+        console.error('[PDF] Logo download failed:', logoError.message)
+      } else if (logoData) {
+        const buffer = Buffer.from(await logoData.arrayBuffer())
+        console.log('[PDF] Logo buffer size:', buffer.length, 'bytes')
+        clinicLogoBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+      } else {
+        console.warn('[PDF] Logo download returned null data')
+      }
+    } else {
+      console.warn('[PDF] Unsupported logo format:', clinicSettings.logo_storage_path)
     }
   }
 
-  // Fetch signature as base64 (if exists)
+  // Fetch signature as base64 (if exists — only PNG/JPEG supported)
   let providerSignatureBase64: string | undefined
   if (providerProfile?.signature_storage_path) {
-    const { data: sigData } = await supabase.storage
-      .from('clinic-assets')
-      .download(providerProfile.signature_storage_path)
-    if (sigData) {
-      const buffer = Buffer.from(await sigData.arrayBuffer())
-      const mime = providerProfile.signature_storage_path.endsWith('.png') ? 'image/png' : 'image/jpeg'
-      providerSignatureBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+    const mime = getMimeType(providerProfile.signature_storage_path)
+    if (mime) {
+      const { data: sigData } = await supabase.storage
+        .from('clinic-assets')
+        .download(providerProfile.signature_storage_path)
+      if (sigData) {
+        const buffer = Buffer.from(await sigData.arrayBuffer())
+        providerSignatureBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+      }
     }
   }
 
