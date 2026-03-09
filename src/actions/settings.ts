@@ -7,6 +7,8 @@ import { clinicInfoSchema, type ClinicInfoFormValues, providerInfoSchema, type P
 const CLINIC_ASSETS_BUCKET = 'clinic-assets'
 const LOGO_MAX_SIZE = 2 * 1024 * 1024 // 2 MB
 const LOGO_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/svg+xml']
+const SIGNATURE_MAX_SIZE = 1 * 1024 * 1024 // 1 MB
+const SIGNATURE_ALLOWED_TYPES = ['image/jpeg', 'image/png']
 
 export async function getClinicSettings() {
   const supabase = await createClient()
@@ -233,6 +235,134 @@ export async function getClinicLogoUrl() {
   const { data, error } = await supabase.storage
     .from(CLINIC_ASSETS_BUCKET)
     .createSignedUrl(settings.logo_storage_path, 3600)
+
+  if (error) return { error: error.message }
+  return { url: data.signedUrl }
+}
+
+export async function uploadProviderSignature(formData: FormData) {
+  const file = formData.get('file') as File | null
+  if (!file) return { error: 'No file provided' }
+
+  if (!SIGNATURE_ALLOWED_TYPES.includes(file.type)) {
+    return { error: 'Invalid file type. Please upload a JPEG or PNG image.' }
+  }
+
+  if (file.size > SIGNATURE_MAX_SIZE) {
+    return { error: 'File too large. Maximum size is 1 MB.' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: existing } = await supabase
+    .from('provider_profiles')
+    .select('id, signature_storage_path')
+    .eq('user_id', user!.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  // Remove old signature file if one exists
+  if (existing?.signature_storage_path) {
+    await supabase.storage
+      .from(CLINIC_ASSETS_BUCKET)
+      .remove([existing.signature_storage_path])
+  }
+
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
+  const storagePath = `signatures/${Date.now()}.${ext}`
+
+  const { error: uploadError } = await supabase.storage
+    .from(CLINIC_ASSETS_BUCKET)
+    .upload(storagePath, file, {
+      contentType: file.type,
+      upsert: false,
+    })
+
+  if (uploadError) return { error: uploadError.message }
+
+  let result
+  if (existing) {
+    result = await supabase
+      .from('provider_profiles')
+      .update({
+        signature_storage_path: storagePath,
+        updated_by_user_id: user?.id,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single()
+  } else {
+    result = await supabase
+      .from('provider_profiles')
+      .insert({
+        user_id: user!.id,
+        display_name: '',
+        signature_storage_path: storagePath,
+        created_by_user_id: user?.id,
+        updated_by_user_id: user?.id,
+      })
+      .select()
+      .single()
+  }
+
+  if (result.error) return { error: result.error.message }
+
+  revalidatePath('/settings')
+  return { data: result.data }
+}
+
+export async function removeProviderSignature() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: existing } = await supabase
+    .from('provider_profiles')
+    .select('id, signature_storage_path')
+    .eq('user_id', user!.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!existing?.signature_storage_path) {
+    return { error: 'No signature to remove' }
+  }
+
+  const { error: deleteError } = await supabase.storage
+    .from(CLINIC_ASSETS_BUCKET)
+    .remove([existing.signature_storage_path])
+
+  if (deleteError) return { error: deleteError.message }
+
+  const { error: updateError } = await supabase
+    .from('provider_profiles')
+    .update({
+      signature_storage_path: null,
+      updated_by_user_id: user?.id,
+    })
+    .eq('id', existing.id)
+
+  if (updateError) return { error: updateError.message }
+
+  revalidatePath('/settings')
+  return { success: true }
+}
+
+export async function getProviderSignatureUrl() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: profile } = await supabase
+    .from('provider_profiles')
+    .select('signature_storage_path')
+    .eq('user_id', user!.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!profile?.signature_storage_path) return { url: null }
+
+  const { data, error } = await supabase.storage
+    .from(CLINIC_ASSETS_BUCKET)
+    .createSignedUrl(profile.signature_storage_path, 3600)
 
   if (error) return { error: error.message }
   return { url: data.signedUrl }

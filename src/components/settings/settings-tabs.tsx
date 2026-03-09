@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ClinicInfoForm } from './clinic-info-form'
 import { ProviderInfoForm } from './provider-info-form'
 import { ClinicLogoUpload } from './clinic-logo-upload'
+import { ProviderSignatureUpload } from './provider-signature-upload'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
@@ -37,7 +38,7 @@ export function SettingsTabs({ clinicSettings, providerProfile }: SettingsTabsPr
       </TabsContent>
 
       <TabsContent value="signature">
-        <p className="text-sm text-muted-foreground">Signature upload coming soon.</p>
+        <ProviderSignatureUpload initialSignaturePath={providerProfile?.signature_storage_path ?? null} />
       </TabsContent>
     </Tabs>
   )
