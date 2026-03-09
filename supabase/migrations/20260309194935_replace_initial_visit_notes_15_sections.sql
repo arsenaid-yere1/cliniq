@@ -1,7 +1,6 @@
--- Initial visit notes: AI-generated clinical notes matching provider's Initial Visit template
--- 15 narrative sections covering full document structure
+-- Replace initial_visit_notes: expand from 8 to 15 sections matching provider template
+-- Safe to drop — no production data exists
 
--- Drop old table if exists (no production data)
 drop table if exists public.initial_visit_notes cascade;
 
 create table public.initial_visit_notes (
@@ -9,21 +8,21 @@ create table public.initial_visit_notes (
   case_id uuid not null references public.cases(id),
 
   -- Section text fields (15 sections matching provider template)
-  introduction text,                -- "To Whom it May Concern" opening paragraph
-  history_of_accident text,         -- Mechanism of injury, immediate symptoms
-  chief_complaint text,             -- Current complaints with pain ratings
-  past_medical_history text,        -- PMH, surgeries, medications, allergies
-  social_history text,              -- Smoking/drinking, occupation
-  review_of_systems text,           -- General + MSK review
-  physical_exam text,               -- Vitals, exam, ROM, ortho tests, neuro
-  imaging_findings text,            -- MRI findings by region with impressions
-  motor_sensory_reflex text,        -- Motor/sensory/reflex summary
-  medical_necessity text,           -- Clinical correlation + PRP justification
-  diagnoses text,                   -- ICD-10 codes list
-  treatment_plan text,              -- PRP recommendations, conservative care, follow-up
-  patient_education text,           -- Education provided
-  prognosis text,                   -- Prognosis statement
-  clinician_disclaimer text,        -- Medical-legal disclaimer
+  introduction text,
+  history_of_accident text,
+  chief_complaint text,
+  past_medical_history text,
+  social_history text,
+  review_of_systems text,
+  physical_exam text,
+  imaging_findings text,
+  motor_sensory_reflex text,
+  medical_necessity text,
+  diagnoses text,
+  treatment_plan text,
+  patient_education text,
+  prognosis text,
+  clinician_disclaimer text,
 
   -- AI metadata
   ai_model text,
@@ -63,7 +62,7 @@ create unique index idx_initial_visit_notes_case_active
 create trigger set_updated_at before update on public.initial_visit_notes
   for each row execute function update_updated_at();
 
--- RLS (same pattern as all other tables)
+-- RLS
 alter table public.initial_visit_notes enable row level security;
 
 create policy "Authenticated users full access" on public.initial_visit_notes

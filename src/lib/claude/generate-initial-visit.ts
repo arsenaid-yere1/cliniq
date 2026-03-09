@@ -8,70 +8,139 @@ import { sectionLabels } from '@/lib/validations/initial-visit-note'
 
 const anthropic = new Anthropic()
 
-const SYSTEM_PROMPT = `You are a clinical documentation specialist for a personal injury chiropractic clinic. Your task is to generate a comprehensive Initial Visit note from the provided case data.
+const SYSTEM_PROMPT = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate a comprehensive Initial Visit note that matches the clinic's standard document format.
 
-Rules:
-1. Write in formal clinical Initial Visit note format appropriate for personal injury documentation
-2. Use precise medical terminology suitable for legal proceedings
-3. Generate narrative prose for each section — not bullet points or structured data
-4. For Patient Information: include demographics, accident details, and date of injury
-5. For Chief Complaint: write a concise narrative of the patient's primary complaints and mechanism of injury
-6. For History of Present Illness: write a detailed chronological narrative of the injury, symptoms, and their progression
-7. For Imaging Review: summarize all imaging findings by body region, citing specific pathology
-8. For Prior Treatment Summary: describe the treatment course including modalities, frequency, response, and any gaps
-9. For Physical Examination: generate a body-region-specific exam template based on the imaging findings and complaints, with common objective findings to be completed by the provider
-10. For Assessment: synthesize findings into clinical impressions with diagnoses
-11. For Treatment Plan: generate a preliminary treatment plan based on diagnoses, including recommended modalities, frequency, duration, and goals
-12. Reference the date of injury and case details throughout the note where clinically appropriate
-13. If data is sparse for a section, write what can be reasonably inferred and note limitations`
+This document is for medical-legal assessment of injuries sustained in a motor vehicle accident or other personal injury event. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
+
+Section-specific instructions:
+
+1. INTRODUCTION: Write a "To Whom it May Concern" opening paragraph. State the patient's age, gender, reason for evaluation (pain management evaluation due to injuries sustained in [accident type]), date of injury, and that the document contains the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations.
+
+2. HISTORY OF THE ACCIDENT: Write a detailed narrative of the accident mechanism. Include: vehicle position, point of impact, seatbelt/airbag status, loss of consciousness, immediate symptoms, paramedic/ER response, and initial post-accident actions. End with a paragraph about seeking conservative treatment and obtaining imaging. Include a final paragraph noting that despite conservative treatment, the patient continues to complain of pain and functional deficits with ADLs.
+
+3. CHIEF COMPLAINT: List each complaint as a bullet point with: body region, pain character (persistent/intermittent), pain rating (X/10), radiation status, aggravating factors, and alleviating factors. Include sleep disturbance if applicable.
+
+4. PAST MEDICAL HISTORY: Use bullet points for: Medical Problems, Surgeries, Medications Prior to Visit, Allergies.
+
+5. SOCIAL HISTORY: Use bullet points for: Smoking/Drinking status, Occupation.
+
+6. REVIEW OF SYSTEMS: Use bullet points organized by system (General, Musculoskeletal, etc.).
+
+7. PHYSICAL EXAMINATION: Include Vital Signs as bullet points (BP, HR, RR, Temp, SpO2, Pain Level). Then for each affected spine region: musculoskeletal examination findings, palpation findings with specific levels, ROM testing in table format (Normal/Actual/Pain for each movement), orthopedic test results (positive and negative), and neurological testing results.
+
+8. RADIOLOGICAL IMAGING FINDINGS: For each MRI, include the date, list findings as bullet points with specific measurements (mm), disc levels, and pathology. Include an Impression subsection repeating key findings.
+
+9. MOTOR / SENSORY / REFLEX SUMMARY: Brief paragraph summarizing upper and lower extremity motor strength, sensation, and DTR findings.
+
+10. MEDICAL NECESSITY: This is the critical medical-legal justification section. Write a narrative that:
+    - Correlates clinical examination findings with imaging pathology
+    - Documents the failure of conservative treatment despite adequate trial
+    - Describes persistent symptoms and their impact on ADLs and quality of life
+    - Establishes the medical rationale for interventional pain management (PRP therapy)
+    - Uses language appropriate for insurance authorization and legal proceedings
+    - Conclude that persistent symptoms despite conservative care warrant interventional pain management consideration
+
+11. DIAGNOSES: List each diagnosis as a bullet point with ICD-10 code and description (e.g., "M50.20 - Cervical Disc Displacement"). Generate appropriate codes based on the clinical findings and imaging.
+
+12. TREATMENT PLAN: Recommend a series of PRP injections with:
+    - Specific target regions (cervical and/or lumbar) with disc/facet levels
+    - Guidance modality (ultrasound guidance)
+    - Estimated cost per injection (Professional Fees and Practice/Surgery Center Fees)
+    - Medication recommendations
+    - Conservative care and home exercise program recommendations
+    - Activity modification guidance
+    - Follow-up timeline
+
+13. PATIENT EDUCATION: Describe the education provided to the patient about their condition, PRP therapy mechanism, expected post-injection course, activity modification, ergonomic strategies, and prevention of chronic pain syndromes. End with "The patient verbalized understanding."
+
+14. PROGNOSIS: Brief statement of prognosis (guarded to fair) based on ongoing symptoms, imaging-confirmed pathology, and dependence on treatment response.
+
+15. CLINICIAN DISCLAIMER: Write the standard medical-legal disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
+
+If source data is sparse for any section, write what can be reasonably inferred from available data and note limitations. Do not fabricate specific measurements, test results, or vital signs that are not supported by the source data — instead generate a clinically appropriate template for the provider to complete.`
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
   name: 'generate_initial_visit_note',
-  description: 'Generate a comprehensive Initial Visit clinical note from case data',
+  description: 'Generate a comprehensive Initial Visit clinical note matching the provider template',
   input_schema: {
     type: 'object' as const,
     required: [
-      'patient_info',
+      'introduction',
+      'history_of_accident',
       'chief_complaint',
-      'history_of_present_illness',
-      'imaging_review',
-      'prior_treatment_summary',
+      'past_medical_history',
+      'social_history',
+      'review_of_systems',
       'physical_exam',
-      'assessment',
+      'imaging_findings',
+      'motor_sensory_reflex',
+      'medical_necessity',
+      'diagnoses',
       'treatment_plan',
+      'patient_education',
+      'prognosis',
+      'clinician_disclaimer',
     ],
     properties: {
-      patient_info: {
+      introduction: {
         type: 'string',
-        description: 'Patient demographics, accident details, and date of injury narrative',
+        description: '"To Whom it May Concern" opening paragraph with patient demographics and evaluation context',
+      },
+      history_of_accident: {
+        type: 'string',
+        description: 'Detailed narrative of accident mechanism, immediate symptoms, and post-accident course',
       },
       chief_complaint: {
         type: 'string',
-        description: 'Concise narrative of primary complaints and mechanism of injury',
+        description: 'Current complaints with body region, pain character, ratings, radiation, and aggravating/alleviating factors',
       },
-      history_of_present_illness: {
+      past_medical_history: {
         type: 'string',
-        description: 'Detailed chronological narrative of injury, symptoms, and progression',
+        description: 'Medical problems, surgeries, medications, and allergies',
       },
-      imaging_review: {
+      social_history: {
         type: 'string',
-        description: 'Summary of all imaging findings by body region',
+        description: 'Smoking/drinking status and occupation',
       },
-      prior_treatment_summary: {
+      review_of_systems: {
         type: 'string',
-        description: 'Description of treatment course including modalities, frequency, and response',
+        description: 'General and musculoskeletal review of systems',
       },
       physical_exam: {
         type: 'string',
-        description: 'Body-region-specific examination template with common objective findings',
+        description: 'Vital signs, musculoskeletal exam, ROM, orthopedic tests, and neurological findings by region',
       },
-      assessment: {
+      imaging_findings: {
         type: 'string',
-        description: 'Clinical impressions and diagnoses synthesized from all findings',
+        description: 'MRI findings by region with specific measurements, disc levels, pathology, and impressions',
+      },
+      motor_sensory_reflex: {
+        type: 'string',
+        description: 'Motor strength, sensation, and DTR summary for upper and lower extremities',
+      },
+      medical_necessity: {
+        type: 'string',
+        description: 'Clinical correlation of findings with imaging, conservative care failure, persistent symptoms, functional impairment, and PRP treatment justification',
+      },
+      diagnoses: {
+        type: 'string',
+        description: 'ICD-10 diagnosis list based on clinical findings and imaging',
       },
       treatment_plan: {
         type: 'string',
-        description: 'Preliminary treatment plan with recommended modalities, frequency, duration, and goals',
+        description: 'PRP injection recommendations with target regions, costs, medications, conservative care, and follow-up',
+      },
+      patient_education: {
+        type: 'string',
+        description: 'Education provided about condition, PRP therapy, post-injection course, and activity modification',
+      },
+      prognosis: {
+        type: 'string',
+        description: 'Prognosis statement based on symptoms, imaging, and treatment response',
+      },
+      clinician_disclaimer: {
+        type: 'string',
+        description: 'Standard medical-legal disclaimer about scope of assessment',
       },
     },
   },
@@ -125,7 +194,7 @@ export async function generateInitialVisitFromData(
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
+      max_tokens: 16384,
       system: SYSTEM_PROMPT,
       tools: [INITIAL_VISIT_TOOL],
       tool_choice: { type: 'tool', name: 'generate_initial_visit_note' },

@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attorneys: {
@@ -691,24 +716,31 @@ export type Database = {
       initial_visit_notes: {
         Row: {
           ai_model: string | null
-          assessment: string | null
           case_id: string
           chief_complaint: string | null
+          clinician_disclaimer: string | null
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
+          diagnoses: string | null
           document_id: string | null
           finalized_at: string | null
           finalized_by_user_id: string | null
           generation_attempts: number
           generation_error: string | null
-          history_of_present_illness: string | null
+          history_of_accident: string | null
           id: string
-          imaging_review: string | null
-          patient_info: string | null
+          imaging_findings: string | null
+          introduction: string | null
+          medical_necessity: string | null
+          motor_sensory_reflex: string | null
+          past_medical_history: string | null
+          patient_education: string | null
           physical_exam: string | null
-          prior_treatment_summary: string | null
+          prognosis: string | null
           raw_ai_response: Json | null
+          review_of_systems: string | null
+          social_history: string | null
           source_data_hash: string | null
           status: string
           treatment_plan: string | null
@@ -717,24 +749,31 @@ export type Database = {
         }
         Insert: {
           ai_model?: string | null
-          assessment?: string | null
           case_id: string
           chief_complaint?: string | null
+          clinician_disclaimer?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: string | null
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
           generation_attempts?: number
           generation_error?: string | null
-          history_of_present_illness?: string | null
+          history_of_accident?: string | null
           id?: string
-          imaging_review?: string | null
-          patient_info?: string | null
+          imaging_findings?: string | null
+          introduction?: string | null
+          medical_necessity?: string | null
+          motor_sensory_reflex?: string | null
+          past_medical_history?: string | null
+          patient_education?: string | null
           physical_exam?: string | null
-          prior_treatment_summary?: string | null
+          prognosis?: string | null
           raw_ai_response?: Json | null
+          review_of_systems?: string | null
+          social_history?: string | null
           source_data_hash?: string | null
           status?: string
           treatment_plan?: string | null
@@ -743,24 +782,31 @@ export type Database = {
         }
         Update: {
           ai_model?: string | null
-          assessment?: string | null
           case_id?: string
           chief_complaint?: string | null
+          clinician_disclaimer?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: string | null
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
           generation_attempts?: number
           generation_error?: string | null
-          history_of_present_illness?: string | null
+          history_of_accident?: string | null
           id?: string
-          imaging_review?: string | null
-          patient_info?: string | null
+          imaging_findings?: string | null
+          introduction?: string | null
+          medical_necessity?: string | null
+          motor_sensory_reflex?: string | null
+          past_medical_history?: string | null
+          patient_education?: string | null
           physical_exam?: string | null
-          prior_treatment_summary?: string | null
+          prognosis?: string | null
           raw_ai_response?: Json | null
+          review_of_systems?: string | null
+          social_history?: string | null
           source_data_hash?: string | null
           status?: string
           treatment_plan?: string | null
@@ -1486,6 +1532,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

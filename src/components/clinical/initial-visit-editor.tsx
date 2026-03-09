@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+import { format, differenceInYears } from 'date-fns'
 import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -48,14 +48,21 @@ import {
 interface NoteRow {
   id: string
   case_id: string
-  patient_info: string | null
+  introduction: string | null
+  history_of_accident: string | null
   chief_complaint: string | null
-  history_of_present_illness: string | null
-  imaging_review: string | null
-  prior_treatment_summary: string | null
+  past_medical_history: string | null
+  social_history: string | null
+  review_of_systems: string | null
   physical_exam: string | null
-  assessment: string | null
+  imaging_findings: string | null
+  motor_sensory_reflex: string | null
+  medical_necessity: string | null
+  diagnoses: string | null
   treatment_plan: string | null
+  patient_education: string | null
+  prognosis: string | null
+  clinician_disclaimer: string | null
   status: string
   generation_error: string | null
   finalized_at: string | null
@@ -80,6 +87,18 @@ interface ProviderProfile {
   npi_number: string | null
 }
 
+interface CaseData {
+  case_number: string
+  accident_type: string | null
+  accident_date: string | null
+  patient: {
+    first_name: string
+    last_name: string
+    date_of_birth: string | null
+    gender: string | null
+  }
+}
+
 interface InitialVisitEditorProps {
   caseId: string
   note: NoteRow | null
@@ -89,6 +108,26 @@ interface InitialVisitEditorProps {
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
   providerSignatureUrl: string | null
+  caseData: CaseData | null
+}
+
+// Textarea row heights per section
+const sectionRows: Record<InitialVisitSection, number> = {
+  introduction: 5,
+  history_of_accident: 8,
+  chief_complaint: 8,
+  past_medical_history: 5,
+  social_history: 3,
+  review_of_systems: 5,
+  physical_exam: 8,
+  imaging_findings: 8,
+  motor_sensory_reflex: 3,
+  medical_necessity: 5,
+  diagnoses: 5,
+  treatment_plan: 8,
+  patient_education: 5,
+  prognosis: 3,
+  clinician_disclaimer: 3,
 }
 
 export function InitialVisitEditor({
@@ -100,6 +139,7 @@ export function InitialVisitEditor({
   providerProfile,
   clinicLogoUrl,
   providerSignatureUrl,
+  caseData,
 }: InitialVisitEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
@@ -193,6 +233,7 @@ export function InitialVisitEditor({
         providerProfile={providerProfile}
         clinicLogoUrl={clinicLogoUrl}
         providerSignatureUrl={providerSignatureUrl}
+        caseData={caseData}
         isPending={isPending}
         startTransition={startTransition}
       />
@@ -232,14 +273,21 @@ function DraftEditor({
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
     defaultValues: {
-      patient_info: note.patient_info || '',
+      introduction: note.introduction || '',
+      history_of_accident: note.history_of_accident || '',
       chief_complaint: note.chief_complaint || '',
-      history_of_present_illness: note.history_of_present_illness || '',
-      imaging_review: note.imaging_review || '',
-      prior_treatment_summary: note.prior_treatment_summary || '',
+      past_medical_history: note.past_medical_history || '',
+      social_history: note.social_history || '',
+      review_of_systems: note.review_of_systems || '',
       physical_exam: note.physical_exam || '',
-      assessment: note.assessment || '',
+      imaging_findings: note.imaging_findings || '',
+      motor_sensory_reflex: note.motor_sensory_reflex || '',
+      medical_necessity: note.medical_necessity || '',
+      diagnoses: note.diagnoses || '',
       treatment_plan: note.treatment_plan || '',
+      patient_education: note.patient_education || '',
+      prognosis: note.prognosis || '',
+      clinician_disclaimer: note.clinician_disclaimer || '',
     },
   })
 
@@ -366,7 +414,7 @@ function DraftEditor({
                   <FormControl>
                     <Textarea
                       {...field}
-                      rows={6}
+                      rows={sectionRows[section]}
                       className="resize-y"
                     />
                   </FormControl>
@@ -390,6 +438,7 @@ function FinalizedView({
   providerProfile,
   clinicLogoUrl,
   providerSignatureUrl,
+  caseData,
   isPending,
   startTransition,
 }: {
@@ -399,11 +448,26 @@ function FinalizedView({
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
   providerSignatureUrl: string | null
+  caseData: CaseData | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
 }) {
+  const patientName = caseData
+    ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
+    : null
+  const dob = caseData?.patient.date_of_birth
+    ? format(new Date(caseData.patient.date_of_birth), 'MM/dd/yyyy')
+    : null
+  const age = caseData?.patient.date_of_birth
+    ? differenceInYears(new Date(), new Date(caseData.patient.date_of_birth))
+    : null
+  const accidentDate = caseData?.accident_date
+    ? format(new Date(caseData.accident_date), 'MM/dd/yyyy')
+    : null
+
   return (
     <div className="space-y-6">
+      {/* Action bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Initial Visit Note</h1>
@@ -441,85 +505,100 @@ function FinalizedView({
         </AlertDialog>
       </div>
 
-      {/* Clinic Header */}
-      <div className="border rounded-lg p-6 bg-white">
-        <div className="flex items-start justify-between mb-6">
-          <div className="space-y-1">
-            {clinicLogoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={clinicLogoUrl} alt="Clinic logo" className="h-12 mb-2" />
-            )}
-            {clinicSettings?.clinic_name && (
-              <h2 className="text-lg font-bold">{clinicSettings.clinic_name}</h2>
-            )}
-            {clinicSettings?.address_line1 && (
-              <p className="text-sm text-muted-foreground">{clinicSettings.address_line1}</p>
-            )}
-            {clinicSettings?.address_line2 && (
-              <p className="text-sm text-muted-foreground">{clinicSettings.address_line2}</p>
-            )}
-            {(clinicSettings?.city || clinicSettings?.state || clinicSettings?.zip_code) && (
-              <p className="text-sm text-muted-foreground">
-                {[clinicSettings.city, clinicSettings.state].filter(Boolean).join(', ')} {clinicSettings.zip_code}
-              </p>
-            )}
-            {(clinicSettings?.phone || clinicSettings?.fax) && (
-              <p className="text-sm text-muted-foreground">
-                {clinicSettings.phone && `Phone: ${clinicSettings.phone}`}
-                {clinicSettings.phone && clinicSettings.fax && ' | '}
-                {clinicSettings.fax && `Fax: ${clinicSettings.fax}`}
-              </p>
-            )}
-          </div>
-          <div className="text-right">
-            <h3 className="text-lg font-semibold">Initial Visit Note</h3>
-            {note.finalized_at && (
-              <p className="text-sm text-muted-foreground">
-                {format(new Date(note.finalized_at), 'MMMM d, yyyy')}
-              </p>
-            )}
-          </div>
-        </div>
+      {/* Document */}
+      <div className="border rounded-lg p-8 bg-white max-w-4xl mx-auto space-y-6">
 
-        <Separator className="mb-6" />
-
-        {/* Note Sections */}
-        <div className="space-y-6">
-          {initialVisitSections.map((section) => {
-            const content = note[section]
-            if (!content) return null
-            return (
-              <section key={section}>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  {sectionLabels[section]}
-                </h3>
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{content}</p>
-              </section>
-            )
-          })}
-        </div>
-
-        {/* Provider Signature Block */}
-        <Separator className="my-6" />
-        <div className="flex flex-col items-end space-y-2">
-          {providerSignatureUrl && (
+        {/* Clinic Header — centered */}
+        <div className="text-center space-y-1">
+          {clinicLogoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={providerSignatureUrl} alt="Provider signature" className="h-16" />
+            <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 mx-auto mb-2" />
           )}
-          {providerProfile?.display_name && (
-            <p className="text-sm font-semibold">
-              {providerProfile.display_name}
-              {providerProfile.credentials && `, ${providerProfile.credentials}`}
+          {clinicSettings?.clinic_name && (
+            <h2 className="text-lg font-bold">{clinicSettings.clinic_name}</h2>
+          )}
+          {clinicSettings?.address_line1 && (
+            <p className="text-sm">{clinicSettings.address_line1}</p>
+          )}
+          {clinicSettings?.address_line2 && (
+            <p className="text-sm">{clinicSettings.address_line2}</p>
+          )}
+          {(clinicSettings?.city || clinicSettings?.state || clinicSettings?.zip_code) && (
+            <p className="text-sm">
+              {[clinicSettings.city, clinicSettings.state].filter(Boolean).join(', ')} {clinicSettings.zip_code}
             </p>
           )}
-          {providerProfile?.npi_number && (
-            <p className="text-xs text-muted-foreground">NPI: {providerProfile.npi_number}</p>
-          )}
-          {note.finalized_at && (
-            <p className="text-xs text-muted-foreground">
-              Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
+          {(clinicSettings?.phone || clinicSettings?.fax) && (
+            <p className="text-sm">
+              {clinicSettings.phone && `Tel: ${clinicSettings.phone}`}
+              {clinicSettings.phone && clinicSettings.fax && ' | '}
+              {clinicSettings.fax && `Fax: ${clinicSettings.fax}`}
             </p>
           )}
+        </div>
+
+        <Separator />
+
+        {/* Patient Info Block */}
+        {caseData && (
+          <>
+            <div className="space-y-1 text-sm">
+              {patientName && <p><strong>Patient:</strong> {patientName}</p>}
+              {dob && <p><strong>DOB:</strong> {dob}</p>}
+              {age !== null && <p><strong>Age:</strong> {age}</p>}
+              <p><strong>Date of Visit:</strong> {note.finalized_at ? format(new Date(note.finalized_at), 'MM/dd/yyyy') : '\u2014'}</p>
+              {note.chief_complaint && <p><strong>Indication:</strong> Pain Management Evaluation</p>}
+              {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
+            </div>
+            <Separator />
+          </>
+        )}
+
+        {/* Introduction — special heading */}
+        {note.introduction && (
+          <div>
+            <h3 className="text-sm font-bold mb-2">To Whom it May Concern</h3>
+            <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.introduction}</p>
+          </div>
+        )}
+
+        {/* Remaining sections with their headings */}
+        {initialVisitSections.slice(1).map((section) => {
+          const content = note[section]
+          if (!content) return null
+          return (
+            <div key={section}>
+              <h3 className="text-sm font-bold mb-2">{sectionLabels[section]}</h3>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{content}</p>
+            </div>
+          )
+        })}
+
+        <Separator />
+
+        {/* Closing + Signature */}
+        <div className="space-y-4">
+          <p className="text-sm">Respectfully,</p>
+          <div className="space-y-2">
+            {providerSignatureUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={providerSignatureUrl} alt="Provider signature" className="h-16" />
+            )}
+            {providerProfile?.display_name && (
+              <p className="text-sm font-semibold">
+                {providerProfile.display_name}
+                {providerProfile.credentials && `, ${providerProfile.credentials}`}
+              </p>
+            )}
+            {providerProfile?.npi_number && (
+              <p className="text-xs text-muted-foreground">NPI: {providerProfile.npi_number}</p>
+            )}
+            {note.finalized_at && (
+              <p className="text-xs text-muted-foreground">
+                Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
