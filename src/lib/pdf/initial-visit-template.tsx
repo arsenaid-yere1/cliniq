@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
   signatureImage: { height: 40, width: 120, marginBottom: 4 },
   providerName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   providerDetail: { fontSize: 9, color: '#666' },
-  logo: { width: 150, height: 50, marginBottom: 6 },
+  logo: { height: 80, marginBottom: 6 },
 })
 
 export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
@@ -81,7 +81,7 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
         {/* Clinic Header */}
         <View style={styles.clinicHeader}>
           {data.clinicLogoBase64 && <Image src={data.clinicLogoBase64} style={styles.logo} />}
-          {data.clinicName && <Text style={styles.clinicName}>{data.clinicName}</Text>}
+          {/* Clinic name omitted — logo contains it */}
           {data.clinicAddress && <Text style={styles.clinicDetail}>{data.clinicAddress}</Text>}
           {(data.clinicPhone || data.clinicFax) && (
             <Text style={styles.clinicDetail}>

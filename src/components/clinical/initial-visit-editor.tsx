@@ -536,9 +536,7 @@ function FinalizedView({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 mx-auto mb-2" />
           )}
-          {clinicSettings?.clinic_name && (
-            <h2 className="text-lg font-bold">{clinicSettings.clinic_name}</h2>
-          )}
+          {/* Clinic name omitted — logo contains it */}
           {clinicSettings?.address_line1 && (
             <p className="text-sm">{clinicSettings.address_line1}</p>
           )}
