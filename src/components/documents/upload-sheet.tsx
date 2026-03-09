@@ -18,6 +18,7 @@ import { createTusUpload } from '@/lib/tus-upload'
 import { getUploadSession, saveDocumentMetadata } from '@/actions/documents'
 import { extractMriReport } from '@/actions/mri-extractions'
 import { extractChiroReport } from '@/actions/chiro-extractions'
+import { extractPainManagementReport } from '@/actions/pain-management-extractions'
 import {
   ALLOWED_MIME_TYPES, MAX_FILE_SIZE, type DocumentType,
 } from '@/lib/validations/document'
@@ -101,7 +102,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
     }
 
     let completedCount = 0
-    const pendingExtractions: Array<{ type: 'mri' | 'chiro'; documentId: string }> = []
+    const pendingExtractions: Array<{ type: 'mri' | 'chiro' | 'pain_management'; documentId: string }> = []
 
     for (const stagedFile of staged) {
       try {
@@ -163,6 +164,9 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
         if (stagedFile.documentType === 'chiro_report' && metaResult.data) {
           pendingExtractions.push({ type: 'chiro', documentId: metaResult.data.id })
         }
+        if (stagedFile.documentType === 'pain_management' && metaResult.data) {
+          pendingExtractions.push({ type: 'pain_management', documentId: metaResult.data.id })
+        }
       } catch (err) {
         updateFile(stagedFile.id, {
           status: 'error',
@@ -201,6 +205,20 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
               toast.error(`Extraction failed: ${extractResult.error}`)
             } else {
               toast.success('Chiro findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
+        if (extraction.type === 'pain_management') {
+          extractPainManagementReport(extraction.documentId).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('Pain management findings extracted', {
                 action: {
                   label: 'View',
                   onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
@@ -278,6 +296,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                     <SelectContent>
                       <SelectItem value="mri_report">MRI Report</SelectItem>
                       <SelectItem value="chiro_report">Chiropractor Report</SelectItem>
+                      <SelectItem value="pain_management">Pain Management</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
