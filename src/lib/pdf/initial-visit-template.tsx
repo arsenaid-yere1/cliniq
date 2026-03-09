@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
+import type { Style } from '@react-pdf/types'
 
 export interface InitialVisitPdfData {
   // Clinic info
@@ -74,18 +75,101 @@ const styles = StyleSheet.create({
 })
 
 /**
- * Renders a section's body text, splitting on double-newlines into separate
- * paragraphs so @react-pdf can properly wrap and paginate long content.
+ * Renders a single line of text, handling inline bold markers (**text**).
+ * Returns an array of <Text> fragments with appropriate font styling.
+ */
+function renderInlineText(text: string, baseStyle: Style) {
+  // Split on **bold** markers
+  const parts = text.split(/\*\*(.+?)\*\*/)
+  if (parts.length === 1) {
+    // No bold markers found
+    return <Text style={baseStyle}>{text}</Text>
+  }
+  // Alternating: plain, bold, plain, bold, ...
+  return (
+    <Text style={baseStyle}>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <Text key={i} style={{ fontFamily: 'Helvetica-Bold' }}>{part}</Text>
+        ) : (
+          <Text key={i}>{part}</Text>
+        )
+      )}
+    </Text>
+  )
+}
+
+/**
+ * Checks if a line is a sub-heading (e.g., "VITAL SIGNS:" or "CERVICAL SPINE EXAMINATION:")
+ * Sub-headings are short lines that end with ":" and are mostly uppercase.
+ */
+function isSubHeading(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed.endsWith(':')) return false
+  if (trimmed.length > 80) return false
+  // Check if mostly uppercase (>60% uppercase letters)
+  const letters = trimmed.replace(/[^a-zA-Z]/g, '')
+  if (letters.length === 0) return false
+  const upperCount = (letters.match(/[A-Z]/g) || []).length
+  return upperCount / letters.length > 0.6
+}
+
+/**
+ * Renders a section's body text with proper formatting:
+ * - Splits on double-newlines into paragraphs
+ * - Renders lines starting with "• " or "- " or "* " as indented bullet points
+ * - Renders ALL CAPS lines ending with ":" as bold sub-headings
+ * - Handles **bold** inline markers
  */
 function SectionBody({ content }: { content: string }) {
   const paragraphs = content.split(/\n\n+/)
   return (
     <View>
-      {paragraphs.map((para, i) => (
-        <Text key={i} style={[styles.sectionBody, i > 0 ? { marginTop: 6 } : {}]}>
-          {para}
-        </Text>
-      ))}
+      {paragraphs.map((para, paraIdx) => {
+        const lines = para.split('\n')
+        return (
+          <View key={paraIdx} style={paraIdx > 0 ? { marginTop: 6 } : {}}>
+            {lines.map((line, lineIdx) => {
+              const trimmed = line.trim()
+              if (!trimmed) return null
+
+              // Bullet point: "• ", "- ", "* " at start of line
+              const bulletMatch = trimmed.match(/^(?:•\s*|-\s+|\*\s+)(.*)$/)
+              if (bulletMatch) {
+                return (
+                  <View key={lineIdx} style={{ flexDirection: 'row', marginLeft: 12, marginBottom: 1 }}>
+                    <Text style={[styles.sectionBody, { width: 12 }]}>•</Text>
+                    <View style={{ flex: 1 }}>
+                      {renderInlineText(bulletMatch[1], styles.sectionBody)}
+                    </View>
+                  </View>
+                )
+              }
+
+              // Sub-heading: ALL CAPS line ending with ":"
+              if (isSubHeading(trimmed)) {
+                // Strip any markdown bold markers from sub-headings
+                const cleanHeading = trimmed.replace(/\*\*/g, '')
+                return (
+                  <Text
+                    key={lineIdx}
+                    style={[styles.sectionBody, { fontFamily: 'Helvetica-Bold', marginTop: lineIdx > 0 ? 6 : 0, marginBottom: 2 }]}
+                  >
+                    {cleanHeading}
+                  </Text>
+                )
+              }
+
+              // Regular text with possible inline bold
+              return (
+                <View key={lineIdx}>
+                  {renderInlineText(trimmed, styles.sectionBody)}
+                </View>
+              )
+            })}
+          </View>
+        )
+      })}
     </View>
   )
 }
