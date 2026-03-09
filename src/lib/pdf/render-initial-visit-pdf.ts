@@ -7,8 +7,19 @@ import React from 'react'
 function getMimeType(path: string): string {
   if (path.endsWith('.png')) return 'image/png'
   if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
-  // SVG is not supported by @react-pdf/renderer, skip it
+  if (path.endsWith('.svg')) return 'image/svg+xml'
   return ''
+}
+
+async function imageToBase64(data: Blob, mime: string): Promise<string> {
+  const buffer = Buffer.from(await data.arrayBuffer())
+  // @react-pdf/renderer doesn't support SVG — convert to PNG via sharp
+  if (mime === 'image/svg+xml') {
+    const sharp = (await import('sharp')).default
+    const pngBuffer = await sharp(buffer).png().toBuffer()
+    return `data:image/png;base64,${pngBuffer.toString('base64')}`
+  }
+  return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
 interface RenderPdfInput {
@@ -56,9 +67,8 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
       if (logoError) {
         console.error('[PDF] Logo download failed:', logoError.message)
       } else if (logoData) {
-        const buffer = Buffer.from(await logoData.arrayBuffer())
-        console.log('[PDF] Logo buffer size:', buffer.length, 'bytes')
-        clinicLogoBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+        clinicLogoBase64 = await imageToBase64(logoData, mime)
+        console.log('[PDF] Logo loaded, format:', mime)
       } else {
         console.warn('[PDF] Logo download returned null data')
       }
@@ -76,8 +86,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
         .from('clinic-assets')
         .download(providerProfile.signature_storage_path)
       if (sigData) {
-        const buffer = Buffer.from(await sigData.arrayBuffer())
-        providerSignatureBase64 = `data:${mime};base64,${buffer.toString('base64')}`
+        providerSignatureBase64 = await imageToBase64(sigData, mime)
       }
     }
   }
