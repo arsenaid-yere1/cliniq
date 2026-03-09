@@ -66,6 +66,7 @@ interface NoteRow {
 interface ClinicSettings {
   clinic_name: string | null
   address_line1: string | null
+  address_line2: string | null
   city: string | null
   state: string | null
   zip_code: string | null
@@ -453,6 +454,9 @@ function FinalizedView({
             )}
             {clinicSettings?.address_line1 && (
               <p className="text-sm text-muted-foreground">{clinicSettings.address_line1}</p>
+            )}
+            {clinicSettings?.address_line2 && (
+              <p className="text-sm text-muted-foreground">{clinicSettings.address_line2}</p>
             )}
             {(clinicSettings?.city || clinicSettings?.state || clinicSettings?.zip_code) && (
               <p className="text-sm text-muted-foreground">

@@ -101,6 +101,7 @@ export interface InitialVisitInputData {
   clinicInfo: {
     clinic_name: string | null
     address_line1: string | null
+    address_line2: string | null
     city: string | null
     state: string | null
     zip_code: string | null

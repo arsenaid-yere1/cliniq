@@ -37,7 +37,7 @@ async function gatherSourceData(
       .single(),
     supabase
       .from('clinic_settings')
-      .select('clinic_name, address_line1, city, state, zip_code, phone, fax')
+      .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
       .is('deleted_at', null)
       .maybeSingle(),
     supabase
@@ -87,6 +87,7 @@ async function gatherSourceData(
       clinicInfo: {
         clinic_name: clinicRes.data?.clinic_name ?? null,
         address_line1: clinicRes.data?.address_line1 ?? null,
+        address_line2: clinicRes.data?.address_line2 ?? null,
         city: clinicRes.data?.city ?? null,
         state: clinicRes.data?.state ?? null,
         zip_code: clinicRes.data?.zip_code ?? null,
