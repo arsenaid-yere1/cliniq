@@ -265,36 +265,22 @@ export async function finalizeInitialVisitNote(caseId: string) {
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
-  // Assemble note content as JSON
-  const noteContent = {
-    introduction: note.introduction,
-    history_of_accident: note.history_of_accident,
-    chief_complaint: note.chief_complaint,
-    past_medical_history: note.past_medical_history,
-    social_history: note.social_history,
-    review_of_systems: note.review_of_systems,
-    physical_exam: note.physical_exam,
-    imaging_findings: note.imaging_findings,
-    motor_sensory_reflex: note.motor_sensory_reflex,
-    medical_necessity: note.medical_necessity,
-    diagnoses: note.diagnoses,
-    treatment_plan: note.treatment_plan,
-    patient_education: note.patient_education,
-    prognosis: note.prognosis,
-    clinician_disclaimer: note.clinician_disclaimer,
-    finalized_at: new Date().toISOString(),
-    finalized_by: user.id,
-  }
+  // Render PDF
+  const { renderInitialVisitPdf } = await import('@/lib/pdf/render-initial-visit-pdf')
+  const pdfBuffer = await renderInitialVisitPdf({
+    note: note as Record<string, unknown>,
+    caseId,
+    userId: user.id,
+  })
 
-  // Upload to Supabase Storage
-  const storagePath = `cases/${caseId}/initial-visit-note-${Date.now()}.json`
-  const fileContent = JSON.stringify(noteContent, null, 2)
-  const fileBlob = new Blob([fileContent], { type: 'application/json' })
+  // Upload PDF to Supabase Storage
+  const storagePath = `cases/${caseId}/initial-visit-note-${Date.now()}.pdf`
+  const fileBlob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' })
 
   const { error: uploadError } = await supabase.storage
     .from('case-documents')
     .upload(storagePath, fileBlob, {
-      contentType: 'application/json',
+      contentType: 'application/pdf',
       upsert: false,
     })
 
@@ -308,8 +294,8 @@ export async function finalizeInitialVisitNote(caseId: string) {
       document_type: 'generated',
       file_name: 'Initial Visit Note',
       file_path: storagePath,
-      file_size_bytes: new TextEncoder().encode(fileContent).length,
-      mime_type: 'application/json',
+      file_size_bytes: pdfBuffer.length,
+      mime_type: 'application/pdf',
       status: 'reviewed',
       uploaded_by_user_id: user.id,
       created_by_user_id: user.id,

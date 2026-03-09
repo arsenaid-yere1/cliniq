@@ -36,10 +36,22 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       }
     : null
 
+  // Fetch document file_path if note is finalized with a linked document
+  let documentFilePath: string | null = null
+  const note = noteResult.data
+  if (note?.document_id) {
+    const { data: docRow } = await supabase
+      .from('documents')
+      .select('file_path')
+      .eq('id', note.document_id)
+      .single()
+    documentFilePath = docRow?.file_path ?? null
+  }
+
   return (
     <InitialVisitEditor
       caseId={caseId}
-      note={noteResult.data ?? null}
+      note={note ?? null}
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
       clinicSettings={clinicResult.data ?? null}
@@ -47,6 +59,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       clinicLogoUrl={logoResult.url ?? null}
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
+      documentFilePath={documentFilePath}
     />
   )
 }

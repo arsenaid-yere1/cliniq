@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,6 +37,7 @@ import {
   unfinalizeInitialVisitNote,
   regenerateNoteSection,
 } from '@/actions/initial-visit-notes'
+import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
   initialVisitNoteEditSchema,
   initialVisitSections,
@@ -109,6 +110,7 @@ interface InitialVisitEditorProps {
   clinicLogoUrl: string | null
   providerSignatureUrl: string | null
   caseData: CaseData | null
+  documentFilePath: string | null
 }
 
 // Textarea row heights per section
@@ -140,6 +142,7 @@ export function InitialVisitEditor({
   clinicLogoUrl,
   providerSignatureUrl,
   caseData,
+  documentFilePath,
 }: InitialVisitEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
@@ -234,6 +237,7 @@ export function InitialVisitEditor({
         clinicLogoUrl={clinicLogoUrl}
         providerSignatureUrl={providerSignatureUrl}
         caseData={caseData}
+        documentFilePath={documentFilePath}
         isPending={isPending}
         startTransition={startTransition}
       />
@@ -439,6 +443,7 @@ function FinalizedView({
   clinicLogoUrl,
   providerSignatureUrl,
   caseData,
+  documentFilePath,
   isPending,
   startTransition,
 }: {
@@ -449,6 +454,7 @@ function FinalizedView({
   clinicLogoUrl: string | null
   providerSignatureUrl: string | null
   caseData: CaseData | null
+  documentFilePath: string | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
 }) {
@@ -473,16 +479,31 @@ function FinalizedView({
           <h1 className="text-2xl font-bold">Initial Visit Note</h1>
           <Badge variant="outline" className="border-green-500 bg-green-50 text-green-700">Finalized</Badge>
         </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" disabled={isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
-              Edit
+        <div className="flex items-center gap-2">
+          {documentFilePath && (
+            <Button
+              variant="outline"
+              disabled={isPending}
+              onClick={async () => {
+                const result = await getDocumentDownloadUrl(documentFilePath)
+                if (result.url) window.open(result.url, '_blank')
+                else toast.error('Failed to get download URL')
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
             </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Unfinalize Note</AlertDialogTitle>
+          )}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isPending}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
+                Edit
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unfinalize Note</AlertDialogTitle>
               <AlertDialogDescription>
                 This will re-open the note for editing. The existing document record will be preserved. Continue?
               </AlertDialogDescription>
@@ -502,7 +523,8 @@ function FinalizedView({
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
+          </AlertDialog>
+        </div>
       </div>
 
       {/* Document */}
