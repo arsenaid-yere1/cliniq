@@ -688,6 +688,123 @@ export type Database = {
           },
         ]
       }
+      initial_visit_notes: {
+        Row: {
+          ai_model: string | null
+          assessment: string | null
+          case_id: string
+          chief_complaint: string | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          document_id: string | null
+          finalized_at: string | null
+          finalized_by_user_id: string | null
+          generation_attempts: number
+          generation_error: string | null
+          history_of_present_illness: string | null
+          id: string
+          imaging_review: string | null
+          patient_info: string | null
+          physical_exam: string | null
+          prior_treatment_summary: string | null
+          raw_ai_response: Json | null
+          source_data_hash: string | null
+          status: string
+          treatment_plan: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id: string
+          chief_complaint?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          history_of_present_illness?: string | null
+          id?: string
+          imaging_review?: string | null
+          patient_info?: string | null
+          physical_exam?: string | null
+          prior_treatment_summary?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          treatment_plan?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id?: string
+          chief_complaint?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          history_of_present_illness?: string | null
+          id?: string
+          imaging_review?: string | null
+          patient_info?: string | null
+          physical_exam?: string | null
+          prior_treatment_summary?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          treatment_plan?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "initial_visit_notes_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "initial_visit_notes_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "initial_visit_notes_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "initial_visit_notes_finalized_by_user_id_fkey"
+            columns: ["finalized_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "initial_visit_notes_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_line_items: {
         Row: {
           cpt_code: string | null
