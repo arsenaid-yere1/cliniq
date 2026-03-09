@@ -44,6 +44,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       .from('documents')
       .select('file_path')
       .eq('id', note.document_id)
+      .is('deleted_at', null)
       .single()
     documentFilePath = docRow?.file_path ?? null
   }
