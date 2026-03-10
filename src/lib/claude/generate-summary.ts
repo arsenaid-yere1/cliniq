@@ -178,8 +178,9 @@ export interface SummaryInputData {
   }>
 }
 
-function normalizeNullString(value: unknown): unknown {
-  return value === 'null' ? null : value
+function normalizeNullString(val: unknown): string | null {
+  if (val === 'null' || val === null || val === undefined) return null
+  return String(val)
 }
 
 function normalizeNullStringsInArray<T extends Record<string, unknown>>(
@@ -225,40 +226,51 @@ export async function generateCaseSummaryFromData(
     const raw = toolBlock.input as Record<string, unknown>
 
     // Normalize null strings (same pattern as extract-mri.ts / extract-chiro.ts)
+    const rawPriorTreatment = (raw.prior_treatment as Record<string, unknown>) || {}
+    const rawSymptomsTimeline = (raw.symptoms_timeline as Record<string, unknown>) || {}
+
+    // Coerce total_visits: Claude may return a string like "42" due to type: ['integer', 'string']
+    const rawTotalVisits = rawPriorTreatment?.total_visits
+    const normalizedTotalVisits = normalizeNullString(rawTotalVisits)
+    const coercedTotalVisits = normalizedTotalVisits === null
+      ? null
+      : Number(normalizedTotalVisits)
+
     const normalized = {
       ...raw,
       chief_complaint: normalizeNullString(raw.chief_complaint),
       extraction_notes: normalizeNullString(raw.extraction_notes),
       imaging_findings: normalizeNullStringsInArray(
-        raw.imaging_findings as Array<Record<string, unknown>>,
+        (Array.isArray(raw.imaging_findings) ? raw.imaging_findings : []) as Array<Record<string, unknown>>,
         ['severity'],
       ),
       prior_treatment: {
-        ...(raw.prior_treatment as Record<string, unknown>),
-        total_visits: normalizeNullString((raw.prior_treatment as Record<string, unknown>)?.total_visits),
-        treatment_period: normalizeNullString((raw.prior_treatment as Record<string, unknown>)?.treatment_period),
+        ...rawPriorTreatment,
+        total_visits: Number.isNaN(coercedTotalVisits) ? null : coercedTotalVisits,
+        treatment_period: normalizeNullString(rawPriorTreatment?.treatment_period),
       },
       symptoms_timeline: {
-        ...(raw.symptoms_timeline as Record<string, unknown>),
-        onset: normalizeNullString((raw.symptoms_timeline as Record<string, unknown>)?.onset),
-        current_status: normalizeNullString((raw.symptoms_timeline as Record<string, unknown>)?.current_status),
+        ...rawSymptomsTimeline,
+        onset: normalizeNullString(rawSymptomsTimeline?.onset),
+        current_status: normalizeNullString(rawSymptomsTimeline?.current_status),
         progression: normalizeNullStringsInArray(
-          ((raw.symptoms_timeline as Record<string, unknown>)?.progression as Array<Record<string, unknown>>) || [],
+          (Array.isArray(rawSymptomsTimeline?.progression) ? rawSymptomsTimeline.progression : []) as Array<Record<string, unknown>>,
           ['date'],
         ),
         pain_levels: normalizeNullStringsInArray(
-          ((raw.symptoms_timeline as Record<string, unknown>)?.pain_levels as Array<Record<string, unknown>>) || [],
+          (Array.isArray(rawSymptomsTimeline?.pain_levels) ? rawSymptomsTimeline.pain_levels : []) as Array<Record<string, unknown>>,
           ['date', 'context'],
         ),
       },
       suggested_diagnoses: normalizeNullStringsInArray(
-        raw.suggested_diagnoses as Array<Record<string, unknown>>,
+        (Array.isArray(raw.suggested_diagnoses) ? raw.suggested_diagnoses : []) as Array<Record<string, unknown>>,
         ['icd10_code', 'supporting_evidence'],
       ),
     }
 
     const validated = caseSummaryResultSchema.safeParse(normalized)
     if (!validated.success) {
+      console.error('[generate-summary] Zod validation errors:', JSON.stringify(validated.error.issues, null, 2))
       return { error: 'Summary output failed validation', rawResponse: raw }
     }
 
