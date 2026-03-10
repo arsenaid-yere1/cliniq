@@ -13,7 +13,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getDocumentDownloadUrl, getDocumentPreviewUrl, removeDocument } from '@/actions/documents'
-import { PdfPreview } from './pdf-preview'
+import dynamic from 'next/dynamic'
+const PdfPreview = dynamic(() => import('./pdf-preview').then(mod => ({ default: mod.PdfPreview })), { ssr: false })
 import { ImagePreview } from './image-preview'
 
 const docTypeLabels: Record<string, string> = {
