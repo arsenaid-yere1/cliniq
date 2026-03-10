@@ -204,7 +204,7 @@ export function InitialVisitEditor({
           <h1 className="text-2xl font-bold">Initial Visit Note</h1>
           <Badge variant="destructive">Failed</Badge>
         </div>
-        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+        <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {note.generation_error || 'Note generation failed.'}
         </div>
@@ -477,7 +477,7 @@ function FinalizedView({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Initial Visit Note</h1>
-          <Badge variant="outline" className="border-green-500 bg-green-50 text-green-700">Finalized</Badge>
+          <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">Finalized</Badge>
         </div>
         <div className="flex items-center gap-2">
           {documentFilePath && (
@@ -528,7 +528,7 @@ function FinalizedView({
       </div>
 
       {/* Document */}
-      <div className="border rounded-lg p-8 bg-white max-w-4xl mx-auto space-y-6">
+      <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">
 
         {/* Clinic Header — centered */}
         <div className="text-center space-y-1">
