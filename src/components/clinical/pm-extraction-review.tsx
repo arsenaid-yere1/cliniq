@@ -98,7 +98,7 @@ export function PmExtractionReview({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 h-[calc(100vh-280px)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
@@ -149,7 +149,7 @@ export function PmExtractionReview({
         </div>
       )}
 
-      <div className="flex gap-6" style={{ height: 'calc(100vh - 280px)' }}>
+      <div className="flex gap-6 min-h-0 flex-1">
         <div className="w-1/2 min-h-0 border rounded-lg overflow-hidden">
           {pdfUrl ? (
             <PdfViewer url={pdfUrl} className="h-full" />
