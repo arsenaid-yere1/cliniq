@@ -80,7 +80,7 @@ export function MriExtractionReview({
   }
 
   return (
-    <div className="flex flex-col gap-4 max-h-[calc(100dvh-220px)]">
+    <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
