@@ -5,6 +5,7 @@ import { ClinicInfoForm } from './clinic-info-form'
 import { ProviderInfoForm } from './provider-info-form'
 import { ClinicLogoUpload } from './clinic-logo-upload'
 import { ProviderSignatureUpload } from './provider-signature-upload'
+import { AppearanceForm } from './appearance-form'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
@@ -23,6 +24,7 @@ export function SettingsTabs({ clinicSettings, providerProfile }: SettingsTabsPr
         <TabsTrigger value="provider-info">Provider Info</TabsTrigger>
         <TabsTrigger value="clinic-logo">Clinic Logo</TabsTrigger>
         <TabsTrigger value="signature">Signature</TabsTrigger>
+        <TabsTrigger value="appearance">Appearance</TabsTrigger>
       </TabsList>
 
       <TabsContent value="clinic-info">
@@ -39,6 +41,10 @@ export function SettingsTabs({ clinicSettings, providerProfile }: SettingsTabsPr
 
       <TabsContent value="signature">
         <ProviderSignatureUpload initialSignaturePath={providerProfile?.signature_storage_path ?? null} />
+      </TabsContent>
+
+      <TabsContent value="appearance">
+        <AppearanceForm />
       </TabsContent>
     </Tabs>
   )
