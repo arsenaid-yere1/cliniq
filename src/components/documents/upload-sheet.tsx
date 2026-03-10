@@ -302,7 +302,8 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                     <SelectContent>
                       <SelectItem value="mri_report">MRI Report</SelectItem>
                       <SelectItem value="chiro_report">Chiropractor Report</SelectItem>
-                      <SelectItem value="pain_management">Pain Management</SelectItem>
+                      <SelectItem value="pain_management">Pain Management Report</SelectItem>
+                      <SelectItem value="pt_report">PT Report</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
