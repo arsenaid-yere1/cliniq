@@ -83,9 +83,9 @@ const PdfPreview = dynamic(() => import('./pdf-preview').then(mod => ({ default:
 - [x] TypeScript compiles: `npx tsc --noEmit`
 
 #### Manual Verification:
-- [ ] PDF viewer works in extraction review pages (chiro, PM, MRI)
-- [ ] PDF preview works in document cards
-- [ ] No flash of missing content when PDF components load
+- [x] PDF viewer works in extraction review pages (chiro, PM, MRI)
+- [x] PDF preview works in document cards
+- [x] No flash of missing content when PDF components load
 
 ## References
 
