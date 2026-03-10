@@ -17,7 +17,13 @@ export const mriExtractionResultSchema = z.object({
   extraction_notes: z.string().nullable(),
 })
 
+// Multi-region response: Claude returns an array of reports (one per body region)
+export const mriExtractionResponseSchema = z.object({
+  reports: z.array(mriExtractionResultSchema).min(1),
+})
+
 export type MriExtractionResult = z.infer<typeof mriExtractionResultSchema>
+export type MriExtractionResponse = z.infer<typeof mriExtractionResponseSchema>
 export type Finding = z.infer<typeof findingSchema>
 
 // --- Provider review form schema ---

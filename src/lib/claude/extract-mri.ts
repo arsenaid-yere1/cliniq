@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { mriExtractionResultSchema, type MriExtractionResult } from '@/lib/validations/mri-extraction'
+import { mriExtractionResponseSchema, type MriExtractionResult } from '@/lib/validations/mri-extraction'
 
 const anthropic = new Anthropic()
 
@@ -7,59 +7,71 @@ const SYSTEM_PROMPT = `You are a medical data extraction assistant for a persona
 Extract structured information from MRI radiology reports using the provided tool.
 
 Rules:
+- A single PDF may contain MRI reports for MULTIPLE body regions (e.g., cervical + lumbar spine)
+- Create a SEPARATE report object for each body region found in the document
 - Extract the body region scanned (e.g., "Lumbar Spine", "Cervical Spine")
-- Extract the MRI study date if present
+- Extract the MRI study date if present (may differ per region or be shared)
 - Extract each disc level or anatomical finding individually -- do NOT combine
 - For each finding, identify the spinal level (e.g., L4-L5) or anatomical location
-- Include the radiologist's Impression section verbatim if present
+- Include the radiologist's Impression section verbatim if present (per body region)
 - If a field cannot be determined, return null -- do NOT guess
 - Set confidence to "low" if document quality is poor or report is incomplete
 - Add extraction_notes for anything ambiguous or missing`
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
   name: 'extract_mri_data',
-  description: 'Extract structured data from an MRI radiology report',
+  description: 'Extract structured data from one or more MRI radiology reports in a PDF',
   input_schema: {
     type: 'object',
     properties: {
-      body_region: {
-        type: 'string',
-        description: "e.g. 'Lumbar Spine', 'Cervical Spine', 'Right Knee'",
-      },
-      mri_date: {
-        type: 'string',
-        description: 'ISO 8601 date (YYYY-MM-DD) or null if not found. Use the string "null" if not found.',
-      },
-      findings: {
+      reports: {
         type: 'array',
+        description: 'One report per body region found in the document. Most PDFs have 1, but multi-region PDFs will have 2+.',
         items: {
           type: 'object',
           properties: {
-            level: { type: 'string', description: 'Spinal level (e.g., L4-L5) or anatomical location' },
-            description: { type: 'string', description: 'Description of the finding' },
-            severity: {
+            body_region: {
               type: 'string',
-              enum: ['mild', 'moderate', 'severe', 'null'],
-              description: 'Severity of the finding, or "null" if not determinable',
+              description: "e.g. 'Lumbar Spine', 'Cervical Spine', 'Right Knee'",
+            },
+            mri_date: {
+              type: 'string',
+              description: 'ISO 8601 date (YYYY-MM-DD) or "null" if not found',
+            },
+            findings: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  level: { type: 'string', description: 'Spinal level or anatomical location' },
+                  description: { type: 'string', description: 'Description of the finding' },
+                  severity: {
+                    type: 'string',
+                    enum: ['mild', 'moderate', 'severe', 'null'],
+                    description: 'Severity or "null" if not determinable',
+                  },
+                },
+                required: ['level', 'description', 'severity'],
+              },
+            },
+            impression_summary: {
+              type: 'string',
+              description: "Radiologist's impression for this body region, or \"null\"",
+            },
+            confidence: {
+              type: 'string',
+              enum: ['high', 'medium', 'low'],
+            },
+            extraction_notes: {
+              type: 'string',
+              description: 'Ambiguities or quality issues for this region. "null" if none.',
             },
           },
-          required: ['level', 'description', 'severity'],
+          required: ['body_region', 'mri_date', 'findings', 'impression_summary', 'confidence', 'extraction_notes'],
         },
       },
-      impression_summary: {
-        type: 'string',
-        description: "Radiologist's impression/conclusion section verbatim, or \"null\" if not present",
-      },
-      confidence: {
-        type: 'string',
-        enum: ['high', 'medium', 'low'],
-      },
-      extraction_notes: {
-        type: 'string',
-        description: 'Ambiguities, missing data, or quality issues. Use "null" if none.',
-      },
     },
-    required: ['body_region', 'mri_date', 'findings', 'impression_summary', 'confidence', 'extraction_notes'],
+    required: ['reports'],
   },
 }
 
@@ -69,14 +81,14 @@ function normalizeNullString(val: unknown): string | null {
 }
 
 export async function extractMriFromPdf(pdfBase64: string): Promise<{
-  data?: MriExtractionResult
+  data?: MriExtractionResult[]
   rawResponse?: unknown
   error?: string
 }> {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: [EXTRACTION_TOOL],
       tool_choice: { type: 'tool', name: 'extract_mri_data' },
@@ -87,7 +99,7 @@ export async function extractMriFromPdf(pdfBase64: string): Promise<{
             type: 'document',
             source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
           },
-          { type: 'text', text: 'Extract the structured data from this MRI report now.' },
+          { type: 'text', text: 'Extract the structured data from this MRI report now. If the document contains multiple body regions, return a separate report for each.' },
         ],
       }],
     })
@@ -99,28 +111,29 @@ export async function extractMriFromPdf(pdfBase64: string): Promise<{
 
     const raw = toolBlock.input as Record<string, unknown>
 
-    // Normalize "null" strings to actual nulls
-    const normalized = {
-      body_region: raw.body_region,
-      mri_date: normalizeNullString(raw.mri_date),
-      findings: Array.isArray(raw.findings)
-        ? raw.findings.map((f: Record<string, unknown>) => ({
+    // Normalize "null" strings in each report
+    const rawReports = Array.isArray(raw.reports) ? raw.reports : []
+    const normalizedReports = rawReports.map((r: Record<string, unknown>) => ({
+      body_region: r.body_region,
+      mri_date: normalizeNullString(r.mri_date),
+      findings: Array.isArray(r.findings)
+        ? r.findings.map((f: Record<string, unknown>) => ({
             ...f,
             severity: f.severity === 'null' ? null : f.severity,
           }))
         : [],
-      impression_summary: normalizeNullString(raw.impression_summary),
-      confidence: raw.confidence,
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-    }
+      impression_summary: normalizeNullString(r.impression_summary),
+      confidence: r.confidence,
+      extraction_notes: normalizeNullString(r.extraction_notes),
+    }))
 
-    const validated = mriExtractionResultSchema.safeParse(normalized)
+    const validated = mriExtractionResponseSchema.safeParse({ reports: normalizedReports })
 
     if (!validated.success) {
       return { error: 'Extraction output failed validation', rawResponse: raw }
     }
 
-    return { data: validated.data, rawResponse: raw }
+    return { data: validated.data.reports, rawResponse: raw }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Claude API call failed' }
   }

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractMriFromPdf } from '@/lib/claude/extract-mri'
-import type { MriReviewFormValues } from '@/lib/validations/mri-extraction'
+import type { MriExtractionResult, MriReviewFormValues } from '@/lib/validations/mri-extraction'
 
 // --- Trigger extraction for a document ---
 
@@ -78,11 +78,11 @@ export async function extractMriReport(documentId: string) {
 
   const result = await extractMriFromPdf(pdfBase64)
 
-  if (result.error || !result.data) {
+  if (result.error || !result.data?.length) {
     // Retry once on failure
     const retry = await extractMriFromPdf(pdfBase64)
 
-    if (retry.error || !retry.data) {
+    if (retry.error || !retry.data?.length) {
       await supabase.from('mri_extractions').update({
         extraction_status: 'failed',
         extraction_error: retry.error ?? result.error ?? 'Extraction failed',
@@ -95,40 +95,75 @@ export async function extractMriReport(documentId: string) {
     }
 
     // Retry succeeded
-    await updateExtractionSuccess(supabase, extraction.id, retry, user.id, 2)
+    const ids = await insertMultiRegionExtractions(
+      supabase, extraction.id, documentId, doc.case_id, retry, user.id, 2,
+    )
     revalidatePath(`/patients/${doc.case_id}/clinical`)
-    return { data: { extractionId: extraction.id } }
+    return { data: { extractionIds: ids } }
   }
 
   // First attempt succeeded
-  await updateExtractionSuccess(supabase, extraction.id, result, user.id, 1)
+  const ids = await insertMultiRegionExtractions(
+    supabase, extraction.id, documentId, doc.case_id, result, user.id, 1,
+  )
   revalidatePath(`/patients/${doc.case_id}/clinical`)
   revalidatePath(`/patients/${doc.case_id}/documents`)
-  return { data: { extractionId: extraction.id } }
+  return { data: { extractionIds: ids } }
 }
 
-async function updateExtractionSuccess(
+/**
+ * Creates one extraction record per body region.
+ * - First report updates the existing placeholder row (avoids orphan on failure)
+ * - Additional reports are inserted as new rows
+ * - All share the same document_id and raw_ai_response
+ */
+async function insertMultiRegionExtractions(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  extractionId: string,
-  result: { data?: { body_region: string; mri_date: string | null; findings: unknown; impression_summary: string | null; confidence: string; extraction_notes: string | null }; rawResponse?: unknown },
+  placeholderId: string,
+  documentId: string,
+  caseId: string,
+  result: { data?: MriExtractionResult[]; rawResponse?: unknown },
   userId: string,
   attempts: number,
-) {
-  const data = result.data!
-  await supabase.from('mri_extractions').update({
-    extraction_status: 'completed',
-    body_region: data.body_region,
-    mri_date: data.mri_date,
-    findings: data.findings,
-    impression_summary: data.impression_summary,
-    ai_model: 'claude-sonnet-4-6',
-    ai_confidence: data.confidence,
-    extraction_notes: data.extraction_notes,
-    raw_ai_response: result.rawResponse ?? null,
-    extraction_attempts: attempts,
-    extracted_at: new Date().toISOString(),
-    updated_by_user_id: userId,
-  }).eq('id', extractionId)
+): Promise<string[]> {
+  const reports = result.data!
+  const ids: string[] = []
+  const now = new Date().toISOString()
+
+  for (let i = 0; i < reports.length; i++) {
+    const report = reports[i]
+    const fields = {
+      extraction_status: 'completed' as const,
+      body_region: report.body_region,
+      mri_date: report.mri_date,
+      findings: report.findings,
+      impression_summary: report.impression_summary,
+      ai_model: 'claude-sonnet-4-6',
+      ai_confidence: report.confidence,
+      extraction_notes: report.extraction_notes,
+      raw_ai_response: result.rawResponse ?? null,
+      extraction_attempts: attempts,
+      extracted_at: now,
+      updated_by_user_id: userId,
+    }
+
+    if (i === 0) {
+      // Update the placeholder row with first report
+      await supabase.from('mri_extractions').update(fields).eq('id', placeholderId)
+      ids.push(placeholderId)
+    } else {
+      // Insert additional rows for subsequent body regions
+      const { data } = await supabase.from('mri_extractions').insert({
+        ...fields,
+        document_id: documentId,
+        case_id: caseId,
+        created_by_user_id: userId,
+      }).select('id').single()
+      if (data) ids.push(data.id)
+    }
+  }
+
+  return ids
 }
 
 // --- List extractions for a case ---

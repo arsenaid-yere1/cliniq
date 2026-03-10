@@ -190,12 +190,18 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
             if ('error' in extractResult && extractResult.error) {
               toast.error(`Extraction failed: ${extractResult.error}`)
             } else {
-              toast.success('MRI findings extracted', {
-                action: {
-                  label: 'View',
-                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+              const count = extractResult.data?.extractionIds?.length ?? 1
+              toast.success(
+                count > 1
+                  ? `${count} MRI regions extracted`
+                  : 'MRI findings extracted',
+                {
+                  action: {
+                    label: 'View',
+                    onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                  },
                 },
-              })
+              )
             }
           })
         }
