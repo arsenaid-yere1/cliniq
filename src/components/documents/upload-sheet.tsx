@@ -19,6 +19,7 @@ import { getUploadSession, saveDocumentMetadata } from '@/actions/documents'
 import { extractMriReport } from '@/actions/mri-extractions'
 import { extractChiroReport } from '@/actions/chiro-extractions'
 import { extractPainManagementReport } from '@/actions/pain-management-extractions'
+import { extractPtReport } from '@/actions/pt-extractions'
 import {
   ALLOWED_MIME_TYPES, MAX_FILE_SIZE, type DocumentType,
 } from '@/lib/validations/document'
@@ -102,7 +103,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
     }
 
     let completedCount = 0
-    const pendingExtractions: Array<{ type: 'mri' | 'chiro' | 'pain_management'; documentId: string }> = []
+    const pendingExtractions: Array<{ type: 'mri' | 'chiro' | 'pain_management' | 'pt_report'; documentId: string }> = []
 
     for (const stagedFile of staged) {
       try {
@@ -167,6 +168,9 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
         if (stagedFile.documentType === 'pain_management' && metaResult.data) {
           pendingExtractions.push({ type: 'pain_management', documentId: metaResult.data.id })
         }
+        if (stagedFile.documentType === 'pt_report' && metaResult.data) {
+          pendingExtractions.push({ type: 'pt_report', documentId: metaResult.data.id })
+        }
       } catch (err) {
         updateFile(stagedFile.id, {
           status: 'error',
@@ -225,6 +229,20 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
               toast.error(`Extraction failed: ${extractResult.error}`)
             } else {
               toast.success('Pain management findings extracted', {
+                action: {
+                  label: 'View',
+                  onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                },
+              })
+            }
+          })
+        }
+        if (extraction.type === 'pt_report') {
+          extractPtReport(extraction.documentId).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              toast.success('Physical therapy findings extracted', {
                 action: {
                   label: 'View',
                   onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
