@@ -14,7 +14,11 @@ Rules:
 6. For suggested diagnoses, provide ICD-10 codes when available and rate confidence based on supporting evidence strength
 7. Use "null" for any field where data is insufficient to make a determination
 8. Set confidence to "low" if source data is sparse or contradictory
-9. Be precise with medical terminology — this summary may be used in legal proceedings`
+9. Be precise with medical terminology — this summary may be used in legal proceedings
+10. When pain management data is present, incorporate diagnoses, treatment plans (including injection/surgery recommendations), and physical exam findings into the appropriate summary sections
+11. When physical therapy data is present, incorporate functional outcome measures (NDI, ODI, PSFS, LEFS), treatment goals with baselines and targets, and plan of care details. PT data establishes the functional recovery timeline — critical for damages calculations
+12. Cross-reference diagnoses across all sources. If MRI, chiro, PM, and PT all reference the same condition, consolidate into a single diagnosis entry with higher confidence
+13. Include PT outcome measure scores in the symptoms timeline pain_levels when they indicate functional status changes`
 
 const SUMMARY_TOOL: Anthropic.Tool = {
   name: 'extract_case_summary',
@@ -174,6 +178,33 @@ export interface SummaryInputData {
     diagnoses: unknown
     treatment_modalities: unknown
     functional_outcomes: unknown
+    provider_overrides: unknown
+  }>
+  pmExtractions: Array<{
+    report_date: string | null
+    examining_provider: string | null
+    chief_complaints: unknown
+    physical_exam: unknown
+    diagnoses: unknown
+    treatment_plan: unknown
+    diagnostic_studies_summary: string | null
+    provider_overrides: unknown
+  }>
+  ptExtractions: Array<{
+    evaluation_date: string | null
+    evaluating_therapist: string | null
+    pain_ratings: unknown
+    range_of_motion: unknown
+    muscle_strength: unknown
+    special_tests: unknown
+    outcome_measures: unknown
+    short_term_goals: unknown
+    long_term_goals: unknown
+    plan_of_care: unknown
+    diagnoses: unknown
+    clinical_impression: string | null
+    causation_statement: string | null
+    prognosis: string | null
     provider_overrides: unknown
   }>
 }

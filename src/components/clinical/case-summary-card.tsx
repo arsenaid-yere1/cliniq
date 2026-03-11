@@ -113,7 +113,7 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
         <CardContent>
           <div className="text-center py-6 space-y-3">
             <p className="text-sm text-muted-foreground">
-              No summary generated yet. Approve at least one MRI or chiro extraction to generate a summary.
+              No summary generated yet. Approve at least one clinical extraction to generate a summary.
             </p>
             <Button onClick={handleGenerate} disabled={isPending}>
               {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}

@@ -19,7 +19,7 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
 ): Promise<{ data: SummaryInputData | null; error: string | null }> {
-  const [caseRes, mriRes, chiroRes] = await Promise.all([
+  const [caseRes, mriRes, chiroRes, pmRes, ptRes] = await Promise.all([
     supabase
       .from('cases')
       .select('accident_type, accident_date, accident_description')
@@ -38,6 +38,18 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('pain_management_extractions')
+      .select('report_date, examining_provider, chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('pt_extractions')
+      .select('evaluation_date, evaluating_therapist, pain_ratings, range_of_motion, muscle_strength, special_tests, outcome_measures, short_term_goals, long_term_goals, plan_of_care, diagnoses, clinical_impression, causation_statement, prognosis, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -46,9 +58,11 @@ async function gatherSourceData(
 
   const mriExtractions = mriRes.data || []
   const chiroExtractions = chiroRes.data || []
+  const pmExtractions = pmRes.data || []
+  const ptExtractions = ptRes.data || []
 
-  if (mriExtractions.length === 0 && chiroExtractions.length === 0) {
-    return { data: null, error: 'No approved extractions found. Approve at least one MRI or chiro extraction first.' }
+  if (mriExtractions.length === 0 && chiroExtractions.length === 0 && pmExtractions.length === 0 && ptExtractions.length === 0) {
+    return { data: null, error: 'No approved extractions found. Approve at least one extraction first.' }
   }
 
   return {
@@ -56,6 +70,8 @@ async function gatherSourceData(
       caseDetails: caseRes.data,
       mriExtractions,
       chiroExtractions,
+      pmExtractions,
+      ptExtractions,
     },
     error: null,
   }
