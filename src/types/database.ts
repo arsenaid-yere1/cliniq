@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -1503,6 +1478,192 @@ export type Database = {
           },
         ]
       }
+      pt_extractions: {
+        Row: {
+          ai_confidence: string | null
+          ai_model: string | null
+          case_id: string
+          causation_statement: string | null
+          chief_complaint: string | null
+          clinical_impression: string | null
+          created_at: string
+          created_by_user_id: string | null
+          date_of_injury: string | null
+          deleted_at: string | null
+          diagnoses: Json
+          document_id: string
+          evaluating_therapist: string | null
+          evaluation_date: string | null
+          extracted_at: string | null
+          extraction_attempts: number
+          extraction_error: string | null
+          extraction_notes: string | null
+          extraction_status: string
+          functional_limitations: string | null
+          functional_tests: Json
+          gait_analysis: string | null
+          id: string
+          long_term_goals: Json
+          mechanism_of_injury: string | null
+          muscle_strength: Json
+          neurological_screening: Json
+          outcome_measures: Json
+          pain_ratings: Json
+          palpation_findings: Json
+          plan_of_care: Json
+          postural_assessment: string | null
+          prior_treatment: string | null
+          prognosis: string | null
+          provider_overrides: Json
+          range_of_motion: Json
+          raw_ai_response: Json | null
+          referring_provider: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          schema_version: number
+          short_term_goals: Json
+          special_tests: Json
+          updated_at: string
+          updated_by_user_id: string | null
+          work_status: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id: string
+          causation_statement?: string | null
+          chief_complaint?: string | null
+          clinical_impression?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          date_of_injury?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          document_id: string
+          evaluating_therapist?: string | null
+          evaluation_date?: string | null
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          functional_limitations?: string | null
+          functional_tests?: Json
+          gait_analysis?: string | null
+          id?: string
+          long_term_goals?: Json
+          mechanism_of_injury?: string | null
+          muscle_strength?: Json
+          neurological_screening?: Json
+          outcome_measures?: Json
+          pain_ratings?: Json
+          palpation_findings?: Json
+          plan_of_care?: Json
+          postural_assessment?: string | null
+          prior_treatment?: string | null
+          prognosis?: string | null
+          provider_overrides?: Json
+          range_of_motion?: Json
+          raw_ai_response?: Json | null
+          referring_provider?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          short_term_goals?: Json
+          special_tests?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+          work_status?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          case_id?: string
+          causation_statement?: string | null
+          chief_complaint?: string | null
+          clinical_impression?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          date_of_injury?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          document_id?: string
+          evaluating_therapist?: string | null
+          evaluation_date?: string | null
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          functional_limitations?: string | null
+          functional_tests?: Json
+          gait_analysis?: string | null
+          id?: string
+          long_term_goals?: Json
+          mechanism_of_injury?: string | null
+          muscle_strength?: Json
+          neurological_screening?: Json
+          outcome_measures?: Json
+          pain_ratings?: Json
+          palpation_findings?: Json
+          plan_of_care?: Json
+          postural_assessment?: string | null
+          prior_treatment?: string | null
+          prognosis?: string | null
+          provider_overrides?: Json
+          range_of_motion?: Json
+          raw_ai_response?: Json | null
+          referring_provider?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          short_term_goals?: Json
+          special_tests?: Json
+          updated_at?: string
+          updated_by_user_id?: string | null
+          work_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pt_extractions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pt_extractions_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pt_extractions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pt_extractions_reviewed_by_user_id_fkey"
+            columns: ["reviewed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pt_extractions_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           created_at: string
@@ -1664,9 +1825,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
