@@ -617,6 +617,138 @@ export type Database = {
           },
         ]
       }
+      discharge_notes: {
+        Row: {
+          ai_model: string | null
+          assessment: string | null
+          case_id: string
+          clinician_disclaimer: string | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          diagnoses: string | null
+          document_id: string | null
+          finalized_at: string | null
+          finalized_by_user_id: string | null
+          generation_attempts: number
+          generation_error: string | null
+          id: string
+          objective_cervical: string | null
+          objective_general: string | null
+          objective_lumbar: string | null
+          objective_neurological: string | null
+          objective_vitals: string | null
+          patient_education: string | null
+          patient_header: string | null
+          plan_and_recommendations: string | null
+          prognosis: string | null
+          raw_ai_response: Json | null
+          source_data_hash: string | null
+          status: string
+          subjective: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id: string
+          clinician_disclaimer?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          id?: string
+          objective_cervical?: string | null
+          objective_general?: string | null
+          objective_lumbar?: string | null
+          objective_neurological?: string | null
+          objective_vitals?: string | null
+          patient_education?: string | null
+          patient_header?: string | null
+          plan_and_recommendations?: string | null
+          prognosis?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          subjective?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id?: string
+          clinician_disclaimer?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          id?: string
+          objective_cervical?: string | null
+          objective_general?: string | null
+          objective_lumbar?: string | null
+          objective_neurological?: string | null
+          objective_vitals?: string | null
+          patient_education?: string | null
+          patient_header?: string | null
+          plan_and_recommendations?: string | null
+          prognosis?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          subjective?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discharge_notes_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_finalized_by_user_id_fkey"
+            columns: ["finalized_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           case_id: string

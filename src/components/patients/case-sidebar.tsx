@@ -44,6 +44,7 @@ const navItems = [
   { label: 'Clinical Data', href: '/clinical', enabled: true },
   { label: 'Initial Visit', href: '/initial-visit', enabled: true },
   { label: 'Procedures', href: '/procedures', enabled: true },
+  { label: 'Discharge', href: '/discharge', enabled: true },
   { label: 'Billing', href: '/billing', enabled: true },
   { label: 'Timeline', href: '/timeline', enabled: true },
 ]
