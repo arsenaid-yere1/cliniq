@@ -19,6 +19,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useCaseStatus } from '@/components/patients/case-status-context'
 import {
   painManagementReviewFormSchema,
   type PainManagementReviewFormValues,
@@ -42,6 +43,8 @@ export function PmExtractionForm({
   isManualEntry,
   onActionComplete,
 }: PmExtractionFormProps) {
+  const caseStatus = useCaseStatus()
+  const isClosed = caseStatus === 'closed'
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
@@ -665,7 +668,7 @@ export function PmExtractionForm({
                 type="button"
                 variant={isDirty ? 'outline' : 'default'}
                 onClick={handleApprove}
-                disabled={isSubmitting}
+                disabled={isClosed || isSubmitting}
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                 Approve
@@ -675,7 +678,7 @@ export function PmExtractionForm({
             <Button
               type="submit"
               variant={isDirty || isManualEntry ? 'default' : 'outline'}
-              disabled={isSubmitting}
+              disabled={isClosed || isSubmitting}
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               {isManualEntry ? 'Save' : 'Save & Approve'}
@@ -686,7 +689,7 @@ export function PmExtractionForm({
                 type="button"
                 variant="destructive"
                 onClick={() => setRejectDialogOpen(true)}
-                disabled={isSubmitting}
+                disabled={isClosed || isSubmitting}
               >
                 Reject
               </Button>
@@ -713,7 +716,7 @@ export function PmExtractionForm({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleReject}
-              disabled={!rejectReason.trim() || isSubmitting}
+              disabled={isClosed || !rejectReason.trim() || isSubmitting}
             >
               Reject
             </AlertDialogAction>

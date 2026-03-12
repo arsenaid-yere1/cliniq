@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
 const PdfViewer = dynamic(() => import('@/components/documents/pdf-viewer').then(mod => ({ default: mod.PdfViewer })), { ssr: false })
+import { useCaseStatus } from '@/components/patients/case-status-context'
 import { PmExtractionForm } from './pm-extraction-form'
 import { getDocumentPreviewUrl } from '@/actions/documents'
 import { extractPainManagementReport } from '@/actions/pain-management-extractions'
@@ -56,6 +57,8 @@ export function PmExtractionReview({
   extraction: Extraction
   onBack: () => void
 }) {
+  const caseStatus = useCaseStatus()
+  const isClosed = caseStatus === 'closed'
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [isReExtracting, setIsReExtracting] = useState(false)
 
@@ -128,7 +131,7 @@ export function PmExtractionReview({
           variant="outline"
           size="sm"
           onClick={handleReExtract}
-          disabled={isReExtracting}
+          disabled={isClosed || isReExtracting}
         >
           {isReExtracting
             ? <Loader2 className="h-3 w-3 animate-spin mr-1" />

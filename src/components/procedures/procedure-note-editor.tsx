@@ -45,6 +45,7 @@ import {
   type ProcedureNoteEditValues,
   type ProcedureNoteSection,
 } from '@/lib/validations/procedure-note'
+import { useCaseStatus } from '@/components/patients/case-status-context'
 
 interface NoteRow {
   id: string
@@ -177,6 +178,8 @@ export function ProcedureNoteEditor({
 }: ProcedureNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<ProcedureNoteSection | null>(null)
+  const caseStatus = useCaseStatus()
+  const isClosed = caseStatus === 'closed'
 
   // No note — show generate button
   if (!note) {
@@ -197,7 +200,7 @@ export function ProcedureNoteEditor({
                 else toast.success('Note generated successfully')
               })
             }}
-            disabled={!canGenerate || isPending}
+            disabled={isClosed || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             Generate Procedure Note
@@ -248,7 +251,7 @@ export function ProcedureNoteEditor({
               else toast.success('Note generated successfully')
             })
           }}
-          disabled={isPending}
+          disabled={isClosed || isPending}
         >
           {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
           Retry
@@ -273,6 +276,7 @@ export function ProcedureNoteEditor({
         documentFilePath={documentFilePath}
         isPending={isPending}
         startTransition={startTransition}
+        isClosed={isClosed}
       />
     )
   }
@@ -287,6 +291,7 @@ export function ProcedureNoteEditor({
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
+      isClosed={isClosed}
     />
   )
 }
@@ -301,6 +306,7 @@ function DraftEditor({
   startTransition,
   regeneratingSection,
   setRegeneratingSection,
+  isClosed,
 }: {
   caseId: string
   procedureId: string
@@ -309,6 +315,7 @@ function DraftEditor({
   startTransition: (callback: () => Promise<void>) => void
   regeneratingSection: ProcedureNoteSection | null
   setRegeneratingSection: (s: ProcedureNoteSection | null) => void
+  isClosed: boolean
 }) {
   const form = useForm<ProcedureNoteEditValues>({
     resolver: zodResolver(procedureNoteEditSchema),
@@ -348,13 +355,13 @@ function DraftEditor({
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleSave} disabled={isPending}>
+          <Button variant="outline" onClick={handleSave} disabled={isClosed || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isPending}>
+              <Button disabled={isClosed || isPending}>
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize
               </Button>
@@ -410,7 +417,7 @@ function DraftEditor({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          disabled={isPending}
+                          disabled={isClosed || isPending}
                         >
                           {regeneratingSection === section ? (
                             <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -469,6 +476,7 @@ function FinalizedView({
   documentFilePath,
   isPending,
   startTransition,
+  isClosed,
 }: {
   caseId: string
   procedureId: string
@@ -482,6 +490,7 @@ function FinalizedView({
   documentFilePath: string | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
+  isClosed: boolean
 }) {
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
@@ -524,7 +533,7 @@ function FinalizedView({
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isPending}>
+              <Button variant="outline" disabled={isClosed || isPending}>
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
                 Edit
               </Button>

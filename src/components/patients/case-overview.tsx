@@ -2,7 +2,8 @@ import { format } from 'date-fns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { FileUp, Stethoscope, ClipboardList, Receipt } from 'lucide-react'
+import { FileUp, Stethoscope, ClipboardList, Receipt, Lock } from 'lucide-react'
+import { CaseActions } from '@/components/patients/case-actions'
 
 interface CaseOverviewProps {
   caseData: {
@@ -173,11 +174,17 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
+          <CardTitle>Case Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3">
-            {quickActions.map((action) => (
+          {caseData.case_status === 'closed' && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
+              <Lock className="h-4 w-4 shrink-0" />
+              This case is closed. No modifications are allowed until it is reopened.
+            </div>
+          )}
+          <div className="flex gap-3 flex-wrap">
+            {caseData.case_status !== 'closed' && quickActions.map((action) => (
               <Tooltip key={action.label}>
                 <TooltipTrigger asChild>
                   <Button variant="outline" disabled>
@@ -188,6 +195,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
                 <TooltipContent>Coming Soon</TooltipContent>
               </Tooltip>
             ))}
+            <CaseActions caseId={caseData.id} caseStatus={caseData.case_status} />
           </div>
         </CardContent>
       </Card>

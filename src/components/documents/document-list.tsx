@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { DocumentCard } from '@/components/documents/document-card'
 import { UploadSheet } from '@/components/documents/upload-sheet'
 import { listDocuments } from '@/actions/documents'
+import { useCaseStatus } from '@/components/patients/case-status-context'
 
 const docTypeOptions = [
   { value: 'all', label: 'All Types' },
@@ -51,6 +52,8 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
   const [uploadOpen, setUploadOpen] = useState(false)
   const [docType, setDocType] = useState('all')
   const [status, setStatus] = useState('all')
+  const caseStatus = useCaseStatus()
+  const isClosed = caseStatus === 'closed'
 
   const refreshDocuments = useCallback(async () => {
     const { data } = await listDocuments(caseId)
@@ -98,7 +101,7 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
             className="pl-9"
           />
         </div>
-        <Button onClick={() => setUploadOpen(true)}>
+        <Button onClick={() => setUploadOpen(true)} disabled={isClosed}>
           <Upload className="h-4 w-4 mr-2" />
           Upload Document
         </Button>

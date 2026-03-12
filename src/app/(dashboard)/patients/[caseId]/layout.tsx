@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getPatientCase } from '@/actions/patients'
 import { CaseSidebar } from '@/components/patients/case-sidebar'
+import { CaseStatusProvider } from '@/components/patients/case-status-context'
 
 export default async function CaseDashboardLayout({
   children,
@@ -17,9 +18,11 @@ export default async function CaseDashboardLayout({
   }
 
   return (
-    <div className="flex h-full -m-6">
-      <CaseSidebar caseData={data} />
-      <div className="flex-1 p-6">{children}</div>
-    </div>
+    <CaseStatusProvider status={data.case_status}>
+      <div className="flex h-full -m-6">
+        <CaseSidebar caseData={data} />
+        <div className="flex-1 p-6">{children}</div>
+      </div>
+    </CaseStatusProvider>
   )
 }
