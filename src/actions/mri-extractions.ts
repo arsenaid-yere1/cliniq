@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractMriFromPdf } from '@/lib/claude/extract-mri'
 import type { MriExtractionResult, MriReviewFormValues } from '@/lib/validations/mri-extraction'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Trigger extraction for a document ---
 
@@ -22,6 +23,9 @@ export async function extractMriReport(documentId: string) {
 
   if (docError || !doc) return { error: 'Document not found' }
   if (doc.document_type !== 'mri_report') return { error: 'Not an MRI report' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, doc.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Soft-delete any existing extraction for this document
   await supabase
@@ -205,6 +209,11 @@ export async function approveMriExtraction(extractionId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const { data: ext } = await supabase.from('mri_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { data, error } = await supabase
     .from('mri_extractions')
     .update({
@@ -236,6 +245,11 @@ export async function saveAndApproveMriExtraction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('mri_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('mri_extractions')
@@ -285,6 +299,11 @@ export async function rejectMriExtraction(extractionId: string, reason: string) 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('mri_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('mri_extractions')

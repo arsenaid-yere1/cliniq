@@ -13,6 +13,7 @@ import {
   type DischargeNoteEditValues,
   type DischargeNoteSection,
 } from '@/lib/validations/discharge-note'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -268,6 +269,9 @@ export async function generateDischargeNote(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   // Check prerequisite
   const prereq = await checkDischargeNotePrerequisites(caseId)
   if (prereq.data && !prereq.data.canGenerate) {
@@ -389,6 +393,9 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const validated = dischargeNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
@@ -414,6 +421,9 @@ export async function finalizeDischargeNote(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch the draft note
   const { data: note, error: fetchError } = await supabase
@@ -513,6 +523,9 @@ export async function unfinalizeDischargeNote(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { error } = await supabase
     .from('discharge_notes')
     .update({
@@ -540,6 +553,9 @@ export async function regenerateDischargeNoteSectionAction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase

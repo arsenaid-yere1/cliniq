@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 export async function listDocuments(caseId: string, filters?: {
   search?: string
@@ -68,6 +69,9 @@ export async function getUploadSession(data: DocumentUploadMeta) {
 
   if (caseError || !caseData) return { error: 'Case not found' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, parsed.data.caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const sanitized = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const storagePath = `cases/${parsed.data.caseId}/${Date.now()}-${sanitized}`
 
@@ -90,6 +94,9 @@ export async function saveDocumentMetadata(input: {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, input.caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('documents')
@@ -128,6 +135,19 @@ export async function removeDocument(documentId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  // Fetch case_id to check closure
+  const { data: docInfo } = await supabase
+    .from('documents')
+    .select('case_id')
+    .eq('id', documentId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!docInfo) return { error: 'Document not found' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, docInfo.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('documents')

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractPainManagementFromPdf } from '@/lib/claude/extract-pain-management'
 import type { PainManagementReviewFormValues } from '@/lib/validations/pain-management-extraction'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Trigger extraction for a document ---
 
@@ -22,6 +23,9 @@ export async function extractPainManagementReport(documentId: string) {
 
   if (docError || !doc) return { error: 'Document not found' }
   if (doc.document_type !== 'pain_management') return { error: 'Not a pain management report' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, doc.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Soft-delete any existing extraction for this document
   await supabase
@@ -174,6 +178,11 @@ export async function approvePainManagementExtraction(extractionId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const { data: ext } = await supabase.from('pain_management_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { data, error } = await supabase
     .from('pain_management_extractions')
     .update({
@@ -205,6 +214,11 @@ export async function saveAndApprovePainManagementExtraction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('pain_management_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('pain_management_extractions')
@@ -254,6 +268,11 @@ export async function rejectPainManagementExtraction(extractionId: string, reaso
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('pain_management_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('pain_management_extractions')

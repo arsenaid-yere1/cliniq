@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractPtFromPdf } from '@/lib/claude/extract-pt'
 import type { PtReviewFormValues } from '@/lib/validations/pt-extraction'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Trigger extraction for a document ---
 
@@ -22,6 +23,9 @@ export async function extractPtReport(documentId: string) {
 
   if (docError || !doc) return { error: 'Document not found' }
   if (doc.document_type !== 'pt_report') return { error: 'Not a PT report' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, doc.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Soft-delete any existing extraction for this document
   await supabase
@@ -192,6 +196,11 @@ export async function approvePtExtraction(extractionId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const { data: ext } = await supabase.from('pt_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { data, error } = await supabase
     .from('pt_extractions')
     .update({
@@ -223,6 +232,11 @@ export async function saveAndApprovePtExtraction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('pt_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('pt_extractions')
@@ -272,6 +286,11 @@ export async function rejectPtExtraction(extractionId: string, reason: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('pt_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('pt_extractions')

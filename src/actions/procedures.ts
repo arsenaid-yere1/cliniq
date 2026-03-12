@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -61,6 +62,9 @@ export async function createPrpProcedure(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Derive procedure number in series
   const { count } = await supabase
@@ -169,6 +173,9 @@ export async function updatePrpProcedure(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data: procedure, error: procError } = await supabase
     .from('procedures')

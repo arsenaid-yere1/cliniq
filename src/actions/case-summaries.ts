@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateCaseSummaryFromData, type SummaryInputData } from '@/lib/claude/generate-summary'
 import { caseSummaryEditSchema, type CaseSummaryEditValues } from '@/lib/validations/case-summary'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -83,6 +84,9 @@ export async function generateCaseSummary(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Gather source data
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId)
@@ -218,6 +222,9 @@ export async function saveCaseSummaryEdits(caseId: string, formValues: CaseSumma
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const validated = caseSummaryEditSchema.safeParse(formValues)
   if (!validated.success) return { error: 'Invalid form data' }
 
@@ -245,6 +252,9 @@ export async function approveCaseSummary(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { error } = await supabase
     .from('case_summaries')

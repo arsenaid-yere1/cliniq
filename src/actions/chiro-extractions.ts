@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractChiroFromPdf } from '@/lib/claude/extract-chiro'
 import type { ChiroReviewFormValues } from '@/lib/validations/chiro-extraction'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Trigger extraction for a document ---
 
@@ -22,6 +23,9 @@ export async function extractChiroReport(documentId: string) {
 
   if (docError || !doc) return { error: 'Document not found' }
   if (doc.document_type !== 'chiro_report') return { error: 'Not a chiro report' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, doc.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Soft-delete any existing extraction for this document
   await supabase
@@ -173,6 +177,11 @@ export async function approveChiroExtraction(extractionId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const { data: ext } = await supabase.from('chiro_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { data, error } = await supabase
     .from('chiro_extractions')
     .update({
@@ -204,6 +213,11 @@ export async function saveAndApproveChiroExtraction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('chiro_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('chiro_extractions')
@@ -253,6 +267,11 @@ export async function rejectChiroExtraction(extractionId: string, reason: string
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: ext } = await supabase.from('chiro_extractions').select('case_id').eq('id', extractionId).is('deleted_at', null).single()
+  if (!ext) return { error: 'Extraction not found' }
+  const closedCheck = await assertCaseNotClosed(supabase, ext.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   const { data, error } = await supabase
     .from('chiro_extractions')

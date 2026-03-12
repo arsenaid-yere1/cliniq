@@ -13,6 +13,7 @@ import {
   type ProcedureNoteEditValues,
   type ProcedureNoteSection,
 } from '@/lib/validations/procedure-note'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -239,6 +240,9 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   // Check prerequisite
   const prereq = await checkProcedureNotePrerequisites(caseId)
   if (prereq.data && !prereq.data.canGenerate) {
@@ -369,6 +373,9 @@ export async function saveProcedureNote(procedureId: string, caseId: string, val
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const validated = procedureNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
@@ -394,6 +401,9 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch the draft note
   const { data: note, error: fetchError } = await supabase
@@ -494,6 +504,9 @@ export async function unfinalizeProcedureNote(procedureId: string, caseId: strin
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { error } = await supabase
     .from('procedure_notes')
     .update({
@@ -522,6 +535,9 @@ export async function regenerateProcedureNoteSectionAction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase

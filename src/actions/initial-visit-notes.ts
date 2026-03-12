@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
 import { initialVisitNoteEditSchema, type InitialVisitNoteEditValues, type InitialVisitSection } from '@/lib/validations/initial-visit-note'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -110,6 +111,9 @@ export async function generateInitialVisitNote(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Gather source data
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id)
@@ -228,6 +232,9 @@ export async function saveInitialVisitNote(caseId: string, values: InitialVisitN
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const validated = initialVisitNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
@@ -253,6 +260,9 @@ export async function finalizeInitialVisitNote(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch the note
   const { data: note, error: fetchError } = await supabase
@@ -352,6 +362,9 @@ export async function unfinalizeInitialVisitNote(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
@@ -376,6 +389,9 @@ export async function regenerateNoteSection(caseId: string, section: InitialVisi
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase
