@@ -11,8 +11,10 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Loader2, Pencil } from 'lucide-react'
+import { ArrowUpDown, FileText, Loader2, Pencil } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -145,9 +147,10 @@ interface ProcedureTableProps {
   procedures: Procedure[]
   caseId: string
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
+  noteStatuses?: Record<string, string>
 }
 
-export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: ProcedureTableProps) {
+export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteStatuses = {} }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
@@ -219,16 +222,44 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: Pro
                     </TableCell>
                   ))}
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={loadingId === row.original.id}
-                      onClick={() => handleEditClick(row.original.id)}
-                    >
-                      {loadingId === row.original.id
-                        ? <Loader2 className="h-4 w-4 animate-spin" />
-                        : <Pencil className="h-4 w-4" />}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {noteStatuses[row.original.id] && (
+                        <Badge
+                          variant="outline"
+                          className={
+                            noteStatuses[row.original.id] === 'finalized'
+                              ? 'border-green-600 bg-green-500/10 text-green-700 dark:text-green-400 text-xs'
+                              : 'text-xs'
+                          }
+                        >
+                          {noteStatuses[row.original.id] === 'finalized' ? 'Finalized' : 'Draft'}
+                        </Badge>
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                          >
+                            <Link href={`/patients/${caseId}/procedures/${row.original.id}/note`}>
+                              <FileText className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Procedure Note</TooltipContent>
+                      </Tooltip>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={loadingId === row.original.id}
+                        onClick={() => handleEditClick(row.original.id)}
+                      >
+                        {loadingId === row.original.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Pencil className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
