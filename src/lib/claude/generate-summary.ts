@@ -272,9 +272,9 @@ export async function generateCaseSummaryFromData(
       Array.isArray(val) ? val : []
 
     const normalized = {
-      ...raw,
       chief_complaint: normalizeNullString(raw.chief_complaint),
       extraction_notes: normalizeNullString(raw.extraction_notes),
+      confidence: raw.confidence ?? 'low',
       imaging_findings: normalizeNullStringsInArray(
         toArray(raw.imaging_findings),
         ['severity'],
@@ -302,9 +302,6 @@ export async function generateCaseSummaryFromData(
         ['icd10_code', 'supporting_evidence'],
       ),
     }
-
-    console.log('[generate-summary] RAW from Claude:', JSON.stringify(raw, null, 2))
-    console.log('[generate-summary] NORMALIZED:', JSON.stringify(normalized, null, 2))
 
     const validated = caseSummaryResultSchema.safeParse(normalized)
     if (!validated.success) {
