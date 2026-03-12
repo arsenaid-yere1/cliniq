@@ -50,12 +50,26 @@ export function CaseSummaryEditDialog({
 }: CaseSummaryEditDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Defensive defaults: DB JSONB columns may be {} or [] rather than fully structured objects
+  const rawPriorTreatment = (overrides?.prior_treatment ?? summary.prior_treatment) as Partial<PriorTreatment> | null
+  const rawSymptomsTimeline = (overrides?.symptoms_timeline ?? summary.symptoms_timeline) as Partial<SymptomsTimeline> | null
+
   const defaultValues: CaseSummaryEditValues = {
     chief_complaint: overrides?.chief_complaint ?? summary.chief_complaint,
-    imaging_findings: (overrides?.imaging_findings ?? summary.imaging_findings) as ImagingFinding[],
-    prior_treatment: (overrides?.prior_treatment ?? summary.prior_treatment) as PriorTreatment,
-    symptoms_timeline: (overrides?.symptoms_timeline ?? summary.symptoms_timeline) as SymptomsTimeline,
-    suggested_diagnoses: (overrides?.suggested_diagnoses ?? summary.suggested_diagnoses) as SuggestedDiagnosis[],
+    imaging_findings: (overrides?.imaging_findings ?? summary.imaging_findings ?? []) as ImagingFinding[],
+    prior_treatment: {
+      modalities: rawPriorTreatment?.modalities ?? [],
+      total_visits: rawPriorTreatment?.total_visits ?? null,
+      treatment_period: rawPriorTreatment?.treatment_period ?? null,
+      gaps: rawPriorTreatment?.gaps ?? [],
+    },
+    symptoms_timeline: {
+      onset: rawSymptomsTimeline?.onset ?? null,
+      progression: rawSymptomsTimeline?.progression ?? [],
+      current_status: rawSymptomsTimeline?.current_status ?? null,
+      pain_levels: rawSymptomsTimeline?.pain_levels ?? [],
+    },
+    suggested_diagnoses: (overrides?.suggested_diagnoses ?? summary.suggested_diagnoses ?? []) as SuggestedDiagnosis[],
   }
 
   const form = useForm<CaseSummaryEditValues>({

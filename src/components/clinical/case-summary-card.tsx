@@ -175,10 +175,22 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
     : null
 
   const chiefComplaint = overrides?.chief_complaint ?? summary.chief_complaint
-  const imagingFindings = (overrides?.imaging_findings ?? summary.imaging_findings) as ImagingFinding[]
-  const priorTreatment = (overrides?.prior_treatment ?? summary.prior_treatment) as PriorTreatment
-  const symptomsTimeline = (overrides?.symptoms_timeline ?? summary.symptoms_timeline) as SymptomsTimeline
-  const suggestedDiagnoses = (overrides?.suggested_diagnoses ?? summary.suggested_diagnoses) as SuggestedDiagnosis[]
+  const imagingFindings = (overrides?.imaging_findings ?? summary.imaging_findings ?? []) as ImagingFinding[]
+  const rawPriorTreatment = (overrides?.prior_treatment ?? summary.prior_treatment) as Partial<PriorTreatment> | null
+  const priorTreatment: PriorTreatment = {
+    modalities: rawPriorTreatment?.modalities ?? [],
+    total_visits: rawPriorTreatment?.total_visits ?? null,
+    treatment_period: rawPriorTreatment?.treatment_period ?? null,
+    gaps: rawPriorTreatment?.gaps ?? [],
+  }
+  const rawSymptomsTimeline = (overrides?.symptoms_timeline ?? summary.symptoms_timeline) as Partial<SymptomsTimeline> | null
+  const symptomsTimeline: SymptomsTimeline = {
+    onset: rawSymptomsTimeline?.onset ?? null,
+    progression: rawSymptomsTimeline?.progression ?? [],
+    current_status: rawSymptomsTimeline?.current_status ?? null,
+    pain_levels: rawSymptomsTimeline?.pain_levels ?? [],
+  }
+  const suggestedDiagnoses = (overrides?.suggested_diagnoses ?? summary.suggested_diagnoses ?? []) as SuggestedDiagnosis[]
 
   const showApprove = summary.review_status === 'pending_review'
   const showRegenerate = summary.review_status !== 'pending_review' || isStale
