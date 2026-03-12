@@ -11,7 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowUpDown } from 'lucide-react'
+import { ArrowUpDown, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -36,6 +36,25 @@ interface Procedure {
   injection_site: string | null
   laterality: string | null
   procedure_number: number | null
+  // Story 4.2 fields
+  blood_draw_volume_ml: number | null
+  centrifuge_duration_min: number | null
+  prep_protocol: string | null
+  kit_lot_number: string | null
+  anesthetic_agent: string | null
+  anesthetic_dose_ml: number | null
+  patient_tolerance: string | null
+  injection_volume_ml: number | null
+  needle_gauge: string | null
+  guidance_method: string | null
+  target_confirmed_imaging: boolean | null
+  complications: string | null
+  supplies_used: string | null
+  compression_bandage: boolean | null
+  activity_restriction_hrs: number | null
+  diagnoses: unknown
+  consent_obtained: boolean | null
+  pain_rating: number | null
 }
 
 function ordinal(n: number): string {
@@ -130,6 +149,7 @@ interface ProcedureTableProps {
 export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
+  const [editingProcedure, setEditingProcedure] = useState<Procedure | null>(null)
 
   const table = useReactTable({
     data: procedures,
@@ -154,6 +174,16 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: Pro
         <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} />
       </div>
 
+      {editingProcedure && (
+        <RecordProcedureDialog
+          caseId={caseId}
+          diagnosisSuggestions={diagnosisSuggestions}
+          initialData={editingProcedure}
+          open={true}
+          onOpenChange={(open) => { if (!open) setEditingProcedure(null) }}
+        />
+      )}
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -166,6 +196,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: Pro
                       : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>
                 ))}
+                <TableHead />
               </TableRow>
             ))}
           </TableHeader>
@@ -178,11 +209,20 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: Pro
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingProcedure(row.original)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell colSpan={columns.length + 1} className="h-24 text-center">
                   No procedures recorded.
                 </TableCell>
               </TableRow>

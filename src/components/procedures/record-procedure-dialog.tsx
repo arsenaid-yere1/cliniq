@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
 import { prpProcedureFormSchema, type PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
-import { createPrpProcedure } from '@/actions/procedures'
+import { createPrpProcedure, updatePrpProcedure } from '@/actions/procedures'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -49,78 +49,138 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+interface ProcedureInitialData {
+  id: string
+  procedure_date: string
+  injection_site: string | null
+  laterality: string | null
+  diagnoses: unknown
+  consent_obtained: boolean | null
+  pain_rating: number | null
+  blood_draw_volume_ml: number | null
+  centrifuge_duration_min: number | null
+  prep_protocol: string | null
+  kit_lot_number: string | null
+  anesthetic_agent: string | null
+  anesthetic_dose_ml: number | null
+  patient_tolerance: string | null
+  injection_volume_ml: number | null
+  needle_gauge: string | null
+  guidance_method: string | null
+  target_confirmed_imaging: boolean | null
+  complications: string | null
+  supplies_used: string | null
+  compression_bandage: boolean | null
+  activity_restriction_hrs: number | null
+  _vitals?: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+  } | null
+}
+
 interface RecordProcedureDialogProps {
   caseId: string
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
+  initialData?: ProcedureInitialData
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function RecordProcedureDialog({ caseId, diagnosisSuggestions }: RecordProcedureDialogProps) {
-  const [open, setOpen] = useState(false)
-  const [complicationsMode, setComplicationsMode] = useState<'none' | 'other' | ''>('')
+export function RecordProcedureDialog({
+  caseId,
+  diagnosisSuggestions,
+  initialData,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+}: RecordProcedureDialogProps) {
+  const isEditing = !!initialData?.id
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen
+  const setOpen = controlledOnOpenChange ?? setInternalOpen
+
+  // Derive complications mode from initialData
+  const initialComplicationsMode = initialData?.complications
+    ? initialData.complications === 'none'
+      ? 'none'
+      : 'other'
+    : ''
+  const [complicationsMode, setComplicationsMode] = useState<'none' | 'other' | ''>(
+    isEditing ? (initialComplicationsMode as 'none' | 'other' | '') : ''
+  )
 
   const form = useForm<PrpProcedureFormValues>({
     resolver: zodResolver(prpProcedureFormSchema),
     defaultValues: {
-      procedure_date: format(new Date(), 'yyyy-MM-dd'),
-      injection_site: '',
-      laterality: undefined,
-      diagnoses: [],
-      consent_obtained: false,
-      pain_rating: null,
+      procedure_date: initialData?.procedure_date ?? format(new Date(), 'yyyy-MM-dd'),
+      injection_site: initialData?.injection_site ?? '',
+      laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined) ?? undefined,
+      diagnoses: Array.isArray(initialData?.diagnoses) ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses']) : [],
+      consent_obtained: initialData?.consent_obtained ?? false,
+      pain_rating: initialData?.pain_rating ?? null,
       vital_signs: {
-        bp_systolic: null,
-        bp_diastolic: null,
-        heart_rate: null,
-        respiratory_rate: null,
-        temperature_f: null,
-        spo2_percent: null,
+        bp_systolic: initialData?._vitals?.bp_systolic ?? null,
+        bp_diastolic: initialData?._vitals?.bp_diastolic ?? null,
+        heart_rate: initialData?._vitals?.heart_rate ?? null,
+        respiratory_rate: initialData?._vitals?.respiratory_rate ?? null,
+        temperature_f: initialData?._vitals?.temperature_f ?? null,
+        spo2_percent: initialData?._vitals?.spo2_percent ?? null,
       },
       prp_preparation: {
-        blood_draw_volume_ml: undefined,
-        centrifuge_duration_min: null,
-        prep_protocol: '',
-        kit_lot_number: '',
+        blood_draw_volume_ml: initialData?.blood_draw_volume_ml ?? undefined,
+        centrifuge_duration_min: initialData?.centrifuge_duration_min ?? null,
+        prep_protocol: initialData?.prep_protocol ?? '',
+        kit_lot_number: initialData?.kit_lot_number ?? '',
       },
       anesthesia: {
-        anesthetic_agent: '',
-        anesthetic_dose_ml: null,
-        patient_tolerance: null,
+        anesthetic_agent: initialData?.anesthetic_agent ?? '',
+        anesthetic_dose_ml: initialData?.anesthetic_dose_ml ?? null,
+        patient_tolerance: (initialData?.patient_tolerance as 'tolerated_well' | 'adverse_reaction' | null) ?? null,
       },
       injection: {
-        injection_volume_ml: undefined,
-        needle_gauge: '',
-        guidance_method: undefined,
-        target_confirmed_imaging: null,
+        injection_volume_ml: initialData?.injection_volume_ml ?? undefined,
+        needle_gauge: initialData?.needle_gauge ?? '',
+        guidance_method: (initialData?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined) ?? undefined,
+        target_confirmed_imaging: initialData?.target_confirmed_imaging ?? null,
       },
       post_procedure: {
-        complications: '',
-        supplies_used: '',
-        compression_bandage: null,
-        activity_restriction_hrs: null,
+        complications: initialData?.complications ?? '',
+        supplies_used: initialData?.supplies_used ?? '',
+        compression_bandage: initialData?.compression_bandage ?? null,
+        activity_restriction_hrs: initialData?.activity_restriction_hrs ?? null,
       },
     },
   })
 
   async function onSubmit(values: PrpProcedureFormValues) {
-    const result = await createPrpProcedure(caseId, values)
+    const result = isEditing
+      ? await updatePrpProcedure(initialData!.id, caseId, values)
+      : await createPrpProcedure(caseId, values)
     if ('error' in result && result.error) {
       toast.error(result.error)
       return
     }
-    toast.success('Procedure recorded')
+    toast.success(isEditing ? 'Procedure updated' : 'Procedure recorded')
     setOpen(false)
-    setComplicationsMode('')
-    form.reset()
+    if (!isEditing) {
+      setComplicationsMode('')
+      form.reset()
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>Record Procedure</Button>
-      </DialogTrigger>
+      {!isEditing && (
+        <DialogTrigger asChild>
+          <Button>Record Procedure</Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Record PRP Procedure</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit PRP Procedure' : 'Record PRP Procedure'}</DialogTitle>
         </DialogHeader>
 
         {/* Section nav */}
@@ -765,7 +825,7 @@ export function RecordProcedureDialog({ caseId, diagnosisSuggestions }: RecordPr
                 Cancel
               </Button>
               <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? 'Saving...' : 'Record Procedure'}
+                {form.formState.isSubmitting ? 'Saving...' : isEditing ? 'Update Procedure' : 'Record Procedure'}
               </Button>
             </div>
           </form>

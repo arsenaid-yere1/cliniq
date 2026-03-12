@@ -4,6 +4,29 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
 
+export async function getProcedureById(id: string) {
+  const supabase = await createClient()
+
+  const { data: procedure, error } = await supabase
+    .from('procedures')
+    .select('*')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .single()
+
+  if (error || !procedure) return { error: error?.message ?? 'Not found', data: null }
+
+  const { data: vitals } = await supabase
+    .from('vital_signs')
+    .select('*')
+    .eq('procedure_id', id)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle()
+
+  return { data: { ...procedure, _vitals: vitals ?? null } }
+}
+
 export async function listProcedures(caseId: string) {
   const supabase = await createClient()
 
@@ -136,6 +159,99 @@ export async function getCaseDiagnoses(caseId: string) {
   return {
     data: diagnoses as Array<{ icd10_code: string | null; description: string }>,
   }
+}
+
+export async function updatePrpProcedure(
+  procedureId: string,
+  caseId: string,
+  values: PrpProcedureFormValues
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: procedure, error: procError } = await supabase
+    .from('procedures')
+    .update({
+      procedure_date: values.procedure_date,
+      injection_site: values.injection_site,
+      laterality: values.laterality,
+      diagnoses: values.diagnoses,
+      consent_obtained: values.consent_obtained,
+      pain_rating: values.pain_rating,
+      // PRP Preparation
+      blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,
+      centrifuge_duration_min: values.prp_preparation.centrifuge_duration_min,
+      prep_protocol: values.prp_preparation.prep_protocol || null,
+      kit_lot_number: values.prp_preparation.kit_lot_number || null,
+      // Anesthesia
+      anesthetic_agent: values.anesthesia.anesthetic_agent,
+      anesthetic_dose_ml: values.anesthesia.anesthetic_dose_ml,
+      patient_tolerance: values.anesthesia.patient_tolerance,
+      // Injection
+      injection_volume_ml: values.injection.injection_volume_ml,
+      needle_gauge: values.injection.needle_gauge || null,
+      guidance_method: values.injection.guidance_method,
+      target_confirmed_imaging: values.injection.target_confirmed_imaging,
+      // Post-Procedure
+      complications: values.post_procedure.complications,
+      supplies_used: values.post_procedure.supplies_used || null,
+      compression_bandage: values.post_procedure.compression_bandage,
+      activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', procedureId)
+    .select()
+    .single()
+
+  if (procError || !procedure) return { error: procError?.message ?? 'Failed to update procedure' }
+
+  // Upsert vital signs
+  const vs = values.vital_signs
+  const hasVitals = Object.values(vs).some((v) => v !== null && v !== undefined)
+
+  const { data: existingVitals } = await supabase
+    .from('vital_signs')
+    .select('id')
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle()
+
+  if (hasVitals) {
+    if (existingVitals) {
+      await supabase
+        .from('vital_signs')
+        .update({
+          bp_systolic: vs.bp_systolic,
+          bp_diastolic: vs.bp_diastolic,
+          heart_rate: vs.heart_rate,
+          respiratory_rate: vs.respiratory_rate,
+          temperature_f: vs.temperature_f,
+          spo2_percent: vs.spo2_percent,
+          updated_by_user_id: user.id,
+        })
+        .eq('id', existingVitals.id)
+    } else {
+      await supabase
+        .from('vital_signs')
+        .insert({
+          case_id: caseId,
+          procedure_id: procedureId,
+          bp_systolic: vs.bp_systolic,
+          bp_diastolic: vs.bp_diastolic,
+          heart_rate: vs.heart_rate,
+          respiratory_rate: vs.respiratory_rate,
+          temperature_f: vs.temperature_f,
+          spo2_percent: vs.spo2_percent,
+          created_by_user_id: user.id,
+          updated_by_user_id: user.id,
+        })
+    }
+  }
+
+  revalidatePath(`/patients/${caseId}/procedures`)
+  return { data: procedure }
 }
 
 // Get the most recent prior PRP procedure for comparison
