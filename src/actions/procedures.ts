@@ -52,6 +52,7 @@ export async function createPrpProcedure(
   const { data: procedure, error: procError } = await supabase
     .from('procedures')
     .insert({
+      // --- Story 4.1 fields ---
       case_id: caseId,
       procedure_date: values.procedure_date,
       procedure_name: 'PRP Injection',
@@ -61,6 +62,26 @@ export async function createPrpProcedure(
       consent_obtained: values.consent_obtained,
       pain_rating: values.pain_rating,
       procedure_number: procedureNumber,
+      // --- Story 4.2: PRP Preparation ---
+      blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,
+      centrifuge_duration_min: values.prp_preparation.centrifuge_duration_min,
+      prep_protocol: values.prp_preparation.prep_protocol || null,
+      kit_lot_number: values.prp_preparation.kit_lot_number || null,
+      // --- Story 4.2: Anesthesia ---
+      anesthetic_agent: values.anesthesia.anesthetic_agent,
+      anesthetic_dose_ml: values.anesthesia.anesthetic_dose_ml,
+      patient_tolerance: values.anesthesia.patient_tolerance,
+      // --- Story 4.2: Injection ---
+      injection_volume_ml: values.injection.injection_volume_ml,
+      needle_gauge: values.injection.needle_gauge || null,
+      guidance_method: values.injection.guidance_method,
+      target_confirmed_imaging: values.injection.target_confirmed_imaging,
+      // --- Story 4.2: Post-Procedure ---
+      complications: values.post_procedure.complications,
+      supplies_used: values.post_procedure.supplies_used || null,
+      compression_bandage: values.post_procedure.compression_bandage,
+      activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
+      // --- audit ---
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })

@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attorneys: {
@@ -1336,47 +1361,110 @@ export type Database = {
       }
       procedures: {
         Row: {
+          activity_restriction_hrs: number | null
+          anesthetic_agent: string | null
+          anesthetic_dose_ml: number | null
+          blood_draw_volume_ml: number | null
           case_id: string
+          centrifuge_duration_min: number | null
           charge_amount: number | null
+          complications: string | null
+          compression_bandage: boolean | null
+          consent_obtained: boolean | null
           cpt_code: string | null
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
+          diagnoses: Json
+          guidance_method: string | null
           id: string
+          injection_site: string | null
+          injection_volume_ml: number | null
+          kit_lot_number: string | null
+          laterality: string | null
+          needle_gauge: string | null
           notes: string | null
+          pain_rating: number | null
+          patient_tolerance: string | null
+          prep_protocol: string | null
           procedure_date: string
           procedure_name: string
+          procedure_number: number | null
           provider_id: string | null
+          supplies_used: string | null
+          target_confirmed_imaging: boolean | null
           updated_at: string
           updated_by_user_id: string | null
         }
         Insert: {
+          activity_restriction_hrs?: number | null
+          anesthetic_agent?: string | null
+          anesthetic_dose_ml?: number | null
+          blood_draw_volume_ml?: number | null
           case_id: string
+          centrifuge_duration_min?: number | null
           charge_amount?: number | null
+          complications?: string | null
+          compression_bandage?: boolean | null
+          consent_obtained?: boolean | null
           cpt_code?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: Json
+          guidance_method?: string | null
           id?: string
+          injection_site?: string | null
+          injection_volume_ml?: number | null
+          kit_lot_number?: string | null
+          laterality?: string | null
+          needle_gauge?: string | null
           notes?: string | null
+          pain_rating?: number | null
+          patient_tolerance?: string | null
+          prep_protocol?: string | null
           procedure_date: string
           procedure_name: string
+          procedure_number?: number | null
           provider_id?: string | null
+          supplies_used?: string | null
+          target_confirmed_imaging?: boolean | null
           updated_at?: string
           updated_by_user_id?: string | null
         }
         Update: {
+          activity_restriction_hrs?: number | null
+          anesthetic_agent?: string | null
+          anesthetic_dose_ml?: number | null
+          blood_draw_volume_ml?: number | null
           case_id?: string
+          centrifuge_duration_min?: number | null
           charge_amount?: number | null
+          complications?: string | null
+          compression_bandage?: boolean | null
+          consent_obtained?: boolean | null
           cpt_code?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: Json
+          guidance_method?: string | null
           id?: string
+          injection_site?: string | null
+          injection_volume_ml?: number | null
+          kit_lot_number?: string | null
+          laterality?: string | null
+          needle_gauge?: string | null
           notes?: string | null
+          pain_rating?: number | null
+          patient_tolerance?: string | null
+          prep_protocol?: string | null
           procedure_date?: string
           procedure_name?: string
+          procedure_number?: number | null
           provider_id?: string | null
+          supplies_used?: string | null
+          target_confirmed_imaging?: boolean | null
           updated_at?: string
           updated_by_user_id?: string | null
         }
@@ -1691,6 +1779,89 @@ export type Database = {
         }
         Relationships: []
       }
+      vital_signs: {
+        Row: {
+          bp_diastolic: number | null
+          bp_systolic: number | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          heart_rate: number | null
+          id: string
+          procedure_id: string | null
+          recorded_at: string
+          respiratory_rate: number | null
+          spo2_percent: number | null
+          temperature_f: number | null
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          heart_rate?: number | null
+          id?: string
+          procedure_id?: string | null
+          recorded_at?: string
+          respiratory_rate?: number | null
+          spo2_percent?: number | null
+          temperature_f?: number | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          heart_rate?: number | null
+          id?: string
+          procedure_id?: string | null
+          recorded_at?: string
+          respiratory_rate?: number | null
+          spo2_percent?: number | null
+          temperature_f?: number | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vital_signs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vital_signs_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vital_signs_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vital_signs_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1825,6 +1996,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
