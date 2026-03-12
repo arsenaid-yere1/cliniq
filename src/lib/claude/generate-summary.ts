@@ -267,34 +267,38 @@ export async function generateCaseSummaryFromData(
       ? null
       : Number(normalizedTotalVisits)
 
+    // Safely coerce any value to an array (Claude may return null for array fields)
+    const toArray = (val: unknown): Array<Record<string, unknown>> =>
+      Array.isArray(val) ? val : []
+
     const normalized = {
       ...raw,
       chief_complaint: normalizeNullString(raw.chief_complaint),
       extraction_notes: normalizeNullString(raw.extraction_notes),
       imaging_findings: normalizeNullStringsInArray(
-        (Array.isArray(raw.imaging_findings) ? raw.imaging_findings : []) as Array<Record<string, unknown>>,
+        toArray(raw.imaging_findings),
         ['severity'],
       ),
       prior_treatment: {
-        ...rawPriorTreatment,
+        modalities: (Array.isArray(rawPriorTreatment?.modalities) ? rawPriorTreatment.modalities : []).map((m: unknown) => String(m)),
         total_visits: Number.isNaN(coercedTotalVisits) ? null : coercedTotalVisits,
         treatment_period: normalizeNullString(rawPriorTreatment?.treatment_period),
+        gaps: toArray(rawPriorTreatment?.gaps),
       },
       symptoms_timeline: {
-        ...rawSymptomsTimeline,
         onset: normalizeNullString(rawSymptomsTimeline?.onset),
         current_status: normalizeNullString(rawSymptomsTimeline?.current_status),
         progression: normalizeNullStringsInArray(
-          (Array.isArray(rawSymptomsTimeline?.progression) ? rawSymptomsTimeline.progression : []) as Array<Record<string, unknown>>,
+          toArray(rawSymptomsTimeline?.progression),
           ['date'],
         ),
         pain_levels: normalizeNullStringsInArray(
-          (Array.isArray(rawSymptomsTimeline?.pain_levels) ? rawSymptomsTimeline.pain_levels : []) as Array<Record<string, unknown>>,
+          toArray(rawSymptomsTimeline?.pain_levels),
           ['date', 'context'],
         ),
       },
       suggested_diagnoses: normalizeNullStringsInArray(
-        (Array.isArray(raw.suggested_diagnoses) ? raw.suggested_diagnoses : []) as Array<Record<string, unknown>>,
+        toArray(raw.suggested_diagnoses),
         ['icd10_code', 'supporting_evidence'],
       ),
     }
