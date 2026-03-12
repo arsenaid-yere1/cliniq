@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { RecordProcedureDialog } from './record-procedure-dialog'
 
 interface Procedure {
   id: string
@@ -32,6 +33,15 @@ interface Procedure {
   charge_amount: number | null
   notes: string | null
   provider: { full_name: string } | null
+  injection_site: string | null
+  laterality: string | null
+  procedure_number: number | null
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
 }
 
 const columns: ColumnDef<Procedure>[] = [
@@ -47,6 +57,28 @@ const columns: ColumnDef<Procedure>[] = [
   {
     accessorKey: 'procedure_name',
     header: 'Procedure',
+  },
+  {
+    accessorKey: 'injection_site',
+    header: 'Injection Site',
+    cell: ({ getValue }) => (getValue() as string | null) || '—',
+  },
+  {
+    accessorKey: 'laterality',
+    header: 'Laterality',
+    cell: ({ getValue }) => {
+      const val = getValue() as string | null
+      if (!val) return '—'
+      return val.charAt(0).toUpperCase() + val.slice(1)
+    },
+  },
+  {
+    accessorKey: 'procedure_number',
+    header: '# in Series',
+    cell: ({ getValue }) => {
+      const val = getValue() as number | null
+      return val != null ? ordinal(val) : '—'
+    },
   },
   {
     accessorKey: 'cpt_code',
@@ -89,7 +121,13 @@ const columns: ColumnDef<Procedure>[] = [
   },
 ]
 
-export function ProcedureTable({ procedures }: { procedures: Procedure[] }) {
+interface ProcedureTableProps {
+  procedures: Procedure[]
+  caseId: string
+  diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
+}
+
+export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
 
@@ -113,12 +151,7 @@ export function ProcedureTable({ procedures }: { procedures: Procedure[] }) {
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button disabled>Record Procedure</Button>
-          </TooltipTrigger>
-          <TooltipContent>Coming Soon</TooltipContent>
-        </Tooltip>
+        <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} />
       </div>
 
       <div className="rounded-md border">
