@@ -11,7 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Pencil } from 'lucide-react'
+import { ArrowUpDown, Loader2, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -23,7 +23,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { RecordProcedureDialog } from './record-procedure-dialog'
+import { RecordProcedureDialog, type ProcedureInitialData } from './record-procedure-dialog'
+import { getProcedureById } from '@/actions/procedures'
 
 interface Procedure {
   id: string
@@ -149,7 +150,15 @@ interface ProcedureTableProps {
 export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
-  const [editingProcedure, setEditingProcedure] = useState<Procedure | null>(null)
+  const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  async function handleEditClick(id: string) {
+    setLoadingId(id)
+    const result = await getProcedureById(id)
+    setLoadingId(null)
+    if (result.data) setEditingProcedure(result.data as ProcedureInitialData)
+  }
 
   const table = useReactTable({
     data: procedures,
@@ -213,9 +222,12 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions }: Pro
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setEditingProcedure(row.original)}
+                      disabled={loadingId === row.original.id}
+                      onClick={() => handleEditClick(row.original.id)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      {loadingId === row.original.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Pencil className="h-4 w-4" />}
                     </Button>
                   </TableCell>
                 </TableRow>

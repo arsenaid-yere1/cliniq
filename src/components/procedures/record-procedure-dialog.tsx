@@ -49,7 +49,7 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-interface ProcedureInitialData {
+export interface ProcedureInitialData {
   id: string
   procedure_date: string
   injection_site: string | null
