@@ -303,6 +303,9 @@ export async function generateCaseSummaryFromData(
       ),
     }
 
+    console.log('[generate-summary] RAW from Claude:', JSON.stringify(raw, null, 2))
+    console.log('[generate-summary] NORMALIZED:', JSON.stringify(normalized, null, 2))
+
     const validated = caseSummaryResultSchema.safeParse(normalized)
     if (!validated.success) {
       console.error('[generate-summary] Zod validation errors:', JSON.stringify(validated.error.issues, null, 2))
