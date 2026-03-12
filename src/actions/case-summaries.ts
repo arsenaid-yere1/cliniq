@@ -152,7 +152,7 @@ export async function generateCaseSummary(caseId: string) {
       prior_treatment: data.prior_treatment,
       symptoms_timeline: data.symptoms_timeline,
       suggested_diagnoses: data.suggested_diagnoses,
-      ai_model: 'claude-sonnet-4-6',
+      ai_model: 'claude-opus-4-6',
       ai_confidence: data.confidence,
       extraction_notes: data.extraction_notes,
       raw_ai_response: result.rawResponse || null,

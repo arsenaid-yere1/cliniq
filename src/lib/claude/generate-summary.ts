@@ -236,8 +236,12 @@ export async function generateCaseSummaryFromData(
 }> {
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
+      model: 'claude-opus-4-6',
+      max_tokens: 16384,
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 10000,
+      },
       system: SYSTEM_PROMPT,
       tools: [SUMMARY_TOOL],
       tool_choice: { type: 'tool', name: 'extract_case_summary' },
