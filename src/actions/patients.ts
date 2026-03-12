@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { createPatientCaseSchema, type CreatePatientCaseValues } from '@/lib/validations/patient'
+import { createPatientCaseSchema, type CreatePatientCaseValues, editPatientSchema, type EditPatientValues, editCaseSchema, type EditCaseValues } from '@/lib/validations/patient'
 
 export async function checkDuplicatePatient(
   firstName: string,
@@ -155,4 +155,68 @@ export async function listPatientCases(search?: string) {
   }))
 
   return { data: normalized }
+}
+
+export async function updatePatient(patientId: string, data: EditPatientValues) {
+  const parsed = editPatientSchema.safeParse(data)
+  if (!parsed.success) {
+    return { error: parsed.error.flatten().fieldErrors }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('patients')
+    .update({
+      first_name: parsed.data.first_name,
+      last_name: parsed.data.last_name,
+      middle_name: parsed.data.middle_name || null,
+      date_of_birth: parsed.data.date_of_birth,
+      gender: parsed.data.gender || null,
+      phone_primary: parsed.data.phone_primary || null,
+      email: parsed.data.email || null,
+      address_line1: parsed.data.address_line1 || null,
+      address_line2: parsed.data.address_line2 || null,
+      city: parsed.data.city || null,
+      state: parsed.data.state || null,
+      zip_code: parsed.data.zip_code || null,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', patientId)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  return { data: { success: true } }
+}
+
+export async function updateCase(caseId: string, data: EditCaseValues) {
+  const parsed = editCaseSchema.safeParse(data)
+  if (!parsed.success) {
+    return { error: parsed.error.flatten().fieldErrors }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('cases')
+    .update({
+      accident_date: parsed.data.accident_date || null,
+      accident_type: parsed.data.accident_type || null,
+      accident_description: parsed.data.accident_description || null,
+      attorney_id: parsed.data.attorney_id || null,
+      lien_on_file: parsed.data.lien_on_file,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', caseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
 }

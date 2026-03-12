@@ -1,10 +1,13 @@
+'use client'
+
+import { useState } from 'react'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { FileUp, Stethoscope, ClipboardList, Receipt, Lock } from 'lucide-react'
+import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil } from 'lucide-react'
 import { CaseActions } from '@/components/patients/case-actions'
+import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
 
 interface CaseOverviewProps {
   caseData: {
@@ -15,7 +18,10 @@ interface CaseOverviewProps {
     accident_type: string | null
     accident_description: string | null
     case_open_date: string | null
+    attorney_id: string | null
+    lien_on_file: boolean
     patient: {
+      id: string
       first_name: string
       last_name: string
       middle_name: string | null
@@ -59,8 +65,10 @@ const quickActions = [
 ]
 
 export function CaseOverview({ caseData }: CaseOverviewProps) {
+  const [editOpen, setEditOpen] = useState(false)
   const patient = caseData.patient
   const attorney = caseData.attorney
+  const isClosed = caseData.case_status === 'closed'
 
   const address = patient
     ? [patient.address_line1, patient.address_line2, patient.city, patient.state, patient.zip_code]
@@ -75,7 +83,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
           <CardTitle>Case Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          {caseData.case_status === 'closed' && (
+          {isClosed && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
               <Lock className="h-4 w-4 shrink-0" />
               This case is closed. No modifications are allowed until it is reopened.
@@ -83,7 +91,6 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
           )}
           <div className="flex gap-3 flex-wrap">
             {quickActions.map((action) => {
-              const isClosed = caseData.case_status === 'closed'
               return isClosed ? (
                 <Button key={action.label} variant="outline" disabled>
                   <action.icon className="h-4 w-4 mr-2" />
@@ -106,14 +113,10 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Case Summary</CardTitle>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled>
-                Edit
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Coming Soon</TooltipContent>
-          </Tooltip>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={isClosed}>
+            <Pencil className="h-3 w-3 mr-1" />
+            Edit
+          </Button>
         </CardHeader>
         <CardContent className="space-y-6">
           {patient && (
@@ -205,6 +208,23 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
           )}
         </CardContent>
       </Card>
+
+      {patient && (
+        <CaseOverviewEditDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          caseId={caseData.id}
+          patientId={patient.id}
+          patient={patient}
+          caseDetails={{
+            accident_date: caseData.accident_date,
+            accident_type: caseData.accident_type,
+            accident_description: caseData.accident_description,
+            attorney_id: caseData.attorney_id,
+            lien_on_file: caseData.lien_on_file,
+          }}
+        />
+      )}
     </div>
   )
 }
