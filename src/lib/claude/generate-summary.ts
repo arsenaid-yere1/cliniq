@@ -244,7 +244,7 @@ export async function generateCaseSummaryFromData(
       },
       system: SYSTEM_PROMPT,
       tools: [SUMMARY_TOOL],
-      tool_choice: { type: 'any' },
+      tool_choice: { type: 'auto' },
       messages: [
         {
           role: 'user',
