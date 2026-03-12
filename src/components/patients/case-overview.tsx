@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -51,10 +52,10 @@ const genderLabels: Record<string, string> = {
 }
 
 const quickActions = [
-  { label: 'Upload Document', icon: FileUp },
-  { label: 'Add Clinical Note', icon: Stethoscope },
-  { label: 'Record Procedure', icon: ClipboardList },
-  { label: 'Create Invoice', icon: Receipt },
+  { label: 'Upload Document', icon: FileUp, href: 'documents' },
+  { label: 'Add Clinical Note', icon: Stethoscope, href: 'clinical' },
+  { label: 'Record Procedure', icon: ClipboardList, href: 'procedures' },
+  { label: 'Create Invoice', icon: Receipt, href: 'billing' },
 ]
 
 export function CaseOverview({ caseData }: CaseOverviewProps) {
@@ -69,6 +70,39 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Case Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {caseData.case_status === 'closed' && (
+            <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
+              <Lock className="h-4 w-4 shrink-0" />
+              This case is closed. No modifications are allowed until it is reopened.
+            </div>
+          )}
+          <div className="flex gap-3 flex-wrap">
+            {quickActions.map((action) => {
+              const isClosed = caseData.case_status === 'closed'
+              return isClosed ? (
+                <Button key={action.label} variant="outline" disabled>
+                  <action.icon className="h-4 w-4 mr-2" />
+                  {action.label}
+                </Button>
+              ) : (
+                <Button key={action.label} variant="outline" asChild>
+                  <Link href={`/patients/${caseData.id}/${action.href}`}>
+                    <action.icon className="h-4 w-4 mr-2" />
+                    {action.label}
+                  </Link>
+                </Button>
+              )
+            })}
+            <CaseActions caseId={caseData.id} caseStatus={caseData.case_status} />
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Case Summary</CardTitle>
@@ -169,34 +203,6 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
               </dl>
             </section>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Case Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {caseData.case_status === 'closed' && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
-              <Lock className="h-4 w-4 shrink-0" />
-              This case is closed. No modifications are allowed until it is reopened.
-            </div>
-          )}
-          <div className="flex gap-3 flex-wrap">
-            {caseData.case_status !== 'closed' && quickActions.map((action) => (
-              <Tooltip key={action.label}>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" disabled>
-                    <action.icon className="h-4 w-4 mr-2" />
-                    {action.label}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Coming Soon</TooltipContent>
-              </Tooltip>
-            ))}
-            <CaseActions caseId={caseData.id} caseStatus={caseData.case_status} />
-          </div>
         </CardContent>
       </Card>
     </div>

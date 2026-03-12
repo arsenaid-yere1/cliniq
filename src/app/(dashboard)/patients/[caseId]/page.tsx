@@ -29,12 +29,12 @@ export default async function CaseDashboardPage({
   return (
     <div className="space-y-6">
       <CaseStatCards stats={statsResult.data} />
+      <CaseOverview caseData={caseResult.data} />
       <CaseSummaryCard
         caseId={caseId}
         summary={summaryResult.data ?? null}
         isStale={stalenessResult.data?.isStale ?? false}
       />
-      <CaseOverview caseData={caseResult.data} />
       <CaseRecentActivity events={timelineResult.data.slice(0, 5)} />
     </div>
   )
