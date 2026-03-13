@@ -191,7 +191,7 @@ export function CreateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit' : 'Create'} {watchedInvoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
@@ -396,7 +396,7 @@ export function CreateInvoiceDialog({
 
               <div className="overflow-x-auto -mx-1 px-1">
                 {/* Table header */}
-                <div className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 text-xs font-medium text-muted-foreground px-1 min-w-[580px]">
+                <div className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
                   <span>Date</span>
                   <span>CPT</span>
                   <span>Description</span>
@@ -407,7 +407,7 @@ export function CreateInvoiceDialog({
                 </div>
 
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 items-start min-w-[580px]">
+                <div key={field.id} className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 items-start">
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.service_date`}
