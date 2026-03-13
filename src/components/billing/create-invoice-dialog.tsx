@@ -36,24 +36,23 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      name: string
+      first_name: string
+      last_name: string
       firm_name: string | null
-      address: string | null
+      address_line1: string | null
+      address_line2: string | null
       city: string | null
       state: string | null
-      zip: string | null
-    } | null
-    provider: {
-      id: string
-      full_name: string
+      zip_code: string | null
     } | null
   }
   clinic: {
     clinic_name: string | null
-    address: string | null
+    address_line1: string | null
+    address_line2: string | null
     city: string | null
     state: string | null
-    zip: string | null
+    zip_code: string | null
     phone: string | null
     fax: string | null
   } | null
@@ -99,8 +98,12 @@ interface CreateInvoiceDialogProps {
 
 function buildClinicAddress(clinic: InvoiceFormData['clinic']) {
   if (!clinic) return ''
-  const parts = [clinic.address, clinic.city, clinic.state, clinic.zip].filter(Boolean)
-  return parts.join(', ')
+  const lines: string[] = []
+  if (clinic.address_line1) lines.push(clinic.address_line1)
+  if (clinic.address_line2) lines.push(clinic.address_line2)
+  const cityStateZip = [clinic.city, clinic.state, clinic.zip_code].filter(Boolean).join(', ')
+  if (cityStateZip) lines.push(cityStateZip)
+  return lines.join('\n')
 }
 
 export function CreateInvoiceDialog({
@@ -272,9 +275,7 @@ export function CreateInvoiceDialog({
                     </p>
                     {provider.npi_number && <p className="text-xs text-muted-foreground">NPI: {provider.npi_number}</p>}
                   </>
-                ) : formData.caseData.provider ? (
-                  <p className="text-sm font-medium">{formData.caseData.provider.full_name}</p>
-                ) : <p className="text-sm text-muted-foreground">N/A</p>}
+                ) : <p className="text-sm text-muted-foreground">No provider profile configured</p>}
                 {formData.clinic?.clinic_name && (
                   <p className="text-xs text-muted-foreground">Facility: {formData.clinic.clinic_name}</p>
                 )}
@@ -284,11 +285,11 @@ export function CreateInvoiceDialog({
                 <h3 className="text-sm font-medium text-muted-foreground">Attorney</h3>
                 {attorney ? (
                   <>
-                    <p className="text-sm font-medium">{attorney.name}</p>
+                    <p className="text-sm font-medium">{attorney.first_name} {attorney.last_name}</p>
                     {attorney.firm_name && <p className="text-xs text-muted-foreground">{attorney.firm_name}</p>}
-                    {attorney.address && (
+                    {(attorney.address_line1 || attorney.city) && (
                       <p className="text-xs text-muted-foreground">
-                        {[attorney.address, attorney.city, attorney.state, attorney.zip].filter(Boolean).join(', ')}
+                        {[attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ')}
                       </p>
                     )}
                   </>

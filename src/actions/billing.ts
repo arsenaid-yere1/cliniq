@@ -364,41 +364,40 @@ export async function deleteInvoice(invoiceId: string, caseId: string) {
 
 export async function getInvoiceWithContext(invoiceId: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated', data: null }
 
-  const { data: invoice, error } = await supabase
-    .from('invoices')
-    .select(`
-      *,
-      line_items:invoice_line_items(*),
-      case:cases(
+  // Parallel fetch: invoice+case+patient+attorney, clinic, provider profile (current user)
+  const [invoiceResult, clinicResult, providerProfileResult] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select(`
         *,
-        patient:patients(*),
-        attorney:attorneys(*)
-      )
-    `)
-    .eq('id', invoiceId)
-    .is('deleted_at', null)
-    .single()
-
-  if (error) return { error: error.message, data: null }
-
-  const { data: clinic } = await supabase
-    .from('clinic_settings')
-    .select('*')
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  let providerProfile = null
-  const providerId = invoice?.case?.assigned_provider_id
-  if (providerId) {
-    const { data } = await supabase
+        line_items:invoice_line_items(*),
+        case:cases(
+          *,
+          patient:patients(*),
+          attorney:attorneys(*)
+        )
+      `)
+      .eq('id', invoiceId)
+      .is('deleted_at', null)
+      .single(),
+    supabase
+      .from('clinic_settings')
+      .select('*')
+      .is('deleted_at', null)
+      .maybeSingle(),
+    // Use current user ID for provider profile (same pattern as getInvoiceFormData)
+    supabase
       .from('provider_profiles')
       .select('*')
-      .eq('user_id', providerId)
+      .eq('user_id', user.id)
       .is('deleted_at', null)
-      .maybeSingle()
-    providerProfile = data
-  }
+      .maybeSingle(),
+  ])
 
-  return { data: { invoice, clinic, providerProfile } }
+  if (invoiceResult.error) return { error: invoiceResult.error.message, data: null }
+
+  return { data: { invoice: invoiceResult.data, clinic: clinicResult.data, providerProfile: providerProfileResult.data } }
 }

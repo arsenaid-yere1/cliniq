@@ -31,24 +31,23 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      name: string
+      first_name: string
+      last_name: string
       firm_name: string | null
-      address: string | null
+      address_line1: string | null
+      address_line2: string | null
       city: string | null
       state: string | null
-      zip: string | null
-    } | null
-    provider: {
-      id: string
-      full_name: string
+      zip_code: string | null
     } | null
   }
   clinic: {
     clinic_name: string | null
-    address: string | null
+    address_line1: string | null
+    address_line2: string | null
     city: string | null
     state: string | null
-    zip: string | null
+    zip_code: string | null
     phone: string | null
     fax: string | null
   } | null

@@ -66,22 +66,25 @@ interface InvoiceData {
       date_of_birth: string | null
     } | null
     attorney: {
-      name: string
+      first_name: string
+      last_name: string
       firm_name: string | null
-      address: string | null
+      address_line1: string | null
+      address_line2: string | null
       city: string | null
       state: string | null
-      zip: string | null
+      zip_code: string | null
     } | null
   }
 }
 
 interface ClinicData {
   clinic_name: string | null
-  address: string | null
+  address_line1: string | null
+  address_line2: string | null
   city: string | null
   state: string | null
-  zip: string | null
+  zip_code: string | null
   phone: string | null
   fax: string | null
 }
@@ -102,16 +105,14 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      name: string
+      first_name: string
+      last_name: string
       firm_name: string | null
-      address: string | null
+      address_line1: string | null
+      address_line2: string | null
       city: string | null
       state: string | null
-      zip: string | null
-    } | null
-    provider: {
-      id: string
-      full_name: string
+      zip_code: string | null
     } | null
   }
   clinic: ClinicData | null
@@ -180,7 +181,6 @@ export function InvoiceDetailClient({
       accident_date: invoice.case?.accident_date ?? null,
       patient: patient ?? null,
       attorney: attorney ?? null,
-      provider: null,
     },
     clinic,
     providerProfile,
@@ -189,7 +189,12 @@ export function InvoiceDetailClient({
     prePopulatedLineItems: [],
   }
 
-  const clinicAddress = [clinic?.address, clinic?.city, clinic?.state, clinic?.zip].filter(Boolean).join(', ')
+  const clinicAddressParts: string[] = []
+  if (clinic?.address_line1) clinicAddressParts.push(clinic.address_line1)
+  if (clinic?.address_line2) clinicAddressParts.push(clinic.address_line2)
+  const cityStateZip = [clinic?.city, clinic?.state, clinic?.zip_code].filter(Boolean).join(', ')
+  if (cityStateZip) clinicAddressParts.push(cityStateZip)
+  const clinicAddress = clinicAddressParts.join(', ')
 
   return (
     <div className="space-y-6">
@@ -287,9 +292,9 @@ export function InvoiceDetailClient({
             <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wide">Attorney</h3>
             {attorney ? (
               <>
-                <p className="font-medium">{attorney.name}</p>
+                <p className="font-medium">{attorney.first_name} {attorney.last_name}</p>
                 {attorney.firm_name && <p>{attorney.firm_name}</p>}
-                <p>{[attorney.address, attorney.city, attorney.state, attorney.zip].filter(Boolean).join(', ')}</p>
+                <p>{[attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ')}</p>
               </>
             ) : <p className="text-muted-foreground">N/A</p>}
           </div>
