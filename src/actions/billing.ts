@@ -55,13 +55,14 @@ export async function getInvoice(invoiceId: string) {
 export async function getInvoiceFormData(caseId: string) {
   const supabase = await createClient()
 
-  const [caseResult, proceduresResult, clinicResult, initialVisitResult] = await Promise.all([
+  const [caseResult, proceduresResult, clinicResult, initialVisitResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
     supabase
       .from('cases')
       .select(`
         *,
         patient:patients(*),
-        attorney:attorneys(*)
+        attorney:attorneys(*),
+        provider:users!assigned_provider_id(id, full_name)
       `)
       .eq('id', caseId)
       .is('deleted_at', null)
@@ -79,7 +80,32 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('chief_complaint, diagnoses')
+      .select('chief_complaint, diagnoses, created_at')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('pain_management_extractions')
+      .select('chief_complaints')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('mri_extractions')
+      .select('id')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited'])
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('discharge_notes')
+      .select('created_at')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -112,30 +138,95 @@ export async function getInvoiceFormData(caseId: string) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
   }
 
-  // Derive indication from chief_complaint
+  // Derive indication: build from PM extraction complaint locations with accident context
   let indication = ''
-  if (initialVisitResult.data?.chief_complaint) {
+  const pmComplaints = pmExtractionResult.data?.chief_complaints as Array<{ location: string }> | null
+  if (Array.isArray(pmComplaints) && pmComplaints.length > 0) {
+    const locations = pmComplaints.map((c) => c.location).filter(Boolean)
+    if (locations.length > 0) {
+      indication = `Post-traumatic ${locations.join(' and ').toLowerCase()} following motor vehicle accident`
+    }
+  } else if (initialVisitResult.data?.chief_complaint) {
     indication = initialVisitResult.data.chief_complaint
   }
 
-  // Build pre-populated line items from procedures
-  const prePopulatedLineItems = procedures.map((proc: {
-    id: string
-    procedure_date: string
-    cpt_code: string | null
-    procedure_name: string
-    injection_site?: string | null
-    laterality?: string | null
-    charge_amount: number | null
-  }) => ({
-    procedure_id: proc.id,
-    service_date: proc.procedure_date,
-    cpt_code: proc.cpt_code ?? '',
-    description: proc.procedure_name + (proc.injection_site ? ` — ${proc.injection_site}` : '') + (proc.laterality ? ` (${proc.laterality})` : ''),
-    quantity: 1,
-    unit_price: Number(proc.charge_amount ?? 0),
-    total_price: Number(proc.charge_amount ?? 0),
-  }))
+  // Build pre-populated line items matching reference invoice format
+  const prePopulatedLineItems: Array<{
+    procedure_id?: string
+    service_date: string
+    cpt_code: string
+    description: string
+    quantity: number
+    unit_price: number
+    total_price: number
+  }> = []
+
+  const caseOpenDate = caseResult.data?.case_open_date
+
+  // 1. Initial exam (CPT 99204) — if an initial visit note exists
+  if (initialVisitResult.data) {
+    prePopulatedLineItems.push({
+      service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
+      cpt_code: '99204',
+      description: 'Initial exam (45-60min)',
+      quantity: 1,
+      unit_price: 0,
+      total_price: 0,
+    })
+  }
+
+  // 2. MRI review (CPT 76140) — if approved MRI extractions exist
+  if (mriExtractionResult.data) {
+    prePopulatedLineItems.push({
+      service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
+      cpt_code: '76140',
+      description: 'MRI review',
+      quantity: 1,
+      unit_price: 0,
+      total_price: 0,
+    })
+  }
+
+  // 3. PRP procedure line items (CPT 0232T 86999 76942)
+  for (const proc of procedures) {
+    const typedProc = proc as {
+      id: string
+      procedure_date: string
+      cpt_code: string | null
+      procedure_name: string
+      injection_site?: string | null
+      laterality?: string | null
+      charge_amount: number | null
+    }
+    // Build description with injection sites listed below the main description
+    const sites: string[] = []
+    if (typedProc.injection_site) sites.push(typedProc.injection_site)
+    if (typedProc.laterality) sites.push(`(${typedProc.laterality})`)
+    const description = 'PRP preparation and injection with US guided'
+      + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
+
+    prePopulatedLineItems.push({
+      procedure_id: typedProc.id,
+      service_date: typedProc.procedure_date,
+      cpt_code: '0232T\n86999\n76942',
+      description,
+      quantity: 1,
+      unit_price: Number(typedProc.charge_amount ?? 0),
+      total_price: Number(typedProc.charge_amount ?? 0),
+    })
+  }
+
+  // 4. Follow up / Discharge visit (CPT 99213) — if a discharge note exists
+  if (dischargeNoteResult.data) {
+    prePopulatedLineItems.push({
+      service_date: dischargeNoteResult.data.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+      cpt_code: '99213',
+      description: 'Follow up/ Discharge visit',
+      quantity: 1,
+      unit_price: 0,
+      total_price: 0,
+    })
+  }
 
   return {
     data: {

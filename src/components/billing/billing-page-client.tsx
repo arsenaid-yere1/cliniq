@@ -38,6 +38,10 @@ interface InvoiceFormData {
       state: string | null
       zip: string | null
     } | null
+    provider: {
+      id: string
+      full_name: string
+    } | null
   }
   clinic: {
     clinic_name: string | null
@@ -51,7 +55,7 @@ interface InvoiceFormData {
   providerProfile: {
     display_name: string | null
     credentials: string | null
-    npi: string | null
+    npi_number: string | null
   } | null
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string

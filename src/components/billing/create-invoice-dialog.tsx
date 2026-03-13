@@ -43,6 +43,10 @@ interface InvoiceFormData {
       state: string | null
       zip: string | null
     } | null
+    provider: {
+      id: string
+      full_name: string
+    } | null
   }
   clinic: {
     clinic_name: string | null
@@ -56,7 +60,7 @@ interface InvoiceFormData {
   providerProfile: {
     display_name: string | null
     credentials: string | null
-    npi: string | null
+    npi_number: string | null
   } | null
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
@@ -266,8 +270,10 @@ export function CreateInvoiceDialog({
                     <p className="text-sm font-medium">
                       {provider.display_name}{provider.credentials ? `, ${provider.credentials}` : ''}
                     </p>
-                    {provider.npi && <p className="text-xs text-muted-foreground">NPI: {provider.npi}</p>}
+                    {provider.npi_number && <p className="text-xs text-muted-foreground">NPI: {provider.npi_number}</p>}
                   </>
+                ) : formData.caseData.provider ? (
+                  <p className="text-sm font-medium">{formData.caseData.provider.full_name}</p>
                 ) : <p className="text-sm text-muted-foreground">N/A</p>}
                 {formData.clinic?.clinic_name && (
                   <p className="text-xs text-muted-foreground">Facility: {formData.clinic.clinic_name}</p>

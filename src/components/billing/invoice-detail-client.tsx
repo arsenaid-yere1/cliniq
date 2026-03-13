@@ -89,7 +89,7 @@ interface ClinicData {
 interface ProviderProfileData {
   display_name: string | null
   credentials: string | null
-  npi: string | null
+  npi_number: string | null
 }
 
 interface InvoiceFormData {
@@ -108,6 +108,10 @@ interface InvoiceFormData {
       city: string | null
       state: string | null
       zip: string | null
+    } | null
+    provider: {
+      id: string
+      full_name: string
     } | null
   }
   clinic: ClinicData | null
@@ -176,6 +180,7 @@ export function InvoiceDetailClient({
       accident_date: invoice.case?.accident_date ?? null,
       patient: patient ?? null,
       attorney: attorney ?? null,
+      provider: null,
     },
     clinic,
     providerProfile,
