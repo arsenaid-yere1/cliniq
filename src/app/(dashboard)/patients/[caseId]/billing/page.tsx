@@ -1,6 +1,5 @@
-import { listInvoices, getBillingSummary } from '@/actions/billing'
-import { BillingSummaryCard } from '@/components/billing/billing-summary-card'
-import { BillingTable } from '@/components/billing/billing-table'
+import { listInvoices, getBillingSummary, getInvoiceFormData } from '@/actions/billing'
+import { BillingPageClient } from '@/components/billing/billing-page-client'
 
 export default async function BillingPage({
   params,
@@ -8,16 +7,18 @@ export default async function BillingPage({
   params: Promise<{ caseId: string }>
 }) {
   const { caseId } = await params
-  const [{ data: invoices }, { data: summary }] = await Promise.all([
+  const [{ data: invoices }, { data: summary }, { data: invoiceFormData }] = await Promise.all([
     listInvoices(caseId),
     getBillingSummary(caseId),
+    getInvoiceFormData(caseId),
   ])
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Billing</h1>
-      {summary && <BillingSummaryCard summary={summary} />}
-      <BillingTable invoices={invoices} />
-    </div>
+    <BillingPageClient
+      caseId={caseId}
+      invoices={invoices}
+      summary={summary}
+      invoiceFormData={invoiceFormData}
+    />
   )
 }

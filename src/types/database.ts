@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -992,6 +967,7 @@ export type Database = {
           invoice_id: string
           procedure_id: string | null
           quantity: number
+          service_date: string | null
           total_price: number
           unit_price: number
         }
@@ -1003,6 +979,7 @@ export type Database = {
           invoice_id: string
           procedure_id?: string | null
           quantity?: number
+          service_date?: string | null
           total_price: number
           unit_price: number
         }
@@ -1014,6 +991,7 @@ export type Database = {
           invoice_id?: string
           procedure_id?: string | null
           quantity?: number
+          service_date?: string | null
           total_price?: number
           unit_price?: number
         }
@@ -1037,15 +1015,21 @@ export type Database = {
       invoices: {
         Row: {
           case_id: string
+          claim_type: string
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
+          diagnoses_snapshot: Json
           due_date: string | null
           id: string
+          indication: string | null
           invoice_date: string
           invoice_number: string
+          invoice_type: string
           notes: string | null
           paid_amount: number
+          payee_address: string | null
+          payee_name: string | null
           status: string
           total_amount: number
           updated_at: string
@@ -1053,15 +1037,21 @@ export type Database = {
         }
         Insert: {
           case_id: string
+          claim_type?: string
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           due_date?: string | null
           id?: string
+          indication?: string | null
           invoice_date?: string
           invoice_number: string
+          invoice_type?: string
           notes?: string | null
           paid_amount?: number
+          payee_address?: string | null
+          payee_name?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -1069,15 +1059,21 @@ export type Database = {
         }
         Update: {
           case_id?: string
+          claim_type?: string
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           due_date?: string | null
           id?: string
+          indication?: string | null
           invoice_date?: string
           invoice_number?: string
+          invoice_type?: string
           notes?: string | null
           paid_amount?: number
+          payee_address?: string | null
+          payee_name?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -2294,9 +2290,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

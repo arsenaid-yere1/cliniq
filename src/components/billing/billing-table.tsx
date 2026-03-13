@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import {
   useReactTable,
@@ -13,7 +14,6 @@ import {
 import { ArrowUpDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Table,
   TableBody,
@@ -106,8 +106,15 @@ const columns: ColumnDef<Invoice>[] = [
   },
 ]
 
-export function BillingTable({ invoices }: { invoices: Invoice[] }) {
+interface BillingTableProps {
+  invoices: Invoice[]
+  caseId?: string
+  onCreateClick?: () => void
+}
+
+export function BillingTable({ invoices, caseId, onCreateClick }: BillingTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
+  const router = useRouter()
 
   const table = useReactTable({
     data: invoices,
@@ -121,12 +128,7 @@ export function BillingTable({ invoices }: { invoices: Invoice[] }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button disabled>Create Invoice</Button>
-          </TooltipTrigger>
-          <TooltipContent>Coming Soon</TooltipContent>
-        </Tooltip>
+        <Button onClick={onCreateClick}>Create Invoice</Button>
       </div>
 
       <div className="rounded-md border">
@@ -147,7 +149,15 @@ export function BillingTable({ invoices }: { invoices: Invoice[] }) {
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className={caseId ? 'cursor-pointer' : ''}
+                  onClick={() => {
+                    if (caseId) {
+                      router.push(`/patients/${caseId}/billing/${row.original.id}`)
+                    }
+                  }}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
