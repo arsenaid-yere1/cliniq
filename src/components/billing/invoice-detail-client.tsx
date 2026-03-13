@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Pencil, Trash2, ArrowLeft } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -224,13 +223,8 @@ export function InvoiceDetailClient({
         <div className="flex items-start justify-between border-b pb-4">
           <div className="flex items-start gap-4">
             {clinicLogoUrl && (
-              <Image
-                src={clinicLogoUrl}
-                alt="Clinic logo"
-                width={80}
-                height={80}
-                className="object-contain"
-              />
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 object-contain" />
             )}
             <div>
               {clinic?.clinic_name && <p className="font-bold text-lg">{clinic.clinic_name}</p>}
