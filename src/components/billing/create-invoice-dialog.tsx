@@ -184,7 +184,7 @@ export function CreateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit' : 'Create'} {watchedInvoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
@@ -192,9 +192,9 @@ export function CreateInvoiceDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6 min-w-0">
             {/* Invoice Type & Date */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="invoice_type"
@@ -239,7 +239,7 @@ export function CreateInvoiceDialog({
             <Separator />
 
             {/* Patient & Case Info (read-only display) */}
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
               <div className="space-y-1">
                 <h3 className="text-sm font-medium text-muted-foreground">Patient</h3>
                 {patient ? (
@@ -511,7 +511,7 @@ export function CreateInvoiceDialog({
             <Separator />
 
             {/* Payee */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="payee_name"
