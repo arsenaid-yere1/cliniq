@@ -103,7 +103,7 @@ function buildClinicAddress(clinic: InvoiceFormData['clinic']) {
   if (clinic.address_line2) lines.push(clinic.address_line2)
   const cityStateZip = [clinic.city, clinic.state, clinic.zip_code].filter(Boolean).join(', ')
   if (cityStateZip) lines.push(cityStateZip)
-  return lines.join('\n')
+  return lines.join(', ')
 }
 
 export function CreateInvoiceDialog({

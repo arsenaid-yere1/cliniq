@@ -115,14 +115,14 @@ export async function getInvoiceFormData(caseId: string) {
 
   if (caseResult.error) return { error: caseResult.error.message, data: null }
 
-  // Get provider profile if provider assigned
+  // Get provider profile for current user (single-provider clinic — logged-in user IS the provider)
+  const { data: { user } } = await supabase.auth.getUser()
   let providerProfile = null
-  const providerId = caseResult.data?.assigned_provider_id
-  if (providerId) {
+  if (user) {
     const { data } = await supabase
       .from('provider_profiles')
       .select('*')
-      .eq('user_id', providerId)
+      .eq('user_id', user.id)
       .is('deleted_at', null)
       .maybeSingle()
     providerProfile = data
