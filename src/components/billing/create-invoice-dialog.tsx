@@ -396,18 +396,17 @@ export function CreateInvoiceDialog({
 
               <div className="overflow-x-auto -mx-1 px-1">
                 {/* Table header */}
-                <div className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+                <div className="grid grid-cols-[100px_70px_1fr_50px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
                   <span>Date</span>
                   <span>CPT</span>
                   <span>Description</span>
                   <span>QTY</span>
-                  <span>Unit Price</span>
-                  <span>Total</span>
+                  <span>Price</span>
                   <span />
                 </div>
 
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 items-start">
+                <div key={field.id} className="grid grid-cols-[100px_70px_1fr_50px_80px_36px] gap-2 items-start">
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.service_date`}
@@ -478,29 +477,11 @@ export function CreateInvoiceDialog({
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.total_price`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            className="text-xs bg-muted"
-                            readOnly
-                            {...field}
-                            value={field.value as number}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9"
+                    className="h-9 w-9 shrink-0"
                     onClick={() => lineItemFields.remove(index)}
                     disabled={lineItemFields.fields.length <= 1}
                   >
