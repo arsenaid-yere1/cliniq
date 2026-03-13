@@ -6,9 +6,9 @@ export const invoiceLineItemSchema = z.object({
   service_date: z.string().min(1, 'Service date is required'),
   cpt_code: z.string().min(1, 'CPT code is required'),
   description: z.string().min(1, 'Description is required'),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
-  unit_price: z.number().min(0, 'Unit price must be non-negative'),
-  total_price: z.number().min(0),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  unit_price: z.coerce.number().min(0, 'Unit price must be non-negative'),
+  total_price: z.coerce.number().min(0),
 })
 
 export const createInvoiceSchema = z.object({

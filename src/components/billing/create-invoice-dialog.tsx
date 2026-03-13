@@ -446,6 +446,7 @@ export function CreateInvoiceDialog({
                             min={1}
                             className="text-xs"
                             {...field}
+                            value={field.value as number}
                             onChange={(e) => {
                               field.onChange(e)
                               setTimeout(() => handleQuantityOrPriceChange(index), 0)
@@ -467,6 +468,7 @@ export function CreateInvoiceDialog({
                             min={0}
                             className="text-xs"
                             {...field}
+                            value={field.value as number}
                             onChange={(e) => {
                               field.onChange(e)
                               setTimeout(() => handleQuantityOrPriceChange(index), 0)
@@ -488,6 +490,7 @@ export function CreateInvoiceDialog({
                             className="text-xs bg-muted"
                             readOnly
                             {...field}
+                            value={field.value as number}
                           />
                         </FormControl>
                       </FormItem>
