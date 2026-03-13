@@ -12,6 +12,6 @@ So that invoices are calculated correctly.
 
 - Admin can define:
   - PRP injection price
-  - Multi-site pricing
+  - Site pricing
   - Ultrasound add-on
   - Supply charges
