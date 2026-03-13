@@ -2046,6 +2046,60 @@ export type Database = {
           },
         ]
       }
+      service_catalog: {
+        Row: {
+          id: string
+          cpt_code: string
+          description: string
+          default_price: number
+          sort_order: number
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+          created_by_user_id: string | null
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          id?: string
+          cpt_code: string
+          description: string
+          default_price?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          created_by_user_id?: string | null
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          id?: string
+          cpt_code?: string
+          description?: string
+          default_price?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          created_by_user_id?: string | null
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_catalog_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_catalog_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           created_at: string

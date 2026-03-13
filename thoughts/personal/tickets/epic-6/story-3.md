@@ -12,5 +12,4 @@ So that they can be sent to patients or attorneys.
 
 - Export formats:
   - PDF
-  - CSV
   - Printable statement

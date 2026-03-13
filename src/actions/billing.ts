@@ -8,6 +8,7 @@ import {
   type CreateInvoiceFormValues,
   type UpdateInvoiceFormValues,
 } from '@/lib/validations/invoice'
+import { getServiceCatalogPriceMap } from '@/actions/service-catalog'
 
 export async function listInvoices(caseId: string) {
   const supabase = await createClient()
@@ -150,6 +151,9 @@ export async function getInvoiceFormData(caseId: string) {
     indication = initialVisitResult.data.chief_complaint
   }
 
+  // Fetch default prices from service catalog
+  const priceMap = await getServiceCatalogPriceMap()
+
   // Build pre-populated line items matching reference invoice format
   const prePopulatedLineItems: Array<{
     procedure_id?: string
@@ -165,25 +169,27 @@ export async function getInvoiceFormData(caseId: string) {
 
   // 1. Initial exam (CPT 99204) — if an initial visit note exists
   if (initialVisitResult.data) {
+    const price = priceMap['99204'] ?? 0
     prePopulatedLineItems.push({
       service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
       cpt_code: '99204',
       description: 'Initial exam (45-60min)',
       quantity: 1,
-      unit_price: 0,
-      total_price: 0,
+      unit_price: price,
+      total_price: price,
     })
   }
 
   // 2. MRI review (CPT 76140) — if approved MRI extractions exist
   if (mriExtractionResult.data) {
+    const price = priceMap['76140'] ?? 0
     prePopulatedLineItems.push({
       service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
       cpt_code: '76140',
       description: 'MRI review',
       quantity: 1,
-      unit_price: 0,
-      total_price: 0,
+      unit_price: price,
+      total_price: price,
     })
   }
 
@@ -205,26 +211,30 @@ export async function getInvoiceFormData(caseId: string) {
     const description = 'PRP preparation and injection with US guided'
       + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
 
+    const prpBundlePrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
+    const catalogPrice = prpBundlePrice > 0 ? prpBundlePrice : Number(typedProc.charge_amount ?? 0)
+
     prePopulatedLineItems.push({
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
       cpt_code: '0232T\n86999\n76942',
       description,
       quantity: 1,
-      unit_price: Number(typedProc.charge_amount ?? 0),
-      total_price: Number(typedProc.charge_amount ?? 0),
+      unit_price: catalogPrice,
+      total_price: catalogPrice,
     })
   }
 
   // 4. Follow up / Discharge visit (CPT 99213) — if a discharge note exists
   if (dischargeNoteResult.data) {
+    const price = priceMap['99213'] ?? 0
     prePopulatedLineItems.push({
       service_date: dischargeNoteResult.data.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
       cpt_code: '99213',
       description: 'Follow up/ Discharge visit',
       quantity: 1,
-      unit_price: 0,
-      total_price: 0,
+      unit_price: price,
+      total_price: price,
     })
   }
 

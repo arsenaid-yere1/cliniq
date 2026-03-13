@@ -1,10 +1,12 @@
 import { getClinicSettings, getProviderProfile } from '@/actions/settings'
+import { listServiceCatalog } from '@/actions/service-catalog'
 import { SettingsTabs } from '@/components/settings/settings-tabs'
 
 export default async function SettingsPage() {
-  const [{ data: clinicSettings }, { data: providerProfile }] = await Promise.all([
+  const [{ data: clinicSettings }, { data: providerProfile }, { data: serviceCatalog }] = await Promise.all([
     getClinicSettings(),
     getProviderProfile(),
+    listServiceCatalog(),
   ])
 
   return (
@@ -13,6 +15,7 @@ export default async function SettingsPage() {
       <SettingsTabs
         clinicSettings={clinicSettings ?? null}
         providerProfile={providerProfile ?? null}
+        serviceCatalog={serviceCatalog ?? []}
       />
     </div>
   )
