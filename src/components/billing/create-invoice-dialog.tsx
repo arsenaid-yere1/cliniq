@@ -184,7 +184,7 @@ export function CreateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit' : 'Create'} {watchedInvoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
@@ -387,19 +387,20 @@ export function CreateInvoiceDialog({
                 </Button>
               </div>
 
-              {/* Table header */}
-              <div className="grid grid-cols-[100px_80px_1fr_60px_100px_100px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
-                <span>Date</span>
-                <span>CPT</span>
-                <span>Description</span>
-                <span>QTY</span>
-                <span>Unit Price</span>
-                <span>Total</span>
-                <span />
-              </div>
+              <div className="overflow-x-auto -mx-1 px-1">
+                {/* Table header */}
+                <div className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 text-xs font-medium text-muted-foreground px-1 min-w-[580px]">
+                  <span>Date</span>
+                  <span>CPT</span>
+                  <span>Description</span>
+                  <span>QTY</span>
+                  <span>Unit Price</span>
+                  <span>Total</span>
+                  <span />
+                </div>
 
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[100px_80px_1fr_60px_100px_100px_36px] gap-2 items-start">
+                <div key={field.id} className="grid grid-cols-[minmax(100px,1fr)_70px_minmax(120px,2fr)_50px_90px_90px_36px] gap-2 items-start min-w-[580px]">
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.service_date`}
@@ -503,6 +504,7 @@ export function CreateInvoiceDialog({
                 <div className="text-sm font-semibold">
                   Total: ${runningTotal.toFixed(2)}
                 </div>
+              </div>
               </div>
             </div>
 
