@@ -17,8 +17,10 @@ Rules:
 9. Be precise with medical terminology — this summary may be used in legal proceedings
 10. When pain management data is present, incorporate diagnoses, treatment plans (including injection/surgery recommendations), and physical exam findings into the appropriate summary sections
 11. When physical therapy data is present, incorporate functional outcome measures (NDI, ODI, PSFS, LEFS), treatment goals with baselines and targets, and plan of care details. PT data establishes the functional recovery timeline — critical for damages calculations
-12. Cross-reference diagnoses across all sources. If MRI, chiro, PM, and PT all reference the same condition, consolidate into a single diagnosis entry with higher confidence
-13. Include PT outcome measure scores in the symptoms timeline pain_levels when they indicate functional status changes`
+12. Cross-reference diagnoses across all sources. If MRI, chiro, PM, PT, and orthopedic all reference the same condition, consolidate into a single diagnosis entry with higher confidence
+13. Include PT outcome measure scores in the symptoms timeline pain_levels when they indicate functional status changes
+14. When orthopedic data is present, incorporate the surgeon's physical exam findings, ICD-10 diagnoses, treatment recommendations with cost estimates, and any referenced imaging (X-ray, MRI) into the appropriate summary sections. Orthopedic recommendations with cost estimates are especially valuable for damages calculations
+15. Orthopedic reports often contain detailed history of injury narratives — use these to enrich the chief complaint when available`
 
 const SUMMARY_TOOL: Anthropic.Tool = {
   name: 'extract_case_summary',
@@ -205,6 +207,19 @@ export interface SummaryInputData {
     clinical_impression: string | null
     causation_statement: string | null
     prognosis: string | null
+    provider_overrides: unknown
+  }>
+  orthoExtractions: Array<{
+    report_date: string | null
+    date_of_injury: string | null
+    examining_provider: string | null
+    provider_specialty: string | null
+    history_of_injury: string | null
+    present_complaints: unknown
+    physical_exam: unknown
+    diagnostics: unknown
+    diagnoses: unknown
+    recommendations: unknown
     provider_overrides: unknown
   }>
 }

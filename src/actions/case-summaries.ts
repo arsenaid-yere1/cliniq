@@ -20,7 +20,7 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
 ): Promise<{ data: SummaryInputData | null; error: string | null }> {
-  const [caseRes, mriRes, chiroRes, pmRes, ptRes] = await Promise.all([
+  const [caseRes, mriRes, chiroRes, pmRes, ptRes, orthoRes] = await Promise.all([
     supabase
       .from('cases')
       .select('accident_type, accident_date, accident_description')
@@ -51,6 +51,12 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('orthopedic_extractions')
+      .select('report_date, date_of_injury, examining_provider, provider_specialty, history_of_injury, present_complaints, physical_exam, diagnostics, diagnoses, recommendations, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -61,8 +67,9 @@ async function gatherSourceData(
   const chiroExtractions = chiroRes.data || []
   const pmExtractions = pmRes.data || []
   const ptExtractions = ptRes.data || []
+  const orthoExtractions = orthoRes.data || []
 
-  if (mriExtractions.length === 0 && chiroExtractions.length === 0 && pmExtractions.length === 0 && ptExtractions.length === 0) {
+  if (mriExtractions.length === 0 && chiroExtractions.length === 0 && pmExtractions.length === 0 && ptExtractions.length === 0 && orthoExtractions.length === 0) {
     return { data: null, error: 'No approved extractions found. Approve at least one extraction first.' }
   }
 
@@ -73,6 +80,7 @@ async function gatherSourceData(
       chiroExtractions,
       pmExtractions,
       ptExtractions,
+      orthoExtractions,
     },
     error: null,
   }
