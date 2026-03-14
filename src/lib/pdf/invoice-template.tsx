@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   logo: { height: 80, marginBottom: 6 },
   clinicAddress: { fontSize: 10, fontFamily: 'Helvetica-Bold' },
   clinicDetail: { fontSize: 9 },
-  clinicFax: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  clinicFax: { fontSize: 9 },
   // Title
   title: { fontFamily: 'Helvetica-Bold', fontSize: 16, textAlign: 'center', marginBottom: 14, marginTop: 6 },
   // 3-column info block
@@ -185,7 +185,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
             {data.attorneyName ? (
               <>
                 <Text style={styles.infoText}>
-                  {data.attorneyName}{data.firmName ? ` ${data.firmName}` : ''}
+                  {data.attorneyName}{data.firmName ? `, ${data.firmName}` : ''}
                 </Text>
                 {data.attorneyAddress && <Text style={styles.infoText}>{data.attorneyAddress}</Text>}
               </>
@@ -222,7 +222,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
         {/* Payee */}
         {(data.payeeName || data.payeeAddress) && (
           <Text style={styles.payeeText}>
-            Please make the check: {data.payeeName}{data.payeeAddress ? `, ${data.payeeAddress}` : ''}
+            Please make the check payable to: {data.payeeName}{data.payeeAddress ? `, ${data.payeeAddress}` : ''}
           </Text>
         )}
 
