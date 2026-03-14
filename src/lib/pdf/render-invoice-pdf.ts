@@ -92,9 +92,12 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
   ].filter(Boolean).join(', ')
 
   // Assemble attorney address
-  const attorneyAddress = attorney
-    ? [attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ')
-    : undefined
+  let attorneyAddress: string | undefined
+  if (attorney) {
+    const streetParts = [attorney.address_line1, attorney.address_line2].filter(Boolean).join(', ')
+    const cityStateZipParts = [attorney.city, attorney.state].filter(Boolean).join(', ') + (attorney.zip_code ? ` ${attorney.zip_code}` : '')
+    attorneyAddress = [streetParts, cityStateZipParts].filter(Boolean).join(', ') || undefined
+  }
 
   // Format line items
   const lineItems = ((invoice.line_items ?? []) as Array<{
@@ -133,6 +136,7 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
 
     providerName: providerProfile?.display_name || undefined,
     providerCredentials: providerProfile?.credentials || undefined,
+    facilityName: clinicSettings?.clinic_name || undefined,
 
     diagnoses: (invoice.diagnoses_snapshot ?? []) as Array<{ icd10_code: string | null; description: string }>,
 
