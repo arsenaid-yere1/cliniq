@@ -25,6 +25,7 @@ import {
   type InvoiceLineItemFormValues,
 } from '@/lib/validations/invoice'
 import { createInvoice, updateInvoice } from '@/actions/billing'
+import { CptCodeCombobox } from './cpt-code-combobox'
 
 interface InvoiceFormData {
   caseData: {
@@ -64,6 +65,13 @@ interface InvoiceFormData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
   prePopulatedLineItems: InvoiceLineItemFormValues[]
+  catalogItems: Array<{
+    id: string
+    cpt_code: string
+    description: string
+    default_price: number
+    sort_order: number
+  }>
 }
 
 interface ExistingInvoice {
@@ -396,7 +404,7 @@ export function CreateInvoiceDialog({
 
               <div className="overflow-x-auto -mx-1 px-1">
                 {/* Table header */}
-                <div className="grid grid-cols-[100px_70px_1fr_50px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+                <div className="grid grid-cols-[100px_80px_1fr_50px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
                   <span>Date</span>
                   <span>CPT</span>
                   <span>Description</span>
@@ -406,7 +414,7 @@ export function CreateInvoiceDialog({
                 </div>
 
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[100px_70px_1fr_50px_80px_36px] gap-2 items-start">
+                <div key={field.id} className="grid grid-cols-[100px_80px_1fr_50px_80px_36px] gap-2 items-start">
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.service_date`}
@@ -421,7 +429,20 @@ export function CreateInvoiceDialog({
                     name={`line_items.${index}.cpt_code`}
                     render={({ field }) => (
                       <FormItem>
-                        <FormControl><Input className="text-xs" placeholder="CPT" {...field} /></FormControl>
+                        <FormControl>
+                          <CptCodeCombobox
+                            value={field.value}
+                            onChange={field.onChange}
+                            catalogItems={formData.catalogItems}
+                            className="text-xs"
+                            onSelect={(item) => {
+                              field.onChange(item.cpt_code)
+                              form.setValue(`line_items.${index}.description`, item.description)
+                              form.setValue(`line_items.${index}.unit_price`, item.default_price)
+                              setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                            }}
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />

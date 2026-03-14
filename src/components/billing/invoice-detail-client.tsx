@@ -119,6 +119,13 @@ interface InvoiceFormData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
   prePopulatedLineItems: InvoiceLineItemFormValues[]
+  catalogItems: Array<{
+    id: string
+    cpt_code: string
+    description: string
+    default_price: number
+    sort_order: number
+  }>
 }
 
 interface InvoiceDetailClientProps {
@@ -127,6 +134,13 @@ interface InvoiceDetailClientProps {
   providerProfile: ProviderProfileData | null
   clinicLogoUrl: string | null
   caseId: string
+  catalogItems: Array<{
+    id: string
+    cpt_code: string
+    description: string
+    default_price: number
+    sort_order: number
+  }>
 }
 
 const statusColors: Record<string, string> = {
@@ -150,6 +164,7 @@ export function InvoiceDetailClient({
   providerProfile,
   clinicLogoUrl,
   caseId,
+  catalogItems,
 }: InvoiceDetailClientProps) {
   const router = useRouter()
   const [isEditOpen, setIsEditOpen] = useState(false)
@@ -186,6 +201,7 @@ export function InvoiceDetailClient({
     diagnoses: invoice.diagnoses_snapshot ?? [],
     indication: invoice.indication ?? '',
     prePopulatedLineItems: [],
+    catalogItems,
   }
 
   const clinicAddressParts: string[] = []

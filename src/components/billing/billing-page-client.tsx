@@ -59,6 +59,13 @@ interface InvoiceFormData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
   prePopulatedLineItems: InvoiceLineItemFormValues[]
+  catalogItems: Array<{
+    id: string
+    cpt_code: string
+    description: string
+    default_price: number
+    sort_order: number
+  }>
 }
 
 interface BillingPageClientProps {

@@ -8,7 +8,7 @@ import {
   type CreateInvoiceFormValues,
   type UpdateInvoiceFormValues,
 } from '@/lib/validations/invoice'
-import { getServiceCatalogPriceMap } from '@/actions/service-catalog'
+import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service-catalog'
 
 export async function listInvoices(caseId: string) {
   const supabase = await createClient()
@@ -151,8 +151,11 @@ export async function getInvoiceFormData(caseId: string) {
     indication = initialVisitResult.data.chief_complaint
   }
 
-  // Fetch default prices from service catalog
-  const priceMap = await getServiceCatalogPriceMap()
+  // Fetch default prices and full catalog items from service catalog
+  const [priceMap, { data: catalogItems }] = await Promise.all([
+    getServiceCatalogPriceMap(),
+    listServiceCatalog(),
+  ])
 
   // Build pre-populated line items matching reference invoice format
   const prePopulatedLineItems: Array<{
@@ -247,6 +250,7 @@ export async function getInvoiceFormData(caseId: string) {
       diagnoses,
       indication,
       prePopulatedLineItems,
+      catalogItems: catalogItems ?? [],
     },
   }
 }

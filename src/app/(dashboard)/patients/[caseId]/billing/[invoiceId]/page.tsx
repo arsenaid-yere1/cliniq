@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getInvoiceWithContext } from '@/actions/billing'
 import { getClinicLogoUrl } from '@/actions/settings'
+import { listServiceCatalog } from '@/actions/service-catalog'
 import { InvoiceDetailClient } from '@/components/billing/invoice-detail-client'
 
 export default async function InvoiceDetailPage({
@@ -10,9 +11,10 @@ export default async function InvoiceDetailPage({
 }) {
   const { caseId, invoiceId } = await params
 
-  const [invoiceResult, logoResult] = await Promise.all([
+  const [invoiceResult, logoResult, catalogResult] = await Promise.all([
     getInvoiceWithContext(invoiceId),
     getClinicLogoUrl(),
+    listServiceCatalog(),
   ])
 
   if (invoiceResult.error || !invoiceResult.data?.invoice) {
@@ -28,6 +30,7 @@ export default async function InvoiceDetailPage({
       providerProfile={providerProfile}
       clinicLogoUrl={logoResult.url ?? null}
       caseId={caseId}
+      catalogItems={catalogResult.data ?? []}
     />
   )
 }
