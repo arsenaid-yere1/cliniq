@@ -230,11 +230,19 @@ export const documentTypeEnum = z.enum([
    ```
 5. Use multi-region success message like MRI: check `extractionIds.length > 1`
 
-### Step 7: Update Document List Filter (`document-list.tsx`)
+### Step 7: Update Document List Filter & Card Labels
 
-Add `ct_scan` to the `docTypeOptions` array so users can filter documents by CT Scan type:
+**`document-list.tsx`** — Add `ct_scan` to the `docTypeOptions` array so users can filter documents by CT Scan type:
 ```typescript
 { value: 'ct_scan', label: 'CT Scan' },
+```
+
+**`document-card.tsx`** — Add `ct_scan` to both `docTypeLabels` and `docTypeColors` maps so the document card badge shows "CT Scan" instead of the raw `ct_scan` enum value:
+```typescript
+// docTypeLabels
+ct_scan: 'CT Scan',
+// docTypeColors
+ct_scan: 'bg-amber-100 text-amber-800 border-amber-200',
 ```
 
 ### Step 8: Update Document Removal Cascade (`documents.ts`)
