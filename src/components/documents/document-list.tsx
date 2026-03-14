@@ -17,6 +17,7 @@ const docTypeOptions = [
   { value: 'chiro_report', label: 'Chiro Report' },
   { value: 'pain_management', label: 'Pain Management' },
   { value: 'pt_report', label: 'PT Report' },
+  { value: 'orthopedic_report', label: 'Orthopedic Report' },
   { value: 'generated', label: 'Generated' },
   { value: 'other', label: 'Other' },
 ]
