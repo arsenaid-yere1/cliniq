@@ -49,15 +49,16 @@ We'll reuse the MRI finding structure (`level`, `description`, `severity`) since
 | 6 | `src/components/clinical/ct-scan-extraction-review.tsx` | Split-pane PDF + form view |
 | 7 | `src/components/clinical/ct-scan-extraction-form.tsx` | Editable review form with approve/save/reject |
 
-### Existing Files to Modify (5)
+### Existing Files to Modify (6)
 
 | # | File | Change |
 |---|---|---|
 | 1 | `src/lib/validations/document.ts` | Add `'ct_scan'` to `documentTypeEnum` |
 | 2 | `src/components/documents/upload-sheet.tsx` | Add import, SelectItem, extraction routing |
-| 3 | `src/actions/documents.ts` | Add `ct_scan_extractions` to `removeDocument` cascade |
-| 4 | `src/app/(dashboard)/patients/[caseId]/clinical/page.tsx` | Add tab + data fetch |
-| 5 | `src/actions/case-summaries.ts` + `src/lib/claude/generate-summary.ts` | Fetch CT data + add summary prompt rule |
+| 3 | `src/components/documents/document-list.tsx` | Add `ct_scan` to `docTypeOptions` filter array |
+| 4 | `src/actions/documents.ts` | Add `ct_scan_extractions` to `removeDocument` cascade |
+| 5 | `src/app/(dashboard)/patients/[caseId]/clinical/page.tsx` | Add tab + data fetch |
+| 6 | `src/actions/case-summaries.ts` + `src/lib/claude/generate-summary.ts` | Fetch CT data + add summary prompt rule |
 
 ## Implementation Steps
 
@@ -229,7 +230,14 @@ export const documentTypeEnum = z.enum([
    ```
 5. Use multi-region success message like MRI: check `extractionIds.length > 1`
 
-### Step 7: Update Document Removal Cascade (`documents.ts`)
+### Step 7: Update Document List Filter (`document-list.tsx`)
+
+Add `ct_scan` to the `docTypeOptions` array so users can filter documents by CT Scan type:
+```typescript
+{ value: 'ct_scan', label: 'CT Scan' },
+```
+
+### Step 8: Update Document Removal Cascade (`documents.ts`)
 
 In `removeDocument` (around line 167), add `ct_scan_extractions` to the `Promise.all`:
 ```typescript
@@ -239,7 +247,7 @@ supabase.from('ct_scan_extractions')
   .is('deleted_at', null)
 ```
 
-### Step 8: UI Components
+### Step 9: UI Components
 
 **`ct-scan-extraction-list.tsx`** — Clone from `mri-extraction-list.tsx`:
 - Include the document grouping logic (multiple body regions per document)
@@ -255,7 +263,7 @@ supabase.from('ct_scan_extractions')
 - Fields: `body_region`, `scan_date`, `technique` (textarea), `reason_for_study` (textarea), `impression_summary` (textarea), `findings` (field array with level/description/severity)
 - Same approve/save-and-approve/reject action bar
 
-### Step 9: Update Clinical Page (`clinical/page.tsx`)
+### Step 10: Update Clinical Page (`clinical/page.tsx`)
 
 1. Add import: `import { listCtScanExtractions } from '@/actions/ct-scan-extractions'`
 2. Add import: `import { CtScanExtractionList } from '@/components/clinical/ct-scan-extraction-list'`
@@ -268,7 +276,7 @@ supabase.from('ct_scan_extractions')
    </TabsContent>
    ```
 
-### Step 10: Integrate with Case Summary
+### Step 11: Integrate with Case Summary
 
 **`src/actions/case-summaries.ts`** — in `gatherSourceData`:
 1. Add query to `Promise.all`:
@@ -289,7 +297,7 @@ CT scans provide bone and structural detail complementary to MRI soft tissue fin
 Cross-reference CT and MRI findings for the same body region to build a complete picture.
 ```
 
-### Step 11: Regenerate Supabase Types
+### Step 12: Regenerate Supabase Types
 
 ```bash
 npx supabase gen types typescript --local > src/lib/supabase/database.types.ts
@@ -303,14 +311,16 @@ npx supabase gen types typescript --local > src/lib/supabase/database.types.ts
 4. [x] Server actions (Step 4)
 5. [x] Document type enum (Step 5)
 6. [x] Upload sheet (Step 6)
-7. [x] Document removal cascade (Step 7)
-8. [x] UI components — list, review, form (Step 8)
-9. [x] Clinical page (Step 9)
-10. [x] Case summary integration (Step 10)
-11. [x] Type regeneration (Step 11)
+7. [x] Document list filter (Step 7)
+8. [x] Document removal cascade (Step 8)
+9. [x] UI components — list, review, form (Step 9)
+10. [x] Clinical page (Step 10)
+11. [x] Case summary integration (Step 11)
+12. [x] Type regeneration (Step 12)
 
 ## Testing Checklist
 
+- [ ] Document list filter shows "CT Scan" option and filters correctly
 - [ ] Upload a CT scan PDF with type "CT Scan Report"
 - [ ] Verify extraction triggers and completes with correct fields
 - [ ] Verify multi-region CT scans create separate extraction rows (grouped in list)

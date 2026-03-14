@@ -6,6 +6,7 @@ import { Search, X, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DocumentCard } from '@/components/documents/document-card'
 import { UploadSheet } from '@/components/documents/upload-sheet'
 import { listDocuments } from '@/actions/documents'
@@ -18,6 +19,7 @@ const docTypeOptions = [
   { value: 'pain_management', label: 'Pain Management' },
   { value: 'pt_report', label: 'PT Report' },
   { value: 'orthopedic_report', label: 'Orthopedic Report' },
+  { value: 'ct_scan', label: 'CT Scan Report' },
   { value: 'generated', label: 'Generated' },
 ]
 
@@ -107,18 +109,19 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {docTypeOptions.map((opt) => (
-          <Button
-            key={opt.value}
-            variant={docType === opt.value ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setDocType(opt.value)}
-          >
-            {opt.label}
-          </Button>
-        ))}
-        <span className="border-l mx-1" />
+      <div className="flex items-center gap-3">
+        <Select value={docType} onValueChange={setDocType}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {docTypeOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {statusOptions.map((opt) => (
           <Button
             key={opt.value}
