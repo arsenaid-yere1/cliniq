@@ -21,6 +21,7 @@ import { extractChiroReport } from '@/actions/chiro-extractions'
 import { extractPainManagementReport } from '@/actions/pain-management-extractions'
 import { extractPtReport } from '@/actions/pt-extractions'
 import { extractOrthopedicReport } from '@/actions/orthopedic-extractions'
+import { extractCtScanReport } from '@/actions/ct-scan-extractions'
 import {
   ALLOWED_MIME_TYPES, MAX_FILE_SIZE, type DocumentType,
 } from '@/lib/validations/document'
@@ -104,7 +105,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
     }
 
     let completedCount = 0
-    const pendingExtractions: Array<{ type: 'mri' | 'chiro' | 'pain_management' | 'pt_report' | 'orthopedic_report'; documentId: string }> = []
+    const pendingExtractions: Array<{ type: 'mri' | 'chiro' | 'pain_management' | 'pt_report' | 'orthopedic_report' | 'ct_scan'; documentId: string }> = []
 
     for (const stagedFile of staged) {
       try {
@@ -174,6 +175,9 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
         }
         if (stagedFile.documentType === 'orthopedic_report' && metaResult.data) {
           pendingExtractions.push({ type: 'orthopedic_report', documentId: metaResult.data.id })
+        }
+        if (stagedFile.documentType === 'ct_scan' && metaResult.data) {
+          pendingExtractions.push({ type: 'ct_scan', documentId: metaResult.data.id })
         }
       } catch (err) {
         updateFile(stagedFile.id, {
@@ -269,6 +273,26 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
             }
           })
         }
+        if (extraction.type === 'ct_scan') {
+          extractCtScanReport(extraction.documentId).then((extractResult) => {
+            if ('error' in extractResult && extractResult.error) {
+              toast.error(`Extraction failed: ${extractResult.error}`)
+            } else {
+              const count = extractResult.data?.extractionIds?.length ?? 1
+              toast.success(
+                count > 1
+                  ? `${count} CT scan regions extracted`
+                  : 'CT scan findings extracted',
+                {
+                  action: {
+                    label: 'View',
+                    onClick: () => { window.location.href = `/patients/${caseId}/clinical` },
+                  },
+                },
+              )
+            }
+          })
+        }
       }
     }, 0)
   }
@@ -341,6 +365,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                       <SelectItem value="pain_management">Pain Management Report</SelectItem>
                       <SelectItem value="pt_report">PT Report</SelectItem>
                       <SelectItem value="orthopedic_report">Orthopedic Report</SelectItem>
+                      <SelectItem value="ct_scan">CT Scan Report</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

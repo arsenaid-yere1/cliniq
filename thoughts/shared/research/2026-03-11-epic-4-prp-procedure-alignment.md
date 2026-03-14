@@ -30,7 +30,7 @@ The three Epic 4 stories capture the general intent but are **significantly unde
 
 ### What the Real PRP Documents Contain
 
-Both PRP procedure PDFs follow an identical structure from the NPMD clinic (16101 Ventura Blvd, Unit 300, Encino, CA 91436). They are SOAP-format procedure notes with these sections:
+Both PRP procedure PDFs follow an identical structure from [REDACTED clinic]. They are SOAP-format procedure notes with these sections:
 
 #### Header / Demographics
 - Clinic letterhead (name, address, phone, fax)

@@ -20,7 +20,8 @@ Rules:
 12. Cross-reference diagnoses across all sources. If MRI, chiro, PM, PT, and orthopedic all reference the same condition, consolidate into a single diagnosis entry with higher confidence
 13. Include PT outcome measure scores in the symptoms timeline pain_levels when they indicate functional status changes
 14. When orthopedic data is present, incorporate the surgeon's physical exam findings, ICD-10 diagnoses, treatment recommendations with cost estimates, and any referenced imaging (X-ray, MRI) into the appropriate summary sections. Orthopedic recommendations with cost estimates are especially valuable for damages calculations
-15. Orthopedic reports often contain detailed history of injury narratives — use these to enrich the chief complaint when available`
+15. Orthopedic reports often contain detailed history of injury narratives — use these to enrich the chief complaint when available
+16. When CT scan data is present, incorporate CT findings into imaging_findings alongside MRI data. CT scans provide bone and structural detail complementary to MRI soft tissue findings. Cross-reference CT and MRI findings for the same body region to build a complete picture`
 
 const SUMMARY_TOOL: Anthropic.Tool = {
   name: 'extract_case_summary',
@@ -220,6 +221,15 @@ export interface SummaryInputData {
     diagnostics: unknown
     diagnoses: unknown
     recommendations: unknown
+    provider_overrides: unknown
+  }>
+  ctScanExtractions: Array<{
+    body_region: string | null
+    scan_date: string | null
+    technique: string | null
+    reason_for_study: string | null
+    findings: unknown
+    impression_summary: string | null
     provider_overrides: unknown
   }>
 }
