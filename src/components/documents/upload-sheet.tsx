@@ -49,7 +49,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
     const newFiles: StagedFile[] = acceptedFiles.map((file) => ({
       id: crypto.randomUUID(),
       file,
-      documentType: 'other' as DocumentType,
+      documentType: 'mri_report' as DocumentType,
       progress: 0,
       status: 'staged',
     }))
@@ -341,7 +341,6 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                       <SelectItem value="pain_management">Pain Management Report</SelectItem>
                       <SelectItem value="pt_report">PT Report</SelectItem>
                       <SelectItem value="orthopedic_report">Orthopedic Report</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
