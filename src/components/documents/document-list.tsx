@@ -19,7 +19,6 @@ const docTypeOptions = [
   { value: 'pt_report', label: 'PT Report' },
   { value: 'orthopedic_report', label: 'Orthopedic Report' },
   { value: 'generated', label: 'Generated' },
-  { value: 'other', label: 'Other' },
 ]
 
 const statusOptions = [
