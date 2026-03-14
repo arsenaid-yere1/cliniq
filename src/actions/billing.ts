@@ -377,6 +377,17 @@ export async function deleteInvoice(invoiceId: string, caseId: string) {
   return { success: true }
 }
 
+export async function generateInvoicePdf(invoiceId: string) {
+  const { renderInvoicePdf } = await import('@/lib/pdf/render-invoice-pdf')
+
+  try {
+    const pdfBuffer = await renderInvoicePdf({ invoiceId })
+    return { data: Buffer.from(pdfBuffer).toString('base64') }
+  } catch {
+    return { error: 'Failed to generate PDF' }
+  }
+}
+
 export async function getInvoiceWithContext(invoiceId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

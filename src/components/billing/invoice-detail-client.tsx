@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { Pencil, Trash2, ArrowLeft } from 'lucide-react'
+import { Pencil, Trash2, ArrowLeft, Download } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -27,7 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { CreateInvoiceDialog } from './create-invoice-dialog'
-import { deleteInvoice } from '@/actions/billing'
+import { deleteInvoice, generateInvoicePdf } from '@/actions/billing'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
 
 interface InvoiceData {
@@ -170,6 +170,7 @@ export function InvoiceDetailClient({
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
 
   const patient = invoice.case?.patient
   const attorney = invoice.case?.attorney
@@ -222,6 +223,34 @@ export function InvoiceDetailClient({
           </Link>
         </Button>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isGeneratingPdf}
+            onClick={async () => {
+              setIsGeneratingPdf(true)
+              try {
+                const result = await generateInvoicePdf(invoice.id)
+                if (result.error) {
+                  toast.error(result.error)
+                  return
+                }
+                const bytes = Uint8Array.from(atob(result.data!), c => c.charCodeAt(0))
+                const blob = new Blob([bytes], { type: 'application/pdf' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `Invoice-${invoice.invoice_number}.pdf`
+                a.click()
+                URL.revokeObjectURL(url)
+              } finally {
+                setIsGeneratingPdf(false)
+              }
+            }}
+          >
+            <Download className="h-4 w-4 mr-1" />
+            {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-1" />
             Edit
