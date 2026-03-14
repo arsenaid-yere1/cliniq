@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
-import { Flag, FileText, Activity, Receipt } from 'lucide-react'
+import { Flag, FileText, Activity, Receipt, ArrowRightLeft } from 'lucide-react'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import type { TimelineEvent, TimelineEventType } from '@/actions/timeline'
 
@@ -9,6 +9,7 @@ const eventIcons: Record<TimelineEventType, React.ElementType> = {
   document_added: FileText,
   procedure: Activity,
   invoice_created: Receipt,
+  invoice_status_change: ArrowRightLeft,
 }
 
 const eventColors: Record<TimelineEventType, string> = {
@@ -16,6 +17,7 @@ const eventColors: Record<TimelineEventType, string> = {
   document_added: 'text-gray-600',
   procedure: 'text-green-600',
   invoice_created: 'text-purple-600',
+  invoice_status_change: 'text-amber-600',
 }
 
 export function CaseRecentActivity({ events }: { events: TimelineEvent[] }) {

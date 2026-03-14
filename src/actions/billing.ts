@@ -9,6 +9,7 @@ import {
   type UpdateInvoiceFormValues,
 } from '@/lib/validations/invoice'
 import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service-catalog'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 export async function listInvoices(caseId: string) {
   const supabase = await createClient()
@@ -263,6 +264,9 @@ export async function createInvoice(caseId: string, values: CreateInvoiceFormVal
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
   const { line_items, ...invoiceData } = parsed.data
   const totalAmount = line_items.reduce((sum, item) => sum + item.total_price, 0)
 
@@ -318,6 +322,24 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  // Case-closed guard
+  const { data: invoiceRow } = await supabase
+    .from('invoices')
+    .select('status, case_id')
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!invoiceRow) return { error: 'Invoice not found' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, invoiceRow.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Immutability: only draft invoices can be edited
+  if (invoiceRow.status !== 'draft') {
+    return { error: 'Only draft invoices can be edited. Void this invoice and create a new one.' }
+  }
+
   const { line_items, ...invoiceData } = parsed.data
   const totalAmount = line_items.reduce((sum, item) => sum + item.total_price, 0)
 
@@ -367,6 +389,27 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
 
 export async function deleteInvoice(invoiceId: string, caseId: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Fetch invoice to check status
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('status, case_id')
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!invoice) return { error: 'Invoice not found' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Only draft invoices can be deleted; issued+ invoices must be voided
+  if (invoice.status !== 'draft') {
+    return { error: 'Only draft invoices can be deleted. Use void for issued invoices.' }
+  }
+
   const { error } = await supabase
     .from('invoices')
     .update({ deleted_at: new Date().toISOString() })

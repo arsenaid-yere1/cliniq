@@ -27,7 +27,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { CreateInvoiceDialog } from './create-invoice-dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { deleteInvoice, generateInvoicePdf } from '@/actions/billing'
+import { issueInvoice, markInvoicePaid, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
+import { ALLOWED_TRANSITIONS, INVOICE_STATUS_COLORS, INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
 
 interface InvoiceData {
@@ -143,11 +146,6 @@ interface InvoiceDetailClientProps {
   }>
 }
 
-const statusColors: Record<string, string> = {
-  paid: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
-  pending: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
-  draft: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-}
 
 function formatDate(date: string | null) {
   if (!date) return 'N/A'
@@ -171,10 +169,59 @@ export function InvoiceDetailClient({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [showVoidDialog, setShowVoidDialog] = useState(false)
+  const [voidReason, setVoidReason] = useState('')
+  const [showWriteOffDialog, setShowWriteOffDialog] = useState(false)
+  const [writeOffReason, setWriteOffReason] = useState('')
+
+  const currentStatus = invoice.status as InvoiceStatus
+  const availableTransitions = ALLOWED_TRANSITIONS[currentStatus] ?? []
+  const isDraft = currentStatus === 'draft'
 
   const patient = invoice.case?.patient
   const attorney = invoice.case?.attorney
   const balance = Number(invoice.total_amount) - Number(invoice.paid_amount)
+
+  async function handleTransition(action: () => Promise<{ error: string | null }>, successMsg: string) {
+    setIsTransitioning(true)
+    const result = await action()
+    setIsTransitioning(false)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success(successMsg)
+      router.refresh()
+    }
+  }
+
+  async function handleVoid() {
+    setIsTransitioning(true)
+    const result = await voidInvoice(invoice.id, voidReason)
+    setIsTransitioning(false)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success('Invoice voided')
+      setShowVoidDialog(false)
+      setVoidReason('')
+      router.refresh()
+    }
+  }
+
+  async function handleWriteOff() {
+    setIsTransitioning(true)
+    const result = await writeOffInvoice(invoice.id, writeOffReason)
+    setIsTransitioning(false)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success('Invoice written off')
+      setShowWriteOffDialog(false)
+      setWriteOffReason('')
+      router.refresh()
+    }
+  }
 
   async function handleDelete() {
     setIsDeleting(true)
@@ -251,14 +298,70 @@ export function InvoiceDetailClient({
             <Download className="h-4 w-4 mr-1" />
             {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
-            <Pencil className="h-4 w-4 mr-1" />
-            Edit
-          </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDeleteConfirm(true)}>
-            <Trash2 className="h-4 w-4 mr-1" />
-            Delete
-          </Button>
+          {isDraft && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
+                <Pencil className="h-4 w-4 mr-1" />
+                Edit
+              </Button>
+              <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDeleteConfirm(true)}>
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            </>
+          )}
+          {availableTransitions.includes('issued') && (
+            <Button
+              size="sm"
+              disabled={isTransitioning}
+              onClick={() => handleTransition(() => issueInvoice(invoice.id), 'Invoice issued')}
+            >
+              Issue Invoice
+            </Button>
+          )}
+          {availableTransitions.includes('paid') && (
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700"
+              disabled={isTransitioning}
+              onClick={() => handleTransition(() => markInvoicePaid(invoice.id), 'Invoice marked as paid')}
+            >
+              Mark as Paid
+            </Button>
+          )}
+          {availableTransitions.includes('overdue') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950"
+              disabled={isTransitioning}
+              onClick={() => handleTransition(() => markInvoiceOverdue(invoice.id), 'Invoice marked as overdue')}
+            >
+              Mark Overdue
+            </Button>
+          )}
+          {availableTransitions.includes('void') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive"
+              disabled={isTransitioning}
+              onClick={() => setShowVoidDialog(true)}
+            >
+              Void Invoice
+            </Button>
+          )}
+          {availableTransitions.includes('uncollectible') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive"
+              disabled={isTransitioning}
+              onClick={() => setShowWriteOffDialog(true)}
+            >
+              Write Off
+            </Button>
+          )}
         </div>
       </div>
 
@@ -279,8 +382,8 @@ export function InvoiceDetailClient({
             </div>
           </div>
           <div className="text-right">
-            <Badge variant="outline" className={statusColors[invoice.status] ?? ''}>
-              {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+            <Badge variant="outline" className={INVOICE_STATUS_COLORS[invoice.status as InvoiceStatus] ?? ''}>
+              {INVOICE_STATUS_LABELS[invoice.status as InvoiceStatus] ?? invoice.status}
             </Badge>
             <p className="text-sm text-muted-foreground mt-1 font-mono">{invoice.invoice_number}</p>
             <p className="text-sm text-muted-foreground">{formatDate(invoice.invoice_date)}</p>
@@ -409,6 +512,52 @@ export function InvoiceDetailClient({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Void Reason Dialog */}
+      <AlertDialog open={showVoidDialog} onOpenChange={(open) => { setShowVoidDialog(open); if (!open) setVoidReason('') }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Void Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently void invoice {invoice.invoice_number}. Please provide a reason.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            placeholder="Reason for voiding..."
+            value={voidReason}
+            onChange={(e) => setVoidReason(e.target.value)}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleVoid} disabled={isTransitioning || voidReason.trim().length === 0}>
+              {isTransitioning ? 'Voiding...' : 'Void Invoice'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Write Off Reason Dialog */}
+      <AlertDialog open={showWriteOffDialog} onOpenChange={(open) => { setShowWriteOffDialog(open); if (!open) setWriteOffReason('') }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Write Off Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark invoice {invoice.invoice_number} as uncollectible. Please provide a reason.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            placeholder="Reason for writing off..."
+            value={writeOffReason}
+            onChange={(e) => setWriteOffReason(e.target.value)}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWriteOff} disabled={isTransitioning || writeOffReason.trim().length === 0}>
+              {isTransitioning ? 'Writing off...' : 'Write Off'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

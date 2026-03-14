@@ -1,8 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 
-export type TimelineEventType = 'status_change' | 'document_added' | 'procedure' | 'invoice_created'
+export type TimelineEventType = 'status_change' | 'document_added' | 'procedure' | 'invoice_created' | 'invoice_status_change'
 
 export interface TimelineEvent {
   id: string
@@ -16,7 +17,7 @@ export interface TimelineEvent {
 export async function getTimelineEvents(caseId: string): Promise<{ data: TimelineEvent[], error?: string }> {
   const supabase = await createClient()
 
-  const [statusRes, docRes, procRes, invRes] = await Promise.all([
+  const [statusRes, docRes, procRes, invRes, invStatusRes] = await Promise.all([
     supabase
       .from('case_status_history')
       .select('id, previous_status, new_status, changed_at, notes, changed_by:users!changed_by_user_id(full_name)')
@@ -40,6 +41,19 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('invoice_date', { ascending: false }),
+    supabase
+      .from('invoice_status_history')
+      .select(`
+        id,
+        invoice_id,
+        previous_status,
+        new_status,
+        changed_at,
+        reason,
+        invoices!inner(invoice_number, case_id)
+      `)
+      .eq('invoices.case_id', caseId)
+      .order('changed_at', { ascending: false }),
   ])
 
   const events: TimelineEvent[] = []
@@ -88,7 +102,24 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
       type: 'invoice_created',
       date: i.invoice_date + 'T00:00:00',
       title: `Invoice ${i.invoice_number}`,
-      description: `$${Number(i.total_amount).toFixed(2)} - ${formatInvoiceStatus(i.status)}`,
+      description: `$${Number(i.total_amount).toFixed(2)} - ${INVOICE_STATUS_LABELS[i.status as InvoiceStatus] ?? i.status}`,
+    })
+  }
+
+  // Map invoice status changes
+  for (const h of invStatusRes.data ?? []) {
+    const inv = Array.isArray(h.invoices) ? h.invoices[0] : h.invoices
+    if (!inv) continue
+    const prevLabel = h.previous_status ? (INVOICE_STATUS_LABELS[h.previous_status as InvoiceStatus] ?? h.previous_status) : 'New'
+    const newLabel = INVOICE_STATUS_LABELS[h.new_status as InvoiceStatus] ?? h.new_status
+    events.push({
+      id: `inv-status-${h.id}`,
+      type: 'invoice_status_change',
+      date: h.changed_at,
+      title: `Invoice ${inv.invoice_number} — ${newLabel}`,
+      description: h.reason
+        ? `${prevLabel} → ${newLabel}. Reason: ${h.reason}`
+        : `${prevLabel} → ${newLabel}`,
     })
   }
 
@@ -119,14 +150,3 @@ function formatDocType(type: string): string {
   return labels[type] ?? type
 }
 
-function formatInvoiceStatus(status: string): string {
-  const labels: Record<string, string> = {
-    draft: 'Draft',
-    pending: 'Pending',
-    paid: 'Paid',
-    partial: 'Partial',
-    denied: 'Denied',
-    overdue: 'Overdue',
-  }
-  return labels[status] ?? status
-}

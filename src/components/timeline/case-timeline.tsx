@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { Flag, FileText, Activity, Receipt } from 'lucide-react'
+import { Flag, FileText, Activity, Receipt, ArrowRightLeft } from 'lucide-react'
 import type { TimelineEvent, TimelineEventType } from '@/actions/timeline'
 import {
   Timeline,
@@ -14,6 +14,7 @@ const eventConfig: Record<TimelineEventType, { icon: React.ElementType; colorCla
   document_added: { icon: FileText, colorClass: 'text-gray-600' },
   procedure: { icon: Activity, colorClass: 'text-green-600' },
   invoice_created: { icon: Receipt, colorClass: 'text-purple-600' },
+  invoice_status_change: { icon: ArrowRightLeft, colorClass: 'text-amber-600' },
 }
 
 function formatEventDate(dateStr: string): string {
