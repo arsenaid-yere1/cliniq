@@ -10,7 +10,7 @@ export const ALLOWED_MIME_TYPES = [
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-export const documentTypeEnum = z.enum(['mri_report', 'chiro_report', 'pain_management', 'pt_report', 'generated', 'other'])
+export const documentTypeEnum = z.enum(['mri_report', 'chiro_report', 'pain_management', 'pt_report', 'orthopedic_report', 'generated', 'other'])
 
 export const documentUploadMetaSchema = z.object({
   caseId: z.string().uuid(),

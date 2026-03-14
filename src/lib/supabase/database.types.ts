@@ -592,6 +592,138 @@ export type Database = {
           },
         ]
       }
+      discharge_notes: {
+        Row: {
+          ai_model: string | null
+          assessment: string | null
+          case_id: string
+          clinician_disclaimer: string | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          diagnoses: string | null
+          document_id: string | null
+          finalized_at: string | null
+          finalized_by_user_id: string | null
+          generation_attempts: number
+          generation_error: string | null
+          id: string
+          objective_cervical: string | null
+          objective_general: string | null
+          objective_lumbar: string | null
+          objective_neurological: string | null
+          objective_vitals: string | null
+          patient_education: string | null
+          patient_header: string | null
+          plan_and_recommendations: string | null
+          prognosis: string | null
+          raw_ai_response: Json | null
+          source_data_hash: string | null
+          status: string
+          subjective: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id: string
+          clinician_disclaimer?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          id?: string
+          objective_cervical?: string | null
+          objective_general?: string | null
+          objective_lumbar?: string | null
+          objective_neurological?: string | null
+          objective_vitals?: string | null
+          patient_education?: string | null
+          patient_header?: string | null
+          plan_and_recommendations?: string | null
+          prognosis?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          subjective?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          assessment?: string | null
+          case_id?: string
+          clinician_disclaimer?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          diagnoses?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          id?: string
+          objective_cervical?: string | null
+          objective_general?: string | null
+          objective_lumbar?: string | null
+          objective_neurological?: string | null
+          objective_vitals?: string | null
+          patient_education?: string | null
+          patient_header?: string | null
+          plan_and_recommendations?: string | null
+          prognosis?: string | null
+          raw_ai_response?: Json | null
+          source_data_hash?: string | null
+          status?: string
+          subjective?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discharge_notes_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_finalized_by_user_id_fkey"
+            columns: ["finalized_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_notes_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           case_id: string
@@ -835,6 +967,7 @@ export type Database = {
           invoice_id: string
           procedure_id: string | null
           quantity: number
+          service_date: string | null
           total_price: number
           unit_price: number
         }
@@ -846,6 +979,7 @@ export type Database = {
           invoice_id: string
           procedure_id?: string | null
           quantity?: number
+          service_date?: string | null
           total_price: number
           unit_price: number
         }
@@ -857,6 +991,7 @@ export type Database = {
           invoice_id?: string
           procedure_id?: string | null
           quantity?: number
+          service_date?: string | null
           total_price?: number
           unit_price?: number
         }
@@ -877,18 +1012,72 @@ export type Database = {
           },
         ]
       }
+      invoice_status_history: {
+        Row: {
+          changed_at: string
+          changed_by_user_id: string | null
+          id: string
+          invoice_id: string
+          metadata: Json | null
+          new_status: string
+          previous_status: string | null
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by_user_id?: string | null
+          id?: string
+          invoice_id: string
+          metadata?: Json | null
+          new_status: string
+          previous_status?: string | null
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by_user_id?: string | null
+          id?: string
+          invoice_id?: string
+          metadata?: Json | null
+          new_status?: string
+          previous_status?: string | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_status_history_changed_by_user_id_fkey"
+            columns: ["changed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_status_history_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           case_id: string
+          claim_type: string
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
+          diagnoses_snapshot: Json
           due_date: string | null
           id: string
+          indication: string | null
           invoice_date: string
           invoice_number: string
+          invoice_type: string
           notes: string | null
           paid_amount: number
+          payee_address: string | null
+          payee_name: string | null
           status: string
           total_amount: number
           updated_at: string
@@ -896,15 +1085,21 @@ export type Database = {
         }
         Insert: {
           case_id: string
+          claim_type?: string
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           due_date?: string | null
           id?: string
+          indication?: string | null
           invoice_date?: string
           invoice_number: string
+          invoice_type?: string
           notes?: string | null
           paid_amount?: number
+          payee_address?: string | null
+          payee_name?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -912,15 +1107,21 @@ export type Database = {
         }
         Update: {
           case_id?: string
+          claim_type?: string
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           due_date?: string | null
           id?: string
+          indication?: string | null
           invoice_date?: string
           invoice_number?: string
+          invoice_type?: string
           notes?: string | null
           paid_amount?: number
+          payee_address?: string | null
+          payee_name?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -1063,6 +1264,186 @@ export type Database = {
           },
           {
             foreignKeyName: "mri_extractions_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orthopedic_extractions: {
+        Row: {
+          ai_confidence: string | null
+          ai_model: string | null
+          allergies: string | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          current_employment: string | null
+          current_medications: Json
+          date_of_injury: string | null
+          deleted_at: string | null
+          diagnoses: Json
+          diagnostics: Json
+          document_id: string
+          examining_provider: string | null
+          extracted_at: string | null
+          extraction_attempts: number
+          extraction_error: string | null
+          extraction_notes: string | null
+          extraction_status: string
+          family_history: string | null
+          hand_dominance: string | null
+          height: string | null
+          history_of_injury: string | null
+          id: string
+          past_medical_history: string | null
+          patient_age: number | null
+          patient_sex: string | null
+          physical_exam: Json
+          present_complaints: Json
+          previous_complaints: string | null
+          provider_overrides: Json
+          provider_specialty: string | null
+          raw_ai_response: Json | null
+          recommendations: Json
+          report_date: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          schema_version: number
+          social_history: string | null
+          subsequent_complaints: string | null
+          surgical_history: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+          weight: string | null
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          allergies?: string | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_employment?: string | null
+          current_medications?: Json
+          date_of_injury?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          diagnostics?: Json
+          document_id: string
+          examining_provider?: string | null
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          family_history?: string | null
+          hand_dominance?: string | null
+          height?: string | null
+          history_of_injury?: string | null
+          id?: string
+          past_medical_history?: string | null
+          patient_age?: number | null
+          patient_sex?: string | null
+          physical_exam?: Json
+          present_complaints?: Json
+          previous_complaints?: string | null
+          provider_overrides?: Json
+          provider_specialty?: string | null
+          raw_ai_response?: Json | null
+          recommendations?: Json
+          report_date?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          social_history?: string | null
+          subsequent_complaints?: string | null
+          surgical_history?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          weight?: string | null
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_model?: string | null
+          allergies?: string | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          current_employment?: string | null
+          current_medications?: Json
+          date_of_injury?: string | null
+          deleted_at?: string | null
+          diagnoses?: Json
+          diagnostics?: Json
+          document_id?: string
+          examining_provider?: string | null
+          extracted_at?: string | null
+          extraction_attempts?: number
+          extraction_error?: string | null
+          extraction_notes?: string | null
+          extraction_status?: string
+          family_history?: string | null
+          hand_dominance?: string | null
+          height?: string | null
+          history_of_injury?: string | null
+          id?: string
+          past_medical_history?: string | null
+          patient_age?: number | null
+          patient_sex?: string | null
+          physical_exam?: Json
+          present_complaints?: Json
+          previous_complaints?: string | null
+          provider_overrides?: Json
+          provider_specialty?: string | null
+          raw_ai_response?: Json | null
+          recommendations?: Json
+          report_date?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          schema_version?: number
+          social_history?: string | null
+          subsequent_complaints?: string | null
+          surgical_history?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+          weight?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orthopedic_extractions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orthopedic_extractions_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orthopedic_extractions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orthopedic_extractions_reviewed_by_user_id_fkey"
+            columns: ["reviewed_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orthopedic_extractions_updated_by_user_id_fkey"
             columns: ["updated_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -1886,6 +2267,60 @@ export type Database = {
           },
           {
             foreignKeyName: "pt_extractions_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_catalog: {
+        Row: {
+          cpt_code: string
+          created_at: string
+          created_by_user_id: string | null
+          default_price: number
+          deleted_at: string | null
+          description: string
+          id: string
+          sort_order: number
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          cpt_code: string
+          created_at?: string
+          created_by_user_id?: string | null
+          default_price?: number
+          deleted_at?: string | null
+          description: string
+          id?: string
+          sort_order?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          cpt_code?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          default_price?: number
+          deleted_at?: string | null
+          description?: string
+          id?: string
+          sort_order?: number
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_catalog_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_catalog_updated_by_user_id_fkey"
             columns: ["updated_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"

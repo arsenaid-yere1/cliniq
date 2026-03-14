@@ -22,6 +22,7 @@ const docTypeLabels: Record<string, string> = {
   chiro_report: 'Chiro Report',
   pain_management: 'Pain Management',
   pt_report: 'PT Report',
+  orthopedic_report: 'Orthopedic Report',
   generated: 'Generated',
   other: 'Other',
 }
@@ -31,6 +32,7 @@ const docTypeColors: Record<string, string> = {
   chiro_report: 'bg-blue-100 text-blue-800 border-blue-200',
   pain_management: 'bg-orange-100 text-orange-800 border-orange-200',
   pt_report: 'bg-teal-100 text-teal-800 border-teal-200',
+  orthopedic_report: 'bg-rose-100 text-rose-800 border-rose-200',
   generated: 'bg-green-100 text-green-800 border-green-200',
   other: 'bg-gray-100 text-gray-800 border-gray-200',
 }

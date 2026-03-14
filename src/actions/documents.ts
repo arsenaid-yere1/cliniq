@@ -175,6 +175,21 @@ export async function removeDocument(documentId: string) {
       .update({ deleted_at: now, updated_by_user_id: user.id })
       .eq('document_id', documentId)
       .is('deleted_at', null),
+    supabase
+      .from('pain_management_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
+    supabase
+      .from('pt_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
+    supabase
+      .from('orthopedic_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
   ])
 
   revalidatePath(`/patients/${data.case_id}/documents`)
