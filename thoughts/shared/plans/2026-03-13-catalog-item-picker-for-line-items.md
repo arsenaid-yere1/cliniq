@@ -117,8 +117,8 @@ Verify that the billing page client does pass the full `data` object from `getIn
 - [x] App builds successfully: `npm run build`
 
 #### Manual Verification:
-- [ ] Open the Create Invoice dialog — no regressions, everything works as before
-- [ ] Confirm via React DevTools or console log that `formData.catalogItems` contains the catalog entries
+- [x] Open the Create Invoice dialog — no regressions, everything works as before
+- [x] Confirm via React DevTools or console log that `formData.catalogItems` contains the catalog entries
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 2.
 
@@ -300,15 +300,15 @@ This applies to both the header row (line 399) and each item row (line 409). The
 - [x] App builds successfully: `npm run build`
 
 #### Manual Verification:
-- [ ] Focus the CPT field on a blank line item — dropdown appears with all catalog items
-- [ ] Type "99" — dropdown filters to 99204 and 99213
-- [ ] Select "99204" — CPT, description, and unit_price auto-fill; total_price recalculates
-- [ ] Edit the description after selection — change persists
-- [ ] Edit the unit_price after selection — total recalculates
-- [ ] Type a custom CPT code "12345" — no crash, dropdown shows "No matching services", free text accepted
-- [ ] Pre-populated line items still display correctly (their CPT fields show existing values)
-- [ ] Existing edit invoice flow still works (no regressions)
-- [ ] Keyboard navigation works in the dropdown (arrow keys, Enter to select, Escape to close)
+- [x] Focus the CPT field on a blank line item — dropdown appears with all catalog items
+- [x] Type "99" — dropdown filters to 99204 and 99213
+- [x] Select "99204" — CPT, description, and unit_price auto-fill; total_price recalculates
+- [x] Edit the description after selection — change persists
+- [x] Edit the unit_price after selection — total recalculates
+- [x] Type a custom CPT code "12345" — no crash, dropdown shows "No matching services", free text accepted
+- [x] Pre-populated line items still display correctly (their CPT fields show existing values)
+- [x] Existing edit invoice flow still works (no regressions)
+- [x] Keyboard navigation works in the dropdown (arrow keys, Enter to select, Escape to close)
 
 **Implementation Note**: After completing this phase and all verification passes, the feature is complete.
 
