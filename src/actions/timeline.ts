@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
+import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 
 export type TimelineEventType = 'status_change' | 'document_added' | 'procedure' | 'invoice_created' | 'invoice_status_change'
 
@@ -130,14 +131,7 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
 }
 
 function formatStatus(status: string): string {
-  const labels: Record<string, string> = {
-    intake: 'Intake',
-    active: 'Active',
-    pending_settlement: 'Pending Settlement',
-    closed: 'Closed',
-    archived: 'Archived',
-  }
-  return labels[status] ?? status
+  return CASE_STATUS_CONFIG[status as CaseStatus]?.label ?? status
 }
 
 function formatDocType(type: string): string {

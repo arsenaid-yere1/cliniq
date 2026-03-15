@@ -157,9 +157,9 @@ function formatStatus(status: string): string {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npx tsc --noEmit`
-- [ ] Lint passes: `npm run lint`
-- [ ] App builds: `npm run build`
+- [x] TypeScript compiles: `npx tsc --noEmit`
+- [x] Lint passes: `npm run lint` (1 pre-existing error, 9 pre-existing warnings — none from our changes)
+- [x] App builds: `npm run build`
 
 #### Manual Verification:
 - [ ] Patient list table shows correct status badges with colors

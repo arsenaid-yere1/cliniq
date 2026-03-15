@@ -9,6 +9,7 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
+import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import {
   Table,
   TableBody,
@@ -32,21 +33,6 @@ interface PatientCase {
   } | null
 }
 
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  intake: { label: 'Intake', variant: 'default' },
-  active: { label: 'Active', variant: 'default' },
-  pending_settlement: { label: 'Pending Settlement', variant: 'secondary' },
-  closed: { label: 'Closed', variant: 'secondary' },
-  archived: { label: 'Archived', variant: 'outline' },
-}
-
-const statusColors: Record<string, string> = {
-  intake: 'bg-blue-100 text-blue-800 border-blue-200',
-  active: 'bg-green-100 text-green-800 border-green-200',
-  pending_settlement: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  closed: 'bg-gray-100 text-gray-800 border-gray-200',
-  archived: 'bg-gray-50 text-gray-500 border-gray-200',
-}
 
 export function PatientListTable({
   cases,
@@ -78,11 +64,11 @@ export function PatientListTable({
       header: 'Status',
       cell: ({ getValue }) => {
         const status = getValue() as string
-        const config = statusConfig[status]
+        const config = CASE_STATUS_CONFIG[status as CaseStatus]
         return (
           <Badge
             variant={config?.variant ?? 'secondary'}
-            className={statusColors[status] ?? ''}
+            className={config?.color ?? ''}
           >
             {config?.label ?? status}
           </Badge>

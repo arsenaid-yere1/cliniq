@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { Copy, Check } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -22,21 +23,6 @@ interface CaseData {
   } | null
 }
 
-const statusColors: Record<string, string> = {
-  intake: 'bg-blue-100 text-blue-800 border-blue-200',
-  active: 'bg-green-100 text-green-800 border-green-200',
-  pending_settlement: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  closed: 'bg-gray-100 text-gray-800 border-gray-200',
-  archived: 'bg-gray-50 text-gray-500 border-gray-200',
-}
-
-const statusLabels: Record<string, string> = {
-  intake: 'Intake',
-  active: 'Active',
-  pending_settlement: 'Pending Settlement',
-  closed: 'Closed',
-  archived: 'Archived',
-}
 
 const navItems = [
   { label: 'Overview', href: '', enabled: true },
@@ -91,8 +77,8 @@ export function CaseSidebar({ caseData }: { caseData: CaseData }) {
         </div>
       )}
 
-      <Badge className={statusColors[caseData.case_status] ?? ''}>
-        {statusLabels[caseData.case_status] ?? caseData.case_status}
+      <Badge className={CASE_STATUS_CONFIG[caseData.case_status as CaseStatus]?.color ?? ''}>
+        {CASE_STATUS_CONFIG[caseData.case_status as CaseStatus]?.label ?? caseData.case_status}
       </Badge>
 
       <Separator />
