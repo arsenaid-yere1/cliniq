@@ -594,11 +594,11 @@ await autoAdvanceFromIntake(supabase, caseId, user.id)
 - [x] App builds: `npm run build`
 
 #### Manual Verification:
-- [ ] Create a new case (status = intake)
-- [ ] Upload a document → status auto-changes to active
-- [ ] Timeline shows "Auto-advanced: first clinical activity" entry
-- [ ] Creating a procedure on an intake case also triggers auto-advance
-- [ ] Second clinical activity on an already-active case does NOT create duplicate history entries
+- [x] Create a new case (status = intake)
+- [x] Upload a document → status auto-changes to active
+- [x] Timeline shows "Auto-advanced: first clinical activity" entry
+- [x] Creating a procedure on an intake case also triggers auto-advance
+- [x] Second clinical activity on an already-active case does NOT create duplicate history entries
 
 **Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 5.
 
@@ -680,8 +680,8 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npx tsc --noEmit`
-- [ ] App builds: `npm run build`
+- [x] TypeScript compiles: `npx tsc --noEmit`
+- [x] App builds: `npm run build`
 
 #### Manual Verification:
 - [ ] Patient list shows filter dropdown defaulting to "All Active"

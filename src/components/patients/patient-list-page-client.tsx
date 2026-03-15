@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { PatientListTable } from './patient-list-table'
 
 interface PatientCase {
@@ -22,6 +24,13 @@ interface PatientCase {
 
 export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
   const [globalFilter, setGlobalFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all_active')
+
+  const filteredCases = cases.filter((c) => {
+    if (statusFilter === 'all') return true
+    if (statusFilter === 'all_active') return c.case_status !== 'archived'
+    return c.case_status === statusFilter
+  })
 
   return (
     <div className="space-y-6">
@@ -30,12 +39,28 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
       </div>
 
       <div className="flex items-center justify-between gap-4">
-        <Input
-          placeholder="Search by name or case number..."
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-sm"
-        />
+        <div className="flex items-center gap-3">
+          <Input
+            placeholder="Search by name or case number..."
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="max-w-sm"
+          />
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all_active">All Active</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {(Object.entries(CASE_STATUS_CONFIG) as [CaseStatus, typeof CASE_STATUS_CONFIG[CaseStatus]][]).map(
+                ([key, config]) => (
+                  <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                )
+              )}
+            </SelectContent>
+          </Select>
+        </div>
         <Button asChild>
           <Link href="/patients/new">
             <Plus className="h-4 w-4 mr-2" />
@@ -45,7 +70,7 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
       </div>
 
       <PatientListTable
-        cases={cases}
+        cases={filteredCases}
         globalFilter={globalFilter}
         onGlobalFilterChange={setGlobalFilter}
       />
