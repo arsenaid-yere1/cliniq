@@ -162,9 +162,9 @@ function formatStatus(status: string): string {
 - [x] App builds: `npm run build`
 
 #### Manual Verification:
-- [ ] Patient list table shows correct status badges with colors
-- [ ] Case sidebar shows correct status badge
-- [ ] Timeline shows correct status labels for status change events
+- [x] Patient list table shows correct status badges with colors
+- [x] Case sidebar shows correct status badge
+- [x] Timeline shows correct status labels for status change events
 
 ---
 
@@ -296,8 +296,8 @@ export async function reopenCase(caseId: string) {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npx tsc --noEmit`
-- [ ] App builds: `npm run build`
+- [x] TypeScript compiles: `npx tsc --noEmit`
+- [x] App builds: `npm run build`
 
 #### Manual Verification:
 - [ ] Closing a case still works via existing UI (uses thin wrapper)
