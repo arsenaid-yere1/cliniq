@@ -62,7 +62,7 @@ General + Musculoskeletal ONLY. Do NOT add Neurological, Cardiovascular, Respira
 Reference: "• General: Reports sleep disturbance.\n• Musculoskeletal: Ongoing cervical pain, mid-back discomfort, left shoulder pain, and low back pain affecting activities of daily living."
 
 7. PHYSICAL EXAMINATION (structured by affected region only):
-Start with "VITAL SIGNS:" sub-heading + bullets. Use "[XX]" brackets for vitals since these require in-person measurement.
+Start with "VITAL SIGNS:" sub-heading + bullets. If vital signs data is provided in the source data (vitalSigns object), use the actual values: Blood Pressure as {bp_systolic}/{bp_diastolic} mmHg, Heart Rate as {heart_rate} bpm, Respiratory Rate as {respiratory_rate} breaths/min, Temperature as {temperature_f}°F, SpO2 as {spo2_percent}%. For any individual vital sign that is null, use "[XX]" as placeholder. If vitalSigns is null entirely, use "[XX]" for all vitals.
 Then "General:" appearance statement (1-2 sentences).
 Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels, "RANGE OF MOTION:" sub-heading with "• " bullet per movement, orthopedic test results, and brief neurological testing note.
 DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
@@ -225,6 +225,14 @@ export interface InitialVisitInputData {
     credentials: string | null
     npi_number: string | null
   }
+  vitalSigns: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+  } | null
 }
 
 export async function generateInitialVisitFromData(

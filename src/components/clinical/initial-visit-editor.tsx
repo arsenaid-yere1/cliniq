@@ -5,8 +5,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
@@ -36,14 +38,17 @@ import {
   finalizeInitialVisitNote,
   unfinalizeInitialVisitNote,
   regenerateNoteSection,
+  saveInitialVisitVitals,
 } from '@/actions/initial-visit-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
   initialVisitNoteEditSchema,
+  initialVisitVitalsSchema,
   initialVisitSections,
   sectionLabels,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
+  type InitialVisitVitalsValues,
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 
@@ -101,11 +106,21 @@ interface CaseData {
   }
 }
 
+interface VitalsData {
+  bp_systolic: number | null
+  bp_diastolic: number | null
+  heart_rate: number | null
+  respiratory_rate: number | null
+  temperature_f: number | null
+  spo2_percent: number | null
+}
+
 interface InitialVisitEditorProps {
   caseId: string
   note: NoteRow | null
   canGenerate: boolean
   prerequisiteReason?: string
+  initialVitals: VitalsData | null
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
@@ -138,6 +153,7 @@ export function InitialVisitEditor({
   note,
   canGenerate,
   prerequisiteReason,
+  initialVitals,
   clinicSettings,
   providerProfile,
   clinicLogoUrl,
@@ -150,11 +166,12 @@ export function InitialVisitEditor({
   const caseStatus = useCaseStatus()
   const isClosed = caseStatus === 'closed'
 
-  // No note — show generate button
+  // No note — show vitals card + generate button
   if (!note) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+        <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
@@ -253,6 +270,7 @@ export function InitialVisitEditor({
     <DraftEditor
       caseId={caseId}
       note={note}
+      initialVitals={initialVitals}
       isPending={isPending}
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
@@ -262,11 +280,189 @@ export function InitialVisitEditor({
   )
 }
 
+// --- Vital Signs Card ---
+
+function VitalSignsCard({
+  caseId,
+  initialVitals,
+  isClosed,
+}: {
+  caseId: string
+  initialVitals: VitalsData | null
+  isClosed: boolean
+}) {
+  const [isSaving, startSaving] = useTransition()
+  const vitalsForm = useForm<InitialVisitVitalsValues>({
+    resolver: zodResolver(initialVisitVitalsSchema),
+    defaultValues: {
+      bp_systolic: initialVitals?.bp_systolic ?? null,
+      bp_diastolic: initialVitals?.bp_diastolic ?? null,
+      heart_rate: initialVitals?.heart_rate ?? null,
+      respiratory_rate: initialVitals?.respiratory_rate ?? null,
+      temperature_f: initialVitals?.temperature_f ?? null,
+      spo2_percent: initialVitals?.spo2_percent ?? null,
+    },
+  })
+
+  function handleSaveVitals() {
+    startSaving(async () => {
+      const values = vitalsForm.getValues()
+      const result = await saveInitialVisitVitals(caseId, values)
+      if (result.error) toast.error(result.error)
+      else toast.success('Vitals saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Heart className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">Vital Signs</CardTitle>
+        </div>
+        <CardDescription>
+          Record vital signs for this visit. These will be included in the generated note.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...vitalsForm}>
+          <div className="grid grid-cols-3 gap-4">
+            <FormField
+              control={vitalsForm.control}
+              name="bp_systolic"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>BP Systolic</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="mmHg"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="bp_diastolic"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>BP Diastolic</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="mmHg"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="heart_rate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Heart Rate</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="bpm"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="respiratory_rate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Respiratory Rate</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="breaths/min"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="temperature_f"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Temperature</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      placeholder="°F"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="spo2_percent"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>SpO2</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="%"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveVitals}
+              disabled={isClosed || isSaving}
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save Vitals
+            </Button>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
+  )
+}
+
 // --- Draft Editor ---
 
 function DraftEditor({
   caseId,
   note,
+  initialVitals,
   isPending,
   startTransition,
   regeneratingSection,
@@ -275,6 +471,7 @@ function DraftEditor({
 }: {
   caseId: string
   note: NoteRow
+  initialVitals: VitalsData | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   regeneratingSection: InitialVisitSection | null
@@ -376,6 +573,8 @@ function DraftEditor({
           </AlertDialog>
         </div>
       </div>
+
+      <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
 
       <Form {...form}>
         <form className="space-y-6">

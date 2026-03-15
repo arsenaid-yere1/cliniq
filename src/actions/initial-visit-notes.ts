@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
-import { initialVisitNoteEditSchema, type InitialVisitNoteEditValues, type InitialVisitSection } from '@/lib/validations/initial-visit-note'
+import { initialVisitNoteEditSchema, initialVisitVitalsSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
@@ -21,7 +21,7 @@ async function gatherSourceData(
   caseId: string,
   userId: string,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const [caseRes, summaryRes, clinicRes, providerRes] = await Promise.all([
+  const [caseRes, summaryRes, clinicRes, providerRes, vitalsRes] = await Promise.all([
     supabase
       .from('cases')
       .select('case_number, accident_type, accident_date, accident_description, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
@@ -46,6 +46,15 @@ async function gatherSourceData(
       .select('display_name, credentials, npi_number')
       .eq('user_id', userId)
       .is('deleted_at', null)
+      .maybeSingle(),
+    supabase
+      .from('vital_signs')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -100,6 +109,7 @@ async function gatherSourceData(
         credentials: providerRes.data?.credentials ?? null,
         npi_number: providerRes.data?.npi_number ?? null,
       },
+      vitalSigns: vitalsRes.data ?? null,
     },
     error: null,
   }
@@ -451,4 +461,76 @@ export async function checkNotePrerequisites(caseId: string) {
   }
 
   return { data: { canGenerate: true } }
+}
+
+// --- Get initial visit vitals ---
+
+export async function getInitialVisitVitals(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('vital_signs')
+    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
+    .eq('case_id', caseId)
+    .is('procedure_id', null)
+    .is('deleted_at', null)
+    .order('recorded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) return { error: 'Failed to fetch vitals' }
+
+  return { data: data ?? null }
+}
+
+// --- Save initial visit vitals ---
+
+export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisitVitalsValues) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const validated = initialVisitVitalsSchema.safeParse(vitals)
+  if (!validated.success) return { error: 'Invalid vitals data' }
+
+  // Check for existing initial visit vitals row
+  const { data: existing } = await supabase
+    .from('vital_signs')
+    .select('id')
+    .eq('case_id', caseId)
+    .is('procedure_id', null)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('vital_signs')
+      .update({
+        ...validated.data,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existing.id)
+
+    if (error) return { error: 'Failed to update vitals' }
+  } else {
+    const { error } = await supabase
+      .from('vital_signs')
+      .insert({
+        case_id: caseId,
+        procedure_id: null,
+        ...validated.data,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+
+    if (error) return { error: 'Failed to save vitals' }
+  }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
 }

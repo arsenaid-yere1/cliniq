@@ -85,3 +85,16 @@ export const initialVisitNoteEditSchema = z.object({
 })
 
 export type InitialVisitNoteEditValues = z.infer<typeof initialVisitNoteEditSchema>
+
+// --- Initial visit vital signs schema ---
+
+export const initialVisitVitalsSchema = z.object({
+  bp_systolic: z.number().int().min(1).max(300).nullable(),
+  bp_diastolic: z.number().int().min(1).max(200).nullable(),
+  heart_rate: z.number().int().min(1).max(300).nullable(),
+  respiratory_rate: z.number().int().min(1).max(60).nullable(),
+  temperature_f: z.number().min(90).max(110).nullable(),
+  spo2_percent: z.number().int().min(0).max(100).nullable(),
+})
+
+export type InitialVisitVitalsValues = z.infer<typeof initialVisitVitalsSchema>

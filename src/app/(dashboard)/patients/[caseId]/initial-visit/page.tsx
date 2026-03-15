@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getInitialVisitNote, checkNotePrerequisites } from '@/actions/initial-visit-notes'
+import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals } from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfile, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
 
@@ -7,9 +7,10 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
   const { caseId } = await params
   const supabase = await createClient()
 
-  const [noteResult, prereqResult, clinicResult, providerResult, logoResult, signatureResult, caseRes] = await Promise.all([
+  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult, caseRes] = await Promise.all([
     getInitialVisitNote(caseId),
     checkNotePrerequisites(caseId),
+    getInitialVisitVitals(caseId),
     getClinicSettings(),
     getProviderProfile(),
     getClinicLogoUrl(),
@@ -55,6 +56,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       note={note ?? null}
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
+      initialVitals={vitalsResult.data ?? null}
       clinicSettings={clinicResult.data ?? null}
       providerProfile={providerResult.data ?? null}
       clinicLogoUrl={logoResult.url ?? null}
