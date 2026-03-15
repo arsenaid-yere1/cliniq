@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Form,
   FormControl,
@@ -176,13 +177,31 @@ export function InitialVisitEditor({
   // A note row may exist with only rom_data/vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
 
-  // No note or pre-generation note — show vitals card + ROM + generate button
+  // No note or pre-generation note — show tabs + generate button
   if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
-        <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
-        <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isClosed={isClosed} />
+
+        <Tabs defaultValue="vitals">
+          <TabsList>
+            <TabsTrigger value="vitals">
+              <Heart className="h-3.5 w-3.5 mr-1.5" />
+              Vital Signs
+            </TabsTrigger>
+            <TabsTrigger value="rom">
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              Range of Motion
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="vitals" className="mt-4">
+            <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+          </TabsContent>
+          <TabsContent value="rom" className="mt-4">
+            <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isClosed={isClosed} />
+          </TabsContent>
+        </Tabs>
+
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
@@ -276,7 +295,7 @@ export function InitialVisitEditor({
     )
   }
 
-  // Draft state — editable form
+  // Draft state — editable form with tabs
   return (
     <DraftEditor
       caseId={caseId}
@@ -292,7 +311,7 @@ export function InitialVisitEditor({
   )
 }
 
-// --- Vital Signs Card ---
+// --- Vital Signs Content (no Card wrapper — used inside tabs) ---
 
 function VitalSignsCard({
   caseId,
@@ -328,10 +347,6 @@ function VitalSignsCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Heart className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">Vital Signs</CardTitle>
-        </div>
         <CardDescription>
           Record vital signs for this visit. These will be included in the generated note.
         </CardDescription>
@@ -509,10 +524,6 @@ function RomInputCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base">Range of Motion</CardTitle>
-        </div>
         <CardDescription>
           Record ROM measurements for each affected region. These will be included in the generated note.
         </CardDescription>
@@ -826,68 +837,92 @@ function DraftEditor({
         </div>
       </div>
 
-      <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
-      <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
+      <Tabs defaultValue="note">
+        <TabsList>
+          <TabsTrigger value="note">
+            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            Note Sections
+          </TabsTrigger>
+          <TabsTrigger value="vitals">
+            <Heart className="h-3.5 w-3.5 mr-1.5" />
+            Vital Signs
+          </TabsTrigger>
+          <TabsTrigger value="rom">
+            <Activity className="h-3.5 w-3.5 mr-1.5" />
+            Range of Motion
+          </TabsTrigger>
+        </TabsList>
 
-      <Form {...form}>
-        <form className="space-y-6">
-          {initialVisitSections.map((section) => (
-            <FormField
-              key={section}
-              control={form.control}
-              name={section}
-              render={({ field }) => (
-                <FormItem>
-                  <div className="flex items-center justify-between">
-                    <FormLabel className="text-base font-semibold">
-                      {sectionLabels[section]}
-                    </FormLabel>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={isClosed || isPending}
-                        >
-                          {regeneratingSection === section ? (
-                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                          )}
-                          Regenerate
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Regenerate Section</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This will replace the current content of &ldquo;{sectionLabels[section]}&rdquo; with newly generated content. Other sections will not be affected. Continue?
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleRegenerate(section)}>
-                            Regenerate
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      rows={sectionRows[section]}
-                      className="resize-y"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          ))}
-        </form>
-      </Form>
+        <TabsContent value="note" className="mt-4">
+          <Form {...form}>
+            <form className="space-y-6">
+              {initialVisitSections.map((section) => (
+                <FormField
+                  key={section}
+                  control={form.control}
+                  name={section}
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-base font-semibold">
+                          {sectionLabels[section]}
+                        </FormLabel>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={isClosed || isPending}
+                            >
+                              {regeneratingSection === section ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                              )}
+                              Regenerate
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Regenerate Section</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will replace the current content of &ldquo;{sectionLabels[section]}&rdquo; with newly generated content. Other sections will not be affected. Continue?
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleRegenerate(section)}>
+                                Regenerate
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={sectionRows[section]}
+                          className="resize-y"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ))}
+            </form>
+          </Form>
+        </TabsContent>
+
+        <TabsContent value="vitals" className="mt-4">
+          <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+        </TabsContent>
+
+        <TabsContent value="rom" className="mt-4">
+          <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
