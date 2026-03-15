@@ -514,43 +514,47 @@ function RomInputCard({
           Record ROM measurements for each affected region. These will be included in the generated note.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {regionsArray.fields.map((regionField, regionIndex) => (
-          <RomRegionSection
-            key={regionField.id}
-            form={form}
-            regionIndex={regionIndex}
-            onRemoveRegion={() => regionsArray.remove(regionIndex)}
-            isClosed={isClosed}
-          />
-        ))}
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-6">
+            {regionsArray.fields.map((regionField, regionIndex) => (
+              <RomRegionSection
+                key={regionField.id}
+                form={form}
+                regionIndex={regionIndex}
+                onRemoveRegion={() => regionsArray.remove(regionIndex)}
+                isClosed={isClosed}
+              />
+            ))}
 
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => regionsArray.append({
-              region: '',
-              movements: [{ movement: '', normal: null, actual: null, pain: false }],
-            })}
-            disabled={isClosed}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Region
-          </Button>
-          <div className="flex-1" />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleSaveRom}
-            disabled={isClosed || isSaving}
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save ROM
-          </Button>
-        </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => regionsArray.append({
+                  region: '',
+                  movements: [{ movement: '', normal: null, actual: null, pain: false }],
+                })}
+                disabled={isClosed}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Region
+              </Button>
+              <div className="flex-1" />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveRom}
+                disabled={isClosed || isSaving}
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save ROM
+              </Button>
+            </div>
+          </div>
+        </Form>
       </CardContent>
     </Card>
   )
