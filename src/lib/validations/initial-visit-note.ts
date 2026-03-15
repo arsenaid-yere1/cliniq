@@ -136,6 +136,15 @@ export const defaultRomData: InitialVisitRomValues = [
     ],
   },
   {
+    region: 'Thoracic Spine',
+    movements: [
+      { movement: 'Flexion', normal: 45, actual: null, pain: false },
+      { movement: 'Extension', normal: 25, actual: null, pain: false },
+      { movement: 'Left Rotation', normal: 30, actual: null, pain: false },
+      { movement: 'Right Rotation', normal: 30, actual: null, pain: false },
+    ],
+  },
+  {
     region: 'Lumbar Spine',
     movements: [
       { movement: 'Flexion', normal: 60, actual: null, pain: false },
@@ -144,6 +153,64 @@ export const defaultRomData: InitialVisitRomValues = [
       { movement: 'Right Lateral Flexion', normal: 25, actual: null, pain: false },
       { movement: 'Left Rotation', normal: 30, actual: null, pain: false },
       { movement: 'Right Rotation', normal: 30, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Left Shoulder',
+    movements: [
+      { movement: 'Flexion', normal: 180, actual: null, pain: false },
+      { movement: 'Extension', normal: 60, actual: null, pain: false },
+      { movement: 'Abduction', normal: 180, actual: null, pain: false },
+      { movement: 'Adduction', normal: 45, actual: null, pain: false },
+      { movement: 'Internal Rotation', normal: 70, actual: null, pain: false },
+      { movement: 'External Rotation', normal: 90, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Right Shoulder',
+    movements: [
+      { movement: 'Flexion', normal: 180, actual: null, pain: false },
+      { movement: 'Extension', normal: 60, actual: null, pain: false },
+      { movement: 'Abduction', normal: 180, actual: null, pain: false },
+      { movement: 'Adduction', normal: 45, actual: null, pain: false },
+      { movement: 'Internal Rotation', normal: 70, actual: null, pain: false },
+      { movement: 'External Rotation', normal: 90, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Left Knee',
+    movements: [
+      { movement: 'Flexion', normal: 140, actual: null, pain: false },
+      { movement: 'Extension', normal: 0, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Right Knee',
+    movements: [
+      { movement: 'Flexion', normal: 140, actual: null, pain: false },
+      { movement: 'Extension', normal: 0, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Left Hip',
+    movements: [
+      { movement: 'Flexion', normal: 120, actual: null, pain: false },
+      { movement: 'Extension', normal: 30, actual: null, pain: false },
+      { movement: 'Abduction', normal: 45, actual: null, pain: false },
+      { movement: 'Adduction', normal: 30, actual: null, pain: false },
+      { movement: 'Internal Rotation', normal: 45, actual: null, pain: false },
+      { movement: 'External Rotation', normal: 45, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Right Hip',
+    movements: [
+      { movement: 'Flexion', normal: 120, actual: null, pain: false },
+      { movement: 'Extension', normal: 30, actual: null, pain: false },
+      { movement: 'Abduction', normal: 45, actual: null, pain: false },
+      { movement: 'Adduction', normal: 30, actual: null, pain: false },
+      { movement: 'Internal Rotation', normal: 45, actual: null, pain: false },
+      { movement: 'External Rotation', normal: 45, actual: null, pain: false },
     ],
   },
 ]
