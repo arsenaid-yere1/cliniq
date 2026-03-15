@@ -98,3 +98,52 @@ export const initialVisitVitalsSchema = z.object({
 })
 
 export type InitialVisitVitalsValues = z.infer<typeof initialVisitVitalsSchema>
+
+// --- ROM measurement schemas ---
+
+export const romMovementSchema = z.object({
+  movement: z.string().min(1, 'Movement is required'),
+  normal: z.number().int().min(0).max(360).nullable(),
+  actual: z.number().int().min(0).max(360).nullable(),
+  pain: z.boolean(),
+})
+
+export type RomMovement = z.infer<typeof romMovementSchema>
+
+export const romRegionSchema = z.object({
+  region: z.string().min(1, 'Region is required'),
+  movements: z.array(romMovementSchema).min(1, 'At least one movement is required'),
+})
+
+export type RomRegion = z.infer<typeof romRegionSchema>
+
+export const initialVisitRomSchema = z.array(romRegionSchema)
+
+export type InitialVisitRomValues = z.infer<typeof initialVisitRomSchema>
+
+// --- Default ROM template (pre-populated for new entries) ---
+
+export const defaultRomData: InitialVisitRomValues = [
+  {
+    region: 'Cervical Spine',
+    movements: [
+      { movement: 'Flexion', normal: 60, actual: null, pain: false },
+      { movement: 'Extension', normal: 75, actual: null, pain: false },
+      { movement: 'Left Lateral Flexion', normal: 45, actual: null, pain: false },
+      { movement: 'Right Lateral Flexion', normal: 45, actual: null, pain: false },
+      { movement: 'Left Rotation', normal: 80, actual: null, pain: false },
+      { movement: 'Right Rotation', normal: 80, actual: null, pain: false },
+    ],
+  },
+  {
+    region: 'Lumbar Spine',
+    movements: [
+      { movement: 'Flexion', normal: 60, actual: null, pain: false },
+      { movement: 'Extension', normal: 25, actual: null, pain: false },
+      { movement: 'Left Lateral Flexion', normal: 25, actual: null, pain: false },
+      { movement: 'Right Lateral Flexion', normal: 25, actual: null, pain: false },
+      { movement: 'Left Rotation', normal: 30, actual: null, pain: false },
+      { movement: 'Right Rotation', normal: 30, actual: null, pain: false },
+    ],
+  },
+]

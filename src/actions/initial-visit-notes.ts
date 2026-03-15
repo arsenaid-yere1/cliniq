@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
-import { initialVisitNoteEditSchema, initialVisitVitalsSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues } from '@/lib/validations/initial-visit-note'
+import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
@@ -20,6 +20,7 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   userId: string,
+  romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   const [caseRes, summaryRes, clinicRes, providerRes, vitalsRes] = await Promise.all([
     supabase
@@ -110,6 +111,7 @@ async function gatherSourceData(
         npi_number: providerRes.data?.npi_number ?? null,
       },
       vitalSigns: vitalsRes.data ?? null,
+      romData: romData ?? null,
     },
     error: null,
   }
@@ -125,8 +127,18 @@ export async function generateInitialVisitNote(caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Gather source data
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id)
+  // Read ROM data from existing note before soft-deleting
+  const { data: existingNote } = await supabase
+    .from('initial_visit_notes')
+    .select('rom_data')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
+
+  // Gather source data (include ROM)
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id, preservedRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   // Soft-delete existing note
@@ -136,7 +148,7 @@ export async function generateInitialVisitNote(caseId: string) {
     .eq('case_id', caseId)
     .is('deleted_at', null)
 
-  // Insert generating record
+  // Insert generating record (carry ROM data forward)
   const sourceHash = computeSourceHash(inputData)
   const { data: record, error: insertError } = await supabase
     .from('initial_visit_notes')
@@ -145,6 +157,7 @@ export async function generateInitialVisitNote(caseId: string) {
       status: 'generating',
       generation_attempts: 1,
       source_data_hash: sourceHash,
+      rom_data: preservedRom,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -414,8 +427,9 @@ export async function regenerateNoteSection(caseId: string, section: InitialVisi
 
   if (fetchError || !note) return { error: 'No draft note found' }
 
-  // Gather fresh source data
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id)
+  // Gather fresh source data (include ROM from note row)
+  const noteRom = note.rom_data as InitialVisitRomValues | null
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id, noteRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
@@ -529,6 +543,75 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
       })
 
     if (error) return { error: 'Failed to save vitals' }
+  }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
+
+// --- Get ROM data ---
+
+export async function getInitialVisitRom(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('initial_visit_notes')
+    .select('rom_data')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (error) return { error: 'Failed to fetch ROM data' }
+
+  return { data: (data?.rom_data as InitialVisitRomValues | null) ?? null }
+}
+
+// --- Save ROM data ---
+
+export async function saveInitialVisitRom(caseId: string, romData: InitialVisitRomValues) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const validated = initialVisitRomSchema.safeParse(romData)
+  if (!validated.success) return { error: 'Invalid ROM data' }
+
+  // Check for existing active note
+  const { data: existing } = await supabase
+    .from('initial_visit_notes')
+    .select('id')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .update({
+        rom_data: validated.data as unknown as Record<string, unknown>,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existing.id)
+
+    if (error) return { error: 'Failed to update ROM data' }
+  } else {
+    // Create a new draft note with only ROM data
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        status: 'draft',
+        rom_data: validated.data as unknown as Record<string, unknown>,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+
+    if (error) return { error: 'Failed to save ROM data' }
   }
 
   revalidatePath(`/patients/${caseId}`)

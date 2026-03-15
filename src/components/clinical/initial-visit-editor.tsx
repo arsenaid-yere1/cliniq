@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,16 +39,20 @@ import {
   unfinalizeInitialVisitNote,
   regenerateNoteSection,
   saveInitialVisitVitals,
+  saveInitialVisitRom,
 } from '@/actions/initial-visit-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
+  initialVisitRomSchema,
   initialVisitSections,
   sectionLabels,
+  defaultRomData,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
   type InitialVisitVitalsValues,
+  type InitialVisitRomValues,
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 
@@ -75,6 +79,7 @@ interface NoteRow {
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
+  rom_data: unknown
 }
 
 interface ClinicSettings {
@@ -121,6 +126,7 @@ interface InitialVisitEditorProps {
   canGenerate: boolean
   prerequisiteReason?: string
   initialVitals: VitalsData | null
+  initialRom: InitialVisitRomValues | null
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
@@ -154,6 +160,7 @@ export function InitialVisitEditor({
   canGenerate,
   prerequisiteReason,
   initialVitals,
+  initialRom,
   clinicSettings,
   providerProfile,
   clinicLogoUrl,
@@ -172,6 +179,7 @@ export function InitialVisitEditor({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
         <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+        <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
@@ -271,6 +279,7 @@ export function InitialVisitEditor({
       caseId={caseId}
       note={note}
       initialVitals={initialVitals}
+      initialRom={initialRom}
       isPending={isPending}
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
@@ -457,12 +466,247 @@ function VitalSignsCard({
   )
 }
 
+// --- ROM Input Card ---
+
+function RomInputCard({
+  caseId,
+  initialRom,
+  isClosed,
+}: {
+  caseId: string
+  initialRom: InitialVisitRomValues | null
+  isClosed: boolean
+}) {
+  const [isSaving, startSaving] = useTransition()
+  const form = useForm<{ rom: InitialVisitRomValues }>({
+    defaultValues: {
+      rom: initialRom ?? defaultRomData,
+    },
+  })
+
+  const regionsArray = useFieldArray({
+    control: form.control,
+    name: 'rom',
+  })
+
+  function handleSaveRom() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const validated = initialVisitRomSchema.safeParse(values.rom)
+      if (!validated.success) {
+        toast.error('Invalid ROM data')
+        return
+      }
+      const result = await saveInitialVisitRom(caseId, validated.data)
+      if (result.error) toast.error(result.error)
+      else toast.success('ROM data saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">Range of Motion</CardTitle>
+        </div>
+        <CardDescription>
+          Record ROM measurements for each affected region. These will be included in the generated note.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {regionsArray.fields.map((regionField, regionIndex) => (
+          <RomRegionSection
+            key={regionField.id}
+            form={form}
+            regionIndex={regionIndex}
+            onRemoveRegion={() => regionsArray.remove(regionIndex)}
+            isClosed={isClosed}
+          />
+        ))}
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => regionsArray.append({
+              region: '',
+              movements: [{ movement: '', normal: null, actual: null, pain: false }],
+            })}
+            disabled={isClosed}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Region
+          </Button>
+          <div className="flex-1" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleSaveRom}
+            disabled={isClosed || isSaving}
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Save ROM
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// --- ROM Region Section (nested field array) ---
+
+function RomRegionSection({
+  form,
+  regionIndex,
+  onRemoveRegion,
+  isClosed,
+}: {
+  form: ReturnType<typeof useForm<{ rom: InitialVisitRomValues }>>
+  regionIndex: number
+  onRemoveRegion: () => void
+  isClosed: boolean
+}) {
+  const movementsArray = useFieldArray({
+    control: form.control,
+    name: `rom.${regionIndex}.movements`,
+  })
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <FormField
+          control={form.control}
+          name={`rom.${regionIndex}.region`}
+          render={({ field }) => (
+            <FormItem className="flex-1">
+              <FormControl>
+                <Input
+                  placeholder="Region (e.g., Cervical Spine)"
+                  className="font-semibold"
+                  {...field}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+          onClick={onRemoveRegion}
+          disabled={isClosed}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {movementsArray.fields.length > 0 && (
+        <div className="space-y-1">
+          <div className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 text-xs text-muted-foreground px-1">
+            <span>Movement</span>
+            <span>Normal (°)</span>
+            <span>Actual (°)</span>
+            <span>Pain</span>
+            <span />
+          </div>
+          {movementsArray.fields.map((movField, movIndex) => (
+            <div key={movField.id} className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 items-center">
+              <FormField
+                control={form.control}
+                name={`rom.${regionIndex}.movements.${movIndex}.movement`}
+                render={({ field }) => (
+                  <FormControl>
+                    <Input className="h-8 text-sm" placeholder="e.g. Flexion" {...field} />
+                  </FormControl>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`rom.${regionIndex}.movements.${movIndex}.normal`}
+                render={({ field }) => (
+                  <FormControl>
+                    <Input
+                      className="h-8 text-sm"
+                      type="number"
+                      placeholder="°"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`rom.${regionIndex}.movements.${movIndex}.actual`}
+                render={({ field }) => (
+                  <FormControl>
+                    <Input
+                      className="h-8 text-sm"
+                      type="number"
+                      placeholder="°"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name={`rom.${regionIndex}.movements.${movIndex}.pain`}
+                render={({ field }) => (
+                  <FormControl>
+                    <select
+                      className="h-8 text-sm border rounded px-1 w-full"
+                      value={field.value ? 'Y' : 'N'}
+                      onChange={(e) => field.onChange(e.target.value === 'Y')}
+                    >
+                      <option value="N">No</option>
+                      <option value="Y">Yes</option>
+                    </select>
+                  </FormControl>
+                )}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => movementsArray.remove(movIndex)}
+                disabled={isClosed}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs"
+        onClick={() => movementsArray.append({ movement: '', normal: null, actual: null, pain: false })}
+        disabled={isClosed}
+      >
+        <Plus className="h-3 w-3 mr-1" />
+        Add Movement
+      </Button>
+    </div>
+  )
+}
+
 // --- Draft Editor ---
 
 function DraftEditor({
   caseId,
   note,
   initialVitals,
+  initialRom,
   isPending,
   startTransition,
   regeneratingSection,
@@ -472,6 +716,7 @@ function DraftEditor({
   caseId: string
   note: NoteRow
   initialVitals: VitalsData | null
+  initialRom: InitialVisitRomValues | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   regeneratingSection: InitialVisitSection | null
@@ -575,6 +820,7 @@ function DraftEditor({
       </div>
 
       <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+      <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
 
       <Form {...form}>
         <form className="space-y-6">
