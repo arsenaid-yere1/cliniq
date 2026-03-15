@@ -173,13 +173,16 @@ export function InitialVisitEditor({
   const caseStatus = useCaseStatus()
   const isClosed = caseStatus === 'closed'
 
-  // No note — show vitals card + generate button
-  if (!note) {
+  // A note row may exist with only rom_data/vitals but no generated sections yet
+  const hasGeneratedContent = note?.introduction || note?.chief_complaint
+
+  // No note or pre-generation note — show vitals card + ROM + generate button
+  if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
         <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
-        <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
+        <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isClosed={isClosed} />
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
