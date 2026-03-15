@@ -300,10 +300,10 @@ export async function reopenCase(caseId: string) {
 - [x] App builds: `npm run build`
 
 #### Manual Verification:
-- [ ] Closing a case still works via existing UI (uses thin wrapper)
-- [ ] Reopening a case still works
-- [ ] Closing without a finalized discharge note shows error
-- [ ] Timeline shows status change entries
+- [x] Closing a case still works via existing UI (uses thin wrapper)
+- [x] Reopening a case still works
+- [x] Closing without a finalized discharge note shows error
+- [x] Timeline shows status change entries
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 3.
 
@@ -508,9 +508,9 @@ The 21 files to update:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npx tsc --noEmit`
-- [ ] No unused imports/variables: `npm run lint`
-- [ ] App builds: `npm run build`
+- [x] TypeScript compiles: `npx tsc --noEmit`
+- [x] No unused imports/variables: `npm run lint` (pre-existing issues only)
+- [x] App builds: `npm run build`
 
 #### Manual Verification:
 - [ ] Case overview shows "Change Status" dropdown button

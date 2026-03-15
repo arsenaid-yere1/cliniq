@@ -11,6 +11,7 @@ import { DocumentCard } from '@/components/documents/document-card'
 import { UploadSheet } from '@/components/documents/upload-sheet'
 import { listDocuments } from '@/actions/documents'
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 const docTypeOptions = [
   { value: 'all', label: 'All Types' },
@@ -55,7 +56,7 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
   const [docType, setDocType] = useState('all')
   const [status, setStatus] = useState('all')
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
   const refreshDocuments = useCallback(async () => {
     const { data } = await listDocuments(caseId)
@@ -103,7 +104,7 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
             className="pl-9"
           />
         </div>
-        <Button onClick={() => setUploadOpen(true)} disabled={isClosed}>
+        <Button onClick={() => setUploadOpen(true)} disabled={isLocked}>
           <Upload className="h-4 w-4 mr-2" />
           Upload Document
         </Button>

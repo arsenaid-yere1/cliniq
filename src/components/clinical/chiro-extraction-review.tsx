@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import dynamic from 'next/dynamic'
 const PdfViewer = dynamic(() => import('@/components/documents/pdf-viewer').then(mod => ({ default: mod.PdfViewer })), { ssr: false })
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { ChiroExtractionForm } from './chiro-extraction-form'
 import { getDocumentPreviewUrl } from '@/actions/documents'
 import { extractChiroReport } from '@/actions/chiro-extractions'
@@ -91,7 +92,7 @@ export function ChiroExtractionReview({
   onBack: () => void
 }) {
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [isReExtracting, setIsReExtracting] = useState(false)
 
@@ -166,7 +167,7 @@ export function ChiroExtractionReview({
           variant="outline"
           size="sm"
           onClick={handleReExtract}
-          disabled={isClosed || isReExtracting}
+          disabled={isLocked || isReExtracting}
         >
           {isReExtracting
             ? <Loader2 className="h-3 w-3 animate-spin mr-1" />

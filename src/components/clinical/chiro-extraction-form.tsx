@@ -21,6 +21,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import {
   chiroReviewFormSchema,
   type ChiroReviewFormValues,
@@ -45,7 +46,7 @@ export function ChiroExtractionForm({
   onActionComplete,
 }: ChiroExtractionFormProps) {
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
@@ -811,7 +812,7 @@ export function ChiroExtractionForm({
                 type="button"
                 variant={isDirty ? 'outline' : 'default'}
                 onClick={handleApprove}
-                disabled={isClosed || isSubmitting}
+                disabled={isLocked || isSubmitting}
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                 Approve
@@ -821,7 +822,7 @@ export function ChiroExtractionForm({
             <Button
               type="submit"
               variant={isDirty || isManualEntry ? 'default' : 'outline'}
-              disabled={isClosed || isSubmitting}
+              disabled={isLocked || isSubmitting}
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               {isManualEntry ? 'Save' : 'Save & Approve'}
@@ -832,7 +833,7 @@ export function ChiroExtractionForm({
                 type="button"
                 variant="destructive"
                 onClick={() => setRejectDialogOpen(true)}
-                disabled={isClosed || isSubmitting}
+                disabled={isLocked || isSubmitting}
               >
                 Reject
               </Button>
@@ -859,7 +860,7 @@ export function ChiroExtractionForm({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleReject}
-              disabled={isClosed || !rejectReason.trim() || isSubmitting}
+              disabled={isLocked || !rejectReason.trim() || isSubmitting}
             >
               Reject
             </AlertDialogAction>

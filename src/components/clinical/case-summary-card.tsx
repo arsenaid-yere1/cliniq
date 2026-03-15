@@ -17,6 +17,7 @@ import type {
   CaseSummaryEditValues,
 } from '@/lib/validations/case-summary'
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 const reviewStatusColors: Record<string, string> = {
   pending_review: '',
@@ -71,7 +72,7 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
   const [isPending, startTransition] = useTransition()
   const [editOpen, setEditOpen] = useState(false)
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
   function handleGenerate() {
     startTransition(async () => {
@@ -118,7 +119,7 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
             <p className="text-sm text-muted-foreground">
               No summary generated yet. Approve at least one clinical extraction to generate a summary.
             </p>
-            <Button onClick={handleGenerate} disabled={isClosed || isPending}>
+            <Button onClick={handleGenerate} disabled={isLocked || isPending}>
               {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
               Generate Summary
             </Button>
@@ -160,7 +161,7 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
             <AlertTriangle className="h-4 w-4 shrink-0" />
             {summary.generation_error || 'Summary generation failed.'}
           </div>
-          <Button onClick={handleRegenerate} disabled={isClosed || isPending} variant="outline">
+          <Button onClick={handleRegenerate} disabled={isLocked || isPending} variant="outline">
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Retry
           </Button>
@@ -217,17 +218,17 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
           </div>
           <div className="flex items-center gap-2">
             {showApprove && (
-              <Button variant="outline" size="sm" onClick={handleApprove} disabled={isClosed || isPending}>
+              <Button variant="outline" size="sm" onClick={handleApprove} disabled={isLocked || isPending}>
                 {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />}
                 Approve
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={isClosed}>
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={isLocked}>
               <Pencil className="h-3 w-3 mr-1" />
               Edit
             </Button>
             {showRegenerate && (
-              <Button variant="outline" size="sm" onClick={handleRegenerate} disabled={isClosed || isPending}>
+              <Button variant="outline" size="sm" onClick={handleRegenerate} disabled={isLocked || isPending}>
                 {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
                 Regenerate
               </Button>

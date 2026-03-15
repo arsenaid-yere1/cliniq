@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil } from 'lucide-react'
-import { CaseActions } from '@/components/patients/case-actions'
+import { StatusChangeDropdown } from '@/components/patients/status-change-dropdown'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
 
 interface CaseOverviewProps {
@@ -68,7 +69,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
   const [editOpen, setEditOpen] = useState(false)
   const patient = caseData.patient
   const attorney = caseData.attorney
-  const isClosed = caseData.case_status === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseData.case_status as CaseStatus)
 
   const address = patient
     ? [patient.address_line1, patient.address_line2, patient.city, patient.state, patient.zip_code]
@@ -83,15 +84,15 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
           <CardTitle>Case Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          {isClosed && (
+          {isLocked && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
               <Lock className="h-4 w-4 shrink-0" />
-              This case is closed. No modifications are allowed until it is reopened.
+              This case is {caseData.case_status === 'archived' ? 'archived' : 'closed'}. No modifications are allowed until it is reopened.
             </div>
           )}
           <div className="flex gap-3 flex-wrap">
             {quickActions.map((action) => {
-              return isClosed ? (
+              return isLocked ? (
                 <Button key={action.label} variant="outline" disabled>
                   <action.icon className="h-4 w-4 mr-2" />
                   {action.label}
@@ -105,7 +106,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
                 </Button>
               )
             })}
-            <CaseActions caseId={caseData.id} caseStatus={caseData.case_status} />
+            <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} />
           </div>
         </CardContent>
       </Card>
@@ -113,7 +114,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Case Summary</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={isClosed}>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={isLocked}>
             <Pencil className="h-3 w-3 mr-1" />
             Edit
           </Button>

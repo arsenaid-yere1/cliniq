@@ -28,6 +28,7 @@ import {
 import { RecordProcedureDialog, type ProcedureInitialData } from './record-procedure-dialog'
 import { getProcedureById } from '@/actions/procedures'
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 interface Procedure {
   id: string
@@ -157,7 +158,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
   async function handleEditClick(id: string) {
     setLoadingId(id)
@@ -186,7 +187,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        {!isClosed && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} />}
+        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} />}
       </div>
 
       {editingProcedure && (
@@ -255,7 +256,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
                       <Button
                         variant="ghost"
                         size="sm"
-                        disabled={isClosed || loadingId === row.original.id}
+                        disabled={isLocked || loadingId === row.original.id}
                         onClick={() => handleEditClick(row.original.id)}
                       >
                         {loadingId === row.original.id

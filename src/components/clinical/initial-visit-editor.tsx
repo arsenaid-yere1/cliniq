@@ -56,6 +56,7 @@ import {
   type InitialVisitRomValues,
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 interface NoteRow {
   id: string
@@ -172,7 +173,7 @@ export function InitialVisitEditor({
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
   const caseStatus = useCaseStatus()
-  const isClosed = caseStatus === 'closed'
+  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
   // A note row may exist with only rom_data/vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
@@ -195,10 +196,10 @@ export function InitialVisitEditor({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="vitals" className="mt-4">
-            <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+            <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="rom" className="mt-4">
-            <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isClosed={isClosed} />
+            <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
 
@@ -216,7 +217,7 @@ export function InitialVisitEditor({
                 else toast.success('Note generated successfully')
               })
             }}
-            disabled={isClosed || !canGenerate || isPending}
+            disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             Generate Initial Visit Note
@@ -267,7 +268,7 @@ export function InitialVisitEditor({
               else toast.success('Note generated successfully')
             })
           }}
-          disabled={isClosed || isPending}
+          disabled={isLocked || isPending}
         >
           {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
           Retry
@@ -290,7 +291,7 @@ export function InitialVisitEditor({
         documentFilePath={documentFilePath}
         isPending={isPending}
         startTransition={startTransition}
-        isClosed={isClosed}
+        isLocked={isLocked}
       />
     )
   }
@@ -306,7 +307,7 @@ export function InitialVisitEditor({
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
-      isClosed={isClosed}
+      isLocked={isLocked}
     />
   )
 }
@@ -316,11 +317,11 @@ export function InitialVisitEditor({
 function VitalSignsCard({
   caseId,
   initialVitals,
-  isClosed,
+  isLocked,
 }: {
   caseId: string
   initialVitals: VitalsData | null
-  isClosed: boolean
+  isLocked: boolean
 }) {
   const [isSaving, startSaving] = useTransition()
   const vitalsForm = useForm<InitialVisitVitalsValues>({
@@ -472,7 +473,7 @@ function VitalSignsCard({
               variant="outline"
               size="sm"
               onClick={handleSaveVitals}
-              disabled={isClosed || isSaving}
+              disabled={isLocked || isSaving}
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
               Save Vitals
@@ -489,11 +490,11 @@ function VitalSignsCard({
 function RomInputCard({
   caseId,
   initialRom,
-  isClosed,
+  isLocked,
 }: {
   caseId: string
   initialRom: InitialVisitRomValues | null
-  isClosed: boolean
+  isLocked: boolean
 }) {
   const [isSaving, startSaving] = useTransition()
   const form = useForm<{ rom: InitialVisitRomValues }>({
@@ -537,7 +538,7 @@ function RomInputCard({
                 form={form}
                 regionIndex={regionIndex}
                 onRemoveRegion={() => regionsArray.remove(regionIndex)}
-                isClosed={isClosed}
+                isLocked={isLocked}
               />
             ))}
 
@@ -550,7 +551,7 @@ function RomInputCard({
                   region: '',
                   movements: [{ movement: '', normal: null, actual: null, pain: false }],
                 })}
-                disabled={isClosed}
+                disabled={isLocked}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Add Region
@@ -561,7 +562,7 @@ function RomInputCard({
                 variant="outline"
                 size="sm"
                 onClick={handleSaveRom}
-                disabled={isClosed || isSaving}
+                disabled={isLocked || isSaving}
               >
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 Save ROM
@@ -580,12 +581,12 @@ function RomRegionSection({
   form,
   regionIndex,
   onRemoveRegion,
-  isClosed,
+  isLocked,
 }: {
   form: ReturnType<typeof useForm<{ rom: InitialVisitRomValues }>>
   regionIndex: number
   onRemoveRegion: () => void
-  isClosed: boolean
+  isLocked: boolean
 }) {
   const movementsArray = useFieldArray({
     control: form.control,
@@ -616,7 +617,7 @@ function RomRegionSection({
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-destructive"
           onClick={onRemoveRegion}
-          disabled={isClosed}
+          disabled={isLocked}
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -694,7 +695,7 @@ function RomRegionSection({
                 size="icon"
                 className="h-6 w-6"
                 onClick={() => movementsArray.remove(movIndex)}
-                disabled={isClosed}
+                disabled={isLocked}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -709,7 +710,7 @@ function RomRegionSection({
         size="sm"
         className="h-7 text-xs"
         onClick={() => movementsArray.append({ movement: '', normal: null, actual: null, pain: false })}
-        disabled={isClosed}
+        disabled={isLocked}
       >
         <Plus className="h-3 w-3 mr-1" />
         Add Movement
@@ -729,7 +730,7 @@ function DraftEditor({
   startTransition,
   regeneratingSection,
   setRegeneratingSection,
-  isClosed,
+  isLocked,
 }: {
   caseId: string
   note: NoteRow
@@ -739,7 +740,7 @@ function DraftEditor({
   startTransition: (callback: () => Promise<void>) => void
   regeneratingSection: InitialVisitSection | null
   setRegeneratingSection: (s: InitialVisitSection | null) => void
-  isClosed: boolean
+  isLocked: boolean
 }) {
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
@@ -793,13 +794,13 @@ function DraftEditor({
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleSave} disabled={isClosed || isPending}>
+          <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isClosed || isPending}>
+              <Button disabled={isLocked || isPending}>
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize
               </Button>
@@ -873,7 +874,7 @@ function DraftEditor({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              disabled={isClosed || isPending}
+                              disabled={isLocked || isPending}
                             >
                               {regeneratingSection === section ? (
                                 <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -916,11 +917,11 @@ function DraftEditor({
         </TabsContent>
 
         <TabsContent value="vitals" className="mt-4">
-          <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isClosed={isClosed} />
+          <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
         </TabsContent>
 
         <TabsContent value="rom" className="mt-4">
-          <RomInputCard caseId={caseId} initialRom={initialRom} isClosed={isClosed} />
+          <RomInputCard caseId={caseId} initialRom={initialRom} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
     </div>
@@ -940,7 +941,7 @@ function FinalizedView({
   documentFilePath,
   isPending,
   startTransition,
-  isClosed,
+  isLocked,
 }: {
   caseId: string
   note: NoteRow
@@ -952,7 +953,7 @@ function FinalizedView({
   documentFilePath: string | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
-  isClosed: boolean
+  isLocked: boolean
 }) {
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
@@ -992,7 +993,7 @@ function FinalizedView({
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isClosed || isPending}>
+              <Button variant="outline" disabled={isLocked || isPending}>
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
                 Edit
               </Button>
