@@ -13,7 +13,7 @@ import {
   type DischargeNoteEditValues,
   type DischargeNoteSection,
 } from '@/lib/validations/discharge-note'
-import { assertCaseNotClosed } from '@/actions/case-status'
+import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -271,6 +271,8 @@ export async function generateDischargeNote(caseId: string) {
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+
+  await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Check prerequisite
   const prereq = await checkDischargeNotePrerequisites(caseId)

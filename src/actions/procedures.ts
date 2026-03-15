@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
-import { assertCaseNotClosed } from '@/actions/case-status'
+import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -65,6 +65,8 @@ export async function createPrpProcedure(
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+
+  await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Derive procedure number in series
   const { count } = await supabase

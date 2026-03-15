@@ -513,13 +513,13 @@ The 21 files to update:
 - [x] App builds: `npm run build`
 
 #### Manual Verification:
-- [ ] Case overview shows "Change Status" dropdown button
-- [ ] Dropdown shows only valid transitions (e.g., intake shows Active and Closed)
-- [ ] Clicking a transition shows confirmation dialog
-- [ ] Confirming changes the status and shows success toast
-- [ ] Invalid transitions (e.g., closing without discharge) show error toast
-- [ ] Closed/archived cases show locked banner and disable quick actions + edit
-- [ ] All extraction forms, editors, and tables properly disable on closed AND archived cases
+- [x] Case overview shows "Change Status" dropdown button
+- [x] Dropdown shows only valid transitions (e.g., intake shows Active and Closed)
+- [x] Clicking a transition shows confirmation dialog
+- [x] Confirming changes the status and shows success toast
+- [x] Invalid transitions (e.g., closing without discharge) show error toast
+- [x] Closed/archived cases show locked banner and disable quick actions + edit
+- [x] All extraction forms, editors, and tables properly disable on closed AND archived cases
 
 **Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 4.
 
@@ -590,8 +590,8 @@ await autoAdvanceFromIntake(supabase, caseId, user.id)
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npx tsc --noEmit`
-- [ ] App builds: `npm run build`
+- [x] TypeScript compiles: `npx tsc --noEmit`
+- [x] App builds: `npm run build`
 
 #### Manual Verification:
 - [ ] Create a new case (status = intake)

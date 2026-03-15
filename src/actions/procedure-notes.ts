@@ -13,7 +13,7 @@ import {
   type ProcedureNoteEditValues,
   type ProcedureNoteSection,
 } from '@/lib/validations/procedure-note'
-import { assertCaseNotClosed } from '@/actions/case-status'
+import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -242,6 +242,8 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+
+  await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Check prerequisite
   const prereq = await checkProcedureNotePrerequisites(caseId)

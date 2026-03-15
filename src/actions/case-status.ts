@@ -101,6 +101,36 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
   return { data: { success: true } }
 }
 
+// --- Auto-advance from intake on first clinical activity ---
+
+export async function autoAdvanceFromIntake(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+  userId: string,
+) {
+  const { data } = await supabase
+    .from('cases')
+    .select('case_status')
+    .eq('id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (data?.case_status !== 'intake') return
+
+  await supabase
+    .from('cases')
+    .update({ case_status: 'active', updated_by_user_id: userId })
+    .eq('id', caseId)
+
+  await supabase.from('case_status_history').insert({
+    case_id: caseId,
+    previous_status: 'intake',
+    new_status: 'active',
+    changed_by_user_id: userId,
+    notes: 'Auto-advanced: first clinical activity',
+  })
+}
+
 // --- Thin wrappers for existing callers ---
 
 export async function closeCase(caseId: string) {

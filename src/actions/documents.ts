@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
-import { assertCaseNotClosed } from '@/actions/case-status'
+import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 
 export async function listDocuments(caseId: string, filters?: {
   search?: string
@@ -97,6 +97,8 @@ export async function saveDocumentMetadata(input: {
 
   const closedCheck = await assertCaseNotClosed(supabase, input.caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+
+  await autoAdvanceFromIntake(supabase, input.caseId, user.id)
 
   const { data, error } = await supabase
     .from('documents')

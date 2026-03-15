@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
 import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
-import { assertCaseNotClosed } from '@/actions/case-status'
+import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 
 // --- Helper: compute source data hash ---
 
@@ -126,6 +126,8 @@ export async function generateInitialVisitNote(caseId: string) {
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+
+  await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Read ROM data from existing note before soft-deleting
   const { data: existingNote } = await supabase
