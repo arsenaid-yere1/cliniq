@@ -139,6 +139,7 @@ function formatDocType(type: string): string {
     mri_report: 'MRI Report',
     chiro_report: 'Chiropractor Report',
     generated: 'Generated Document',
+    lien_agreement: 'Lien Agreement',
     other: 'Other',
   }
   return labels[type] ?? type

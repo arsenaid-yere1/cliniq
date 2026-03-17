@@ -25,6 +25,7 @@ const docTypeLabels: Record<string, string> = {
   orthopedic_report: 'Orthopedic Report',
   ct_scan: 'CT Scan',
   generated: 'Generated',
+  lien_agreement: 'Lien Agreement',
   other: 'Other',
 }
 
@@ -36,6 +37,7 @@ const docTypeColors: Record<string, string> = {
   orthopedic_report: 'bg-rose-100 text-rose-800 border-rose-200',
   ct_scan: 'bg-amber-100 text-amber-800 border-amber-200',
   generated: 'bg-green-100 text-green-800 border-green-200',
+  lien_agreement: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   other: 'bg-gray-100 text-gray-800 border-gray-200',
 }
 

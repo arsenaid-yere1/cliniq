@@ -62,6 +62,18 @@ export async function updateClinicSettings(formData: ClinicInfoFormValues) {
   return { data: result.data }
 }
 
+export async function listProviderProfiles() {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('provider_profiles')
+    .select('user_id, display_name, credentials')
+    .is('deleted_at', null)
+    .order('display_name')
+
+  if (error) return { data: [] }
+  return { data: data ?? [] }
+}
+
 export async function getProviderProfile() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -84,6 +96,12 @@ export async function updateProviderProfile(formData: ProviderInfoFormValues) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Convert empty string to null for optional UUID fields
+  const profileData = {
+    ...parsed.data,
+    supervising_provider_id: parsed.data.supervising_provider_id || null,
+  }
+
   const { data: existing } = await supabase
     .from('provider_profiles')
     .select('id')
@@ -95,7 +113,7 @@ export async function updateProviderProfile(formData: ProviderInfoFormValues) {
   if (existing) {
     result = await supabase
       .from('provider_profiles')
-      .update({ ...parsed.data, updated_by_user_id: user?.id })
+      .update({ ...profileData, updated_by_user_id: user?.id })
       .eq('id', existing.id)
       .select()
       .single()
@@ -103,7 +121,7 @@ export async function updateProviderProfile(formData: ProviderInfoFormValues) {
     result = await supabase
       .from('provider_profiles')
       .insert({
-        ...parsed.data,
+        ...profileData,
         user_id: user!.id,
         created_by_user_id: user?.id,
         updated_by_user_id: user?.id,

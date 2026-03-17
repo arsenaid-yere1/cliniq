@@ -2161,6 +2161,7 @@ export type Database = {
           license_number: string | null
           npi_number: string | null
           signature_storage_path: string | null
+          supervising_provider_id: string | null
           updated_at: string
           updated_by_user_id: string | null
           user_id: string
@@ -2175,6 +2176,7 @@ export type Database = {
           license_number?: string | null
           npi_number?: string | null
           signature_storage_path?: string | null
+          supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
           user_id: string
@@ -2189,6 +2191,7 @@ export type Database = {
           license_number?: string | null
           npi_number?: string | null
           signature_storage_path?: string | null
+          supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
           user_id?: string
@@ -2197,6 +2200,13 @@ export type Database = {
           {
             foreignKeyName: "provider_profiles_created_by_user_id_fkey"
             columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_profiles_supervising_provider_id_fkey"
+            columns: ["supervising_provider_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]

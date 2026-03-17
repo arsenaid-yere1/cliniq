@@ -30,8 +30,8 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Parallel fetch: invoice+case+patient+attorney, clinic settings, provider profile
-  const [invoiceResult, clinicResult, providerProfileResult] = await Promise.all([
+  // Parallel fetch: invoice+case+patient+attorney, clinic settings
+  const [invoiceResult, clinicResult] = await Promise.all([
     supabase
       .from('invoices')
       .select(`
@@ -51,12 +51,6 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
       .select('*')
       .is('deleted_at', null)
       .maybeSingle(),
-    supabase
-      .from('provider_profiles')
-      .select('display_name, credentials')
-      .eq('user_id', user.id)
-      .is('deleted_at', null)
-      .maybeSingle(),
   ])
 
   if (invoiceResult.error || !invoiceResult.data) {
@@ -65,8 +59,20 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
 
   const invoice = invoiceResult.data
   const clinicSettings = clinicResult.data
-  const providerProfile = providerProfileResult.data
   const caseData = invoice.case as Record<string, unknown> | null
+
+  // Fetch assigned provider profile (not the logged-in user)
+  const assignedProviderId = caseData?.assigned_provider_id as string | null
+  let providerProfile: { display_name: string; credentials: string | null } | null = null
+  if (assignedProviderId) {
+    const { data } = await supabase
+      .from('provider_profiles')
+      .select('display_name, credentials')
+      .eq('user_id', assignedProviderId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    providerProfile = data
+  }
   const patient = (caseData?.patient ?? null) as { first_name: string; last_name: string; date_of_birth: string | null } | null
   const attorney = (caseData?.attorney ?? null) as { first_name: string; last_name: string; firm_name: string | null; address_line1: string | null; address_line2: string | null; city: string | null; state: string | null; zip_code: string | null } | null
 

@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil } from 'lucide-react'
+import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2 } from 'lucide-react'
 import { StatusChangeDropdown } from '@/components/patients/status-change-dropdown'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
+import { generateLienAgreement } from '@/actions/lien'
 
 interface CaseOverviewProps {
   caseData: {
@@ -67,9 +69,40 @@ const quickActions = [
 
 export function CaseOverview({ caseData }: CaseOverviewProps) {
   const [editOpen, setEditOpen] = useState(false)
+  const [generatingLien, setGeneratingLien] = useState(false)
   const patient = caseData.patient
   const attorney = caseData.attorney
   const isLocked = LOCKED_STATUSES.includes(caseData.case_status as CaseStatus)
+
+  async function handleGenerateLien() {
+    if (!caseData.attorney_id) {
+      toast.error('An attorney must be assigned before generating a lien agreement')
+      return
+    }
+    setGeneratingLien(true)
+    try {
+      const result = await generateLienAgreement(caseData.id)
+      if ('error' in result && result.error) {
+        toast.error(result.error)
+        return
+      }
+      if ('data' in result && result.data?.base64) {
+        const bytes = atob(result.data.base64)
+        const arr = new Uint8Array(bytes.length)
+        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+        const blob = new Blob([arr], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'Authorization-and-Lien-Agreement.pdf'
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast.success('Lien agreement generated')
+    } finally {
+      setGeneratingLien(false)
+    }
+  }
 
   const address = patient
     ? [patient.address_line1, patient.address_line2, patient.city, patient.state, patient.zip_code]
@@ -107,6 +140,18 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
               )
             })}
             <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} />
+            <Button
+              variant="outline"
+              onClick={handleGenerateLien}
+              disabled={isLocked || generatingLien || !caseData.attorney_id}
+            >
+              {generatingLien ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileSignature className="h-4 w-4 mr-2" />
+              )}
+              Generate Lien Agreement
+            </Button>
           </div>
         </CardContent>
       </Card>

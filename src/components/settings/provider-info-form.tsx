@@ -15,15 +15,34 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Database } from '@/types/database'
 
 type ProviderProfile = Database['public']['Tables']['provider_profiles']['Row']
 
-interface ProviderInfoFormProps {
-  initialData: ProviderProfile | null
+interface ProviderOption {
+  user_id: string
+  display_name: string
+  credentials: string | null
 }
 
-export function ProviderInfoForm({ initialData }: ProviderInfoFormProps) {
+interface ProviderInfoFormProps {
+  initialData: ProviderProfile | null
+  providerProfiles: ProviderOption[]
+}
+
+export function ProviderInfoForm({ initialData, providerProfiles }: ProviderInfoFormProps) {
+  // Exclude self from supervising provider options
+  const supervisingOptions = providerProfiles.filter(
+    (p) => p.user_id !== initialData?.user_id
+  )
+
   const form = useForm<ProviderInfoFormValues>({
     resolver: zodResolver(providerInfoSchema),
     defaultValues: {
@@ -31,6 +50,7 @@ export function ProviderInfoForm({ initialData }: ProviderInfoFormProps) {
       credentials: initialData?.credentials ?? '',
       license_number: initialData?.license_number ?? '',
       npi_number: initialData?.npi_number ?? '',
+      supervising_provider_id: initialData?.supervising_provider_id ?? '',
     },
     mode: 'onBlur',
   })
@@ -105,6 +125,37 @@ export function ProviderInfoForm({ initialData }: ProviderInfoFormProps) {
             )}
           />
         </div>
+
+        {supervisingOptions.length > 0 && (
+          <FormField
+            control={form.control}
+            name="supervising_provider_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Supervising Provider</FormLabel>
+                <Select
+                  value={field.value ?? ''}
+                  onValueChange={field.onChange}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {supervisingOptions.map((p) => (
+                      <SelectItem key={p.user_id} value={p.user_id}>
+                        {p.display_name}{p.credentials ? `, ${p.credentials}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? 'Saving...' : 'Save Provider Info'}

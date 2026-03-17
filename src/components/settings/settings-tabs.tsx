@@ -13,13 +13,20 @@ type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
 type ProviderProfile = Database['public']['Tables']['provider_profiles']['Row']
 type ServiceCatalogItem = Database['public']['Tables']['service_catalog']['Row']
 
+interface ProviderOption {
+  user_id: string
+  display_name: string
+  credentials: string | null
+}
+
 interface SettingsTabsProps {
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
   serviceCatalog: ServiceCatalogItem[]
+  providerProfiles: ProviderOption[]
 }
 
-export function SettingsTabs({ clinicSettings, providerProfile, serviceCatalog }: SettingsTabsProps) {
+export function SettingsTabs({ clinicSettings, providerProfile, serviceCatalog, providerProfiles }: SettingsTabsProps) {
   return (
     <Tabs defaultValue="clinic-info" className="space-y-6">
       <TabsList>
@@ -36,7 +43,7 @@ export function SettingsTabs({ clinicSettings, providerProfile, serviceCatalog }
       </TabsContent>
 
       <TabsContent value="provider-info">
-        <ProviderInfoForm initialData={providerProfile} />
+        <ProviderInfoForm initialData={providerProfile} providerProfiles={providerProfiles} />
       </TabsContent>
 
       <TabsContent value="clinic-logo">

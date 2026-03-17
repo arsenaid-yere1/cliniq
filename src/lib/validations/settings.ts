@@ -20,6 +20,7 @@ export const providerInfoSchema = z.object({
   credentials: z.string().optional(),
   license_number: z.string().optional(),
   npi_number: z.string().optional(),
+  supervising_provider_id: z.string().uuid().optional().or(z.literal('')),
 })
 
 export type ProviderInfoFormValues = z.infer<typeof providerInfoSchema>

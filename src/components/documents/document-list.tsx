@@ -22,6 +22,7 @@ const docTypeOptions = [
   { value: 'orthopedic_report', label: 'Orthopedic Report' },
   { value: 'ct_scan', label: 'CT Scan Report' },
   { value: 'generated', label: 'Generated' },
+  { value: 'lien_agreement', label: 'Lien Agreement' },
 ]
 
 const statusOptions = [
