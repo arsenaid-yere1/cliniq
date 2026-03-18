@@ -303,9 +303,9 @@ Follow the `AttorneySelect` pattern (`src/components/attorneys/attorney-select.t
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `npm run typecheck`
-- [ ] Linting passes: `npm run lint`
-- [ ] Existing tests pass: `npm test`
+- [x] Type checking passes: `npm run typecheck`
+- [x] Linting passes: `npm run lint` (1 pre-existing error in appearance-form.tsx)
+- [x] Existing tests pass: `npm test`
 
 #### Manual Verification:
 - [ ] Settings → Provider Info shows list of all providers
