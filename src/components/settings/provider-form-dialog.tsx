@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -65,14 +65,28 @@ export function ProviderFormDialog({
   const form = useForm<ProviderInfoFormValues>({
     resolver: zodResolver(providerInfoSchema),
     defaultValues: {
-      display_name: provider?.display_name ?? '',
-      credentials: provider?.credentials ?? '',
-      license_number: provider?.license_number ?? '',
-      npi_number: provider?.npi_number ?? '',
-      supervising_provider_id: provider?.supervising_provider_id ?? '',
+      display_name: '',
+      credentials: '',
+      license_number: '',
+      npi_number: '',
+      supervising_provider_id: '',
     },
     mode: 'onBlur',
   })
+
+  // Reset form when provider changes (switching between add/edit or different providers)
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        display_name: provider?.display_name ?? '',
+        credentials: provider?.credentials ?? '',
+        license_number: provider?.license_number ?? '',
+        npi_number: provider?.npi_number ?? '',
+        supervising_provider_id: provider?.supervising_provider_id ?? '',
+      })
+      setSavedProfileId(provider?.id ?? null)
+    }
+  }, [open, provider, form])
 
   async function onSubmit(values: ProviderInfoFormValues) {
     if (isEditing && provider) {
@@ -97,10 +111,6 @@ export function ProviderFormDialog({
   }
 
   function handleClose(openState: boolean) {
-    if (!openState) {
-      form.reset()
-      setSavedProfileId(provider?.id ?? null)
-    }
     onOpenChange(openState)
   }
 

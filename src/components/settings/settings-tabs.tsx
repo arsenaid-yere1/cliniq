@@ -19,6 +19,7 @@ interface ProviderProfile {
   license_number: string | null
   npi_number: string | null
   supervising_provider_id: string | null
+  signature_storage_path: string | null
 }
 
 interface SettingsTabsProps {

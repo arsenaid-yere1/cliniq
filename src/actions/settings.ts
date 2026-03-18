@@ -66,7 +66,7 @@ export async function listProviderProfiles() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('provider_profiles')
-    .select('id, user_id, display_name, credentials, license_number, npi_number, supervising_provider_id')
+    .select('id, user_id, display_name, credentials, license_number, npi_number, supervising_provider_id, signature_storage_path')
     .is('deleted_at', null)
     .order('display_name')
 
