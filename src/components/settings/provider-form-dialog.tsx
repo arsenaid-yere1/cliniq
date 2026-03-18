@@ -192,8 +192,8 @@ export function ProviderFormDialog({
                   <FormItem>
                     <FormLabel>Supervising Provider</FormLabel>
                     <Select
-                      value={field.value ?? ''}
-                      onValueChange={field.onChange}
+                      value={field.value || 'none'}
+                      onValueChange={(v) => field.onChange(v === 'none' ? '' : v)}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -201,7 +201,7 @@ export function ProviderFormDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {supervisingOptions.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
                             {p.display_name}{p.credentials ? `, ${p.credentials}` : ''}
