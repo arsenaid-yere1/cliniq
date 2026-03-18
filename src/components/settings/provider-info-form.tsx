@@ -27,7 +27,8 @@ import type { Database } from '@/types/database'
 type ProviderProfile = Database['public']['Tables']['provider_profiles']['Row']
 
 interface ProviderOption {
-  user_id: string
+  id: string
+  user_id: string | null
   display_name: string
   credentials: string | null
 }
@@ -40,7 +41,7 @@ interface ProviderInfoFormProps {
 export function ProviderInfoForm({ initialData, providerProfiles }: ProviderInfoFormProps) {
   // Exclude self from supervising provider options
   const supervisingOptions = providerProfiles.filter(
-    (p) => p.user_id !== initialData?.user_id
+    (p) => p.id !== initialData?.id
   )
 
   const form = useForm<ProviderInfoFormValues>({
@@ -56,7 +57,9 @@ export function ProviderInfoForm({ initialData, providerProfiles }: ProviderInfo
   })
 
   async function onSubmit(values: ProviderInfoFormValues) {
-    const result = await updateProviderProfile(values)
+    if (!initialData?.id) return
+
+    const result = await updateProviderProfile(initialData.id, values)
 
     if ('error' in result && result.error) {
       toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
@@ -145,7 +148,7 @@ export function ProviderInfoForm({ initialData, providerProfiles }: ProviderInfo
                   <SelectContent>
                     <SelectItem value="">None</SelectItem>
                     {supervisingOptions.map((p) => (
-                      <SelectItem key={p.user_id} value={p.user_id}>
+                      <SelectItem key={p.id} value={p.id}>
                         {p.display_name}{p.credentials ? `, ${p.credentials}` : ''}
                       </SelectItem>
                     ))}

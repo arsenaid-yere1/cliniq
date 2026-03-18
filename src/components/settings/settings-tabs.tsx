@@ -14,7 +14,8 @@ type ProviderProfile = Database['public']['Tables']['provider_profiles']['Row']
 type ServiceCatalogItem = Database['public']['Tables']['service_catalog']['Row']
 
 interface ProviderOption {
-  user_id: string
+  id: string
+  user_id: string | null
   display_name: string
   credentials: string | null
 }
@@ -51,7 +52,11 @@ export function SettingsTabs({ clinicSettings, providerProfile, serviceCatalog, 
       </TabsContent>
 
       <TabsContent value="signature">
-        <ProviderSignatureUpload initialSignaturePath={providerProfile?.signature_storage_path ?? null} />
+        {providerProfile?.id ? (
+          <ProviderSignatureUpload profileId={providerProfile.id} initialSignaturePath={providerProfile.signature_storage_path ?? null} />
+        ) : (
+          <p className="text-sm text-muted-foreground">Save your provider profile first to upload a signature.</p>
+        )}
       </TabsContent>
 
       <TabsContent value="pricing">

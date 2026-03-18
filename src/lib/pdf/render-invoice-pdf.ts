@@ -68,7 +68,7 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
     const { data } = await supabase
       .from('provider_profiles')
       .select('display_name, credentials')
-      .eq('user_id', assignedProviderId)
+      .eq('id', assignedProviderId)
       .is('deleted_at', null)
       .maybeSingle()
     providerProfile = data

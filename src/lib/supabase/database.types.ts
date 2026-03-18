@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -380,7 +355,7 @@ export type Database = {
             foreignKeyName: "cases_assigned_provider_id_fkey"
             columns: ["assigned_provider_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "provider_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -998,6 +973,7 @@ export type Database = {
           prognosis: string | null
           raw_ai_response: Json | null
           review_of_systems: string | null
+          rom_data: Json | null
           social_history: string | null
           source_data_hash: string | null
           status: string
@@ -1031,6 +1007,7 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
+          rom_data?: Json | null
           social_history?: string | null
           source_data_hash?: string | null
           status?: string
@@ -1064,6 +1041,7 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
+          rom_data?: Json | null
           social_history?: string | null
           source_data_hash?: string | null
           status?: string
@@ -2183,9 +2161,10 @@ export type Database = {
           license_number: string | null
           npi_number: string | null
           signature_storage_path: string | null
+          supervising_provider_id: string | null
           updated_at: string
           updated_by_user_id: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -2197,9 +2176,10 @@ export type Database = {
           license_number?: string | null
           npi_number?: string | null
           signature_storage_path?: string | null
+          supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -2211,9 +2191,10 @@ export type Database = {
           license_number?: string | null
           npi_number?: string | null
           signature_storage_path?: string | null
+          supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -2221,6 +2202,13 @@ export type Database = {
             columns: ["created_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_profiles_supervising_provider_id_fkey"
+            columns: ["supervising_provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -2723,9 +2711,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

@@ -28,7 +28,6 @@ async function gatherProcedureNoteSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   procedureId: string,
   caseId: string,
-  userId: string,
 ): Promise<{ data: ProcedureNoteInputData | null; error: string | null }> {
   const [
     procedureRes,
@@ -39,7 +38,6 @@ async function gatherProcedureNoteSourceData(
     ivNoteRes,
     priorProcedureRes,
     clinicRes,
-    providerRes,
   ] = await Promise.all([
     supabase
       .from('procedures')
@@ -56,7 +54,7 @@ async function gatherProcedureNoteSourceData(
       .maybeSingle(),
     supabase
       .from('cases')
-      .select('case_number, accident_type, accident_date, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+      .select('case_number, accident_type, accident_date, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
       .eq('id', caseId)
       .is('deleted_at', null)
       .single(),
@@ -97,12 +95,6 @@ async function gatherProcedureNoteSourceData(
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
       .is('deleted_at', null)
       .maybeSingle(),
-    supabase
-      .from('provider_profiles')
-      .select('display_name, credentials, npi_number')
-      .eq('user_id', userId)
-      .is('deleted_at', null)
-      .maybeSingle(),
   ])
 
   if (procedureRes.error || !procedureRes.data) {
@@ -110,6 +102,18 @@ async function gatherProcedureNoteSourceData(
   }
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
+  }
+
+  // Fetch provider profile from case's assigned provider
+  const assignedProviderId = caseRes.data.assigned_provider_id as string | null
+  let providerRes: { data: { display_name: string; credentials: string | null; npi_number: string | null } | null } = { data: null }
+  if (assignedProviderId) {
+    providerRes = await supabase
+      .from('provider_profiles')
+      .select('display_name, credentials, npi_number')
+      .eq('id', assignedProviderId)
+      .is('deleted_at', null)
+      .maybeSingle()
   }
 
   const proc = procedureRes.data
@@ -252,7 +256,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   }
 
   // Gather source data
-  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId, user.id)
+  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   // Soft-delete existing note for this procedure
@@ -553,7 +557,7 @@ export async function regenerateProcedureNoteSectionAction(
   if (fetchError || !note) return { error: 'No draft note found' }
 
   // Gather fresh source data
-  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId, user.id)
+  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''

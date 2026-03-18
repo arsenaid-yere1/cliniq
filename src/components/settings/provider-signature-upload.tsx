@@ -8,13 +8,14 @@ import { toast } from 'sonner'
 import { uploadProviderSignature, removeProviderSignature, getProviderSignatureUrl } from '@/actions/settings'
 
 interface ProviderSignatureUploadProps {
+  profileId: string
   initialSignaturePath: string | null
 }
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png']
 const MAX_SIZE = 1 * 1024 * 1024 // 1 MB
 
-export function ProviderSignatureUpload({ initialSignaturePath }: ProviderSignatureUploadProps) {
+export function ProviderSignatureUpload({ profileId, initialSignaturePath }: ProviderSignatureUploadProps) {
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
@@ -23,11 +24,11 @@ export function ProviderSignatureUpload({ initialSignaturePath }: ProviderSignat
 
   useEffect(() => {
     if (!initialSignaturePath) return
-    getProviderSignatureUrl().then((result) => {
+    getProviderSignatureUrl(profileId).then((result) => {
       if (result.url) setSignatureUrl(result.url)
       setIsLoadingPreview(false)
     })
-  }, [initialSignaturePath])
+  }, [initialSignaturePath, profileId])
 
   const handleFileSelect = useCallback(async (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -43,7 +44,7 @@ export function ProviderSignatureUpload({ initialSignaturePath }: ProviderSignat
     const formData = new FormData()
     formData.append('file', file)
 
-    const result = await uploadProviderSignature(formData)
+    const result = await uploadProviderSignature(profileId, formData)
 
     if (result.error) {
       toast.error(result.error)
@@ -51,16 +52,16 @@ export function ProviderSignatureUpload({ initialSignaturePath }: ProviderSignat
       return
     }
 
-    const urlResult = await getProviderSignatureUrl()
+    const urlResult = await getProviderSignatureUrl(profileId)
     if (urlResult.url) setSignatureUrl(urlResult.url)
 
     toast.success('Signature uploaded')
     setIsUploading(false)
-  }, [])
+  }, [profileId])
 
   const handleRemove = useCallback(async () => {
     setIsRemoving(true)
-    const result = await removeProviderSignature()
+    const result = await removeProviderSignature(profileId)
 
     if (result.error) {
       toast.error(result.error)
@@ -71,7 +72,7 @@ export function ProviderSignatureUpload({ initialSignaturePath }: ProviderSignat
     setSignatureUrl(null)
     toast.success('Signature removed')
     setIsRemoving(false)
-  }, [])
+  }, [profileId])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

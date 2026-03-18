@@ -64,7 +64,7 @@ export async function getInvoiceFormData(caseId: string) {
         *,
         patient:patients(*),
         attorney:attorneys(*),
-        provider:users!assigned_provider_id(id, full_name)
+        provider:provider_profiles!assigned_provider_id(id, display_name, credentials)
       `)
       .eq('id', caseId)
       .is('deleted_at', null)
@@ -117,14 +117,14 @@ export async function getInvoiceFormData(caseId: string) {
 
   if (caseResult.error) return { error: caseResult.error.message, data: null }
 
-  // Get provider profile for current user (single-provider clinic — logged-in user IS the provider)
-  const { data: { user } } = await supabase.auth.getUser()
+  // Get provider profile from case's assigned provider
+  const assignedProviderId = caseResult.data?.assigned_provider_id as string | null
   let providerProfile = null
-  if (user) {
+  if (assignedProviderId) {
     const { data } = await supabase
       .from('provider_profiles')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('id', assignedProviderId)
       .is('deleted_at', null)
       .maybeSingle()
     providerProfile = data
@@ -436,8 +436,8 @@ export async function getInvoiceWithContext(invoiceId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', data: null }
 
-  // Parallel fetch: invoice+case+patient+attorney, clinic, provider profile (current user)
-  const [invoiceResult, clinicResult, providerProfileResult] = await Promise.all([
+  // Fetch invoice+case+patient+attorney, clinic
+  const [invoiceResult, clinicResult] = await Promise.all([
     supabase
       .from('invoices')
       .select(`
@@ -457,16 +457,23 @@ export async function getInvoiceWithContext(invoiceId: string) {
       .select('*')
       .is('deleted_at', null)
       .maybeSingle(),
-    // Use current user ID for provider profile (same pattern as getInvoiceFormData)
-    supabase
-      .from('provider_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .is('deleted_at', null)
-      .maybeSingle(),
   ])
 
   if (invoiceResult.error) return { error: invoiceResult.error.message, data: null }
 
-  return { data: { invoice: invoiceResult.data, clinic: clinicResult.data, providerProfile: providerProfileResult.data } }
+  // Get provider profile from case's assigned provider
+  const caseData = invoiceResult.data.case as Record<string, unknown> | null
+  const assignedProviderId = caseData?.assigned_provider_id as string | null
+  let providerProfile = null
+  if (assignedProviderId) {
+    const { data } = await supabase
+      .from('provider_profiles')
+      .select('*')
+      .eq('id', assignedProviderId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    providerProfile = data
+  }
+
+  return { data: { invoice: invoiceResult.data, clinic: clinicResult.data, providerProfile } }
 }

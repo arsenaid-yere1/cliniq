@@ -11,6 +11,16 @@ export default async function DischargePage({
   const { caseId } = await params
   const supabase = await createClient()
 
+  // Fetch case first to get assigned_provider_id for signature lookup
+  const caseRes = await supabase
+    .from('cases')
+    .select('case_number, accident_type, accident_date, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+    .eq('id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  const assignedProviderId = caseRes.data?.assigned_provider_id as string | null
+
   const [
     noteResult,
     prereqResult,
@@ -18,20 +28,13 @@ export default async function DischargePage({
     providerResult,
     logoResult,
     signatureResult,
-    caseRes,
   ] = await Promise.all([
     getDischargeNote(caseId),
     checkDischargeNotePrerequisites(caseId),
     getClinicSettings(),
     getProviderProfile(),
     getClinicLogoUrl(),
-    getProviderSignatureUrl(),
-    supabase
-      .from('cases')
-      .select('case_number, accident_type, accident_date, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
-      .eq('id', caseId)
-      .is('deleted_at', null)
-      .single(),
+    assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])
 
   const caseData = caseRes.data

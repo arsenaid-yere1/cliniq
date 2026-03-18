@@ -66,7 +66,7 @@ export async function listProviderProfiles() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('provider_profiles')
-    .select('user_id, display_name, credentials')
+    .select('id, user_id, display_name, credentials, license_number, npi_number, supervising_provider_id')
     .is('deleted_at', null)
     .order('display_name')
 
@@ -89,51 +89,87 @@ export async function getProviderProfile() {
   return { data }
 }
 
-export async function updateProviderProfile(formData: ProviderInfoFormValues) {
+export async function getProviderProfileById(profileId: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('provider_profiles')
+    .select('*')
+    .eq('id', profileId)
+    .is('deleted_at', null)
+    .single()
+
+  if (error) return { error: error.message }
+  return { data }
+}
+
+export async function createProviderProfile(formData: ProviderInfoFormValues) {
   const parsed = providerInfoSchema.safeParse(formData)
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Convert empty string to null for optional UUID fields
   const profileData = {
     ...parsed.data,
     supervising_provider_id: parsed.data.supervising_provider_id || null,
   }
 
-  const { data: existing } = await supabase
+  const result = await supabase
     .from('provider_profiles')
-    .select('id')
-    .eq('user_id', user!.id)
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  let result
-  if (existing) {
-    result = await supabase
-      .from('provider_profiles')
-      .update({ ...profileData, updated_by_user_id: user?.id })
-      .eq('id', existing.id)
-      .select()
-      .single()
-  } else {
-    result = await supabase
-      .from('provider_profiles')
-      .insert({
-        ...profileData,
-        user_id: user!.id,
-        created_by_user_id: user?.id,
-        updated_by_user_id: user?.id,
-      })
-      .select()
-      .single()
-  }
+    .insert({
+      ...profileData,
+      created_by_user_id: user?.id,
+      updated_by_user_id: user?.id,
+    })
+    .select()
+    .single()
 
   if (result.error) return { error: result.error.message }
 
   revalidatePath('/settings')
   return { data: result.data }
+}
+
+export async function updateProviderProfile(profileId: string, formData: ProviderInfoFormValues) {
+  const parsed = providerInfoSchema.safeParse(formData)
+  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const profileData = {
+    ...parsed.data,
+    supervising_provider_id: parsed.data.supervising_provider_id || null,
+  }
+
+  const result = await supabase
+    .from('provider_profiles')
+    .update({ ...profileData, updated_by_user_id: user?.id })
+    .eq('id', profileId)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (result.error) return { error: result.error.message }
+
+  revalidatePath('/settings')
+  return { data: result.data }
+}
+
+export async function deleteProviderProfile(profileId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await supabase
+    .from('provider_profiles')
+    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user?.id })
+    .eq('id', profileId)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/settings')
+  return { success: true }
 }
 
 export async function uploadClinicLogo(formData: FormData) {
@@ -258,7 +294,7 @@ export async function getClinicLogoUrl() {
   return { url: data.signedUrl }
 }
 
-export async function uploadProviderSignature(formData: FormData) {
+export async function uploadProviderSignature(profileId: string, formData: FormData) {
   const file = formData.get('file') as File | null
   if (!file) return { error: 'No file provided' }
 
@@ -276,12 +312,14 @@ export async function uploadProviderSignature(formData: FormData) {
   const { data: existing } = await supabase
     .from('provider_profiles')
     .select('id, signature_storage_path')
-    .eq('user_id', user!.id)
+    .eq('id', profileId)
     .is('deleted_at', null)
-    .maybeSingle()
+    .single()
+
+  if (!existing) return { error: 'Provider profile not found' }
 
   // Remove old signature file if one exists
-  if (existing?.signature_storage_path) {
+  if (existing.signature_storage_path) {
     await supabase.storage
       .from(CLINIC_ASSETS_BUCKET)
       .remove([existing.signature_storage_path])
@@ -299,30 +337,15 @@ export async function uploadProviderSignature(formData: FormData) {
 
   if (uploadError) return { error: uploadError.message }
 
-  let result
-  if (existing) {
-    result = await supabase
-      .from('provider_profiles')
-      .update({
-        signature_storage_path: storagePath,
-        updated_by_user_id: user?.id,
-      })
-      .eq('id', existing.id)
-      .select()
-      .single()
-  } else {
-    result = await supabase
-      .from('provider_profiles')
-      .insert({
-        user_id: user!.id,
-        display_name: '',
-        signature_storage_path: storagePath,
-        created_by_user_id: user?.id,
-        updated_by_user_id: user?.id,
-      })
-      .select()
-      .single()
-  }
+  const result = await supabase
+    .from('provider_profiles')
+    .update({
+      signature_storage_path: storagePath,
+      updated_by_user_id: user?.id,
+    })
+    .eq('id', existing.id)
+    .select()
+    .single()
 
   if (result.error) return { error: result.error.message }
 
@@ -330,16 +353,16 @@ export async function uploadProviderSignature(formData: FormData) {
   return { data: result.data }
 }
 
-export async function removeProviderSignature() {
+export async function removeProviderSignature(profileId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: existing } = await supabase
     .from('provider_profiles')
     .select('id, signature_storage_path')
-    .eq('user_id', user!.id)
+    .eq('id', profileId)
     .is('deleted_at', null)
-    .maybeSingle()
+    .single()
 
   if (!existing?.signature_storage_path) {
     return { error: 'No signature to remove' }
@@ -365,16 +388,15 @@ export async function removeProviderSignature() {
   return { success: true }
 }
 
-export async function getProviderSignatureUrl() {
+export async function getProviderSignatureUrl(profileId: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const { data: profile } = await supabase
     .from('provider_profiles')
     .select('signature_storage_path')
-    .eq('user_id', user!.id)
+    .eq('id', profileId)
     .is('deleted_at', null)
-    .maybeSingle()
+    .single()
 
   if (!profile?.signature_storage_path) return { url: null }
 

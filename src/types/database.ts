@@ -355,7 +355,7 @@ export type Database = {
             foreignKeyName: "cases_assigned_provider_id_fkey"
             columns: ["assigned_provider_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "provider_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -2164,7 +2164,7 @@ export type Database = {
           supervising_provider_id: string | null
           updated_at: string
           updated_by_user_id: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -2179,7 +2179,7 @@ export type Database = {
           supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -2194,7 +2194,7 @@ export type Database = {
           supervising_provider_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -2208,7 +2208,7 @@ export type Database = {
             foreignKeyName: "provider_profiles_supervising_provider_id_fkey"
             columns: ["supervising_provider_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "provider_profiles"
             referencedColumns: ["id"]
           },
           {

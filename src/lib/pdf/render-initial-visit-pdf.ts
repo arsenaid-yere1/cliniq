@@ -26,7 +26,7 @@ async function imageToBase64(data: Blob, mime: string): Promise<string> {
 interface RenderPdfInput {
   note: Record<string, unknown>
   caseId: string
-  userId: string
+  userId: string // kept for backwards compat but provider is looked up from case
 }
 
 export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buffer> {
@@ -35,7 +35,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
   // Fetch case + patient data
   const { data: caseData } = await supabase
     .from('cases')
-    .select('accident_date, accident_type, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+    .select('accident_date, accident_type, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
     .eq('id', input.caseId)
     .is('deleted_at', null)
     .single()
@@ -47,13 +47,18 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     .is('deleted_at', null)
     .maybeSingle()
 
-  // Fetch provider profile
-  const { data: providerProfile } = await supabase
-    .from('provider_profiles')
-    .select('display_name, credentials, npi_number, signature_storage_path')
-    .eq('user_id', input.userId)
-    .is('deleted_at', null)
-    .maybeSingle()
+  // Fetch provider profile from case's assigned provider
+  const assignedProviderId = caseData?.assigned_provider_id as string | null
+  let providerProfile: { display_name: string; credentials: string | null; npi_number: string | null; signature_storage_path: string | null } | null = null
+  if (assignedProviderId) {
+    const { data } = await supabase
+      .from('provider_profiles')
+      .select('display_name, credentials, npi_number, signature_storage_path')
+      .eq('id', assignedProviderId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    providerProfile = data
+  }
 
   // Fetch logo as base64 (if exists — only PNG/JPEG supported by @react-pdf/renderer)
   let clinicLogoBase64: string | undefined

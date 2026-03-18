@@ -19,13 +19,12 @@ function computeSourceHash(inputData: InitialVisitInputData): string {
 async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
-  userId: string,
   romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const [caseRes, summaryRes, clinicRes, providerRes, vitalsRes] = await Promise.all([
+  const [caseRes, summaryRes, clinicRes, vitalsRes] = await Promise.all([
     supabase
       .from('cases')
-      .select('case_number, accident_type, accident_date, accident_description, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+      .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
       .eq('id', caseId)
       .is('deleted_at', null)
       .single(),
@@ -40,12 +39,6 @@ async function gatherSourceData(
     supabase
       .from('clinic_settings')
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
-      .is('deleted_at', null)
-      .maybeSingle(),
-    supabase
-      .from('provider_profiles')
-      .select('display_name, credentials, npi_number')
-      .eq('user_id', userId)
       .is('deleted_at', null)
       .maybeSingle(),
     supabase
@@ -65,6 +58,18 @@ async function gatherSourceData(
 
   if (summaryRes.error || !summaryRes.data) {
     return { data: null, error: 'An approved case summary is required before generating an Initial Visit note.' }
+  }
+
+  // Fetch provider profile from case's assigned provider
+  const assignedProviderId = caseRes.data.assigned_provider_id as string | null
+  let providerRes: { data: { display_name: string; credentials: string | null; npi_number: string | null } | null } = { data: null }
+  if (assignedProviderId) {
+    providerRes = await supabase
+      .from('provider_profiles')
+      .select('display_name, credentials, npi_number')
+      .eq('id', assignedProviderId)
+      .is('deleted_at', null)
+      .maybeSingle()
   }
 
   const patient = caseRes.data.patient as unknown as {
@@ -140,7 +145,7 @@ export async function generateInitialVisitNote(caseId: string) {
   const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
 
   // Gather source data (include ROM)
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id, preservedRom)
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, preservedRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   // Soft-delete existing note
@@ -431,7 +436,7 @@ export async function regenerateNoteSection(caseId: string, section: InitialVisi
 
   // Gather fresh source data (include ROM from note row)
   const noteRom = note.rom_data as InitialVisitRomValues | null
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, user.id, noteRom)
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, noteRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''

@@ -7,20 +7,24 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
   const { caseId } = await params
   const supabase = await createClient()
 
-  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult, caseRes] = await Promise.all([
+  // Fetch case first to get assigned_provider_id for signature lookup
+  const caseRes = await supabase
+    .from('cases')
+    .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+    .eq('id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  const assignedProviderId = caseRes.data?.assigned_provider_id as string | null
+
+  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult] = await Promise.all([
     getInitialVisitNote(caseId),
     checkNotePrerequisites(caseId),
     getInitialVisitVitals(caseId),
     getClinicSettings(),
     getProviderProfile(),
     getClinicLogoUrl(),
-    getProviderSignatureUrl(),
-    supabase
-      .from('cases')
-      .select('case_number, accident_type, accident_date, accident_description, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
-      .eq('id', caseId)
-      .is('deleted_at', null)
-      .single(),
+    assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])
 
   const caseData = caseRes.data

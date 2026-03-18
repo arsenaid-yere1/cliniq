@@ -64,7 +64,7 @@ export async function renderLienAgreementPdf(input: RenderLienAgreementPdfInput)
     const { data: providerProfile } = await supabase
       .from('provider_profiles')
       .select('display_name, credentials, supervising_provider_id')
-      .eq('user_id', caseData.assigned_provider_id)
+      .eq('id', caseData.assigned_provider_id)
       .is('deleted_at', null)
       .maybeSingle()
 
@@ -76,7 +76,7 @@ export async function renderLienAgreementPdf(input: RenderLienAgreementPdfInput)
         const { data: supervisingProfile } = await supabase
           .from('provider_profiles')
           .select('display_name, credentials')
-          .eq('user_id', providerProfile.supervising_provider_id)
+          .eq('id', providerProfile.supervising_provider_id)
           .is('deleted_at', null)
           .maybeSingle()
 
