@@ -48,6 +48,7 @@ export function PatientWizard() {
       accident_type: undefined,
       accident_description: '',
       attorney_id: '',
+      assigned_provider_id: '',
       lien_on_file: false,
     },
     mode: 'onBlur',

@@ -240,7 +240,7 @@ export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => vo
             name="assigned_provider_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Assigned Provider (optional)</FormLabel>
+                <FormLabel>Assigned Provider</FormLabel>
                 <FormControl>
                   <ProviderSelect
                     value={field.value ?? ''}
