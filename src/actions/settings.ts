@@ -104,13 +104,16 @@ export async function getProviderProfileById(profileId: string) {
 
 export async function createProviderProfile(formData: ProviderInfoFormValues) {
   const parsed = providerInfoSchema.safeParse(formData)
-  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors }
+  if (!parsed.success) return { error: 'Validation failed' }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const profileData = {
-    ...parsed.data,
+    display_name: parsed.data.display_name,
+    credentials: parsed.data.credentials || null,
+    license_number: parsed.data.license_number || null,
+    npi_number: parsed.data.npi_number || null,
     supervising_provider_id: parsed.data.supervising_provider_id || null,
   }
 
@@ -132,13 +135,16 @@ export async function createProviderProfile(formData: ProviderInfoFormValues) {
 
 export async function updateProviderProfile(profileId: string, formData: ProviderInfoFormValues) {
   const parsed = providerInfoSchema.safeParse(formData)
-  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors }
+  if (!parsed.success) return { error: 'Validation failed' }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const profileData = {
-    ...parsed.data,
+    display_name: parsed.data.display_name,
+    credentials: parsed.data.credentials || null,
+    license_number: parsed.data.license_number || null,
+    npi_number: parsed.data.npi_number || null,
     supervising_provider_id: parsed.data.supervising_provider_id || null,
   }
 

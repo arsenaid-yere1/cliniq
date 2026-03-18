@@ -89,25 +89,29 @@ export function ProviderFormDialog({
   }, [open, provider, form])
 
   async function onSubmit(values: ProviderInfoFormValues) {
-    if (isEditing && provider) {
-      const result = await updateProviderProfile(provider.id, values)
-      if ('error' in result && result.error) {
-        toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
-        return
+    try {
+      if (isEditing && provider) {
+        const result = await updateProviderProfile(provider.id, values)
+        if ('error' in result && result.error) {
+          toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
+          return
+        }
+        toast.success('Provider updated')
+      } else {
+        const result = await createProviderProfile(values)
+        if ('error' in result && result.error) {
+          toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
+          return
+        }
+        if (result.data) {
+          setSavedProfileId(result.data.id)
+        }
+        toast.success('Provider created')
       }
-      toast.success('Provider updated')
-    } else {
-      const result = await createProviderProfile(values)
-      if ('error' in result && result.error) {
-        toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
-        return
-      }
-      if (result.data) {
-        setSavedProfileId(result.data.id)
-      }
-      toast.success('Provider created')
+      onSuccess()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'An unexpected error occurred')
     }
-    onSuccess()
   }
 
   function handleClose(openState: boolean) {
