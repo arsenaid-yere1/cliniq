@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getDischargeNote, checkDischargeNotePrerequisites } from '@/actions/discharge-notes'
-import { getClinicSettings, getProviderProfile, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
+import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { DischargeNoteEditor } from '@/components/discharge/discharge-note-editor'
 
 export default async function DischargePage({
@@ -32,7 +32,7 @@ export default async function DischargePage({
     getDischargeNote(caseId),
     checkDischargeNotePrerequisites(caseId),
     getClinicSettings(),
-    getProviderProfile(),
+    assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])

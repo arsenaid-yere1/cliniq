@@ -24,7 +24,7 @@ Decouple provider profiles from auth users, build a provider management UI (list
 - No provider management UI (list/add/edit/delete)
 - No `assigned_provider_id` in case create wizard or edit dialog
 - No lien agreement PDF template
-- No auto-set of `lien_on_file` when lien document is generated — only set when signed copy is manually uploaded
+- `lien_on_file` remains manually controlled — generating the PDF does not auto-set it (only a signed upload should)
 - No "Generate Lien Agreement" action in the UI
 
 ### Key Discoveries:
@@ -40,18 +40,18 @@ Decouple provider profiles from auth users, build a provider management UI (list
 
 1. Provider profiles are decoupled from auth users — `user_id` is nullable, profiles can be created independently
 2. Settings → Provider Info tab shows a **list of all providers** with add/edit/delete capabilities
-3. Case create wizard and edit dialog include an "Assigned Provider" dropdown
+3. Case create wizard and edit dialog include a **required** "Assigned Provider" dropdown — existing cases without a provider must have one assigned on next edit
 4. `cases.assigned_provider_id` references `provider_profiles.id` (not `users.id`)
 5. `supervising_provider_id` references `provider_profiles.id` (not `users.id`)
 6. A "Generate Lien Agreement" button on the case overview page generates a pre-filled PDF
 7. The generated PDF is stored with `document_type: 'lien_agreement'`
-8. `cases.lien_on_file` is automatically set to `true` when the lien agreement is generated
+8. `cases.lien_on_file` is **not** auto-set when generating — it should only be marked `true` when a **signed** copy is manually uploaded back to the case
 9. The lien form's provider line shows "SupervisingName, Credentials / TreatingName, Credentials"
 10. All note/PDF actions use `cases.assigned_provider_id` → `provider_profiles.id` instead of auth `user.id`
 
 ### Verification:
 - Provider management: can list, create, edit, delete providers from Settings
-- Case forms: can select a provider when creating or editing a case
+- Case forms: **must** select a provider when creating or editing a case
 - Navigate to a case with assigned attorney + provider → click "Generate Lien Agreement" → PDF downloads with correct data
 - Invoice PDF uses case's assigned provider, not the logged-in user
 - Note PDFs use case's assigned provider
@@ -61,7 +61,7 @@ Decouple provider profiles from auth users, build a provider management UI (list
 - Digital/electronic signature capture (wet signatures on printed form)
 - Patient-facing or attorney-facing signature workflow
 - A separate `lien_documents` table — using existing `documents` table
-- Database trigger for auto-setting `lien_on_file` — using application logic
+- Auto-setting `lien_on_file` on PDF generation — the generated PDF is unsigned; `lien_on_file` should only be set when a signed copy is uploaded
 - Multi-provider per case — still one assigned provider per case
 
 ## Implementation Approach
@@ -332,14 +332,15 @@ Add `assigned_provider_id` to case creation wizard and case edit dialog using th
 #### 1. Update Validation Schemas
 **File**: `src/lib/validations/patient.ts`
 
-Add `assigned_provider_id` to `patientDetailsSchema` (line 11–24):
+Make `assigned_provider_id` **required** in `patientDetailsSchema` (line 11–24):
 ```typescript
-assigned_provider_id: z.string().uuid().optional().or(z.literal('')),
+assigned_provider_id: z.string().uuid('Assigned provider is required'),
 ```
+This ensures every new case must have a provider assigned at creation time. The `.uuid()` refinement rejects empty strings and undefined values.
 
-Add `assigned_provider_id` to `editCaseSchema` (line 45–51):
+Make `assigned_provider_id` **required** in `editCaseSchema` (line 45–51) as well — this forces users to assign a provider when editing existing cases that don't have one yet:
 ```typescript
-assigned_provider_id: z.string().uuid().optional().or(z.literal('')),
+assigned_provider_id: z.string().uuid('Assigned provider is required'),
 ```
 
 #### 2. Update Case Creation Wizard
@@ -348,7 +349,8 @@ assigned_provider_id: z.string().uuid().optional().or(z.literal('')),
 Add a "Provider" section (after the Attorney section, line 228):
 - Import `ProviderSelect`
 - Add a `FormField` for `assigned_provider_id` with `ProviderSelect`
-- Label: "Assigned Provider (optional)"
+- Label: "Assigned Provider" (required — no "(optional)" suffix)
+- The form will show a Zod validation error if the user tries to proceed without selecting a provider
 
 #### 3. Update Case Edit Dialog
 **File**: `src/components/patients/case-overview-edit-dialog.tsx`
@@ -361,8 +363,8 @@ Add a "Provider" section (after the Attorney section, line 228):
 #### 4. Update Server Actions
 **File**: `src/actions/patients.ts`
 
-- `createPatientCase()` (line 73–83): Add `assigned_provider_id: assigned_provider_id || null` to case insert
-- `updateCase()` (line 207–212): Add `assigned_provider_id: parsed.data.assigned_provider_id || null` to case update
+- `createPatientCase()` (line 73–83): Add `assigned_provider_id: assigned_provider_id` to case insert (no `|| null` fallback — Zod guarantees a valid UUID at this point)
+- `updateCase()` (line 207–212): Add `assigned_provider_id: parsed.data.assigned_provider_id` to case update (no `|| null` fallback — Zod guarantees a valid UUID)
 
 #### 5. Update Case Overview to Pass Provider ID
 **File**: `src/components/patients/case-overview.tsx`
@@ -377,10 +379,11 @@ Ensure `assigned_provider_id` is passed to `CaseOverviewEditDialog` in the `case
 - [x] Existing tests pass: `npm test`
 
 #### Manual Verification:
-- [ ] Case creation wizard shows "Assigned Provider" dropdown
+- [ ] Case creation wizard shows "Assigned Provider" dropdown (required field)
+- [ ] Attempting to create a case without selecting a provider shows validation error
 - [ ] Selecting a provider and creating a case saves `assigned_provider_id` correctly
-- [ ] Case edit dialog shows current provider and allows changing
-- [ ] Provider can be cleared (set to none)
+- [ ] Case edit dialog shows current provider and allows changing (required)
+- [ ] Attempting to save a case edit without a provider shows validation error
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation.
 
@@ -451,9 +454,9 @@ export async function generateLienAgreement(caseId: string) {
   // 4. Call renderLienAgreementPdf({ caseId })
   // 5. Upload PDF: `cases/${caseId}/lien-agreement-${Date.now()}.pdf`
   // 6. Insert documents row: document_type 'lien_agreement', status 'reviewed'
-  // 7. Update cases set lien_on_file = true
-  // 8. revalidatePath
-  // 9. Return { data: { documentId, base64 } }
+  // 7. revalidatePath
+  // 8. Return { data: { base64 } }
+  // Note: lien_on_file is NOT set here — only marked true when a signed copy is uploaded
 }
 ```
 
@@ -470,7 +473,7 @@ Follow `discharge-notes.ts:462–498` pattern for steps 5–6.
 - [ ] Generated PDF matches NPMD form layout
 - [ ] Provider line shows "Supervising, MD / Treating, FNP" format
 - [ ] PDF appears in case documents list
-- [ ] `lien_on_file` set to `true`
+- [ ] `lien_on_file` remains unchanged (not auto-set)
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation.
 
@@ -485,7 +488,7 @@ Add "Generate Lien Agreement" button to case overview, update document type labe
 
 #### 1. Update Document Type Labels and Colors
 **File**: `src/components/documents/document-card.tsx`
-Add `lien_agreement: 'Lien Agreement'` to `docTypeLabels`, `lien_agreement: 'bg-purple-100 text-purple-800 border-purple-200'` to `docTypeColors`.
+Add `lien_agreement: 'Lien Agreement'` to `docTypeLabels`, `lien_agreement: 'bg-indigo-100 text-indigo-800 border-indigo-200'` to `docTypeColors`.
 
 #### 2. Update Document List Filter Options
 **File**: `src/components/documents/document-list.tsx`
@@ -523,9 +526,9 @@ const [generatingLien, setGeneratingLien] = useState(false)
 - [ ] Button disabled without attorney assigned
 - [ ] Button disabled when case is locked
 - [ ] Clicking generates and downloads PDF
-- [ ] Document appears in list with purple "Lien Agreement" badge
+- [ ] Document appears in list with indigo "Lien Agreement" badge
 - [ ] Filter dropdown includes "Lien Agreement"
-- [ ] `lien_on_file` updates to true
+- [ ] `lien_on_file` remains unchanged (not auto-set on generation)
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation.
 
@@ -543,7 +546,7 @@ const [generatingLien, setGeneratingLien] = useState(false)
 3. Click "Generate Lien Agreement" from case overview
 4. Verify PDF content: clinic header, patient/attorney info, provider line, legal text, signature lines
 5. Verify document appears in documents list
-6. Verify `lien_on_file` is true
+6. Verify `lien_on_file` is NOT auto-set (remains unchanged)
 7. Try generating without attorney — should show error
 8. Try generating on closed case — button disabled
 9. Generate invoice PDF — verify it shows assigned provider, not logged-in user

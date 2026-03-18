@@ -74,21 +74,6 @@ export async function listProviderProfiles() {
   return { data: data ?? [] }
 }
 
-export async function getProviderProfile() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data, error } = await supabase
-    .from('provider_profiles')
-    .select('*')
-    .eq('user_id', user!.id)
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  if (error) return { error: error.message }
-  return { data }
-}
-
 export async function getProviderProfileById(profileId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase

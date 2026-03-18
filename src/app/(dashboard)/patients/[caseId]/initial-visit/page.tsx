@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals, getInitialVisitRom } from '@/actions/initial-visit-notes'
-import { getClinicSettings, getProviderProfile, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
+import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
 
 export default async function InitialVisitPage({ params }: { params: Promise<{ caseId: string }> }) {
@@ -22,7 +22,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     checkNotePrerequisites(caseId),
     getInitialVisitVitals(caseId),
     getClinicSettings(),
-    getProviderProfile(),
+    assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])

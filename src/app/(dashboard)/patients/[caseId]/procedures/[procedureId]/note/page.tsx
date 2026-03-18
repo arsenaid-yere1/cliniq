@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getProcedureNote, checkProcedureNotePrerequisites } from '@/actions/procedure-notes'
 import { getProcedureById } from '@/actions/procedures'
-import { getClinicSettings, getProviderProfile, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
+import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { ProcedureNoteEditor } from '@/components/procedures/procedure-note-editor'
 import { notFound } from 'next/navigation'
 
@@ -36,7 +36,7 @@ export default async function ProcedureNotePage({
     getProcedureNote(procedureId),
     checkProcedureNotePrerequisites(caseId),
     getClinicSettings(),
-    getProviderProfile(),
+    assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])
