@@ -366,6 +366,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                       <SelectItem value="pt_report">PT Report</SelectItem>
                       <SelectItem value="orthopedic_report">Orthopedic Report</SelectItem>
                       <SelectItem value="ct_scan">CT Scan Report</SelectItem>
+                      <SelectItem value="lien_agreement">Lien Agreement (Signed)</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

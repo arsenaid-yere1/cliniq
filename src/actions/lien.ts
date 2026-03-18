@@ -59,11 +59,8 @@ export async function generateLienAgreement(caseId: string) {
 
   if (docError) return { error: `Failed to save document record: ${docError.message}` }
 
-  // Set lien_on_file = true
-  await supabase
-    .from('cases')
-    .update({ lien_on_file: true, updated_by_user_id: user.id })
-    .eq('id', caseId)
+  // Note: lien_on_file is NOT set here — it should only be marked true
+  // when a signed copy is manually uploaded back to the case.
 
   // Convert to base64 for immediate download
   const base64 = Buffer.from(pdfBuffer).toString('base64')

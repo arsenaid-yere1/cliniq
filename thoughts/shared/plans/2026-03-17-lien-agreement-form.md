@@ -24,7 +24,7 @@ Decouple provider profiles from auth users, build a provider management UI (list
 - No provider management UI (list/add/edit/delete)
 - No `assigned_provider_id` in case create wizard or edit dialog
 - No lien agreement PDF template
-- No auto-set of `lien_on_file` when lien document is generated
+- No auto-set of `lien_on_file` when lien document is generated — only set when signed copy is manually uploaded
 - No "Generate Lien Agreement" action in the UI
 
 ### Key Discoveries:
@@ -462,9 +462,9 @@ Follow `discharge-notes.ts:462–498` pattern for steps 5–6.
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `npm run typecheck`
-- [ ] Linting passes: `npm run lint`
-- [ ] No import errors in new files
+- [x] Type checking passes: `npm run typecheck`
+- [x] Linting passes: `npm run lint`
+- [x] No import errors in new files
 
 #### Manual Verification:
 - [ ] Generated PDF matches NPMD form layout
@@ -514,9 +514,9 @@ const [generatingLien, setGeneratingLien] = useState(false)
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `npm run typecheck`
-- [ ] Linting passes: `npm run lint`
-- [ ] Existing tests pass: `npm test`
+- [x] Type checking passes: `npm run typecheck`
+- [x] Linting passes: `npm run lint`
+- [x] Existing tests pass: `npm test`
 
 #### Manual Verification:
 - [ ] "Generate Lien Agreement" button visible in Case Actions

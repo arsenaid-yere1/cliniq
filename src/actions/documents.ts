@@ -119,6 +119,15 @@ export async function saveDocumentMetadata(input: {
 
   if (error) return { error: error.message }
 
+  // Auto-set lien_on_file when a signed lien agreement is uploaded
+  if (input.documentType === 'lien_agreement') {
+    await supabase
+      .from('cases')
+      .update({ lien_on_file: true, updated_by_user_id: user.id })
+      .eq('id', input.caseId)
+    revalidatePath(`/patients/${input.caseId}`)
+  }
+
   revalidatePath(`/patients/${input.caseId}/documents`)
   return { data }
 }
