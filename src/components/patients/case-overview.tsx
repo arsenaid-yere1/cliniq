@@ -22,6 +22,7 @@ interface CaseOverviewProps {
     accident_description: string | null
     case_open_date: string | null
     attorney_id: string | null
+    assigned_provider_id: string | null
     lien_on_file: boolean
     patient: {
       id: string
@@ -267,6 +268,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
             accident_type: caseData.accident_type,
             accident_description: caseData.accident_description,
             attorney_id: caseData.attorney_id,
+            assigned_provider_id: caseData.assigned_provider_id,
             lien_on_file: caseData.lien_on_file,
           }}
         />

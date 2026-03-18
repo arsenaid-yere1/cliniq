@@ -74,7 +74,7 @@ export function ProviderFormDialog({
     mode: 'onBlur',
   })
 
-  // Reset form when provider changes (switching between add/edit or different providers)
+  // Reset form when dialog opens (switching between add/edit or different providers)
   useEffect(() => {
     if (open) {
       form.reset({
@@ -84,9 +84,11 @@ export function ProviderFormDialog({
         npi_number: provider?.npi_number ?? '',
         supervising_provider_id: provider?.supervising_provider_id ?? '',
       })
-      setSavedProfileId(provider?.id ?? null)
     }
   }, [open, provider, form])
+
+  // Derive the effective profile ID: provider's ID when editing, or newly created ID
+  const effectiveProfileId = provider?.id ?? savedProfileId
 
   async function onSubmit(values: ProviderInfoFormValues) {
     try {
@@ -222,10 +224,10 @@ export function ProviderFormDialog({
         </Form>
 
         {/* Signature section — only available after provider is saved */}
-        {(isEditing || savedProfileId) && (
+        {effectiveProfileId && (
           <div className="mt-4 border-t pt-4">
             <ProviderSignatureUpload
-              profileId={(provider?.id ?? savedProfileId)!}
+              profileId={effectiveProfileId}
               initialSignaturePath={provider?.signature_storage_path ?? null}
             />
           </div>

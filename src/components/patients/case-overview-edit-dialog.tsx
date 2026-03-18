@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { editPatientSchema, editCaseSchema, type EditPatientValues, type EditCaseValues } from '@/lib/validations/patient'
 import { updatePatient, updateCase } from '@/actions/patients'
 import { AttorneySelect } from '@/components/attorneys/attorney-select'
+import { ProviderSelect } from '@/components/providers/provider-select'
 import { z } from 'zod'
 
 const combinedSchema = editPatientSchema.merge(editCaseSchema)
@@ -50,6 +51,7 @@ interface CaseOverviewEditDialogProps {
     accident_type: string | null
     accident_description: string | null
     attorney_id: string | null
+    assigned_provider_id: string | null
     lien_on_file: boolean
   }
 }
@@ -83,6 +85,7 @@ export function CaseOverviewEditDialog({
       accident_type: (caseDetails.accident_type as CombinedValues['accident_type']) ?? undefined,
       accident_description: caseDetails.accident_description ?? '',
       attorney_id: caseDetails.attorney_id ?? '',
+      assigned_provider_id: caseDetails.assigned_provider_id ?? '',
       lien_on_file: caseDetails.lien_on_file ?? false,
     },
   })
@@ -110,6 +113,7 @@ export function CaseOverviewEditDialog({
       accident_type: values.accident_type,
       accident_description: values.accident_description,
       attorney_id: values.attorney_id,
+      assigned_provider_id: values.assigned_provider_id,
       lien_on_file: values.lien_on_file,
     }
 
@@ -356,6 +360,20 @@ export function CaseOverviewEditDialog({
                     <FormLabel className="text-xs">Attorney</FormLabel>
                     <FormControl>
                       <AttorneySelect value={field.value ?? ''} onChange={field.onChange} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="assigned_provider_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs">Assigned Provider</FormLabel>
+                    <FormControl>
+                      <ProviderSelect value={field.value ?? ''} onChange={field.onChange} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

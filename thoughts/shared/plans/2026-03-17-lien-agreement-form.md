@@ -372,9 +372,9 @@ Ensure `assigned_provider_id` is passed to `CaseOverviewEditDialog` in the `case
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type checking passes: `npm run typecheck`
-- [ ] Linting passes: `npm run lint`
-- [ ] Existing tests pass: `npm test`
+- [x] Type checking passes: `npm run typecheck`
+- [x] Linting passes: `npm run lint` (1 pre-existing error)
+- [x] Existing tests pass: `npm test`
 
 #### Manual Verification:
 - [ ] Case creation wizard shows "Assigned Provider" dropdown

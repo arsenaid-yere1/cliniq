@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/form'
 import { Separator } from '@/components/ui/separator'
 import { AttorneySelect } from '@/components/attorneys/attorney-select'
+import { ProviderSelect } from '@/components/providers/provider-select'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => void }) {
@@ -226,6 +227,30 @@ export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => vo
               )}
             />
           )}
+        </div>
+      </div>
+
+      <Separator />
+
+      <div>
+        <h3 className="text-lg font-medium">Provider</h3>
+        <div className="mt-4 space-y-4">
+          <FormField
+            control={form.control}
+            name="assigned_provider_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Assigned Provider (optional)</FormLabel>
+                <FormControl>
+                  <ProviderSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
       </div>
     </div>

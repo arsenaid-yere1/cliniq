@@ -38,7 +38,7 @@ export async function createPatientCase(data: CreatePatientCaseValues) {
   const {
     first_name, last_name, middle_name, date_of_birth, gender,
     phone_primary, email, address_line1, address_line2, city, state, zip_code,
-    accident_date, accident_type, accident_description, attorney_id, lien_on_file,
+    accident_date, accident_type, accident_description, attorney_id, assigned_provider_id, lien_on_file,
   } = parsed.data
 
   // Insert patient
@@ -73,6 +73,7 @@ export async function createPatientCase(data: CreatePatientCaseValues) {
     .insert({
       patient_id: patient.id,
       attorney_id: attorney_id || null,
+      assigned_provider_id: assigned_provider_id || null,
       accident_date: accident_date || null,
       accident_type: accident_type || null,
       accident_description: accident_description || null,
@@ -209,6 +210,7 @@ export async function updateCase(caseId: string, data: EditCaseValues) {
       accident_type: parsed.data.accident_type || null,
       accident_description: parsed.data.accident_description || null,
       attorney_id: parsed.data.attorney_id || null,
+      assigned_provider_id: parsed.data.assigned_provider_id || null,
       lien_on_file: parsed.data.lien_on_file,
       updated_by_user_id: user.id,
     })
