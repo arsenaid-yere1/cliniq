@@ -72,7 +72,7 @@ export async function createPatientCase(data: CreatePatientCaseValues) {
     .from('cases')
     .insert({
       patient_id: patient.id,
-      attorney_id: attorney_id || null,
+      attorney_id,
       assigned_provider_id,
       accident_date: accident_date || null,
       accident_type: accident_type || null,
@@ -209,7 +209,7 @@ export async function updateCase(caseId: string, data: EditCaseValues) {
       accident_date: parsed.data.accident_date || null,
       accident_type: parsed.data.accident_type || null,
       accident_description: parsed.data.accident_description || null,
-      attorney_id: parsed.data.attorney_id || null,
+      attorney_id: parsed.data.attorney_id,
       assigned_provider_id: parsed.data.assigned_provider_id,
       lien_on_file: parsed.data.lien_on_file,
       updated_by_user_id: user.id,

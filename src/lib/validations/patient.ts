@@ -19,7 +19,7 @@ export const patientDetailsSchema = z.object({
   accident_date: z.string().optional(),
   accident_type: z.enum(['auto', 'slip_and_fall', 'workplace', 'other']).optional(),
   accident_description: z.string().optional(),
-  attorney_id: z.string().uuid().optional().or(z.literal('')),
+  attorney_id: z.string().uuid('Attorney is required'),
   assigned_provider_id: z.string().uuid('Assigned provider is required'),
   lien_on_file: z.boolean(),
 })
@@ -47,7 +47,7 @@ export const editCaseSchema = z.object({
   accident_date: z.string().optional(),
   accident_type: z.enum(['auto', 'slip_and_fall', 'workplace', 'other']).optional(),
   accident_description: z.string().optional(),
-  attorney_id: z.string().uuid().optional().or(z.literal('')),
+  attorney_id: z.string().uuid('Attorney is required'),
   assigned_provider_id: z.string().uuid('Assigned provider is required'),
   lien_on_file: z.boolean(),
 })

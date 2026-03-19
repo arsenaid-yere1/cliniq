@@ -20,7 +20,6 @@ import { ProviderSelect } from '@/components/providers/provider-select'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => void }) {
   const form = useFormContext<CreatePatientCaseValues>()
-  const attorneyId = form.watch('attorney_id')
 
   return (
     <div className="space-y-6">
@@ -196,7 +195,7 @@ export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => vo
             name="attorney_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Attorney (optional)</FormLabel>
+                <FormLabel>Attorney</FormLabel>
                 <FormControl>
                   <AttorneySelect
                     value={field.value ?? ''}
@@ -208,25 +207,23 @@ export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => vo
             )}
           />
 
-          {attorneyId && attorneyId !== '' && (
-            <FormField
-              control={form.control}
-              name="lien_on_file"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Lien on File</FormLabel>
-                  </div>
-                </FormItem>
-              )}
-            />
-          )}
+          <FormField
+            control={form.control}
+            name="lien_on_file"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Lien on File</FormLabel>
+                </div>
+              </FormItem>
+            )}
+          />
         </div>
       </div>
 
