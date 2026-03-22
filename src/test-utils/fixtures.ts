@@ -27,3 +27,10 @@ export const validServiceCatalogItem = {
   description: 'Office visit - established patient',
   default_price: 150,
 }
+
+export const validFeeEstimateItem = {
+  description: 'Initial Consultation',
+  fee_category: 'professional' as const,
+  price_min: 500,
+  price_max: 1000,
+}

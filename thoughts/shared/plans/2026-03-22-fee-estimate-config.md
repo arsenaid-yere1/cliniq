@@ -111,8 +111,8 @@ Run `npx supabase gen types typescript --local > src/lib/supabase/database.types
 - [x] TypeScript compiles: `npm run typecheck`
 
 #### Manual Verification:
-- [ ] Query `select * from fee_estimate_config` returns 5 seeded rows
-- [ ] Soft delete, audit fields, and `updated_at` trigger work as expected
+- [x] Query `select * from fee_estimate_config` returns 5 seeded rows
+- [x] Soft delete, audit fields, and `updated_at` trigger work as expected
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to the next phase.
 
@@ -286,8 +286,8 @@ export async function getFeeEstimateTotals(): Promise<FeeEstimateTotals> {
 - [x] Lint passes: `npm run lint`
 
 #### Manual Verification:
-- [ ] Can call `listFeeEstimateConfig()` and get seeded items
-- [ ] `getFeeEstimateTotals()` returns correct sums after setting non-zero prices
+- [x] Can call `listFeeEstimateConfig()` and get seeded items
+- [x] `getFeeEstimateTotals()` returns correct sums after setting non-zero prices
 
 **Implementation Note**: Pause here for confirmation before proceeding to Phase 3.
 
@@ -371,15 +371,15 @@ Changes:
 - [x] Lint passes: `npm run lint`
 
 #### Manual Verification:
-- [ ] Settings page shows 6 tabs including "Fee Estimates"
-- [ ] Seeded items appear in the table with correct descriptions and categories
-- [ ] Can add a new row, fill in fields, and save
-- [ ] Can edit an existing row's description, category, min/max and save
-- [ ] Can delete an existing row (with confirmation dialog)
-- [ ] Can remove an unsaved row instantly
-- [ ] Save button is disabled when no changes exist
-- [ ] Validation: empty description shows toast error, negative prices show toast error, max < min shows toast error
-- [ ] After save, new rows get their DB IDs and behave as existing rows
+- [x] Settings page shows 6 tabs including "Fee Estimates"
+- [x] Seeded items appear in the table with correct descriptions and categories
+- [x] Can add a new row, fill in fields, and save
+- [x] Can edit an existing row's description, category, min/max and save
+- [x] Can delete an existing row (with confirmation dialog)
+- [x] Can remove an unsaved row instantly
+- [x] Save button is disabled when no changes exist
+- [x] Validation: empty description shows toast error, negative prices show toast error, max < min shows toast error
+- [x] After save, new rows get their DB IDs and behave as existing rows
 
 **Implementation Note**: Pause here for confirmation before proceeding to Phase 4.
 
@@ -449,13 +449,13 @@ The `regenerateSection()` function already passes the full `inputData` to Claude
 - [x] Lint passes: `npm run lint`
 
 #### Manual Verification:
-- [ ] Configure non-zero fee ranges in Settings → Fee Estimates
-- [ ] Generate an Initial Visit note for a case
-- [ ] The Treatment Plan section contains "COST ESTIMATE:" with the configured Professional Fees and Practice Center Fees ranges
-- [ ] The dollar amounts match what was configured in Settings (summed per category)
-- [ ] If all fees are $0, the cost estimate sub-section is omitted
-- [ ] Regenerating the treatment plan section also picks up the fee data
-- [ ] Editing the treatment plan text in draft mode still works as before
+- [x] Configure non-zero fee ranges in Settings → Fee Estimates
+- [x] Generate an Initial Visit note for a case
+- [x] The Treatment Plan section contains "COST ESTIMATE:" with the configured Professional Fees and Practice Center Fees ranges
+- [x] The dollar amounts match what was configured in Settings (summed per category)
+- [x] If all fees are $0, the cost estimate sub-section is omitted
+- [x] Regenerating the treatment plan section also picks up the fee data
+- [x] Editing the treatment plan text in draft mode still works as before
 
 **Implementation Note**: Pause here for confirmation before proceeding to Phase 5.
 
@@ -491,9 +491,9 @@ Follow the same pattern as existing action tests (e.g., `src/actions/__tests__/s
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All tests pass: `npm test`
-- [ ] TypeScript compiles: `npm run typecheck`
-- [ ] Lint passes: `npm run lint`
+- [x] All tests pass: `npm test`
+- [x] TypeScript compiles: `npm run typecheck`
+- [x] Lint passes: `npm run lint`
 
 ---
 
