@@ -172,7 +172,6 @@ export function InitialVisitEditor({
 }: InitialVisitEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
-  const [showRomCard, setShowRomCard] = useState(initialRom !== null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
@@ -185,33 +184,24 @@ export function InitialVisitEditor({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
 
-        <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
-
-        {showRomCard ? (
-          <RomInputCard
-            caseId={caseId}
-            initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)}
-            isLocked={isLocked}
-            onRemove={() => {
-              startTransition(async () => {
-                const result = await saveInitialVisitRom(caseId, null)
-                if (result.error) { toast.error(result.error); return }
-                toast.success('ROM data removed')
-                setShowRomCard(false)
-              })
-            }}
-            isRemoving={isPending}
-          />
-        ) : (
-          <Button
-            variant="outline"
-            onClick={() => setShowRomCard(true)}
-            disabled={isLocked}
-          >
-            <Activity className="h-4 w-4 mr-2" />
-            Add Range of Motion
-          </Button>
-        )}
+        <Tabs defaultValue="vitals">
+          <TabsList>
+            <TabsTrigger value="vitals">
+              <Heart className="h-3.5 w-3.5 mr-1.5" />
+              Vital Signs
+            </TabsTrigger>
+            <TabsTrigger value="rom">
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              Range of Motion
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="vitals" className="mt-4">
+            <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
+          </TabsContent>
+          <TabsContent value="rom" className="mt-4">
+            <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isLocked={isLocked} />
+          </TabsContent>
+        </Tabs>
 
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -318,8 +308,6 @@ export function InitialVisitEditor({
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
       isLocked={isLocked}
-      showRomCard={showRomCard}
-      setShowRomCard={setShowRomCard}
     />
   )
 }
@@ -503,14 +491,10 @@ function RomInputCard({
   caseId,
   initialRom,
   isLocked,
-  onRemove,
-  isRemoving,
 }: {
   caseId: string
   initialRom: InitialVisitRomValues | null
   isLocked: boolean
-  onRemove: () => void
-  isRemoving: boolean
 }) {
   const [isSaving, startSaving] = useTransition()
   const form = useForm<{ rom: InitialVisitRomValues }>({
@@ -541,22 +525,8 @@ function RomInputCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Range of Motion</CardTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={onRemove}
-            disabled={isLocked || isRemoving}
-          >
-            {isRemoving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
-            Remove ROM
-          </Button>
-        </div>
         <CardDescription>
-          Record ROM measurements for each affected region. These will be included in the generated note.
+          Record ROM measurements for each affected region. Save to include in the generated note.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -761,8 +731,6 @@ function DraftEditor({
   regeneratingSection,
   setRegeneratingSection,
   isLocked,
-  showRomCard,
-  setShowRomCard,
 }: {
   caseId: string
   note: NoteRow
@@ -773,8 +741,6 @@ function DraftEditor({
   regeneratingSection: InitialVisitSection | null
   setRegeneratingSection: (s: InitialVisitSection | null) => void
   isLocked: boolean
-  showRomCard: boolean
-  setShowRomCard: (show: boolean) => void
 }) {
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
@@ -882,6 +848,10 @@ function DraftEditor({
             <Heart className="h-3.5 w-3.5 mr-1.5" />
             Vital Signs
           </TabsTrigger>
+          <TabsTrigger value="rom">
+            <Activity className="h-3.5 w-3.5 mr-1.5" />
+            Range of Motion
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="note" className="mt-4">
@@ -949,34 +919,11 @@ function DraftEditor({
         <TabsContent value="vitals" className="mt-4">
           <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
         </TabsContent>
-      </Tabs>
 
-      {/* ROM — optional, below tabs */}
-      {showRomCard ? (
-        <RomInputCard
-          caseId={caseId}
-          initialRom={initialRom}
-          isLocked={isLocked}
-          onRemove={() => {
-            startTransition(async () => {
-              const result = await saveInitialVisitRom(caseId, null)
-              if (result.error) { toast.error(result.error); return }
-              toast.success('ROM data removed')
-              setShowRomCard(false)
-            })
-          }}
-          isRemoving={isPending}
-        />
-      ) : (
-        <Button
-          variant="outline"
-          onClick={() => setShowRomCard(true)}
-          disabled={isLocked}
-        >
-          <Activity className="h-4 w-4 mr-2" />
-          Add Range of Motion
-        </Button>
-      )}
+        <TabsContent value="rom" className="mt-4">
+          <RomInputCard caseId={caseId} initialRom={initialRom} isLocked={isLocked} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
