@@ -946,6 +946,63 @@ export type Database = {
           },
         ]
       }
+      fee_estimate_config: {
+        Row: {
+          id: string
+          description: string
+          fee_category: string
+          price_min: number
+          price_max: number
+          sort_order: number
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+          created_by_user_id: string | null
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          id?: string
+          description: string
+          fee_category?: string
+          price_min?: number
+          price_max?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          created_by_user_id?: string | null
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          id?: string
+          description?: string
+          fee_category?: string
+          price_min?: number
+          price_max?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          created_by_user_id?: string | null
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_estimate_config_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fee_estimate_config_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       initial_visit_notes: {
         Row: {
           ai_model: string | null

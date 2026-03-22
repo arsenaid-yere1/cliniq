@@ -87,7 +87,11 @@ Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / C
 12. TREATMENT PLAN (~2-3 short paragraphs + cost estimate):
 Para 1: "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections."
 Bullet per target region (cervical, lumbar) with specific levels and guidance modality.
-Cost estimate sub-section: Professional Fees range + Practice/Surgery Center Fees range.
+Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
+"COST ESTIMATE:" sub-heading, then:
+"• Professional Fees: $\{professional_min\} – $\{professional_max\}"
+"• Practice/Surgery Center Fees: $\{practice_center_min\} – $\{practice_center_max\}"
+Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values are 0, omit the cost estimate sub-section entirely. If feeEstimate is null, use "[To be determined]" as placeholder.
 Para 2: Brief conservative care recommendations — continue OTC medication, home PT program, activity modification, and follow-up timeline. ALL IN ONE PARAGRAPH. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up.
 The entire treatment plan should be about half a page.
 
@@ -243,6 +247,12 @@ export interface InitialVisitInputData {
       pain: boolean
     }>
   }> | null
+  feeEstimate: {
+    professional_min: number
+    professional_max: number
+    practice_center_min: number
+    practice_center_max: number
+  } | null
 }
 
 export async function generateInitialVisitFromData(

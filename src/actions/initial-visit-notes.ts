@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
 import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
+import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 
 // --- Helper: compute source data hash ---
 
@@ -21,7 +22,7 @@ async function gatherSourceData(
   caseId: string,
   romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const [caseRes, summaryRes, clinicRes, vitalsRes] = await Promise.all([
+  const [caseRes, summaryRes, clinicRes, vitalsRes, feeEstimateTotals] = await Promise.all([
     supabase
       .from('cases')
       .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
@@ -50,6 +51,7 @@ async function gatherSourceData(
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    getFeeEstimateTotals(),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -117,6 +119,9 @@ async function gatherSourceData(
       },
       vitalSigns: vitalsRes.data ?? null,
       romData: romData ?? null,
+      feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
+        ? feeEstimateTotals
+        : null,
     },
     error: null,
   }

@@ -6,10 +6,12 @@ import { ProviderList } from './provider-list'
 import { ClinicLogoUpload } from './clinic-logo-upload'
 import { AppearanceForm } from './appearance-form'
 import { PricingCatalogForm } from './pricing-catalog-form'
+import { FeeEstimateForm } from './fee-estimate-form'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
 type ServiceCatalogItem = Database['public']['Tables']['service_catalog']['Row']
+type FeeEstimateConfigItem = Database['public']['Tables']['fee_estimate_config']['Row']
 
 interface ProviderProfile {
   id: string
@@ -25,10 +27,11 @@ interface ProviderProfile {
 interface SettingsTabsProps {
   clinicSettings: ClinicSettings | null
   serviceCatalog: ServiceCatalogItem[]
+  feeEstimateConfig: FeeEstimateConfigItem[]
   providerProfiles: ProviderProfile[]
 }
 
-export function SettingsTabs({ clinicSettings, serviceCatalog, providerProfiles }: SettingsTabsProps) {
+export function SettingsTabs({ clinicSettings, serviceCatalog, feeEstimateConfig, providerProfiles }: SettingsTabsProps) {
   return (
     <Tabs defaultValue="clinic-info" className="space-y-6">
       <TabsList>
@@ -36,6 +39,7 @@ export function SettingsTabs({ clinicSettings, serviceCatalog, providerProfiles 
         <TabsTrigger value="provider-info">Provider Info</TabsTrigger>
         <TabsTrigger value="clinic-logo">Clinic Logo</TabsTrigger>
         <TabsTrigger value="pricing">Pricing</TabsTrigger>
+        <TabsTrigger value="fee-estimates">Fee Estimates</TabsTrigger>
         <TabsTrigger value="appearance">Appearance</TabsTrigger>
       </TabsList>
 
@@ -53,6 +57,10 @@ export function SettingsTabs({ clinicSettings, serviceCatalog, providerProfiles 
 
       <TabsContent value="pricing">
         <PricingCatalogForm initialData={serviceCatalog} />
+      </TabsContent>
+
+      <TabsContent value="fee-estimates">
+        <FeeEstimateForm initialData={feeEstimateConfig} />
       </TabsContent>
 
       <TabsContent value="appearance">
