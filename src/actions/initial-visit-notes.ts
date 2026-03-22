@@ -582,7 +582,7 @@ export async function getInitialVisitRom(caseId: string) {
 
 // --- Save ROM data ---
 
-export async function saveInitialVisitRom(caseId: string, romData: InitialVisitRomValues) {
+export async function saveInitialVisitRom(caseId: string, romData: InitialVisitRomValues | null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -590,8 +590,13 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  const validated = initialVisitRomSchema.safeParse(romData)
-  if (!validated.success) return { error: 'Invalid ROM data' }
+  // Validate if non-null
+  let validatedData: InitialVisitRomValues | null = null
+  if (romData !== null) {
+    const validated = initialVisitRomSchema.safeParse(romData)
+    if (!validated.success) return { error: 'Invalid ROM data' }
+    validatedData = validated.data
+  }
 
   // Check for existing active note
   const { data: existing } = await supabase
@@ -605,20 +610,20 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
     const { error } = await supabase
       .from('initial_visit_notes')
       .update({
-        rom_data: validated.data as unknown as Record<string, unknown>,
+        rom_data: validatedData as unknown as Record<string, unknown> | null,
         updated_by_user_id: user.id,
       })
       .eq('id', existing.id)
 
     if (error) return { error: 'Failed to update ROM data' }
-  } else {
-    // Create a new draft note with only ROM data
+  } else if (validatedData !== null) {
+    // Create a new draft note with only ROM data (don't create for null)
     const { error } = await supabase
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
         status: 'draft',
-        rom_data: validated.data as unknown as Record<string, unknown>,
+        rom_data: validatedData as unknown as Record<string, unknown>,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })

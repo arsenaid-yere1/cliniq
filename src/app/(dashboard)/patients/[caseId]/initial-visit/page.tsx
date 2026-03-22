@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals, getInitialVisitRom } from '@/actions/initial-visit-notes'
+import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals } from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
 
