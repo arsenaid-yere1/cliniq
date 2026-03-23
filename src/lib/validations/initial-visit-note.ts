@@ -5,6 +5,7 @@ import { z } from 'zod'
 export const initialVisitSections = [
   'introduction',
   'history_of_accident',
+  'post_accident_history',
   'chief_complaint',
   'past_medical_history',
   'social_history',
@@ -27,6 +28,7 @@ export type InitialVisitSection = typeof initialVisitSections[number]
 export const sectionLabels: Record<InitialVisitSection, string> = {
   introduction: 'Introduction',
   history_of_accident: 'History of the Accident',
+  post_accident_history: 'Post-Accident History',
   chief_complaint: 'Chief Complaint',
   past_medical_history: 'Past Medical History',
   social_history: 'Social History',
@@ -47,6 +49,7 @@ export const sectionLabels: Record<InitialVisitSection, string> = {
 export const initialVisitNoteResultSchema = z.object({
   introduction: z.string(),
   history_of_accident: z.string(),
+  post_accident_history: z.string(),
   chief_complaint: z.string(),
   past_medical_history: z.string(),
   social_history: z.string(),
@@ -69,6 +72,7 @@ export type InitialVisitNoteResult = z.infer<typeof initialVisitNoteResultSchema
 export const initialVisitNoteEditSchema = z.object({
   introduction: z.string().min(1, 'Introduction is required'),
   history_of_accident: z.string().min(1, 'History of the accident is required'),
+  post_accident_history: z.string().min(1, 'Post-accident history is required'),
   chief_complaint: z.string().min(1, 'Chief complaint is required'),
   past_medical_history: z.string().min(1, 'Past medical history is required'),
   social_history: z.string().min(1, 'Social history is required'),

@@ -123,6 +123,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
 
     introduction: input.note.introduction as string | null,
     history_of_accident: input.note.history_of_accident as string | null,
+    post_accident_history: input.note.post_accident_history as string | null,
     chief_complaint: input.note.chief_complaint as string | null,
     past_medical_history: input.note.past_medical_history as string | null,
     social_history: input.note.social_history as string | null,

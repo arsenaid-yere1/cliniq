@@ -214,6 +214,7 @@ export async function generateInitialVisitNote(caseId: string) {
     .update({
       introduction: data.introduction,
       history_of_accident: data.history_of_accident,
+      post_accident_history: data.post_accident_history,
       chief_complaint: data.chief_complaint,
       past_medical_history: data.past_medical_history,
       social_history: data.social_history,

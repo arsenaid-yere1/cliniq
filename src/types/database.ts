@@ -948,42 +948,42 @@ export type Database = {
       }
       fee_estimate_config: {
         Row: {
-          id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
           description: string
           fee_category: string
-          price_min: number
+          id: string
           price_max: number
+          price_min: number
           sort_order: number
-          created_at: string
           updated_at: string
-          deleted_at: string | null
-          created_by_user_id: string | null
           updated_by_user_id: string | null
         }
         Insert: {
-          id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
           description: string
           fee_category?: string
-          price_min?: number
+          id?: string
           price_max?: number
+          price_min?: number
           sort_order?: number
-          created_at?: string
           updated_at?: string
-          deleted_at?: string | null
-          created_by_user_id?: string | null
           updated_by_user_id?: string | null
         }
         Update: {
-          id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
           description?: string
           fee_category?: string
-          price_min?: number
+          id?: string
           price_max?: number
+          price_min?: number
           sort_order?: number
-          created_at?: string
           updated_at?: string
-          deleted_at?: string | null
-          created_by_user_id?: string | null
           updated_by_user_id?: string | null
         }
         Relationships: [
@@ -1027,6 +1027,7 @@ export type Database = {
           past_medical_history: string | null
           patient_education: string | null
           physical_exam: string | null
+          post_accident_history: string | null
           prognosis: string | null
           raw_ai_response: Json | null
           review_of_systems: string | null
@@ -1061,6 +1062,7 @@ export type Database = {
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null
+          post_accident_history?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
@@ -1095,6 +1097,7 @@ export type Database = {
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null
+          post_accident_history?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null

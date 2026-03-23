@@ -63,6 +63,7 @@ interface NoteRow {
   case_id: string
   introduction: string | null
   history_of_accident: string | null
+  post_accident_history: string | null
   chief_complaint: string | null
   past_medical_history: string | null
   social_history: string | null
@@ -141,6 +142,7 @@ interface InitialVisitEditorProps {
 const sectionRows: Record<InitialVisitSection, number> = {
   introduction: 5,
   history_of_accident: 8,
+  post_accident_history: 8,
   chief_complaint: 8,
   past_medical_history: 5,
   social_history: 3,
@@ -747,6 +749,7 @@ function DraftEditor({
     defaultValues: {
       introduction: note.introduction || '',
       history_of_accident: note.history_of_accident || '',
+      post_accident_history: note.post_accident_history || '',
       chief_complaint: note.chief_complaint || '',
       past_medical_history: note.past_medical_history || '',
       social_history: note.social_history || '',

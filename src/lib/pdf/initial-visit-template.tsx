@@ -17,9 +17,10 @@ export interface InitialVisitPdfData {
   indication: string
   dateOfInjury: string
 
-  // Note sections (15 sections)
+  // Note sections (16 sections)
   introduction: string | null
   history_of_accident: string | null
+  post_accident_history: string | null
   chief_complaint: string | null
   past_medical_history: string | null
   social_history: string | null
@@ -43,6 +44,7 @@ export interface InitialVisitPdfData {
 
 const sectionEntries: [keyof InitialVisitPdfData, string][] = [
   ['history_of_accident', 'History of the Accident'],
+  ['post_accident_history', 'Post-Accident History'],
   ['chief_complaint', 'Chief Complaint'],
   ['past_medical_history', 'Past Medical History'],
   ['social_history', 'Social History'],

@@ -41,27 +41,34 @@ Reference: "Ms. [Name] is a 21-year-old female who presents for pain management 
 
 2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
-Para 2: Briefly state "The patient sought treatment with [type] care following the collision and has continued conservative treatment. MRIs of the [regions] were obtained for further evaluation." ONE sentence per fact. Do NOT list modality names, visit counts, NRS scores, or treatment dates.
+Para 2: "The patient sought medical attention following the collision." (one sentence only — treatment details belong in Post-Accident History)
 Para 3: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
-3. CHIEF COMPLAINT (~1 intro sentence + bullet list):
+3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
+Para 1: Timeline of care sought after the accident — ER/urgent care visits, initial treatment providers (chiropractic, physical therapy), and referral chain leading to this evaluation. Use specific dates and provider types from the case summary treatment timeline.
+Para 2: How symptoms have evolved since the accident — which symptoms persisted, worsened, or improved over time. Include any medications prescribed post-accident.
+Para 3: Functional impact — work status changes, activity limitations, and how daily life has been affected since the accident.
+Use information from the case summary treatment timeline and symptom progression. Do NOT repeat accident mechanism details (covered in History of the Accident).
+Reference tone: "Following the collision, the patient presented to the emergency department where radiographs were obtained and she was prescribed muscle relaxants and pain medication. She subsequently initiated chiropractic care approximately one week post-accident and has continued conservative treatment. MRIs of the cervical and lumbar spine were obtained for further evaluation."
+
+4. CHIEF COMPLAINT (~1 intro sentence + bullet list):
 Brief intro sentence, then "• " bullet per complaint with: region, persistent/intermittent, pain rating X–X/10, radiation status, aggravating factors, alleviating factors. Include sleep disturbance. Use SPECIFIC ratings from the source data — do not use "[X/10]" if pain data is available.
 Reference: "• Neck pain: Persistent, rated 7–8/10. There is no radiation. The pain is aggravated by activities and sleeping and alleviated with medication, therapy, and rest."
 
-4. PAST MEDICAL HISTORY (~4 bullet points):
+5. PAST MEDICAL HISTORY (~4 bullet points):
 Simple bullets: Medical Problems, Surgeries, Medications Prior to Visit, Allergies. Fill from source data. Keep each to ONE line.
 Reference: "• Medical Problems: None reported.\n• Surgeries: None.\n• Medications Prior to Visit: Advil/Ibuprofen as needed.\n• Allergies: No known drug allergies."
 
-5. SOCIAL HISTORY (~2 bullet points):
+6. SOCIAL HISTORY (~2 bullet points):
 Smoking/Drinking status, Occupation. Fill from source data or use standard "Denies the use of alcohol, tobacco, and/or drugs."
 Reference: "• Smoking/Drinking: Denies the use of alcohol, tobacco, and/or drugs.\n• Occupation: Works as a nanny."
 
-6. REVIEW OF SYSTEMS (~2 bullet points ONLY):
+7. REVIEW OF SYSTEMS (~2 bullet points ONLY):
 General + Musculoskeletal ONLY. Do NOT add Neurological, Cardiovascular, Respiratory, or Psychiatric sub-sections.
 Reference: "• General: Reports sleep disturbance.\n• Musculoskeletal: Ongoing cervical pain, mid-back discomfort, left shoulder pain, and low back pain affecting activities of daily living."
 
-7. PHYSICAL EXAMINATION (structured by affected region only):
+8. PHYSICAL EXAMINATION (structured by affected region only):
 Start with "VITAL SIGNS:" sub-heading + bullets. If vital signs data is provided in the source data (vitalSigns object), use the actual values: Blood Pressure as {bp_systolic}/{bp_diastolic} mmHg, Heart Rate as {heart_rate} bpm, Respiratory Rate as {respiratory_rate} breaths/min, Temperature as {temperature_f}°F, SpO2 as {spo2_percent}%. For any individual vital sign that is null, use "[XX]" as placeholder. If vitalSigns is null entirely, use "[XX]" for all vitals.
 Then "General:" appearance statement (1-2 sentences).
 Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels, "RANGE OF MOTION:" sub-heading with "• " bullet per movement, orthopedic test results, and brief neurological testing note.
@@ -69,22 +76,22 @@ If ROM data (romData) is provided in the source data, render actual measurements
 DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
 Reference ROM format: "• Flexion: Normal 60° / Actual 60° / Pain: No\n• Extension: Normal 50° / Actual 35° / Pain: Yes"
 
-8. RADIOLOGICAL IMAGING FINDINGS:
+9. RADIOLOGICAL IMAGING FINDINGS:
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
 
-9. MOTOR / SENSORY / REFLEX SUMMARY (~2-3 sentences):
+10. MOTOR / SENSORY / REFLEX SUMMARY (~2-3 sentences):
 Brief summary: "Upper and lower extremities without gross motor weakness. Strength normal bilaterally. Sensation intact to light touch overall. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do dermatome-by-dermatome breakdown, do NOT mention Babinski sign.
 
-10. MEDICAL NECESSITY (~3-5 sentences):
+11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
 Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
 Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of March 12, 2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
-11. DIAGNOSES (simple bullet list):
+12. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
 Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia"
 
-12. TREATMENT PLAN (~2-3 short paragraphs + cost estimate):
+13. TREATMENT PLAN (~2-3 short paragraphs + cost estimate):
 Para 1: "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections."
 Bullet per target region (cervical, lumbar) with specific levels and guidance modality.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
@@ -95,13 +102,13 @@ Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values a
 Para 2: Brief conservative care recommendations — continue OTC medication, home PT program, activity modification, and follow-up timeline. ALL IN ONE PARAGRAPH. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up.
 The entire treatment plan should be about half a page.
 
-13. PATIENT EDUCATION (~1 paragraph):
+14. PATIENT EDUCATION (~1 paragraph):
 State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
 
-14. PROGNOSIS (~2 sentences):
+15. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
 
-15. CLINICIAN DISCLAIMER (~2 short paragraphs):
+16. CLINICIAN DISCLAIMER (~2 short paragraphs):
 Standard disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
 FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
 
@@ -115,6 +122,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
     required: [
       'introduction',
       'history_of_accident',
+      'post_accident_history',
       'chief_complaint',
       'past_medical_history',
       'social_history',
@@ -137,6 +145,10 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       history_of_accident: {
         type: 'string',
         description: 'Detailed narrative of accident mechanism, immediate symptoms, and post-accident course',
+      },
+      post_accident_history: {
+        type: 'string',
+        description: 'Post-accident treatment timeline, symptom evolution, and functional impact since the accident',
       },
       chief_complaint: {
         type: 'string',
