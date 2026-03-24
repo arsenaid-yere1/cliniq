@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -1048,10 +1023,10 @@ export type Database = {
           imaging_findings: string | null
           introduction: string | null
           medical_necessity: string | null
-          motor_sensory_reflex: string | null
           past_medical_history: string | null
           patient_education: string | null
           physical_exam: string | null
+          post_accident_history: string | null
           prognosis: string | null
           raw_ai_response: Json | null
           review_of_systems: string | null
@@ -1082,10 +1057,10 @@ export type Database = {
           imaging_findings?: string | null
           introduction?: string | null
           medical_necessity?: string | null
-          motor_sensory_reflex?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null
+          post_accident_history?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
@@ -1116,10 +1091,10 @@ export type Database = {
           imaging_findings?: string | null
           introduction?: string | null
           medical_necessity?: string | null
-          motor_sensory_reflex?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null
+          post_accident_history?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
@@ -2586,6 +2561,8 @@ export type Database = {
           deleted_at: string | null
           heart_rate: number | null
           id: string
+          pain_score_max: number | null
+          pain_score_min: number | null
           procedure_id: string | null
           recorded_at: string
           respiratory_rate: number | null
@@ -2603,6 +2580,8 @@ export type Database = {
           deleted_at?: string | null
           heart_rate?: number | null
           id?: string
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           procedure_id?: string | null
           recorded_at?: string
           respiratory_rate?: number | null
@@ -2620,6 +2599,8 @@ export type Database = {
           deleted_at?: string | null
           heart_rate?: number | null
           id?: string
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           procedure_id?: string | null
           recorded_at?: string
           respiratory_rate?: number | null
@@ -2793,9 +2774,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

@@ -141,7 +141,6 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     review_of_systems: input.note.review_of_systems as string | null,
     physical_exam: input.note.physical_exam as string | null,
     imaging_findings: input.note.imaging_findings as string | null,
-    motor_sensory_reflex: input.note.motor_sensory_reflex as string | null,
     medical_necessity: input.note.medical_necessity as string | null,
     diagnoses: input.note.diagnoses as string | null,
     treatment_plan: input.note.treatment_plan as string | null,

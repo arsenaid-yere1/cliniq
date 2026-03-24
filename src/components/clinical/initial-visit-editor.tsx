@@ -70,7 +70,6 @@ interface NoteRow {
   review_of_systems: string | null
   physical_exam: string | null
   imaging_findings: string | null
-  motor_sensory_reflex: string | null
   medical_necessity: string | null
   diagnoses: string | null
   treatment_plan: string | null
@@ -151,7 +150,6 @@ const sectionRows: Record<InitialVisitSection, number> = {
   review_of_systems: 5,
   physical_exam: 8,
   imaging_findings: 8,
-  motor_sensory_reflex: 3,
   medical_necessity: 5,
   diagnoses: 5,
   treatment_plan: 8,
@@ -801,7 +799,6 @@ function DraftEditor({
       review_of_systems: note.review_of_systems || '',
       physical_exam: note.physical_exam || '',
       imaging_findings: note.imaging_findings || '',
-      motor_sensory_reflex: note.motor_sensory_reflex || '',
       medical_necessity: note.medical_necessity || '',
       diagnoses: note.diagnoses || '',
       treatment_plan: note.treatment_plan || '',

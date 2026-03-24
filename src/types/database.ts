@@ -1023,7 +1023,6 @@ export type Database = {
           imaging_findings: string | null
           introduction: string | null
           medical_necessity: string | null
-          motor_sensory_reflex: string | null
           past_medical_history: string | null
           patient_education: string | null
           physical_exam: string | null
@@ -1058,7 +1057,6 @@ export type Database = {
           imaging_findings?: string | null
           introduction?: string | null
           medical_necessity?: string | null
-          motor_sensory_reflex?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null
@@ -1093,7 +1091,6 @@ export type Database = {
           imaging_findings?: string | null
           introduction?: string | null
           medical_necessity?: string | null
-          motor_sensory_reflex?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
           physical_exam?: string | null

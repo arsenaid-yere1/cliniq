@@ -75,23 +75,21 @@ Then one sub-section per AFFECTED SPINE REGION that has source data (typically c
 If ROM data (romData) is provided in the source data, render actual measurements for each region under the "RANGE OF MOTION:" sub-heading. Use the provided normal/actual/pain values directly. If romData is null, do NOT include any RANGE OF MOTION sub-heading or ROM measurements — omit ROM from the physical exam entirely.
 DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
 Reference ROM format: "• Flexion: Normal 60° / Actual 60° / Pain: No\n• Extension: Normal 50° / Actual 35° / Pain: Yes"
+End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentences) summarizing motor strength, sensation, and deep tendon reflexes for upper and lower extremities. Example: "Upper and lower extremities demonstrate normal motor strength bilaterally. Sensation is intact to light touch throughout all dermatomes. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do a dermatome-by-dermatome breakdown and do NOT mention Babinski sign.
 
 9. RADIOLOGICAL IMAGING FINDINGS:
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
 
-10. MOTOR / SENSORY / REFLEX SUMMARY (~2-3 sentences):
-Brief summary: "Upper and lower extremities without gross motor weakness. Strength normal bilaterally. Sensation intact to light touch overall. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do dermatome-by-dermatome breakdown, do NOT mention Babinski sign.
-
-11. MEDICAL NECESSITY (~3-5 sentences):
+10. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
 Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
 Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of March 12, 2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
-12. DIAGNOSES (simple bullet list):
+11. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
 Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia"
 
-13. TREATMENT PLAN (~2-3 short paragraphs + cost estimate):
+12. TREATMENT PLAN (~2-3 short paragraphs + cost estimate):
 Para 1: "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections."
 Bullet per target region (cervical, lumbar) with specific levels and guidance modality.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
@@ -102,13 +100,13 @@ Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values a
 Para 2: Brief conservative care recommendations — continue OTC medication, home PT program, activity modification, and follow-up timeline. ALL IN ONE PARAGRAPH. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up.
 The entire treatment plan should be about half a page.
 
-14. PATIENT EDUCATION (~1 paragraph):
+13. PATIENT EDUCATION (~1 paragraph):
 State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
 
-15. PROGNOSIS (~2 sentences):
+14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
 
-16. CLINICIAN DISCLAIMER (~2 short paragraphs):
+15. CLINICIAN DISCLAIMER (~2 short paragraphs):
 Standard disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
 FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
 
@@ -129,7 +127,6 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       'review_of_systems',
       'physical_exam',
       'imaging_findings',
-      'motor_sensory_reflex',
       'medical_necessity',
       'diagnoses',
       'treatment_plan',
@@ -173,10 +170,6 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       imaging_findings: {
         type: 'string',
         description: 'MRI findings by region with specific measurements, disc levels, pathology, and impressions',
-      },
-      motor_sensory_reflex: {
-        type: 'string',
-        description: 'Motor strength, sensation, and DTR summary for upper and lower extremities',
       },
       medical_necessity: {
         type: 'string',

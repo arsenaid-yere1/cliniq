@@ -39,7 +39,6 @@ export interface InitialVisitPdfData {
   review_of_systems: string | null
   physical_exam: string | null
   imaging_findings: string | null
-  motor_sensory_reflex: string | null
   medical_necessity: string | null
   diagnoses: string | null
   treatment_plan: string | null
@@ -63,7 +62,6 @@ const sectionEntries: [keyof InitialVisitPdfData, string][] = [
   ['review_of_systems', 'Review of Systems'],
   ['physical_exam', 'Physical Examination'],
   ['imaging_findings', 'Radiological Imaging Findings'],
-  ['motor_sensory_reflex', 'Motor / Sensory / Reflex Summary'],
   ['medical_necessity', 'Medical Necessity'],
   ['diagnoses', 'Diagnoses'],
   ['treatment_plan', 'Treatment Plan'],

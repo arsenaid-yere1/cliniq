@@ -221,7 +221,6 @@ export async function generateInitialVisitNote(caseId: string) {
       review_of_systems: data.review_of_systems,
       physical_exam: data.physical_exam,
       imaging_findings: data.imaging_findings,
-      motor_sensory_reflex: data.motor_sensory_reflex,
       medical_necessity: data.medical_necessity,
       diagnoses: data.diagnoses,
       treatment_plan: data.treatment_plan,
