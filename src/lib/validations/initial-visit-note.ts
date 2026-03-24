@@ -99,6 +99,8 @@ export const initialVisitVitalsSchema = z.object({
   respiratory_rate: z.number().int().min(1).max(60).nullable(),
   temperature_f: z.number().min(90).max(110).nullable(),
   spo2_percent: z.number().int().min(0).max(100).nullable(),
+  pain_score_min: z.number().int().min(0).max(10).nullable(),
+  pain_score_max: z.number().int().min(0).max(10).nullable(),
 })
 
 export type InitialVisitVitalsValues = z.infer<typeof initialVisitVitalsSchema>

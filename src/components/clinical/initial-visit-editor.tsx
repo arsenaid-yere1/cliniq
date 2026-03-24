@@ -121,6 +121,8 @@ interface VitalsData {
   respiratory_rate: number | null
   temperature_f: number | null
   spo2_percent: number | null
+  pain_score_min: number | null
+  pain_score_max: number | null
 }
 
 interface InitialVisitEditorProps {
@@ -294,6 +296,7 @@ export function InitialVisitEditor({
         isPending={isPending}
         startTransition={startTransition}
         isLocked={isLocked}
+        initialVitals={initialVitals}
       />
     )
   }
@@ -335,6 +338,8 @@ function VitalSignsCard({
       respiratory_rate: initialVitals?.respiratory_rate ?? null,
       temperature_f: initialVitals?.temperature_f ?? null,
       spo2_percent: initialVitals?.spo2_percent ?? null,
+      pain_score_min: initialVitals?.pain_score_min ?? null,
+      pain_score_max: initialVitals?.pain_score_max ?? null,
     },
   })
 
@@ -460,6 +465,46 @@ function VitalSignsCard({
                       min={0}
                       max={100}
                       placeholder="%"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="pain_score_min"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Pain Score Min</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      placeholder="0-10"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={vitalsForm.control}
+              name="pain_score_max"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Pain Score Max</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      placeholder="0-10"
                       value={field.value ?? ''}
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
@@ -945,6 +990,7 @@ function FinalizedView({
   isPending,
   startTransition,
   isLocked,
+  initialVitals,
 }: {
   caseId: string
   note: NoteRow
@@ -957,6 +1003,7 @@ function FinalizedView({
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   isLocked: boolean
+  initialVitals: VitalsData | null
 }) {
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
@@ -1069,6 +1116,42 @@ function FinalizedView({
               <p><strong>Date of Visit:</strong> {note.finalized_at ? format(new Date(note.finalized_at), 'MM/dd/yyyy') : '\u2014'}</p>
               {note.chief_complaint && <p><strong>Indication:</strong> Pain Management Evaluation</p>}
               {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
+            </div>
+            <Separator />
+          </>
+        )}
+
+        {/* Vital Signs Summary */}
+        {initialVitals && (
+          <>
+            <div className="space-y-1 text-sm">
+              <h3 className="text-sm font-bold mb-2">Vital Signs</h3>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                {initialVitals.bp_systolic != null && initialVitals.bp_diastolic != null && (
+                  <p><strong>Blood Pressure:</strong> {initialVitals.bp_systolic}/{initialVitals.bp_diastolic} mmHg</p>
+                )}
+                {initialVitals.heart_rate != null && (
+                  <p><strong>Heart Rate:</strong> {initialVitals.heart_rate} bpm</p>
+                )}
+                {initialVitals.respiratory_rate != null && (
+                  <p><strong>Respiratory Rate:</strong> {initialVitals.respiratory_rate} breaths/min</p>
+                )}
+                {initialVitals.temperature_f != null && (
+                  <p><strong>Temperature:</strong> {initialVitals.temperature_f}°F</p>
+                )}
+                {initialVitals.spo2_percent != null && (
+                  <p><strong>SpO2:</strong> {initialVitals.spo2_percent}%</p>
+                )}
+                {(initialVitals.pain_score_min != null || initialVitals.pain_score_max != null) && (
+                  <p><strong>Pain Score:</strong> {
+                    initialVitals.pain_score_min != null && initialVitals.pain_score_max != null
+                      ? initialVitals.pain_score_min === initialVitals.pain_score_max
+                        ? `${initialVitals.pain_score_min}/10`
+                        : `${initialVitals.pain_score_min}/10 – ${initialVitals.pain_score_max}/10`
+                      : `${initialVitals.pain_score_min ?? initialVitals.pain_score_max}/10`
+                  }</p>
+                )}
+              </div>
             </div>
             <Separator />
           </>

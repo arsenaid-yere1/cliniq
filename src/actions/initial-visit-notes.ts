@@ -44,7 +44,7 @@ async function gatherSourceData(
       .maybeSingle(),
     supabase
       .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
       .is('procedure_id', null)
       .is('deleted_at', null)
@@ -499,7 +499,7 @@ export async function getInitialVisitVitals(caseId: string) {
 
   const { data, error } = await supabase
     .from('vital_signs')
-    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
+    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
     .eq('case_id', caseId)
     .is('procedure_id', null)
     .is('deleted_at', null)

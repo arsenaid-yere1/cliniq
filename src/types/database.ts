@@ -2564,6 +2564,8 @@ export type Database = {
           deleted_at: string | null
           heart_rate: number | null
           id: string
+          pain_score_max: number | null
+          pain_score_min: number | null
           procedure_id: string | null
           recorded_at: string
           respiratory_rate: number | null
@@ -2581,6 +2583,8 @@ export type Database = {
           deleted_at?: string | null
           heart_rate?: number | null
           id?: string
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           procedure_id?: string | null
           recorded_at?: string
           respiratory_rate?: number | null
@@ -2598,6 +2602,8 @@ export type Database = {
           deleted_at?: string | null
           heart_rate?: number | null
           id?: string
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           procedure_id?: string | null
           recorded_at?: string
           respiratory_rate?: number | null
