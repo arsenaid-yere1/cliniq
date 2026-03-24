@@ -17,6 +17,18 @@ export interface InitialVisitPdfData {
   indication: string
   dateOfInjury: string
 
+  // Vital signs
+  vitals?: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null
+
   // Note sections (16 sections)
   introduction: string | null
   history_of_accident: string | null
@@ -206,6 +218,42 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
         </View>
 
         <View style={styles.separator} />
+
+        {/* Vital Signs Summary */}
+        {data.vitals && (
+          <View>
+            <Text style={styles.sectionHeading} minPresenceAhead={40}>Vital Signs</Text>
+            <View>
+              {data.vitals.bp_systolic != null && data.vitals.bp_diastolic != null && (
+                <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Blood Pressure:</Text><Text>{data.vitals.bp_systolic}/{data.vitals.bp_diastolic} mmHg</Text></View>
+              )}
+              {data.vitals.heart_rate != null && (
+                <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Heart Rate:</Text><Text>{data.vitals.heart_rate} bpm</Text></View>
+              )}
+              {data.vitals.respiratory_rate != null && (
+                <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Respiratory Rate:</Text><Text>{data.vitals.respiratory_rate} breaths/min</Text></View>
+              )}
+              {data.vitals.temperature_f != null && (
+                <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Temperature:</Text><Text>{data.vitals.temperature_f}°F</Text></View>
+              )}
+              {data.vitals.spo2_percent != null && (
+                <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>SpO2:</Text><Text>{data.vitals.spo2_percent}%</Text></View>
+              )}
+              {(data.vitals.pain_score_min != null || data.vitals.pain_score_max != null) && (
+                <View style={styles.patientInfoRow}>
+                  <Text style={styles.patientLabel}>Pain Score:</Text>
+                  <Text>{
+                    data.vitals.pain_score_min != null && data.vitals.pain_score_max != null
+                      ? data.vitals.pain_score_min === data.vitals.pain_score_max
+                        ? `${data.vitals.pain_score_min}/10`
+                        : `${data.vitals.pain_score_min}/10 – ${data.vitals.pain_score_max}/10`
+                      : `${data.vitals.pain_score_min ?? data.vitals.pain_score_max}/10`
+                  }</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Introduction — special heading */}
         {data.introduction && (
