@@ -1147,7 +1147,7 @@ function FinalizedView({
                     initialVitals.pain_score_min != null && initialVitals.pain_score_max != null
                       ? initialVitals.pain_score_min === initialVitals.pain_score_max
                         ? `${initialVitals.pain_score_min}/10`
-                        : `${initialVitals.pain_score_min}/10 – ${initialVitals.pain_score_max}/10`
+                        : `${initialVitals.pain_score_min}-${initialVitals.pain_score_max}/10`
                       : `${initialVitals.pain_score_min ?? initialVitals.pain_score_max}/10`
                   }</p>
                 )}

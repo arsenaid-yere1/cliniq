@@ -246,7 +246,7 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
                     data.vitals.pain_score_min != null && data.vitals.pain_score_max != null
                       ? data.vitals.pain_score_min === data.vitals.pain_score_max
                         ? `${data.vitals.pain_score_min}/10`
-                        : `${data.vitals.pain_score_min}/10 – ${data.vitals.pain_score_max}/10`
+                        : `${data.vitals.pain_score_min}-${data.vitals.pain_score_max}/10`
                       : `${data.vitals.pain_score_min ?? data.vitals.pain_score_max}/10`
                   }</Text>
                 </View>
