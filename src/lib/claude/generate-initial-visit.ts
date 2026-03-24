@@ -20,7 +20,7 @@ CONCISENESS: Write in the same clinical prose style as the reference examples be
 
 NO REPETITION: DO NOT repeat information that appears in earlier sections. Each section should contain only NEW information. DO NOT repeat information that appears in the document header (clinic name, address, phone/fax, provider name/credentials — these are rendered separately in the PDF header and signature block).
 
-NO UNNECESSARY BRACKETS: DO NOT add "[Provider to confirm]" brackets unless the data is truly absent from the source. If data exists in the case summary, USE IT. Only use brackets for vitals (when not provided) and orthopedic test results that require in-person examination. If romData is provided in the source data, use the actual values for each region's range of motion using the format: "• {movement}: Normal {normal}° / Actual {actual}° / Pain: {Yes|No}". For any movement where actual is null, use "[XX]" for the actual value only. If romData is null entirely, do NOT include any ROM measurements or RANGE OF MOTION sub-headings — omit ROM from the note completely.
+NO UNNECESSARY BRACKETS: DO NOT add "[Provider to confirm]" brackets unless the data is truly absent from the source. If data exists in the case summary, USE IT. Only use brackets for vitals when not provided. If romData is provided in the source data, use the actual values for each region's range of motion using the format: "• {movement}: Normal {normal}° / Actual {actual}° / Pain: {Yes|No}". For any movement where actual is null, use "[XX]" for the actual value only. If romData is null entirely, do NOT include any ROM measurements or RANGE OF MOTION sub-headings — omit ROM from the note completely.
 
 SCOPE: DO NOT expand beyond the scope of the original template. If the patient only has cervical and lumbar complaints, do not add shoulder or thoracic exam unless the source data specifically contains findings for those regions.
 
@@ -71,8 +71,9 @@ Reference: "• General: Reports sleep disturbance.\n• Musculoskeletal: Ongoin
 8. PHYSICAL EXAMINATION (structured by affected region only):
 Start with "VITAL SIGNS:" sub-heading + bullets. If vital signs data is provided in the source data (vitalSigns object), use the actual values: Blood Pressure as {bp_systolic}/{bp_diastolic} mmHg, Heart Rate as {heart_rate} bpm, Respiratory Rate as {respiratory_rate} breaths/min, Temperature as {temperature_f}°F, SpO2 as {spo2_percent}%, Pain Score as {pain_score_min}-{pain_score_max}/10 (do NOT add "Numeric Rating Scale", "NRS", or any scale label — just the number and "/10"). If pain_score_min equals pain_score_max, display as a single value (e.g., "7/10"). If only one is provided, display that single value. For any individual vital sign that is null, use "[XX]" as placeholder. If vitalSigns is null entirely, use "[XX]" for all vitals.
 Then "General:" appearance statement (1-2 sentences).
-Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels, "RANGE OF MOTION:" sub-heading with "• " bullet per movement, orthopedic test results, and brief neurological testing note.
+Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels, and optionally a "RANGE OF MOTION:" sub-heading with "• " bullet per movement (only if ROM data is provided).
 If ROM data (romData) is provided in the source data, render actual measurements for each region under the "RANGE OF MOTION:" sub-heading. Use the provided normal/actual/pain values directly. If romData is null, do NOT include any RANGE OF MOTION sub-heading or ROM measurements — omit ROM from the physical exam entirely.
+DO NOT include orthopedic testing (e.g., Spurling's test, Kemp's test, straight leg raise, foraminal compression) in the physical exam.
 DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
 Reference ROM format: "• Flexion: Normal 60° / Actual 60° / Pain: No\n• Extension: Normal 50° / Actual 35° / Pain: Yes"
 End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentences) summarizing motor strength, sensation, and deep tendon reflexes for upper and lower extremities. Example: "Upper and lower extremities demonstrate normal motor strength bilaterally. Sensation is intact to light touch throughout all dermatomes. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do a dermatome-by-dermatome breakdown and do NOT mention Babinski sign.
@@ -165,7 +166,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       physical_exam: {
         type: 'string',
-        description: 'Vital signs, musculoskeletal exam, ROM, orthopedic tests, and neurological findings by region',
+        description: 'Vital signs, musculoskeletal exam, ROM (if provided), and neurological findings by region',
       },
       imaging_findings: {
         type: 'string',
