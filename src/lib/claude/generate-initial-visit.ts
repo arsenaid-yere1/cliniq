@@ -88,7 +88,12 @@ Reference: "The clinical examination and imaging findings support post-traumatic
 
 11. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
-Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia"
+After the clinical diagnosis codes, include the appropriate External Cause Code based on the accident_type from the case details:
+• If accident_type is "auto": add "• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
+• If accident_type is "slip_and_fall": add "• W01.0XXA – Fall on same level from slipping, initial encounter"
+• If accident_type is "workplace": add "• W18.49XA – Other slipping, tripping and stumbling with subsequent fall, initial encounter"
+• If accident_type is "other" or null: omit the external cause code
+Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia\n• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
 
 12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
 Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region (e.g., cervical, thoracic, lumbar) and citing the MRI-confirmed pathology that supports intervention (e.g., disc herniations, disc bulges, annular tears, cervical instability/ligamentous laxity). State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
