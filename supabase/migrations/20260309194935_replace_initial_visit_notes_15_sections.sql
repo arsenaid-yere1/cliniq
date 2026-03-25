@@ -1,5 +1,7 @@
--- Replace initial_visit_notes: expand from 8 to 15 sections matching provider template
+-- Replace initial_visit_notes: expand to 16 sections matching provider template
 -- Safe to drop — no production data exists
+-- Consolidates changes from migrations 023 (rom_data), 027 (post_accident_history),
+-- 029 (drop motor_sensory_reflex), 030 (time_complexity_attestation)
 
 drop table if exists public.initial_visit_notes cascade;
 
@@ -7,22 +9,26 @@ create table public.initial_visit_notes (
   id uuid primary key default gen_random_uuid(),
   case_id uuid not null references public.cases(id),
 
-  -- Section text fields (15 sections matching provider template)
+  -- Section text fields (16 sections matching provider template)
   introduction text,
   history_of_accident text,
+  post_accident_history text,
   chief_complaint text,
   past_medical_history text,
   social_history text,
   review_of_systems text,
   physical_exam text,
   imaging_findings text,
-  motor_sensory_reflex text,
   medical_necessity text,
   diagnoses text,
   treatment_plan text,
   patient_education text,
   prognosis text,
+  time_complexity_attestation text,
   clinician_disclaimer text,
+
+  -- Structured ROM measurements (optional)
+  rom_data jsonb,
 
   -- AI metadata
   ai_model text,
