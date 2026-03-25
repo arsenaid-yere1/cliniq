@@ -35,8 +35,8 @@ SCOPE: DO NOT expand beyond the scope of the original template. If the patient o
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. INTRODUCTION (~3 sentences):
-"To Whom it May Concern" paragraph. State: patient age, gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
-DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials.
+Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age, gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
+DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
 Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."
 
 2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
@@ -149,7 +149,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
     properties: {
       introduction: {
         type: 'string',
-        description: '"To Whom it May Concern" opening paragraph with patient demographics and evaluation context',
+        description: 'Opening paragraph with patient demographics and evaluation context. Do NOT include "To Whom it May Concern" — the heading is added by the template.',
       },
       history_of_accident: {
         type: 'string',
