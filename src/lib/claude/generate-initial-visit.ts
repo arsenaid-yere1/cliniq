@@ -81,12 +81,7 @@ End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentenc
 9. RADIOLOGICAL IMAGING FINDINGS:
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
 
-10. MEDICAL NECESSITY (~3-5 sentences):
-Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
-Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
-Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of March 12, 2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
-
-11. DIAGNOSES (simple bullet list):
+10. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
 After the clinical diagnosis codes, include the appropriate External Cause Code based on the accident_type from the case details:
 • If accident_type is "auto": add "• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
@@ -94,6 +89,11 @@ After the clinical diagnosis codes, include the appropriate External Cause Code 
 • If accident_type is "workplace": add "• W18.49XA – Other slipping, tripping and stumbling with subsequent fall, initial encounter"
 • If accident_type is "other" or null: omit the external cause code
 Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia\n• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
+
+11. MEDICAL NECESSITY (~3-5 sentences):
+Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
+Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
+Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of March 12, 2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
 12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
 Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region (e.g., cervical, thoracic, lumbar) and citing the MRI-confirmed pathology that supports intervention (e.g., disc herniations, disc bulges, annular tears, cervical instability/ligamentous laxity). State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
@@ -138,8 +138,8 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       'review_of_systems',
       'physical_exam',
       'imaging_findings',
-      'medical_necessity',
       'diagnoses',
+      'medical_necessity',
       'treatment_plan',
       'patient_education',
       'prognosis',
@@ -183,13 +183,13 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
         type: 'string',
         description: 'MRI findings by region with specific measurements, disc levels, pathology, and impressions',
       },
-      medical_necessity: {
-        type: 'string',
-        description: 'Clinical correlation of findings with imaging, conservative care failure, persistent symptoms, functional impairment, and PRP treatment justification',
-      },
       diagnoses: {
         type: 'string',
         description: 'ICD-10 diagnosis list based on clinical findings and imaging',
+      },
+      medical_necessity: {
+        type: 'string',
+        description: 'Clinical correlation of findings with imaging, conservative care failure, persistent symptoms, functional impairment, and PRP treatment justification',
       },
       treatment_plan: {
         type: 'string',
