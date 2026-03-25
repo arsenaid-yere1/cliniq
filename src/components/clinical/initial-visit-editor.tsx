@@ -806,6 +806,7 @@ function DraftEditor({
       treatment_plan: note.treatment_plan || '',
       patient_education: note.patient_education || '',
       prognosis: note.prognosis || '',
+      time_complexity_attestation: note.time_complexity_attestation || '',
       clinician_disclaimer: note.clinician_disclaimer || '',
     },
   })
