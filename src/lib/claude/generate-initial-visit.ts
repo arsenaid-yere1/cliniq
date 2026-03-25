@@ -91,13 +91,13 @@ Use "• ICD-10 — Description" format. NO justification text after each code. 
 Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia"
 
 12. TREATMENT PLAN (~2 paragraphs + cost estimate):
-Para 1 — PRP injection protocol: Open with "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections." Then provide a bullet per target region (cervical, lumbar) specifying: the exact spinal levels to be treated (e.g., C4-5, C5-6), the guidance modality (e.g., fluoroscopic or ultrasound-guided), and the injection type (e.g., intradiscal, facet-mediated, epidural). After the bullets, state the injection spacing (e.g., "Injections will be spaced approximately 4-6 weeks apart") and that the patient will be re-evaluated after each injection to assess response before proceeding with additional treatments.
+Para 1 — PRP injection protocol: Open with "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections." Then provide a bullet per target region (cervical, lumbar) specifying: the exact spinal levels to be treated (e.g., C4-5, C5-6), the guidance modality (e.g., fluoroscopic or ultrasound-guided), and the injection type (e.g., intradiscal, facet-mediated, epidural). After the bullets, state the number of planned injection sessions and that the patient will be re-evaluated after each injection to assess response before proceeding with additional treatments.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
 "COST ESTIMATE:" sub-heading, then:
 "• Professional Fees: $\{professional_min\} – $\{professional_max\}"
 "• Practice/Surgery Center Fees: $\{practice_center_min\} – $\{practice_center_max\}"
 Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values are 0, omit the cost estimate sub-section entirely. If feeEstimate is null, use "[To be determined]" as placeholder.
-Para 2 — Supportive care & follow-up: In a single paragraph, cover: (a) continued conservative care — physical therapy 2-3 times per week focusing on strengthening and flexibility of affected regions, home exercise program, and activity modification as tolerated; (b) medication management — continue current OTC analgesics (e.g., NSAIDs, acetaminophen) as needed for pain control; (c) follow-up schedule — initial post-injection follow-up at 2 weeks to assess response, subsequent re-evaluation at 6 weeks, and long-term reassessment at 3 months to determine if additional injections or alternative interventions are needed. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up — keep it ALL in one paragraph.
+Para 2 — Supportive care & follow-up: In a single paragraph, cover the sequence of treatment steps: (a) continued conservative care — physical therapy focusing on strengthening and flexibility of affected regions, home exercise program, and activity modification as tolerated; (b) medication management — continue current OTC analgesics as needed for pain control; (c) follow-up plan — re-evaluation after each injection to assess response, with subsequent treatment decisions based on clinical progress. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up — keep it ALL in one paragraph.
 The entire treatment plan should be about two-thirds to one full page.
 
 13. PATIENT EDUCATION (~1 paragraph):
@@ -181,7 +181,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       treatment_plan: {
         type: 'string',
-        description: 'PRP injection protocol with specific spinal levels, guidance modality, injection spacing, cost estimate, conservative care plan, medication management, and follow-up schedule',
+        description: 'PRP injection protocol with specific spinal levels, guidance modality, number of sessions, cost estimate, conservative care sequence, and follow-up plan',
       },
       patient_education: {
         type: 'string',
