@@ -90,15 +90,17 @@ Reference: "The clinical examination and imaging findings support post-traumatic
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
 Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia"
 
-12. TREATMENT PLAN (~2 paragraphs + cost estimate):
-Para 1 — PRP injection protocol: Open with "Based on the patient's clinical presentation and diagnostic findings, I recommend a series of one to three PRP injections." Then provide a bullet per target region (cervical, lumbar) specifying: the exact spinal levels to be treated (e.g., C4-5, C5-6), the guidance modality (e.g., fluoroscopic or ultrasound-guided), and the injection type (e.g., intradiscal, facet-mediated, epidural). After the bullets, state the number of planned injection sessions and that the patient will be re-evaluated after each injection to assess response before proceeding with additional treatments.
+12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
+Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region (e.g., cervical, thoracic, lumbar) and citing the MRI-confirmed pathology that supports intervention (e.g., disc herniations, disc bulges, annular tears, cervical instability/ligamentous laxity). State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
+Para 2 — PRP injection protocol: Transition with language such as "Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections." Then provide a bullet per target region (cervical, lumbar) specifying: the exact spinal levels to be treated (e.g., C4-5, C5-6, C6-7), the guidance modality (e.g., fluoroscopic-guided), and the injection approach (e.g., intradiscal, facet-mediated, epidural). After the bullets, state the planned number of injection sessions (typically one to three) and that the patient will be re-evaluated after each injection to assess therapeutic response before proceeding with additional treatments.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
 "COST ESTIMATE:" sub-heading, then:
 "• Professional Fees: $\{professional_min\} – $\{professional_max\}"
 "• Practice/Surgery Center Fees: $\{practice_center_min\} – $\{practice_center_max\}"
 Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values are 0, omit the cost estimate sub-section entirely. If feeEstimate is null, use "[To be determined]" as placeholder.
-Para 2 — Supportive care & follow-up: In a single paragraph, cover the sequence of treatment steps: (a) continued conservative care — physical therapy focusing on strengthening and flexibility of affected regions, home exercise program, and activity modification as tolerated; (b) medication management — continue current OTC analgesics as needed for pain control; (c) follow-up plan — re-evaluation after each injection to assess response, with subsequent treatment decisions based on clinical progress. Do NOT create separate sub-sections for Medications, Conservative Care, Activity Modification, Additional Diagnostics, and Follow-up — keep it ALL in one paragraph.
-The entire treatment plan should be about two-thirds to one full page.
+Para 3 — Supportive care and rehabilitation: In a single paragraph, outline the concurrent conservative management plan: (a) home exercise program emphasizing core stabilization, cervical/lumbar strengthening, and flexibility exercises for affected regions; (b) ergonomic modifications for work and daily activities to minimize biomechanical stress on injured structures; (c) continued physical therapy as tolerated to maintain functional gains.
+Para 4 — Medication management, monitoring, and escalation: In a single paragraph, cover: (a) medication guidance — the patient is advised to avoid NSAIDs for a specified window before and after each PRP injection to avoid inhibiting the platelet-mediated healing response, with acetaminophen permitted for breakthrough pain as needed; (b) monitoring plan — the patient will be re-evaluated after each injection session to assess pain levels, functional improvement, and treatment response; (c) escalation language — if the patient does not demonstrate adequate clinical improvement after completing the PRP series, further diagnostic workup and/or referral for advanced interventional or surgical consultation will be considered. Do NOT create separate sub-sections — keep it ALL in one flowing paragraph.
+The entire treatment plan should be approximately one full page.
 
 13. PATIENT EDUCATION (~1 paragraph):
 State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
@@ -186,7 +188,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       treatment_plan: {
         type: 'string',
-        description: 'PRP injection protocol with specific spinal levels, guidance modality, number of sessions, cost estimate, conservative care sequence, and follow-up plan',
+        description: 'Clinical rationale with MRI-confirmed pathology, conservative treatment gap, PRP injection protocol with specific spinal levels and guidance modality, cost estimate, home exercise and ergonomic modifications, NSAID avoidance guidance, and monitoring/escalation plan',
       },
       patient_education: {
         type: 'string',
