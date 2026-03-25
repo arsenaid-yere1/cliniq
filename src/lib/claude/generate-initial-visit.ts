@@ -106,7 +106,11 @@ State that the patient was advised on home exercises, conservative care, nature 
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
 
-15. CLINICIAN DISCLAIMER (~2 short paragraphs):
+15. TIME AND COMPLEXITY ATTESTATION (~2-3 sentences):
+A first-person attestation from the provider documenting the cumulative time spent and the nature of the visit complexity. Must include: (a) total face-to-face time in minutes (use ">60 minutes" as default), (b) activities performed (evaluating the patient, reviewing imaging and prior records, counseling regarding diagnosis and treatment options), and (c) statement that more than 50% of time was spent in counseling and care coordination.
+Reference tone: "I personally spent a cumulative total of >60 minutes evaluating the patient, reviewing imaging and prior records, and counseling regarding diagnosis and treatment options. More than 50% of time was spent in counseling and care coordination."
+
+16. CLINICIAN DISCLAIMER (~2 short paragraphs):
 Standard disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
 FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
 
@@ -132,6 +136,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       'treatment_plan',
       'patient_education',
       'prognosis',
+      'time_complexity_attestation',
       'clinician_disclaimer',
     ],
     properties: {
@@ -190,6 +195,10 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       prognosis: {
         type: 'string',
         description: 'Prognosis statement based on symptoms, imaging, and treatment response',
+      },
+      time_complexity_attestation: {
+        type: 'string',
+        description: 'Provider attestation of cumulative time spent and complexity of medical decision-making',
       },
       clinician_disclaimer: {
         type: 'string',

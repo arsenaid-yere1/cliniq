@@ -75,6 +75,7 @@ interface NoteRow {
   treatment_plan: string | null
   patient_education: string | null
   prognosis: string | null
+  time_complexity_attestation: string | null
   clinician_disclaimer: string | null
   status: string
   generation_error: string | null
@@ -155,6 +156,7 @@ const sectionRows: Record<InitialVisitSection, number> = {
   treatment_plan: 8,
   patient_education: 5,
   prognosis: 3,
+  time_complexity_attestation: 3,
   clinician_disclaimer: 3,
 }
 

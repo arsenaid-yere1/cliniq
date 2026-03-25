@@ -226,6 +226,7 @@ export async function generateInitialVisitNote(caseId: string) {
       treatment_plan: data.treatment_plan,
       patient_education: data.patient_education,
       prognosis: data.prognosis,
+      time_complexity_attestation: data.time_complexity_attestation,
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-sonnet-4-6',
       raw_ai_response: result.rawResponse || null,

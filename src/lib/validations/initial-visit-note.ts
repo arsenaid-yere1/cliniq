@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// --- Section names (15 sections matching provider template) ---
+// --- Section names (16 sections matching provider template) ---
 
 export const initialVisitSections = [
   'introduction',
@@ -17,6 +17,7 @@ export const initialVisitSections = [
   'treatment_plan',
   'patient_education',
   'prognosis',
+  'time_complexity_attestation',
   'clinician_disclaimer',
 ] as const
 
@@ -39,6 +40,7 @@ export const sectionLabels: Record<InitialVisitSection, string> = {
   treatment_plan: 'Treatment Plan',
   patient_education: 'Patient Education',
   prognosis: 'Prognosis',
+  time_complexity_attestation: 'Time & Complexity Attestation',
   clinician_disclaimer: 'Clinician Disclaimer',
 }
 
@@ -59,6 +61,7 @@ export const initialVisitNoteResultSchema = z.object({
   treatment_plan: z.string(),
   patient_education: z.string(),
   prognosis: z.string(),
+  time_complexity_attestation: z.string(),
   clinician_disclaimer: z.string(),
 })
 
@@ -81,6 +84,7 @@ export const initialVisitNoteEditSchema = z.object({
   treatment_plan: z.string().min(1, 'Treatment plan is required'),
   patient_education: z.string().min(1, 'Patient education is required'),
   prognosis: z.string().min(1, 'Prognosis is required'),
+  time_complexity_attestation: z.string().min(1, 'Time & complexity attestation is required'),
   clinician_disclaimer: z.string().min(1, 'Clinician disclaimer is required'),
 })
 
