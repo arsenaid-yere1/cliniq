@@ -280,12 +280,18 @@ export interface InitialVisitInputData {
 
 export async function generateInitialVisitFromData(
   inputData: InitialVisitInputData,
+  toneHint?: string | null,
 ): Promise<{
   data?: InitialVisitNoteResult
   rawResponse?: unknown
   error?: string
 }> {
   try {
+    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\n${JSON.stringify(inputData, null, 2)}`
+    if (toneHint?.trim()) {
+      userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+    }
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 16384,
@@ -295,7 +301,7 @@ export async function generateInitialVisitFromData(
       messages: [
         {
           role: 'user',
-          content: `Generate a comprehensive Initial Visit note from the following case data.\n\n${JSON.stringify(inputData, null, 2)}`,
+          content: userMessage,
         },
       ],
     })

@@ -129,7 +129,7 @@ async function gatherSourceData(
 
 // --- Generate initial visit note ---
 
-export async function generateInitialVisitNote(caseId: string) {
+export async function generateInitialVisitNote(caseId: string, toneHint?: string | null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -181,12 +181,12 @@ export async function generateInitialVisitNote(caseId: string) {
     return { error: 'Failed to create note record' }
   }
 
-  // Call Claude
-  let result = await generateInitialVisitFromData(inputData)
+  // Call Claude (pass toneHint only on first generation, not retry)
+  let result = await generateInitialVisitFromData(inputData, toneHint)
 
-  // One retry on failure
+  // One retry on failure (without toneHint — retry uses default tone)
   if (result.error || !result.data) {
-    const retry = await generateInitialVisitFromData(inputData)
+    const retry = await generateInitialVisitFromData(inputData, toneHint)
 
     if (retry.error || !retry.data) {
       await supabase
@@ -414,6 +414,44 @@ export async function unfinalizeInitialVisitNote(caseId: string) {
     .eq('status', 'finalized')
 
   if (error) return { error: 'Failed to unfinalize note' }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
+
+// --- Reset note (discard all generated content) ---
+
+export async function resetInitialVisitNote(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Only allow reset on draft or failed notes
+  const { data: note } = await supabase
+    .from('initial_visit_notes')
+    .select('id, status')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!note) return { error: 'No note found to reset' }
+  if (note.status !== 'draft' && note.status !== 'failed') {
+    return { error: 'Only draft or failed notes can be reset' }
+  }
+
+  // Soft-delete the note row
+  const { error } = await supabase
+    .from('initial_visit_notes')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('id', note.id)
+
+  if (error) return { error: 'Failed to reset note' }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }

@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText } from 'lucide-react'
+import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,6 +39,7 @@ import {
   finalizeInitialVisitNote,
   unfinalizeInitialVisitNote,
   regenerateNoteSection,
+  resetInitialVisitNote,
   saveInitialVisitVitals,
   saveInitialVisitRom,
 } from '@/actions/initial-visit-notes'
@@ -176,6 +177,7 @@ export function InitialVisitEditor({
 }: InitialVisitEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
+  const [toneHint, setToneHint] = useState('')
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
@@ -207,6 +209,24 @@ export function InitialVisitEditor({
           </TabsContent>
         </Tabs>
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Tone & Direction (optional)</CardTitle>
+            <CardDescription>
+              Provide optional guidance to influence the AI&apos;s writing style and emphasis. This is used only for the initial generation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              placeholder="e.g., Use assertive language about medical necessity, emphasize conservative treatment failure, keep prognosis cautious..."
+              value={toneHint}
+              onChange={(e) => setToneHint(e.target.value)}
+              rows={3}
+              disabled={isLocked || isPending}
+            />
+          </CardContent>
+        </Card>
+
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
@@ -216,7 +236,7 @@ export function InitialVisitEditor({
           <Button
             onClick={() => {
               startTransition(async () => {
-                const result = await generateInitialVisitNote(caseId)
+                const result = await generateInitialVisitNote(caseId, toneHint || null)
                 if (result.error) toast.error(result.error)
                 else toast.success('Note generated successfully')
               })
@@ -263,20 +283,52 @@ export function InitialVisitEditor({
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {note.generation_error || 'Note generation failed.'}
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            startTransition(async () => {
-              const result = await generateInitialVisitNote(caseId)
-              if (result.error) toast.error(result.error)
-              else toast.success('Note generated successfully')
-            })
-          }}
-          disabled={isLocked || isPending}
-        >
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Retry
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              startTransition(async () => {
+                const result = await generateInitialVisitNote(caseId)
+                if (result.error) toast.error(result.error)
+                else toast.success('Note generated successfully')
+              })
+            }}
+            disabled={isLocked || isPending}
+          >
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            Retry
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isLocked || isPending}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Note</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will discard all generated content and return to the pre-generation state. Vitals will be preserved, but ROM data will need to be re-entered. Continue?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await resetInitialVisitNote(caseId)
+                      if (result.error) toast.error(result.error)
+                      else toast.success('Note reset successfully')
+                    })
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
     )
   }
@@ -842,6 +894,36 @@ function DraftEditor({
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isLocked || isPending}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Note</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will discard all generated content and return to the pre-generation state. Vitals will be preserved, but ROM data will need to be re-entered. Continue?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await resetInitialVisitNote(caseId)
+                      if (result.error) toast.error(result.error)
+                      else toast.success('Note reset successfully')
+                    })
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
