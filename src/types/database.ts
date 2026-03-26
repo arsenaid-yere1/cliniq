@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       attorneys: {
@@ -592,6 +617,88 @@ export type Database = {
           },
         ]
       }
+      clinical_orders: {
+        Row: {
+          ai_model: string | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          document_id: string | null
+          finalized_at: string | null
+          finalized_by_user_id: string | null
+          generation_error: string | null
+          id: string
+          initial_visit_note_id: string | null
+          order_data: Json
+          order_type: string
+          raw_ai_response: Json | null
+          status: string
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_error?: string | null
+          id?: string
+          initial_visit_note_id?: string | null
+          order_data?: Json
+          order_type: string
+          raw_ai_response?: Json | null
+          status?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          document_id?: string | null
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          generation_error?: string | null
+          id?: string
+          initial_visit_note_id?: string | null
+          order_data?: Json
+          order_type?: string
+          raw_ai_response?: Json | null
+          status?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinical_orders_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_orders_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_orders_initial_visit_note_id_fkey"
+            columns: ["initial_visit_note_id"]
+            isOneToOne: false
+            referencedRelation: "initial_visit_notes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ct_scan_extractions: {
         Row: {
           ai_confidence: string | null
@@ -1028,6 +1135,7 @@ export type Database = {
           physical_exam: string | null
           post_accident_history: string | null
           prognosis: string | null
+          provider_intake: Json | null
           raw_ai_response: Json | null
           review_of_systems: string | null
           rom_data: Json | null
@@ -1063,6 +1171,7 @@ export type Database = {
           physical_exam?: string | null
           post_accident_history?: string | null
           prognosis?: string | null
+          provider_intake?: Json | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
           rom_data?: Json | null
@@ -1098,6 +1207,7 @@ export type Database = {
           physical_exam?: string | null
           post_accident_history?: string | null
           prognosis?: string | null
+          provider_intake?: Json | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
           rom_data?: Json | null
@@ -2777,6 +2887,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

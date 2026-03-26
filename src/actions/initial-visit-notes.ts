@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
-import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
+import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, providerIntakeSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 
@@ -22,7 +22,7 @@ async function gatherSourceData(
   caseId: string,
   romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const [caseRes, summaryRes, clinicRes, vitalsRes, feeEstimateTotals] = await Promise.all([
+  const [caseRes, summaryRes, clinicRes, vitalsRes, feeEstimateTotals, intakeRes] = await Promise.all([
     supabase
       .from('cases')
       .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
@@ -36,7 +36,7 @@ async function gatherSourceData(
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited'])
       .eq('generation_status', 'completed')
-      .single(),
+      .maybeSingle(),
     supabase
       .from('clinic_settings')
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
@@ -52,15 +52,21 @@ async function gatherSourceData(
       .limit(1)
       .maybeSingle(),
     getFeeEstimateTotals(),
+    supabase
+      .from('initial_visit_notes')
+      .select('provider_intake')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
   }
 
-  if (summaryRes.error || !summaryRes.data) {
-    return { data: null, error: 'An approved case summary is required before generating an Initial Visit note.' }
-  }
+  const summaryData = summaryRes.data
 
   // Fetch provider profile from case's assigned provider
   const assignedProviderId = caseRes.data.assigned_provider_id as string | null
@@ -96,11 +102,11 @@ async function gatherSourceData(
         accident_description: caseRes.data.accident_description,
       },
       caseSummary: {
-        chief_complaint: summaryRes.data.chief_complaint,
-        imaging_findings: summaryRes.data.imaging_findings,
-        prior_treatment: summaryRes.data.prior_treatment,
-        symptoms_timeline: summaryRes.data.symptoms_timeline,
-        suggested_diagnoses: summaryRes.data.suggested_diagnoses,
+        chief_complaint: summaryData?.chief_complaint ?? null,
+        imaging_findings: summaryData?.imaging_findings ?? null,
+        prior_treatment: summaryData?.prior_treatment ?? null,
+        symptoms_timeline: summaryData?.symptoms_timeline ?? null,
+        suggested_diagnoses: summaryData?.suggested_diagnoses ?? null,
       },
       clinicInfo: {
         clinic_name: clinicRes.data?.clinic_name ?? null,
@@ -122,6 +128,7 @@ async function gatherSourceData(
       feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
         ? feeEstimateTotals
         : null,
+      providerIntake: intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake'] ?? null,
     },
     error: null,
   }
@@ -139,15 +146,16 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
-  // Read ROM data from existing note before soft-deleting
+  // Read ROM data and provider_intake from existing note before soft-deleting
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('rom_data')
+    .select('rom_data, provider_intake')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
 
   const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
+  const preservedIntake = existingNote?.provider_intake as Record<string, unknown> | null
 
   // Gather source data (include ROM)
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, preservedRom)
@@ -170,6 +178,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
       generation_attempts: 1,
       source_data_hash: sourceHash,
       rom_data: preservedRom,
+      provider_intake: preservedIntake,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -512,17 +521,16 @@ export async function checkNotePrerequisites(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: summary } = await supabase
-    .from('case_summaries')
-    .select('id')
-    .eq('case_id', caseId)
+  // Verify case exists and has a patient
+  const { data: caseData } = await supabase
+    .from('cases')
+    .select('id, accident_date, patient:patients!inner(id)')
+    .eq('id', caseId)
     .is('deleted_at', null)
-    .in('review_status', ['approved', 'edited'])
-    .eq('generation_status', 'completed')
     .single()
 
-  if (!summary) {
-    return { data: { canGenerate: false, reason: 'An approved case summary is required before generating an Initial Visit note.' } }
+  if (!caseData) {
+    return { data: { canGenerate: false, reason: 'Case not found or has no patient linked.' } }
   }
 
   return { data: { canGenerate: true } }
@@ -668,6 +676,76 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
       })
 
     if (error) return { error: 'Failed to save ROM data' }
+  }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
+
+// --- Get provider intake ---
+
+export async function getProviderIntake(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('initial_visit_notes')
+    .select('provider_intake')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) return { error: 'Failed to fetch provider intake' }
+
+  return { data: data?.provider_intake ?? null }
+}
+
+// --- Save provider intake ---
+
+export async function saveProviderIntake(caseId: string, intake: ProviderIntakeValues) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const validated = providerIntakeSchema.safeParse(intake)
+  if (!validated.success) return { error: 'Invalid provider intake data' }
+
+  // Check for existing active note
+  const { data: existing } = await supabase
+    .from('initial_visit_notes')
+    .select('id')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .update({
+        provider_intake: validated.data as unknown as Record<string, unknown>,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existing.id)
+
+    if (error) return { error: 'Failed to update provider intake' }
+  } else {
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        status: 'draft',
+        provider_intake: validated.data as unknown as Record<string, unknown>,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+
+    if (error) return { error: 'Failed to save provider intake' }
   }
 
   revalidatePath(`/patients/${caseId}`)

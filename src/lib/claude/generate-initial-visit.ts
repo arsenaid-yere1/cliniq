@@ -276,6 +276,13 @@ export interface InitialVisitInputData {
     practice_center_min: number
     practice_center_max: number
   } | null
+  providerIntake: {
+    chief_complaints: unknown
+    accident_details: unknown
+    past_medical_history: unknown
+    social_history: unknown
+    exam_findings: unknown
+  } | null
 }
 
 export async function generateInitialVisitFromData(

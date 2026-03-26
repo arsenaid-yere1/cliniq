@@ -220,3 +220,122 @@ export const defaultRomData: InitialVisitRomValues = [
     ],
   },
 ]
+
+// --- Provider Intake Schemas ---
+
+export const chiefComplaintEntrySchema = z.object({
+  body_region: z.string().min(1, 'Body region is required'),
+  pain_character: z.string().min(1, 'Pain character is required'),
+  severity_min: z.number().int().min(0).max(10).nullable(),
+  severity_max: z.number().int().min(0).max(10).nullable(),
+  is_persistent: z.boolean(),
+  radiates_to: z.string().nullable(),
+  aggravating_factors: z.string(),
+  alleviating_factors: z.string(),
+})
+
+export const chiefComplaintsSchema = z.object({
+  complaints: z.array(chiefComplaintEntrySchema).min(1, 'At least one complaint is required'),
+  sleep_disturbance: z.boolean(),
+  additional_notes: z.string().nullable(),
+})
+
+export const accidentDetailsSchema = z.object({
+  vehicle_position: z.string().nullable(),
+  impact_type: z.string().nullable(),
+  seatbelt_worn: z.boolean().nullable(),
+  airbag_deployed: z.boolean().nullable(),
+  lost_consciousness: z.boolean().nullable(),
+  er_visit: z.boolean().nullable(),
+  er_details: z.string().nullable(),
+  immediate_symptoms: z.string().nullable(),
+  narrative: z.string().nullable(),
+})
+
+export const pastMedicalHistorySchema = z.object({
+  medical_conditions: z.string(),
+  prior_surgeries: z.string(),
+  current_medications: z.string(),
+  allergies: z.string(),
+})
+
+export const socialHistorySchema = z.object({
+  smoking_status: z.enum(['never', 'former', 'current']),
+  alcohol_use: z.enum(['denies', 'social', 'regular']),
+  drug_use: z.enum(['denies', 'other']),
+  occupation: z.string().nullable(),
+})
+
+export const examRegionSchema = z.object({
+  region: z.string().min(1, 'Region is required'),
+  palpation_findings: z.string(),
+  muscle_spasm: z.boolean(),
+  additional_findings: z.string().nullable(),
+})
+
+export const examFindingsSchema = z.object({
+  general_appearance: z.string().nullable(),
+  regions: z.array(examRegionSchema),
+  neurological_notes: z.string().nullable(),
+})
+
+export const providerIntakeSchema = z.object({
+  chief_complaints: chiefComplaintsSchema,
+  accident_details: accidentDetailsSchema,
+  past_medical_history: pastMedicalHistorySchema,
+  social_history: socialHistorySchema,
+  exam_findings: examFindingsSchema,
+})
+
+export type ProviderIntakeValues = z.infer<typeof providerIntakeSchema>
+export type ChiefComplaintEntry = z.infer<typeof chiefComplaintEntrySchema>
+export type ExamRegion = z.infer<typeof examRegionSchema>
+
+// --- Default Provider Intake template ---
+
+export const defaultProviderIntake: ProviderIntakeValues = {
+  chief_complaints: {
+    complaints: [
+      {
+        body_region: 'Neck',
+        pain_character: '',
+        severity_min: null,
+        severity_max: null,
+        is_persistent: true,
+        radiates_to: null,
+        aggravating_factors: '',
+        alleviating_factors: '',
+      },
+    ],
+    sleep_disturbance: false,
+    additional_notes: null,
+  },
+  accident_details: {
+    vehicle_position: null,
+    impact_type: null,
+    seatbelt_worn: null,
+    airbag_deployed: null,
+    lost_consciousness: null,
+    er_visit: null,
+    er_details: null,
+    immediate_symptoms: null,
+    narrative: null,
+  },
+  past_medical_history: {
+    medical_conditions: 'None reported',
+    prior_surgeries: 'None',
+    current_medications: '',
+    allergies: 'No known drug allergies',
+  },
+  social_history: {
+    smoking_status: 'never',
+    alcohol_use: 'denies',
+    drug_use: 'denies',
+    occupation: null,
+  },
+  exam_findings: {
+    general_appearance: 'Alert and oriented, in no acute distress',
+    regions: [],
+    neurological_notes: null,
+  },
+}

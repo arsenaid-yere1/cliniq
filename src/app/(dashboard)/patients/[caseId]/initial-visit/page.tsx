@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals } from '@/actions/initial-visit-notes'
+import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals, getProviderIntake } from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
+import { providerIntakeSchema } from '@/lib/validations/initial-visit-note'
 
 export default async function InitialVisitPage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params
@@ -17,7 +18,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
 
   const assignedProviderId = caseRes.data?.assigned_provider_id as string | null
 
-  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult] = await Promise.all([
+  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult, intakeResult] = await Promise.all([
     getInitialVisitNote(caseId),
     checkNotePrerequisites(caseId),
     getInitialVisitVitals(caseId),
@@ -25,6 +26,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
+    getProviderIntake(caseId),
   ])
 
   const caseData = caseRes.data
@@ -68,6 +70,10 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
       documentFilePath={documentFilePath}
+      initialIntake={(() => {
+        const parsed = providerIntakeSchema.safeParse(intakeResult.data)
+        return parsed.success ? parsed.data : null
+      })()}
     />
   )
 }

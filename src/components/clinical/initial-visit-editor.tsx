@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText } from 'lucide-react'
+import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText, ClipboardList, Car, History, UserRound, Stethoscope } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,6 +14,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Form,
   FormControl,
@@ -42,6 +49,7 @@ import {
   resetInitialVisitNote,
   saveInitialVisitVitals,
   saveInitialVisitRom,
+  saveProviderIntake,
 } from '@/actions/initial-visit-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
@@ -51,10 +59,13 @@ import {
   initialVisitSections,
   sectionLabels,
   defaultRomData,
+  providerIntakeSchema,
+  defaultProviderIntake,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
   type InitialVisitVitalsValues,
   type InitialVisitRomValues,
+  type ProviderIntakeValues,
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
@@ -139,6 +150,7 @@ interface InitialVisitEditorProps {
   providerSignatureUrl: string | null
   caseData: CaseData | null
   documentFilePath: string | null
+  initialIntake: ProviderIntakeValues | null
 }
 
 // Textarea row heights per section
@@ -174,6 +186,7 @@ export function InitialVisitEditor({
   providerSignatureUrl,
   caseData,
   documentFilePath,
+  initialIntake,
 }: InitialVisitEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
@@ -184,14 +197,46 @@ export function InitialVisitEditor({
   // A note row may exist with only rom_data/vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
 
+  // Parse initial intake data safely
+  const parsedIntake = (() => {
+    if (initialIntake) return initialIntake
+    // Try to get from note row if it exists
+    const noteIntake = (note as Record<string, unknown> | null)?.provider_intake
+    if (noteIntake) {
+      const result = providerIntakeSchema.safeParse(noteIntake)
+      if (result.success) return result.data
+    }
+    return null
+  })()
+
   // No note or pre-generation note — show tabs + generate button
   if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
 
-        <Tabs defaultValue="vitals">
-          <TabsList>
+        <Tabs defaultValue="chief-complaints">
+          <TabsList className="flex-wrap h-auto gap-1 p-1">
+            <TabsTrigger value="chief-complaints">
+              <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+              Chief Complaints
+            </TabsTrigger>
+            <TabsTrigger value="accident-details">
+              <Car className="h-3.5 w-3.5 mr-1.5" />
+              Accident Details
+            </TabsTrigger>
+            <TabsTrigger value="pmh">
+              <History className="h-3.5 w-3.5 mr-1.5" />
+              Past Medical Hx
+            </TabsTrigger>
+            <TabsTrigger value="social-history">
+              <UserRound className="h-3.5 w-3.5 mr-1.5" />
+              Social History
+            </TabsTrigger>
+            <TabsTrigger value="exam-findings">
+              <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
+              Exam Findings
+            </TabsTrigger>
             <TabsTrigger value="vitals">
               <Heart className="h-3.5 w-3.5 mr-1.5" />
               Vital Signs
@@ -201,6 +246,21 @@ export function InitialVisitEditor({
               Range of Motion
             </TabsTrigger>
           </TabsList>
+          <TabsContent value="chief-complaints" className="mt-4">
+            <ChiefComplaintsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+          </TabsContent>
+          <TabsContent value="accident-details" className="mt-4">
+            <AccidentDetailsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+          </TabsContent>
+          <TabsContent value="pmh" className="mt-4">
+            <PastMedicalHistoryCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+          </TabsContent>
+          <TabsContent value="social-history" className="mt-4">
+            <SocialHistoryCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+          </TabsContent>
+          <TabsContent value="exam-findings" className="mt-4">
+            <ExamFindingsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+          </TabsContent>
           <TabsContent value="vitals" className="mt-4">
             <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
@@ -230,7 +290,7 @@ export function InitialVisitEditor({
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
-              ? 'Generate an AI-powered Initial Visit note from the approved case summary.'
+              ? 'Generate an AI-powered Initial Visit note from available case data and provider intake.'
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
@@ -366,6 +426,562 @@ export function InitialVisitEditor({
       setRegeneratingSection={setRegeneratingSection}
       isLocked={isLocked}
     />
+  )
+}
+
+// --- Intake Card shared props ---
+
+interface IntakeCardProps {
+  caseId: string
+  initialIntake: ProviderIntakeValues | null
+  isLocked: boolean
+}
+
+// --- Helper: build full intake for saving (merges one section into defaults) ---
+
+function buildFullIntake(
+  initialIntake: ProviderIntakeValues | null,
+  section: keyof ProviderIntakeValues,
+  sectionData: ProviderIntakeValues[keyof ProviderIntakeValues],
+): ProviderIntakeValues {
+  const base = initialIntake ?? defaultProviderIntake
+  return { ...base, [section]: sectionData }
+}
+
+// --- Chief Complaints Card ---
+
+function ChiefComplaintsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+  const [isSaving, startSaving] = useTransition()
+  const defaults = initialIntake?.chief_complaints ?? defaultProviderIntake.chief_complaints
+  const form = useForm({
+    defaultValues: { chief_complaints: defaults },
+  })
+
+  const complaintsArray = useFieldArray({
+    control: form.control,
+    name: 'chief_complaints.complaints',
+  })
+
+  function handleSave() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const full = buildFullIntake(initialIntake, 'chief_complaints', values.chief_complaints)
+      const result = await saveProviderIntake(caseId, full)
+      if (result.error) toast.error(result.error)
+      else toast.success('Chief complaints saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          Document the patient&apos;s chief complaints — body regions, pain character, severity, and functional impact.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-4">
+            {complaintsArray.fields.map((field, index) => (
+              <div key={field.id} className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Complaint {index + 1}</span>
+                  {complaintsArray.fields.length > 1 && (
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => complaintsArray.remove(index)} disabled={isLocked}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.body_region`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Body Region</FormLabel>
+                      <FormControl><Input placeholder="e.g., Neck, Lower Back" {...f} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.pain_character`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Pain Character</FormLabel>
+                      <Select onValueChange={f.onChange} value={f.value || ''}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {['sharp', 'dull', 'burning', 'aching', 'throbbing', 'stabbing'].map(v => (
+                            <SelectItem key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.severity_min`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Severity Min (0-10)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={0} max={10} placeholder="0-10" value={f.value ?? ''} onChange={e => f.onChange(e.target.value === '' ? null : Number(e.target.value))} />
+                      </FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.severity_max`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Severity Max (0-10)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={0} max={10} placeholder="0-10" value={f.value ?? ''} onChange={e => f.onChange(e.target.value === '' ? null : Number(e.target.value))} />
+                      </FormControl>
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.is_persistent`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Pattern</FormLabel>
+                      <FormControl>
+                        <select className="h-9 w-full border rounded-md px-3 text-sm" value={f.value ? 'persistent' : 'intermittent'} onChange={e => f.onChange(e.target.value === 'persistent')}>
+                          <option value="persistent">Persistent</option>
+                          <option value="intermittent">Intermittent</option>
+                        </select>
+                      </FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`chief_complaints.complaints.${index}.radiates_to`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Radiates To</FormLabel>
+                      <FormControl><Input placeholder="e.g., left arm" value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name={`chief_complaints.complaints.${index}.aggravating_factors`} render={({ field: f }) => (
+                  <FormItem>
+                    <FormLabel>Aggravating Factors</FormLabel>
+                    <FormControl><Textarea rows={2} placeholder="e.g., prolonged sitting, bending, lifting" {...f} /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name={`chief_complaints.complaints.${index}.alleviating_factors`} render={({ field: f }) => (
+                  <FormItem>
+                    <FormLabel>Alleviating Factors</FormLabel>
+                    <FormControl><Textarea rows={2} placeholder="e.g., rest, OTC medications, ice" {...f} /></FormControl>
+                  </FormItem>
+                )} />
+              </div>
+            ))}
+
+            <Button type="button" variant="outline" size="sm" onClick={() => complaintsArray.append({
+              body_region: '', pain_character: '', severity_min: null, severity_max: null,
+              is_persistent: true, radiates_to: null, aggravating_factors: '', alleviating_factors: '',
+            })} disabled={isLocked}>
+              <Plus className="h-4 w-4 mr-1" /> Add Complaint
+            </Button>
+
+            <Separator />
+
+            <FormField control={form.control} name="chief_complaints.sleep_disturbance" render={({ field: f }) => (
+              <FormItem>
+                <FormLabel>Sleep Disturbance</FormLabel>
+                <FormControl>
+                  <select className="h-9 w-full border rounded-md px-3 text-sm" value={f.value ? 'yes' : 'no'} onChange={e => f.onChange(e.target.value === 'yes')}>
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="chief_complaints.additional_notes" render={({ field: f }) => (
+              <FormItem>
+                <FormLabel>Additional Notes</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="Any additional details about symptoms..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <div className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Chief Complaints
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
+  )
+}
+
+// --- Accident Details Card ---
+
+function AccidentDetailsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+  const [isSaving, startSaving] = useTransition()
+  const defaults = initialIntake?.accident_details ?? defaultProviderIntake.accident_details
+  const form = useForm({ defaultValues: { accident_details: defaults } })
+
+  const erVisit = form.watch('accident_details.er_visit')
+
+  function handleSave() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const full = buildFullIntake(initialIntake, 'accident_details', values.accident_details)
+      const result = await saveProviderIntake(caseId, full)
+      if (result.error) toast.error(result.error)
+      else toast.success('Accident details saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          Structured accident details supplement the narrative in the case record.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="accident_details.vehicle_position" render={({ field: f }) => (
+                <FormItem>
+                  <FormLabel>Vehicle Position</FormLabel>
+                  <Select onValueChange={v => f.onChange(v || null)} value={f.value ?? ''}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {['driver', 'front passenger', 'rear passenger', 'pedestrian', 'cyclist'].map(v => (
+                        <SelectItem key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="accident_details.impact_type" render={({ field: f }) => (
+                <FormItem>
+                  <FormLabel>Impact Type</FormLabel>
+                  <Select onValueChange={v => f.onChange(v || null)} value={f.value ?? ''}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {['rear-end', 'front', 'side', 't-bone', 'rollover', 'other'].map(v => (
+                        <SelectItem key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {([
+                ['accident_details.seatbelt_worn', 'Seatbelt Worn'],
+                ['accident_details.airbag_deployed', 'Airbag Deployed'],
+                ['accident_details.lost_consciousness', 'Lost Consciousness'],
+                ['accident_details.er_visit', 'ER Visit'],
+              ] as const).map(([name, label]) => (
+                <FormField key={name} control={form.control} name={name} render={({ field: f }) => (
+                  <FormItem>
+                    <FormLabel>{label}</FormLabel>
+                    <FormControl>
+                      <select className="h-9 w-full border rounded-md px-3 text-sm" value={f.value === null ? '' : f.value ? 'yes' : 'no'} onChange={e => f.onChange(e.target.value === '' ? null : e.target.value === 'yes')}>
+                        <option value="">Not specified</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </FormControl>
+                  </FormItem>
+                )} />
+              ))}
+            </div>
+
+            {erVisit && (
+              <FormField control={form.control} name="accident_details.er_details" render={({ field: f }) => (
+                <FormItem>
+                  <FormLabel>ER Details</FormLabel>
+                  <FormControl><Textarea rows={2} placeholder="Hospital, treatments received, imaging done..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+                </FormItem>
+              )} />
+            )}
+
+            <FormField control={form.control} name="accident_details.immediate_symptoms" render={({ field: f }) => (
+              <FormItem>
+                <FormLabel>Immediate Symptoms</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="Symptoms experienced immediately after the accident..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="accident_details.narrative" render={({ field: f }) => (
+              <FormItem>
+                <FormLabel>Additional Narrative</FormLabel>
+                <FormControl><Textarea rows={3} placeholder="Any additional details about the accident not captured above..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <div className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Accident Details
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
+  )
+}
+
+// --- Past Medical History Card ---
+
+function PastMedicalHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+  const [isSaving, startSaving] = useTransition()
+  const defaults = initialIntake?.past_medical_history ?? defaultProviderIntake.past_medical_history
+  const form = useForm({ defaultValues: { past_medical_history: defaults } })
+
+  function handleSave() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const full = buildFullIntake(initialIntake, 'past_medical_history', values.past_medical_history)
+      const result = await saveProviderIntake(caseId, full)
+      if (result.error) toast.error(result.error)
+      else toast.success('Past medical history saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          Document the patient&apos;s medical history, surgeries, medications, and allergies.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-4">
+            <FormField control={form.control} name="past_medical_history.medical_conditions" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Medical Conditions</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., Hypertension, Type 2 Diabetes, or 'None reported'" {...field} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="past_medical_history.prior_surgeries" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Prior Surgeries</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., Appendectomy (2018), or 'None'" {...field} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="past_medical_history.current_medications" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Current Medications (pre-accident)</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., Advil/Ibuprofen as needed, Lisinopril 10mg daily" {...field} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="past_medical_history.allergies" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Allergies</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., No known drug allergies (NKDA)" {...field} /></FormControl>
+              </FormItem>
+            )} />
+
+            <div className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Medical History
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
+  )
+}
+
+// --- Social History Card ---
+
+function SocialHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+  const [isSaving, startSaving] = useTransition()
+  const defaults = initialIntake?.social_history ?? defaultProviderIntake.social_history
+  const form = useForm({ defaultValues: { social_history: defaults } })
+
+  function handleSave() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const full = buildFullIntake(initialIntake, 'social_history', values.social_history)
+      const result = await saveProviderIntake(caseId, full)
+      if (result.error) toast.error(result.error)
+      else toast.success('Social history saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          Document the patient&apos;s social history — smoking, alcohol, drug use, and occupation.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <FormField control={form.control} name="social_history.smoking_status" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Smoking Status</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="never">Never</SelectItem>
+                      <SelectItem value="former">Former</SelectItem>
+                      <SelectItem value="current">Current</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="social_history.alcohol_use" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Alcohol Use</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="denies">Denies</SelectItem>
+                      <SelectItem value="social">Social</SelectItem>
+                      <SelectItem value="regular">Regular</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="social_history.drug_use" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Drug Use</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="denies">Denies</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            <FormField control={form.control} name="social_history.occupation" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Occupation</FormLabel>
+                <FormControl><Input placeholder="e.g., Office worker, Construction" value={field.value ?? ''} onChange={e => field.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <div className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Social History
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
+  )
+}
+
+// --- Exam Findings Card ---
+
+function ExamFindingsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+  const [isSaving, startSaving] = useTransition()
+  const defaults = initialIntake?.exam_findings ?? defaultProviderIntake.exam_findings
+  const form = useForm({ defaultValues: { exam_findings: defaults } })
+
+  const regionsArray = useFieldArray({
+    control: form.control,
+    name: 'exam_findings.regions',
+  })
+
+  function handleSave() {
+    startSaving(async () => {
+      const values = form.getValues()
+      const full = buildFullIntake(initialIntake, 'exam_findings', values.exam_findings)
+      const result = await saveProviderIntake(caseId, full)
+      if (result.error) toast.error(result.error)
+      else toast.success('Exam findings saved')
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          Document physical examination findings by body region — palpation, muscle spasm, and neurological assessment.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <div className="space-y-4">
+            <FormField control={form.control} name="exam_findings.general_appearance" render={({ field }) => (
+              <FormItem>
+                <FormLabel>General Appearance</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., Alert and oriented, in no acute distress" value={field.value ?? ''} onChange={e => field.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <Separator />
+
+            <div className="space-y-3">
+              <FormLabel>Examination Regions</FormLabel>
+              {regionsArray.fields.map((field, index) => (
+                <div key={field.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FormField control={form.control} name={`exam_findings.regions.${index}.region`} render={({ field: f }) => (
+                      <FormItem className="flex-1">
+                        <FormControl><Input placeholder="Region (e.g., Cervical Spine)" className="font-semibold" {...f} /></FormControl>
+                      </FormItem>
+                    )} />
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => regionsArray.remove(index)} disabled={isLocked}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <FormField control={form.control} name={`exam_findings.regions.${index}.palpation_findings`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Palpation Findings</FormLabel>
+                      <FormControl><Textarea rows={2} placeholder="e.g., Tenderness and muscle spasm at C3-C7 paraspinal musculature" {...f} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`exam_findings.regions.${index}.muscle_spasm`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Muscle Spasm</FormLabel>
+                      <FormControl>
+                        <select className="h-9 w-full border rounded-md px-3 text-sm" value={f.value ? 'yes' : 'no'} onChange={e => f.onChange(e.target.value === 'yes')}>
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
+                        </select>
+                      </FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name={`exam_findings.regions.${index}.additional_findings`} render={({ field: f }) => (
+                    <FormItem>
+                      <FormLabel>Additional Findings</FormLabel>
+                      <FormControl><Textarea rows={2} placeholder="Any other findings for this region..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
+                    </FormItem>
+                  )} />
+                </div>
+              ))}
+
+              <Button type="button" variant="outline" size="sm" onClick={() => regionsArray.append({
+                region: '', palpation_findings: '', muscle_spasm: false, additional_findings: null,
+              })} disabled={isLocked}>
+                <Plus className="h-4 w-4 mr-1" /> Add Region
+              </Button>
+            </div>
+
+            <Separator />
+
+            <FormField control={form.control} name="exam_findings.neurological_notes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Neurological Notes</FormLabel>
+                <FormControl><Textarea rows={2} placeholder="e.g., Motor strength 5/5 bilaterally, sensation intact, reflexes symmetric" value={field.value ?? ''} onChange={e => field.onChange(e.target.value || null)} /></FormControl>
+              </FormItem>
+            )} />
+
+            <div className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Exam Findings
+              </Button>
+            </div>
+          </div>
+        </Form>
+      </CardContent>
+    </Card>
   )
 }
 
