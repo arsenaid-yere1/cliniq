@@ -25,6 +25,7 @@ interface RenderInput {
   orderData: Record<string, unknown>
   clinicSettings: Record<string, unknown> | null
   providerProfile: Record<string, unknown> | null
+  patientDob: string | null
 }
 
 export async function renderChiropracticOrderPdf(input: RenderInput): Promise<Buffer> {
@@ -75,7 +76,7 @@ export async function renderChiropracticOrderPdf(input: RenderInput): Promise<Bu
     clinicFax: cs?.fax || undefined,
     clinicLogoBase64,
     patientName: od.patient_name,
-    dob: '—',
+    dob: input.patientDob ? format(new Date(input.patientDob), 'MM/dd/yyyy') : '—',
     dateOfOrder: od.date_of_order || format(new Date(), 'MM/dd/yyyy'),
     diagnoses: od.diagnoses,
     treatmentPlan: od.treatment_plan,

@@ -12,11 +12,12 @@ async function gatherOrderInputData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
 ): Promise<{ data?: ClinicalOrderInputData; noteId?: string; error?: string }> {
-  // Fetch finalized note with case/patient data
+  // Fetch note (finalized or draft) with case/patient data
   const { data: note, error: noteError } = await supabase
     .from('initial_visit_notes')
     .select(`
       id,
+      status,
       diagnoses,
       chief_complaint,
       treatment_plan,
@@ -28,13 +29,17 @@ async function gatherOrderInputData(
     `)
     .eq('case_id', caseId)
     .is('deleted_at', null)
-    .eq('status', 'finalized')
+    .in('status', ['finalized', 'draft'])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   if (noteError || !note) {
-    return { error: 'No finalized Initial Visit note found. Finalize the note before generating orders.' }
+    return { error: 'No Initial Visit note found. Generate the note before creating orders.' }
+  }
+
+  if (!note.diagnoses) {
+    return { error: 'The Initial Visit note has no diagnoses section. Generate or complete the note first.' }
   }
 
   // Fetch provider and clinic info
@@ -218,11 +223,19 @@ export async function finalizeClinicalOrder(orderId: string, caseId: string) {
     }
   }
 
-  // Fetch clinic/provider for PDF rendering
-  const [clinicRes, providerRes] = await Promise.all([
+  // Fetch clinic/provider/patient for PDF rendering
+  const [clinicRes, providerRes, patientRes] = await Promise.all([
     supabase.from('clinic_settings').select('*').limit(1).maybeSingle(),
     supabase.from('provider_profiles').select('*').limit(1).maybeSingle(),
+    supabase
+      .from('cases')
+      .select('patient:patients!inner(date_of_birth)')
+      .eq('id', caseId)
+      .is('deleted_at', null)
+      .single(),
   ])
+
+  const patientDob = (patientRes.data?.patient as unknown as { date_of_birth: string | null })?.date_of_birth ?? null
 
   // Render PDF based on order type
   let pdfBuffer: Buffer
@@ -234,6 +247,7 @@ export async function finalizeClinicalOrder(orderId: string, caseId: string) {
       orderData: order.order_data as Record<string, unknown>,
       clinicSettings: clinicRes.data,
       providerProfile: providerRes.data,
+      patientDob,
     })
     fileName = 'Imaging Orders'
   } else {
@@ -242,6 +256,7 @@ export async function finalizeClinicalOrder(orderId: string, caseId: string) {
       orderData: order.order_data as Record<string, unknown>,
       clinicSettings: clinicRes.data,
       providerProfile: providerRes.data,
+      patientDob,
     })
     fileName = 'Chiropractic Therapy Order'
   }
