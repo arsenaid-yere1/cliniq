@@ -1584,8 +1584,12 @@ function DraftEditor({
         </div>
       </div>
 
-      <Tabs defaultValue="note">
+      <Tabs defaultValue="orders">
         <TabsList>
+          <TabsTrigger value="orders">
+            <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+            Orders
+          </TabsTrigger>
           <TabsTrigger value="note">
             <FileText className="h-3.5 w-3.5 mr-1.5" />
             Note Sections
@@ -1598,11 +1602,11 @@ function DraftEditor({
             <Activity className="h-3.5 w-3.5 mr-1.5" />
             Range of Motion
           </TabsTrigger>
-          <TabsTrigger value="orders">
-            <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-            Orders
-          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="orders" className="mt-4">
+          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} />
+        </TabsContent>
 
         <TabsContent value="note" className="mt-4">
           <Form {...form}>
@@ -1672,10 +1676,6 @@ function DraftEditor({
 
         <TabsContent value="rom" className="mt-4">
           <RomInputCard caseId={caseId} initialRom={initialRom} isLocked={isLocked} />
-        </TabsContent>
-
-        <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
     </div>
