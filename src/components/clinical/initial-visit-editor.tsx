@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -1904,9 +1904,7 @@ function FinalizedView({
       </div>
 
       {/* Companion Documents */}
-      {!isLocked && (
-        <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} />
-      )}
+      <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} />
     </div>
   )
 }
@@ -1917,10 +1915,12 @@ function CompanionDocumentsSection({
   caseId,
   isPending,
   startTransition,
+  isLocked,
 }: {
   caseId: string
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
+  isLocked: boolean
 }) {
   const [orders, setOrders] = useState<Array<{
     id: string
@@ -1937,9 +1937,10 @@ function CompanionDocumentsSection({
   const [loaded, setLoaded] = useState(false)
 
   // Load orders on mount
-  useState(() => {
+  useEffect(() => {
     loadOrders()
-  })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function loadOrders() {
     const { getClinicalOrders } = await import('@/actions/clinical-orders')
@@ -2021,7 +2022,7 @@ function CompanionDocumentsSection({
           <Button
             variant="outline"
             size="sm"
-            disabled={hasImaging || loadingType !== null || isPending}
+            disabled={hasImaging || loadingType !== null || isPending || isLocked}
             onClick={() => handleGenerate('imaging')}
           >
             {loadingType === 'imaging' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileImage className="mr-2 h-4 w-4" />}
@@ -2030,7 +2031,7 @@ function CompanionDocumentsSection({
           <Button
             variant="outline"
             size="sm"
-            disabled={hasChiro || loadingType !== null || isPending}
+            disabled={hasChiro || loadingType !== null || isPending || isLocked}
             onClick={() => handleGenerate('chiropractic_therapy')}
           >
             {loadingType === 'chiropractic_therapy' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bone className="mr-2 h-4 w-4" />}
