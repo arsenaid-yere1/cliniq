@@ -224,8 +224,8 @@ export const defaultRomData: InitialVisitRomValues = [
 // --- Provider Intake Schemas ---
 
 export const chiefComplaintEntrySchema = z.object({
-  body_region: z.string().min(1, 'Body region is required'),
-  pain_character: z.string().min(1, 'Pain character is required'),
+  body_region: z.string(),
+  pain_character: z.string(),
   severity_min: z.number().int().min(0).max(10).nullable(),
   severity_max: z.number().int().min(0).max(10).nullable(),
   is_persistent: z.boolean(),
@@ -235,7 +235,7 @@ export const chiefComplaintEntrySchema = z.object({
 })
 
 export const chiefComplaintsSchema = z.object({
-  complaints: z.array(chiefComplaintEntrySchema).min(1, 'At least one complaint is required'),
+  complaints: z.array(chiefComplaintEntrySchema),
   sleep_disturbance: z.boolean(),
   additional_notes: z.string().nullable(),
 })
@@ -267,7 +267,7 @@ export const socialHistorySchema = z.object({
 })
 
 export const examRegionSchema = z.object({
-  region: z.string().min(1, 'Region is required'),
+  region: z.string(),
   palpation_findings: z.string(),
   muscle_spasm: z.boolean(),
   additional_findings: z.string().nullable(),
