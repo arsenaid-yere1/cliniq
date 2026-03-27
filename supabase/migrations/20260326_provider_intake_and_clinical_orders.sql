@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS clinical_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES cases(id),
   initial_visit_note_id uuid REFERENCES initial_visit_notes(id),
-  order_type text NOT NULL CHECK (order_type IN ('imaging', 'chiropractic_therapy')),
+  order_type text NOT NULL CHECK (order_type IN ('imaging', 'chiropractic_therapy', 'physical_therapy', 'pain_management_referral', 'orthopedic_referral')),
   order_data jsonb NOT NULL DEFAULT '{}',
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'generating', 'completed', 'failed')),
   generation_error text,

@@ -48,6 +48,7 @@ The Initial Visit is the patient's **first clinical encounter** in the PI workfl
 - **Not changing the existing PRP evaluation prompt** — Mode B preserves current behavior exactly
 - **Not building a structured accident intake form** — we use a single textarea for accident narrative (the existing `accident_description` field), enhanced with a few structured fields (seatbelt, airbag, consciousness, ER visit) stored in `provider_intake`
 - **Not auto-generating companion documents** — they are manually triggered after note finalization
+- **Not implementing PT, pain management, or orthopedic orders yet** — the `order_type` CHECK constraint includes them for forward-compatibility, but only Imaging Orders and Chiropractic Therapy Orders are built in this plan. Future order types follow the same pattern and require only: a generation function, Zod schema, server action, PDF template, and UI button.
 
 ## Implementation Approach
 
@@ -77,7 +78,7 @@ CREATE TABLE IF NOT EXISTS clinical_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL REFERENCES cases(id),
   initial_visit_note_id uuid REFERENCES initial_visit_notes(id),
-  order_type text NOT NULL CHECK (order_type IN ('imaging', 'chiropractic_therapy')),
+  order_type text NOT NULL CHECK (order_type IN ('imaging', 'chiropractic_therapy', 'physical_therapy', 'pain_management_referral', 'orthopedic_referral')),
   order_data jsonb NOT NULL DEFAULT '{}',
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'generating', 'completed', 'failed')),
   generation_error text,

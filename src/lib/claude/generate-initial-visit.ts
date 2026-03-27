@@ -8,7 +8,21 @@ import { sectionLabels } from '@/lib/validations/initial-visit-note'
 
 const anthropic = new Anthropic()
 
-const SYSTEM_PROMPT = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate an Initial Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
+// --- Note Mode Detection ---
+
+type NoteMode = 'first_visit' | 'prp_evaluation'
+
+function detectNoteMode(inputData: InitialVisitInputData): NoteMode {
+  const hasImagingFindings = inputData.caseSummary?.imaging_findings != null
+    && Array.isArray(inputData.caseSummary.imaging_findings)
+    && (inputData.caseSummary.imaging_findings as unknown[]).length > 0
+
+  return hasImagingFindings ? 'prp_evaluation' : 'first_visit'
+}
+
+// --- System Prompt Builder ---
+
+const COMMON_PREAMBLE = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate an Initial Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
 
 This document is for medical-legal assessment of injuries sustained in a motor vehicle accident or other personal injury event. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
 
@@ -32,25 +46,25 @@ SCOPE: DO NOT expand beyond the scope of the original template. If the patient o
 • No "---" horizontal rules, no "**bold**" markers.
 • Use plain line breaks between paragraphs.
 
+=== PROVIDER INTAKE DATA ===
+
+If providerIntake is provided in the source data, use it as the PRIMARY source for:
+• Chief Complaint section: Use providerIntake.chief_complaints for body regions, pain character, severity, radiation, and aggravating/alleviating factors
+• History of the Accident: Supplement accident_description with providerIntake.accident_details (vehicle position, impact type, seatbelt, airbag, consciousness, ER visit, immediate symptoms)
+• Past Medical History: Use providerIntake.past_medical_history directly
+• Social History: Use providerIntake.social_history directly
+• Physical Examination: Use providerIntake.exam_findings for per-region palpation findings, muscle spasm, and neurological notes
+• Post-Accident History: Use providerIntake.chief_complaints and accident_details for symptom/functional impact narrative
+
+If both providerIntake and caseSummary contain data for the same field, prefer providerIntake (it is more recent, entered at this visit).`
+
+const COMMON_SECTIONS = `
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. INTRODUCTION (~3 sentences):
 Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age, gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
 DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
 Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."
-
-2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
-Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
-Para 2: "The patient sought medical attention following the collision." (one sentence only — treatment details belong in Post-Accident History)
-Para 3: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
-Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
-
-3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
-Para 1: Timeline of care sought after the accident — ER/urgent care visits, initial treatment providers (chiropractic, physical therapy), and referral chain leading to this evaluation. Use specific dates and provider types from the case summary treatment timeline.
-Para 2: How symptoms have evolved since the accident — which symptoms persisted, worsened, or improved over time. Include any medications prescribed post-accident.
-Para 3: Functional impact — work status changes, activity limitations, and how daily life has been affected since the accident.
-Use information from the case summary treatment timeline and symptom progression. Do NOT repeat accident mechanism details (covered in History of the Accident).
-Reference tone: "Following the collision, the patient presented to the emergency department where radiographs were obtained and she was prescribed muscle relaxants and pain medication. She subsequently initiated chiropractic care approximately one week post-accident and has continued conservative treatment. MRIs of the cervical and lumbar spine were obtained for further evaluation."
 
 4. CHIEF COMPLAINT (~1 intro sentence + bullet list):
 Brief intro sentence, then "• " bullet per complaint with: region, persistent/intermittent, pain rating X–X/10, radiation status, aggravating factors, alleviating factors. Include sleep disturbance. Use SPECIFIC ratings from the source data — do not use "[X/10]" if pain data is available.
@@ -78,9 +92,6 @@ DO NOT add shoulder exam or thoracic exam unless the patient has specific compla
 Reference ROM format: "• Flexion: Normal 60° / Actual 60° / Pain: No\n• Extension: Normal 50° / Actual 35° / Pain: Yes"
 End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentences) summarizing motor strength, sensation, and deep tendon reflexes for upper and lower extremities. Example: "Upper and lower extremities demonstrate normal motor strength bilaterally. Sensation is intact to light touch throughout all dermatomes. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do a dermatome-by-dermatome breakdown and do NOT mention Babinski sign.
 
-9. RADIOLOGICAL IMAGING FINDINGS:
-For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
-
 10. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
 After the clinical diagnosis codes, include the appropriate External Cause Code based on the accident_type from the case details:
@@ -88,7 +99,90 @@ After the clinical diagnosis codes, include the appropriate External Cause Code 
 • If accident_type is "slip_and_fall": add "• W01.0XXA – Fall on same level from slipping, initial encounter"
 • If accident_type is "workplace": add "• W18.49XA – Other slipping, tripping and stumbling with subsequent fall, initial encounter"
 • If accident_type is "other" or null: omit the external cause code
-Reference: "• M50.20 – Cervical Disc Displacement\n• M79.1 – Myalgia / Cervical Region\n• M54.2 – Cervicalgia\n• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
+
+15. TIME AND COMPLEXITY ATTESTATION (~2-3 sentences):
+A first-person attestation from the provider documenting the cumulative time spent and the nature of the visit complexity. Must include: (a) total face-to-face time in minutes (use ">60 minutes" as default), (b) activities performed (evaluating the patient, reviewing imaging and prior records, counseling regarding diagnosis and treatment options), and (c) statement that more than 50% of time was spent in counseling and care coordination.
+Reference tone: "I personally spent a cumulative total of >60 minutes evaluating the patient, reviewing imaging and prior records, and counseling regarding diagnosis and treatment options. More than 50% of time was spent in counseling and care coordination."
+
+16. CLINICIAN DISCLAIMER (~2 short paragraphs):
+Standard disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
+FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
+
+If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
+
+const FIRST_VISIT_SECTIONS = `
+=== MODE: FIRST VISIT / ACUTE EVALUATION ===
+This patient is presenting for their INITIAL clinical evaluation following a personal injury event. There are NO prior medical records, NO prior imaging results, and NO prior treatment history (other than self-treatment with OTC medications). Generate the note accordingly — do NOT assume any prior clinical encounters exist.
+
+2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
+Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences. Use providerIntake.accident_details if available.
+Para 2: "The patient sought medical attention following the collision." (one sentence only)
+Para 3: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in daily activities, including self-care."
+Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
+
+3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
+Para 1: Symptom onset and progression since the accident — when symptoms began, which body regions were affected first, how they have evolved. Include any self-treatment (OTC medications such as Tylenol, Ibuprofen).
+Para 2: Functional impact — work status changes, activity limitations, sleep disturbance, and how daily life has been affected since the accident.
+Do NOT reference prior clinical encounters, treatment providers, or medical records (none exist). Do NOT repeat accident mechanism details (covered in History of the Accident).
+Reference tone: "Following the accident, the patient reports onset of neck pain, headaches, and low back pain within hours of the collision. She has been self-treating with over-the-counter Tylenol and Ibuprofen with minimal relief. The patient reports difficulty with prolonged sitting, standing, and sleeping due to pain."
+
+9. RADIOLOGICAL IMAGING FINDINGS:
+State what imaging has been ORDERED at this visit, NOT findings (no imaging results exist yet). Format as:
+"MRI of [Region] – Ordered"
+for each affected body region. Then: "Imaging results pending. Diagnostic imaging has been ordered to further evaluate the patient's clinical presentation and guide treatment planning."
+Do NOT fabricate imaging findings. Do NOT use "[Pending]" brackets. Write it as a clinical statement of what was ordered.
+
+10-ADDITIONAL. DIAGNOSES — FIRST VISIT SPECIFICS:
+Use clinical impression codes based on physical examination findings and mechanism of injury. These are NOT imaging-confirmed diagnoses. Use strain/sprain codes appropriate to the affected regions:
+• Cervical: S13.4XXA (Sprain of ligaments of cervical spine, initial encounter), M54.2 (Cervicalgia)
+• Lumbar: S39.012A (Strain of muscle, fascia and tendon of lower back, initial encounter), M54.5 (Low back pain)
+• General: M79.1 (Myalgia), M79.3 (Panniculitis, unspecified — if applicable)
+Select codes based on the actual regions of complaint from the source data. Do NOT use disc displacement codes (M50.20, M51.16, etc.) — those require imaging confirmation.
+Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
+
+11. MEDICAL NECESSITY (~3-5 sentences):
+Write a concise paragraph that: (a) summarizes clinical examination findings by region, (b) names the injury pattern consistent with the mechanism of injury, (c) justifies ordering diagnostic imaging to evaluate the extent of injury, (d) recommends structured follow-up and conservative treatment initiation.
+Do NOT reference imaging results (none exist). Do NOT reference prior conservative care failure (no prior care exists). Do NOT recommend PRP or interventional procedures at this stage.
+Reference: "Clinical examination findings reveal cervical and lumbar paraspinal muscle spasm with restricted range of motion, consistent with post-traumatic cervical and lumbar strain/sprain sustained during the motor vehicle accident. Physical examination findings warrant diagnostic imaging to further evaluate the extent of musculoskeletal and potential structural injury. A structured treatment program including chiropractic care, physical therapy, and medical follow-up is recommended to facilitate recovery and monitor clinical progress."
+
+12. TREATMENT PLAN (~3-4 paragraphs, NO cost estimate):
+Para 1 — Clinical rationale: Summarize the patient's post-traumatic complaints by region and the physical examination findings that support the need for structured treatment. State that diagnostic imaging has been ordered to further evaluate the extent of injury.
+Para 2 — Conservative treatment orders: Outline the initial treatment plan:
+(a) Continue current OTC medications (Tylenol, Ibuprofen) as needed for pain management
+(b) Diagnostic imaging orders — list each MRI ordered by region
+(c) Referral to chiropractic care for spinal manipulation and soft tissue therapy
+(d) Referral to physical therapy for strengthening and functional rehabilitation
+(e) Activity modification and ergonomic guidance
+(f) Follow-up appointment to review imaging results and reassess treatment plan
+Para 3 — Supportive care: Home exercise program, ergonomic modifications, activity modification guidance.
+Para 4 — Monitoring and escalation: The patient will be re-evaluated after imaging results are available. Should diagnostic imaging reveal structural pathology and conservative measures prove insufficient, advanced interventional treatments including regenerative injection therapy may be considered.
+Do NOT include PRP injection protocol. Do NOT include cost estimates. The treatment plan should be conservative and imaging/referral focused.
+
+13. PATIENT EDUCATION (~1 paragraph):
+State that the patient was educated on: the biomechanics of their injury, the importance of diagnostic imaging for accurate diagnosis, red-flag symptoms to monitor (progressive neurological deficits, bowel/bladder changes, severe worsening), conservative care expectations, activity modification and ergonomic strategies, medication guidance, and the importance of compliance with the prescribed treatment program. End with "The patient verbalized understanding." Keep to ONE paragraph. Do NOT mention PRP or regenerative therapy education.
+
+14. PROGNOSIS (~2 sentences):
+"Prognosis is guarded but favorable given early clinical presentation and absence of neurological compromise. Outcome will depend on diagnostic imaging results, response to conservative treatment, and adherence to the prescribed rehabilitation program."`
+
+const PRP_EVALUATION_SECTIONS = `
+=== MODE: PRP EVALUATION ===
+This patient has completed a course of conservative treatment and has imaging results available. Generate the note as a comprehensive pain management evaluation with PRP treatment recommendations.
+
+2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
+Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
+Para 2: "The patient sought medical attention following the collision." (one sentence only — treatment details belong in Post-Accident History)
+Para 3: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
+Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
+
+3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
+Para 1: Timeline of care sought after the accident — ER/urgent care visits, initial treatment providers (chiropractic, physical therapy), and referral chain leading to this evaluation. Use specific dates and provider types from the case summary treatment timeline.
+Para 2: How symptoms have evolved since the accident — which symptoms persisted, worsened, or improved over time. Include any medications prescribed post-accident.
+Para 3: Functional impact — work status changes, activity limitations, and how daily life has been affected since the accident.
+Use information from the case summary treatment timeline and symptom progression. Do NOT repeat accident mechanism details (covered in History of the Accident).
+Reference tone: "Following the collision, the patient presented to the emergency department where radiographs were obtained and she was prescribed muscle relaxants and pain medication. She subsequently initiated chiropractic care approximately one week post-accident and has continued conservative treatment. MRIs of the cervical and lumbar spine were obtained for further evaluation."
+
+9. RADIOLOGICAL IMAGING FINDINGS:
+For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
@@ -111,17 +205,12 @@ The entire treatment plan should be approximately one full page.
 State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
 
 14. PROGNOSIS (~2 sentences):
-"Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
+"Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.`
 
-15. TIME AND COMPLEXITY ATTESTATION (~2-3 sentences):
-A first-person attestation from the provider documenting the cumulative time spent and the nature of the visit complexity. Must include: (a) total face-to-face time in minutes (use ">60 minutes" as default), (b) activities performed (evaluating the patient, reviewing imaging and prior records, counseling regarding diagnosis and treatment options), and (c) statement that more than 50% of time was spent in counseling and care coordination.
-Reference tone: "I personally spent a cumulative total of >60 minutes evaluating the patient, reviewing imaging and prior records, and counseling regarding diagnosis and treatment options. More than 50% of time was spent in counseling and care coordination."
-
-16. CLINICIAN DISCLAIMER (~2 short paragraphs):
-Standard disclaimer: "This report is for medical-legal assessment of the injury noted and is not to be construed as a complete physical examination for general health purposes. Only those symptoms which are believed to have been involved in the injury or that might relate to the injury have been assessed."
-FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
-
-If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
+function buildSystemPrompt(mode: NoteMode): string {
+  const modeSpecificSections = mode === 'first_visit' ? FIRST_VISIT_SECTIONS : PRP_EVALUATION_SECTIONS
+  return `${COMMON_PREAMBLE}\n${COMMON_SECTIONS}\n${modeSpecificSections}`
+}
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
   name: 'generate_initial_visit_note',
@@ -181,27 +270,27 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       imaging_findings: {
         type: 'string',
-        description: 'MRI findings by region with specific measurements, disc levels, pathology, and impressions',
+        description: 'MRI findings by region with specific measurements and impressions, OR "MRI of [Region] – Ordered / Imaging results pending" for first-visit cases where imaging has been ordered but not yet performed',
       },
       diagnoses: {
         type: 'string',
-        description: 'ICD-10 diagnosis list based on clinical findings and imaging',
+        description: 'ICD-10 diagnosis list. For first-visit cases: clinical impression codes (strain/sprain) based on exam and mechanism. For PRP evaluation cases: imaging-confirmed diagnosis codes',
       },
       medical_necessity: {
         type: 'string',
-        description: 'Clinical correlation of findings with imaging, conservative care failure, persistent symptoms, functional impairment, and PRP treatment justification',
+        description: 'For first-visit: clinical exam findings warrant diagnostic imaging and structured follow-up. For PRP evaluation: correlation of findings with imaging, conservative care failure, and PRP justification',
       },
       treatment_plan: {
         type: 'string',
-        description: 'Clinical rationale with MRI-confirmed pathology, conservative treatment gap, PRP injection protocol with specific spinal levels and guidance modality, cost estimate, home exercise and ergonomic modifications, NSAID avoidance guidance, and monitoring/escalation plan',
+        description: 'For first-visit: conservative plan with imaging orders, therapy referrals, activity modification, and follow-up. For PRP evaluation: PRP injection protocol with spinal levels, cost estimate, supportive care, and monitoring/escalation',
       },
       patient_education: {
         type: 'string',
-        description: 'Education provided about condition, PRP therapy, post-injection course, and activity modification',
+        description: 'For first-visit: injury biomechanics, imaging importance, red-flag symptoms, conservative care guidance. For PRP evaluation: PRP mechanism, post-injection course, activity modification',
       },
       prognosis: {
         type: 'string',
-        description: 'Prognosis statement based on symptoms, imaging, and treatment response',
+        description: 'For first-visit: guarded but favorable given early presentation. For PRP evaluation: guarded to fair given symptoms and MRI-confirmed pathology',
       },
       time_complexity_attestation: {
         type: 'string',
@@ -294,7 +383,10 @@ export async function generateInitialVisitFromData(
   error?: string
 }> {
   try {
-    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\n${JSON.stringify(inputData, null, 2)}`
+    const mode = detectNoteMode(inputData)
+    const systemPrompt = buildSystemPrompt(mode)
+
+    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nNote mode: ${mode === 'first_visit' ? 'FIRST VISIT (no prior imaging, no prior treatment)' : 'PRP EVALUATION (imaging available, post-conservative treatment)'}\n\n${JSON.stringify(inputData, null, 2)}`
     if (toneHint?.trim()) {
       userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
     }
@@ -302,7 +394,7 @@ export async function generateInitialVisitFromData(
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 16384,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools: [INITIAL_VISIT_TOOL],
       tool_choice: { type: 'tool', name: 'generate_initial_visit_note' },
       messages: [
@@ -354,12 +446,14 @@ export async function regenerateSection(
   currentContent: string,
 ): Promise<{ data?: string; error?: string }> {
   try {
+    const mode = detectNoteMode(inputData)
+    const systemPrompt = buildSystemPrompt(mode)
     const sectionLabel = sectionLabels[section]
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+      system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Note mode: ${mode === 'first_visit' ? 'FIRST VISIT (no prior imaging, no prior treatment)' : 'PRP EVALUATION (imaging available, post-conservative treatment)'}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
       tools: [SECTION_REGEN_TOOL],
       tool_choice: { type: 'tool', name: 'regenerate_section' },
       messages: [

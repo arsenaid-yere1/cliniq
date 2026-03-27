@@ -5,7 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format, differenceInYears } from 'date-fns'
-import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText, ClipboardList, Car, History, UserRound, Stethoscope } from 'lucide-react'
+import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1902,6 +1902,200 @@ function FinalizedView({
           </div>
         </div>
       </div>
+
+      {/* Companion Documents */}
+      {!isLocked && (
+        <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} />
+      )}
     </div>
+  )
+}
+
+// --- Companion Documents Section ---
+
+function CompanionDocumentsSection({
+  caseId,
+  isPending,
+  startTransition,
+}: {
+  caseId: string
+  isPending: boolean
+  startTransition: (callback: () => Promise<void>) => void
+}) {
+  const [orders, setOrders] = useState<Array<{
+    id: string
+    order_type: string
+    order_data: Record<string, unknown>
+    status: string
+    generation_error: string | null
+    finalized_at: string | null
+    document_id: string | null
+    created_at: string
+  }>>([])
+  const [loadingType, setLoadingType] = useState<string | null>(null)
+  const [finalizingId, setFinalizingId] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+
+  // Load orders on mount
+  useState(() => {
+    loadOrders()
+  })
+
+  async function loadOrders() {
+    const { getClinicalOrders } = await import('@/actions/clinical-orders')
+    const result = await getClinicalOrders(caseId)
+    if (result.data) {
+      setOrders(result.data as typeof orders)
+      setLoaded(true)
+    }
+  }
+
+  async function handleGenerate(orderType: 'imaging' | 'chiropractic_therapy') {
+    setLoadingType(orderType)
+    try {
+      const { generateClinicalOrder } = await import('@/actions/clinical-orders')
+      const result = await generateClinicalOrder(caseId, orderType)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success(orderType === 'imaging' ? 'Imaging orders generated' : 'Chiropractic order generated')
+        await loadOrders()
+      }
+    } finally {
+      setLoadingType(null)
+    }
+  }
+
+  async function handleFinalize(orderId: string) {
+    setFinalizingId(orderId)
+    startTransition(async () => {
+      try {
+        const { finalizeClinicalOrder } = await import('@/actions/clinical-orders')
+        const result = await finalizeClinicalOrder(orderId, caseId)
+        if (result.error) {
+          toast.error(result.error)
+        } else {
+          toast.success('Order finalized and PDF generated')
+          await loadOrders()
+        }
+      } finally {
+        setFinalizingId(null)
+      }
+    })
+  }
+
+  async function handleDelete(orderId: string) {
+    const { deleteClinicalOrder } = await import('@/actions/clinical-orders')
+    const result = await deleteClinicalOrder(orderId, caseId)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success('Order deleted')
+      await loadOrders()
+    }
+  }
+
+  const hasImaging = orders.some(o => o.order_type === 'imaging' && o.status !== 'failed')
+  const hasChiro = orders.some(o => o.order_type === 'chiropractic_therapy' && o.status !== 'failed')
+
+  const orderTypeLabel = (type: string) =>
+    type === 'imaging' ? 'Imaging Orders' : 'Chiropractic Therapy Order'
+
+  const orderTypeIcon = (type: string) =>
+    type === 'imaging' ? <FileImage className="h-4 w-4" /> : <Bone className="h-4 w-4" />
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardList className="h-5 w-5" />
+          Companion Documents
+        </CardTitle>
+        <CardDescription>
+          Generate referral orders and imaging requests based on the finalized Initial Visit note.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Generation buttons */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={hasImaging || loadingType !== null || isPending}
+            onClick={() => handleGenerate('imaging')}
+          >
+            {loadingType === 'imaging' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileImage className="mr-2 h-4 w-4" />}
+            {hasImaging ? 'Imaging Orders Generated' : 'Generate Imaging Orders'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={hasChiro || loadingType !== null || isPending}
+            onClick={() => handleGenerate('chiropractic_therapy')}
+          >
+            {loadingType === 'chiropractic_therapy' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bone className="mr-2 h-4 w-4" />}
+            {hasChiro ? 'Chiropractic Order Generated' : 'Generate Chiropractic Order'}
+          </Button>
+        </div>
+
+        {/* Generated orders list */}
+        {loaded && orders.length > 0 && (
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <div
+                key={order.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
+                <div className="flex items-center gap-3">
+                  {orderTypeIcon(order.order_type)}
+                  <div>
+                    <p className="text-sm font-medium">{orderTypeLabel(order.order_type)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {order.status === 'completed' && !order.finalized_at && 'Ready to finalize'}
+                      {order.status === 'completed' && order.finalized_at && `Finalized ${format(new Date(order.finalized_at), 'MM/dd/yyyy')}`}
+                      {order.status === 'generating' && 'Generating...'}
+                      {order.status === 'failed' && `Failed: ${order.generation_error}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {order.status === 'completed' && !order.finalized_at && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={finalizingId === order.id || isPending}
+                      onClick={() => handleFinalize(order.id)}
+                    >
+                      {finalizingId === order.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                      Finalize PDF
+                    </Button>
+                  )}
+                  {order.finalized_at && order.document_id && (
+                    <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">
+                      PDF Ready
+                    </Badge>
+                  )}
+                  {!order.finalized_at && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(order.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {loaded && orders.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No companion documents generated yet. Use the buttons above to create imaging or chiropractic referral orders.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
