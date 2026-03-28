@@ -396,6 +396,39 @@ export async function deleteClinicalOrder(orderId: string, caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  // Fetch the order to get linked document
+  const { data: order } = await supabase
+    .from('clinical_orders')
+    .select('id, document_id')
+    .eq('id', orderId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!order) return { error: 'Order not found' }
+
+  // Clean up linked document and storage file
+  if (order.document_id) {
+    const { data: doc } = await supabase
+      .from('documents')
+      .select('id, file_path')
+      .eq('id', order.document_id)
+      .is('deleted_at', null)
+      .single()
+
+    if (doc) {
+      await supabase
+        .from('documents')
+        .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
+        .eq('id', doc.id)
+
+      if (doc.file_path) {
+        await supabase.storage.from('case-documents').remove([doc.file_path])
+      }
+    }
+  }
+
+  // Soft-delete the order
   const { error } = await supabase
     .from('clinical_orders')
     .update({

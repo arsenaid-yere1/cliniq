@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enable Initial Visit note generation for patients with no prior clinical records. Currently, a two-gate prerequisite chain (extractions -> case summary -> note) completely blocks generation for "fresh" patients — the most common real-world use case. This plan removes the hard case summary gate, adds 5 pre-generation provider intake forms, implements dual-mode prompt auto-detection (First Visit vs PRP Evaluation), and adds companion document generation (Imaging Orders, Chiropractic Therapy Order).
+Enable Initial Visit note generation for patients with no prior clinical records. Currently, a two-gate prerequisite chain (extractions -> case summary -> note) completely blocks generation for "fresh" patients — the most common real-world use case. This plan removes the hard case summary gate, adds 5 pre-generation provider intake forms, implements dual-mode prompt auto-detection (First Visit vs PRP Evaluation), and adds companion document generation (Imaging Orders, Chiropractic Therapy Order) with immediate PDF rendering (no separate finalize step for orders).
 
 ## Current State Analysis
 
@@ -52,7 +52,7 @@ The Initial Visit is the patient's **first clinical encounter** in the PI workfl
 
 ## Implementation Approach
 
-The changes touch 4 layers: database schema, server actions (gate removal + new save/load), AI prompt (dual-mode), and UI (5 new intake tabs + companion doc generation). We phase by dependency order: schema first, then gates, then intake forms, then prompt, then companion docs.
+The changes touch 4 layers: database schema, server actions (gate removal + new save/load), AI prompt (dual-mode), and UI (5 new intake tabs + companion doc generation). We phase by dependency order: schema first, then gates, then intake forms, then prompt, then companion docs. Phases 6 and 7 from the original plan have been merged — order generation now renders the PDF immediately in the same server action call, eliminating the separate finalize step.
 
 ---
 
@@ -675,8 +675,8 @@ Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/c
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npm run typecheck`
-- [ ] No linting errors: `npm run lint`
+- [x] TypeScript compiles: `npm run typecheck`
+- [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
 - [ ] **Mode A test**: Case with no case summary, provider intake filled out -> generates First Visit note with conservative treatment plan, "Ordered — results pending" imaging, clinical impression diagnoses, no PRP
@@ -684,151 +684,96 @@ Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/c
 - [ ] Section regeneration works correctly in both modes
 - [ ] Tone hint still works in both modes
 
-**Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 6.
+**Implementation Note**: Phase 5 is implemented. Phases 6 and 7 have been merged into a single Phase 6 below.
 
 ---
 
-## Phase 6: Companion Document Generation
+## Phase 6: Companion Document Generation & PDF (merged with former Phase 7)
 
 ### Overview
-Add Imaging Orders and Chiropractic Therapy Order generation, triggered manually after the Initial Visit note is finalized. These companion documents use ICD-10 codes and clinical data from the note.
+Add Imaging Orders and Chiropractic Therapy Order generation with immediate PDF rendering, triggered manually from the "Orders" tab after the Initial Visit note is finalized. Generation is a single step: AI generates structured data → PDF is rendered and uploaded → download button appears immediately. No separate "finalize" step for orders.
 
 ### Changes Required:
 
 #### 1. Companion Document AI Generation
-**File**: `src/lib/claude/generate-clinical-orders.ts` (new file)
+**File**: [generate-clinical-orders.ts](src/lib/claude/generate-clinical-orders.ts) (new file)
+
+Shared `ClinicalOrderInputData` interface with patient info, diagnoses text, chief complaint text, treatment plan text, provider/clinic info, and date of visit.
 
 Two generation functions:
 
 **`generateImagingOrders(inputData)`**:
-- Input: patient info, diagnoses from note, affected body regions, provider info, clinic info
-- Output: structured order with fields: `patient_name`, `date_of_order`, `ordering_provider`, `ordering_provider_npi`, `clinic_info`, `orders` (array of `{ body_region, modality: 'MRI', icd10_codes: string[], clinical_indication }`)
+- Output: structured order with `patient_name`, `date_of_order`, `ordering_provider`, `ordering_provider_npi`, `orders[]` (body_region, modality, icd10_codes, clinical_indication)
 - Uses claude-sonnet-4-6 with a forced tool call
-- System prompt: "Generate imaging orders based on the Initial Visit note findings. Each order should include the body region, imaging modality, relevant ICD-10 codes from the diagnoses, and clinical indication."
 
 **`generateChiropracticOrder(inputData)`**:
-- Input: patient info, diagnoses from note, chief complaints, treatment plan text, provider info, clinic info
-- Output: structured order with fields: `patient_name`, `date_of_order`, `referring_provider`, `referring_provider_npi`, `clinic_info`, `diagnoses` (ICD-10 list), `treatment_plan` (frequency, duration, modalities, goals), `special_instructions`, `precautions`
+- Output: structured order with `patient_name`, `date_of_order`, `referring_provider`, `referring_provider_npi`, `diagnoses[]`, `treatment_plan` (frequency, duration, modalities, goals), `special_instructions`, `precautions`
 - Uses claude-sonnet-4-6 with a forced tool call
 
-#### 2. Zod Schemas for Companion Documents
-**File**: `src/lib/validations/clinical-orders.ts` (new file)
+#### 2. Zod Schemas & Types
+**File**: [clinical-orders.ts](src/lib/validations/clinical-orders.ts) (new file)
 
-```typescript
-export const imagingOrderResultSchema = z.object({
-  patient_name: z.string(),
-  date_of_order: z.string(),
-  ordering_provider: z.string(),
-  ordering_provider_npi: z.string().nullable(),
-  orders: z.array(z.object({
-    body_region: z.string(),
-    modality: z.string(),
-    icd10_codes: z.array(z.string()),
-    clinical_indication: z.string(),
-  })),
-})
-
-export const chiropracticOrderResultSchema = z.object({
-  patient_name: z.string(),
-  date_of_order: z.string(),
-  referring_provider: z.string(),
-  referring_provider_npi: z.string().nullable(),
-  diagnoses: z.array(z.object({
-    code: z.string(),
-    description: z.string(),
-  })),
-  treatment_plan: z.object({
-    frequency: z.string(),
-    duration: z.string(),
-    modalities: z.array(z.string()),
-    goals: z.array(z.string()),
-  }),
-  special_instructions: z.string().nullable(),
-  precautions: z.string().nullable(),
-})
-```
+- `imagingOrderResultSchema` / `ImagingOrderResult`
+- `chiropracticOrderResultSchema` / `ChiropracticOrderResult`
+- `ORDER_TYPES` constant and `OrderType` type
+- `orderTypeLabels` display name map
 
 #### 3. Server Actions
-**File**: `src/actions/clinical-orders.ts` (new file)
+**File**: [clinical-orders.ts](src/actions/clinical-orders.ts) (new file)
 
-- **`generateImagingOrder(caseId)`**: Reads the finalized note, extracts diagnoses and regions, calls `generateImagingOrders()`, writes to `clinical_orders` table
-- **`generateChiropracticOrder(caseId)`**: Same pattern for chiro order
-- **`getClinicalOrders(caseId)`**: Lists all non-deleted orders for a case
-- **`finalizeClinicalOrder(orderId)`**: Generates PDF, uploads to storage, creates document record (same pattern as `finalizeInitialVisitNote`)
+- **`generateClinicalOrder(caseId, orderType)`**: Single action that gathers data from the finalized note, calls AI generation, renders PDF immediately, uploads to storage, creates document record, and saves to `clinical_orders` table — all in one step. No separate finalize needed.
+- **`getClinicalOrders(caseId)`**: Lists all non-deleted orders for a case, joins `documents(file_path)` for download URLs.
+- **`deleteClinicalOrder(orderId, caseId)`**: Soft-deletes an order.
+- **`finalizeClinicalOrder(orderId, caseId)`**: Retained for edge cases but not used in the standard UI flow.
 
-#### 4. UI — Companion Documents Tab
+Data flow in `generateClinicalOrder`:
+1. Fetch finalized note (diagnoses, chief_complaint, treatment_plan) + case/patient/provider/clinic data
+2. Call `generateImagingOrders()` or `generateChiropracticOrder()` via AI
+3. Fetch clinic settings, provider profile, patient DOB for PDF rendering
+4. Render PDF via `renderImagingOrdersPdf()` or `renderChiropracticOrderPdf()`
+5. Upload PDF to Supabase Storage
+6. Create `documents` row
+7. Update `clinical_orders` row with order_data, document_id, and completed status
+
+#### 4. PDF Templates
+**File**: [imaging-orders-template.tsx](src/lib/pdf/imaging-orders-template.tsx) + [render-imaging-orders-pdf.ts](src/lib/pdf/render-imaging-orders-pdf.ts)
+**File**: [chiropractic-order-template.tsx](src/lib/pdf/chiropractic-order-template.tsx) + [render-chiropractic-order-pdf.ts](src/lib/pdf/render-chiropractic-order-pdf.ts)
+
+Both follow the existing React-PDF pattern from `initial-visit-template.tsx`. Accept `patientDob` for DOB population. Include clinic header (logo, address, phone/fax), patient info block, order-specific content, and provider signature block.
+
+#### 5. UI — Orders Tab
 **File**: [initial-visit-editor.tsx](src/components/clinical/initial-visit-editor.tsx)
 
-In the **finalized** view (`FinalizedView`), add a "Companion Documents" section below the existing content:
+`CompanionDocumentsSection` component used in two contexts:
 
-- "Generate Imaging Orders" button (disabled if already generated)
-- "Generate Chiropractic Therapy Order" button (disabled if already generated)
-- List of generated orders with status, preview, and "Download PDF" buttons
-- Each order shows as a Card with the order type, status badge, and action buttons
+**Finalized view** (`FinalizedView`): Rendered inside a `Tabs` component as the "Orders" tab alongside the "Note" tab. Generation buttons are enabled.
 
-### Success Criteria:
+**Draft view** (`DraftEditor`): Orders tab is NOT shown — orders require a finalized note.
 
-#### Automated Verification:
-- [ ] TypeScript compiles: `npm run typecheck`
-- [ ] No linting errors: `npm run lint`
-- [ ] Schema validation tests pass for order schemas
-
-#### Manual Verification:
-- [ ] After finalizing an Initial Visit note, companion document buttons appear
-- [ ] Imaging Orders generate with correct ICD-10 codes from the note
-- [ ] Chiropractic Order generates with correct diagnoses and treatment plan
-- [ ] Generated orders can be finalized and downloaded as PDFs
-
-**Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 7.
-
----
-
-## Phase 7: Companion Document PDF Templates
-
-### Overview
-Create PDF templates for Imaging Orders and Chiropractic Therapy Orders following the existing React-PDF pattern.
-
-### Changes Required:
-
-#### 1. Imaging Orders PDF
-**File**: `src/lib/pdf/imaging-orders-template.tsx` (new file)
-**File**: `src/lib/pdf/render-imaging-orders-pdf.ts` (new file)
-
-Follow the pattern from [initial-visit-template.tsx](src/lib/pdf/initial-visit-template.tsx) and [render-initial-visit-pdf.ts](src/lib/pdf/render-initial-visit-pdf.ts).
-
-Template structure:
-- Clinic header (logo, address, phone/fax) — reuse from initial visit template
-- "IMAGING ORDERS" title
-- Patient info block (name, DOB, date of order)
-- For each order: body region, modality, ICD-10 codes, clinical indication
-- Ordering provider signature block
-
-#### 2. Chiropractic Therapy Order PDF
-**File**: `src/lib/pdf/chiropractic-order-template.tsx` (new file)
-**File**: `src/lib/pdf/render-chiropractic-order-pdf.ts` (new file)
-
-Template structure:
-- Clinic header
-- "CHIROPRACTIC THERAPY ORDER" title
-- Patient info block
-- Diagnoses list with ICD-10 codes
-- Treatment plan: frequency, duration, modalities, goals
-- Special instructions and precautions
-- Referring provider signature block
+UI behavior:
+- "Generate Imaging Orders" and "Generate Chiropractic Therapy Order" buttons
+- Buttons disabled when: already generated, generation in progress, case locked, or note not finalized
+- When not finalized: yellow warning banner "Finalize the Initial Visit note before generating orders."
+- After generation: order row shows with "Download PDF" button and delete (trash) button
+- No intermediate "finalize" step — PDF is available immediately after generation
+- Orders load on component mount via `useEffect`
 
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npm run typecheck`
-- [ ] No linting errors: `npm run lint`
+- [x] TypeScript compiles: `npm run typecheck`
+- [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
-- [ ] Imaging Orders PDF renders correctly with clinic header, patient info, and orders
-- [ ] Chiropractic Order PDF renders correctly with all sections
-- [ ] PDFs are downloadable and display properly in browser
-- [ ] Signature images render (when available)
+- [x] After finalizing an Initial Visit note, "Orders" tab appears with generation buttons
+- [x] Orders tab is NOT shown in draft view
+- [ ] Imaging Orders generate with correct ICD-10 codes from the note and PDF downloads immediately
+- [ ] Chiropractic Order generates with correct diagnoses and treatment plan and PDF downloads immediately
+- [ ] Patient DOB populates correctly in order PDFs
+- [ ] Delete button removes orders
+- [ ] Generation buttons show as disabled/"Generated" after an order exists for that type
 
-**Implementation Note**: This is the final phase. Verify the complete end-to-end workflow: create case -> fill intake forms -> generate First Visit note -> finalize -> generate companion documents -> download PDFs.
+**Implementation Note**: This is the final phase. Verify the complete end-to-end workflow: create case → fill intake forms → generate First Visit note → finalize → switch to Orders tab → generate companion documents → download PDFs.
 
 ---
 
@@ -852,10 +797,14 @@ Template structure:
 3. Fill out all 7 pre-generation tabs, save each
 4. Generate note — verify Mode A output (conservative, no PRP, ordered imaging)
 5. Edit sections, regenerate individual sections — verify mode consistency
-6. Finalize note — verify PDF renders correctly
-7. Generate companion documents — verify correct ICD-10 codes flow through
-8. Download companion PDFs — verify rendering
-9. Test Mode B: create case with approved case summary containing imaging — verify PRP evaluation note (no regression)
+6. Verify Orders tab is NOT shown in draft view
+7. Finalize note — verify PDF renders correctly
+8. Verify Orders tab appears in finalized view with generation buttons enabled
+9. Generate Imaging Orders — verify correct ICD-10 codes, PDF downloads immediately (no finalize step)
+10. Generate Chiropractic Order — verify correct diagnoses/treatment plan, PDF downloads immediately
+11. Verify patient DOB populates correctly in order PDFs
+12. Delete an order — verify it disappears, generation button re-enables
+13. Test Mode B: create case with approved case summary containing imaging — verify PRP evaluation note (no regression)
 
 ## Performance Considerations
 
