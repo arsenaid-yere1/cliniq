@@ -1598,10 +1598,6 @@ function DraftEditor({
             <Activity className="h-3.5 w-3.5 mr-1.5" />
             Range of Motion
           </TabsTrigger>
-          <TabsTrigger value="orders">
-            <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-            Orders
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="note" className="mt-4">
@@ -1672,10 +1668,6 @@ function DraftEditor({
 
         <TabsContent value="rom" className="mt-4">
           <RomInputCard caseId={caseId} initialRom={initialRom} isLocked={isLocked} />
-        </TabsContent>
-
-        <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={false} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1780,139 +1772,155 @@ function FinalizedView({
         </div>
       </div>
 
-      {/* Document */}
-      <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">
+      <Tabs defaultValue="note">
+        <TabsList>
+          <TabsTrigger value="note">
+            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            Note
+          </TabsTrigger>
+          <TabsTrigger value="orders">
+            <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+            Orders
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Clinic Header — centered */}
-        <div className="text-center space-y-1">
-          {clinicLogoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 mx-auto mb-2" />
-          )}
-          {/* Clinic name omitted — logo contains it */}
-          {clinicSettings?.address_line1 && (
-            <p className="text-sm">{clinicSettings.address_line1}</p>
-          )}
-          {clinicSettings?.address_line2 && (
-            <p className="text-sm">{clinicSettings.address_line2}</p>
-          )}
-          {(clinicSettings?.city || clinicSettings?.state || clinicSettings?.zip_code) && (
-            <p className="text-sm">
-              {[clinicSettings.city, clinicSettings.state].filter(Boolean).join(', ')} {clinicSettings.zip_code}
-            </p>
-          )}
-          {(clinicSettings?.phone || clinicSettings?.fax) && (
-            <p className="text-sm">
-              {clinicSettings.phone && `Tel: ${clinicSettings.phone}`}
-              {clinicSettings.phone && clinicSettings.fax && ' | '}
-              {clinicSettings.fax && `Fax: ${clinicSettings.fax}`}
-            </p>
-          )}
-        </div>
+        <TabsContent value="note" className="mt-4">
+          {/* Document */}
+          <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">
 
-        <Separator />
-
-        {/* Patient Info Block */}
-        {caseData && (
-          <>
-            <div className="space-y-1 text-sm">
-              {patientName && <p><strong>Patient:</strong> {patientName}</p>}
-              {dob && <p><strong>DOB:</strong> {dob}</p>}
-              {age !== null && <p><strong>Age:</strong> {age}</p>}
-              <p><strong>Date of Visit:</strong> {note.finalized_at ? format(new Date(note.finalized_at), 'MM/dd/yyyy') : '\u2014'}</p>
-              {note.chief_complaint && <p><strong>Indication:</strong> Pain Management Evaluation</p>}
-              {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
+            {/* Clinic Header — centered */}
+            <div className="text-center space-y-1">
+              {clinicLogoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 mx-auto mb-2" />
+              )}
+              {/* Clinic name omitted — logo contains it */}
+              {clinicSettings?.address_line1 && (
+                <p className="text-sm">{clinicSettings.address_line1}</p>
+              )}
+              {clinicSettings?.address_line2 && (
+                <p className="text-sm">{clinicSettings.address_line2}</p>
+              )}
+              {(clinicSettings?.city || clinicSettings?.state || clinicSettings?.zip_code) && (
+                <p className="text-sm">
+                  {[clinicSettings.city, clinicSettings.state].filter(Boolean).join(', ')} {clinicSettings.zip_code}
+                </p>
+              )}
+              {(clinicSettings?.phone || clinicSettings?.fax) && (
+                <p className="text-sm">
+                  {clinicSettings.phone && `Tel: ${clinicSettings.phone}`}
+                  {clinicSettings.phone && clinicSettings.fax && ' | '}
+                  {clinicSettings.fax && `Fax: ${clinicSettings.fax}`}
+                </p>
+              )}
             </div>
-            <Separator />
-          </>
-        )}
 
-        {/* Vital Signs Summary */}
-        {initialVitals && (
-          <>
-            <div className="space-y-1 text-sm">
-              <h3 className="text-sm font-bold mb-2">Vital Signs</h3>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                {initialVitals.bp_systolic != null && initialVitals.bp_diastolic != null && (
-                  <p><strong>Blood Pressure:</strong> {initialVitals.bp_systolic}/{initialVitals.bp_diastolic} mmHg</p>
+            <Separator />
+
+            {/* Patient Info Block */}
+            {caseData && (
+              <>
+                <div className="space-y-1 text-sm">
+                  {patientName && <p><strong>Patient:</strong> {patientName}</p>}
+                  {dob && <p><strong>DOB:</strong> {dob}</p>}
+                  {age !== null && <p><strong>Age:</strong> {age}</p>}
+                  <p><strong>Date of Visit:</strong> {note.finalized_at ? format(new Date(note.finalized_at), 'MM/dd/yyyy') : '\u2014'}</p>
+                  {note.chief_complaint && <p><strong>Indication:</strong> Pain Management Evaluation</p>}
+                  {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Vital Signs Summary */}
+            {initialVitals && (
+              <>
+                <div className="space-y-1 text-sm">
+                  <h3 className="text-sm font-bold mb-2">Vital Signs</h3>
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                    {initialVitals.bp_systolic != null && initialVitals.bp_diastolic != null && (
+                      <p><strong>Blood Pressure:</strong> {initialVitals.bp_systolic}/{initialVitals.bp_diastolic} mmHg</p>
+                    )}
+                    {initialVitals.heart_rate != null && (
+                      <p><strong>Heart Rate:</strong> {initialVitals.heart_rate} bpm</p>
+                    )}
+                    {initialVitals.respiratory_rate != null && (
+                      <p><strong>Respiratory Rate:</strong> {initialVitals.respiratory_rate} breaths/min</p>
+                    )}
+                    {initialVitals.temperature_f != null && (
+                      <p><strong>Temperature:</strong> {initialVitals.temperature_f}°F</p>
+                    )}
+                    {initialVitals.spo2_percent != null && (
+                      <p><strong>SpO2:</strong> {initialVitals.spo2_percent}%</p>
+                    )}
+                    {(initialVitals.pain_score_min != null || initialVitals.pain_score_max != null) && (
+                      <p><strong>Pain Score:</strong> {
+                        initialVitals.pain_score_min != null && initialVitals.pain_score_max != null
+                          ? initialVitals.pain_score_min === initialVitals.pain_score_max
+                            ? `${initialVitals.pain_score_min}/10`
+                            : `${initialVitals.pain_score_min}-${initialVitals.pain_score_max}/10`
+                          : `${initialVitals.pain_score_min ?? initialVitals.pain_score_max}/10`
+                      }</p>
+                    )}
+                  </div>
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Introduction — special heading */}
+            {note.introduction && (
+              <div>
+                <h3 className="text-sm font-bold mb-2">To Whom it May Concern</h3>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.introduction}</p>
+              </div>
+            )}
+
+            {/* Remaining sections with their headings */}
+            {initialVisitSections.slice(1).map((section) => {
+              const content = note[section]
+              if (!content) return null
+              return (
+                <div key={section}>
+                  <h3 className="text-sm font-bold mb-2">{sectionLabels[section]}</h3>
+                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{content}</p>
+                </div>
+              )
+            })}
+
+            <Separator />
+
+            {/* Closing + Signature */}
+            <div className="space-y-4">
+              <p className="text-sm">Respectfully,</p>
+              <div className="space-y-2">
+                {providerSignatureUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={providerSignatureUrl} alt="Provider signature" className="h-16" />
                 )}
-                {initialVitals.heart_rate != null && (
-                  <p><strong>Heart Rate:</strong> {initialVitals.heart_rate} bpm</p>
+                {providerProfile?.display_name && (
+                  <p className="text-sm font-semibold">
+                    {providerProfile.display_name}
+                    {providerProfile.credentials && `, ${providerProfile.credentials}`}
+                  </p>
                 )}
-                {initialVitals.respiratory_rate != null && (
-                  <p><strong>Respiratory Rate:</strong> {initialVitals.respiratory_rate} breaths/min</p>
+                {providerProfile?.npi_number && (
+                  <p className="text-xs text-muted-foreground">NPI: {providerProfile.npi_number}</p>
                 )}
-                {initialVitals.temperature_f != null && (
-                  <p><strong>Temperature:</strong> {initialVitals.temperature_f}°F</p>
-                )}
-                {initialVitals.spo2_percent != null && (
-                  <p><strong>SpO2:</strong> {initialVitals.spo2_percent}%</p>
-                )}
-                {(initialVitals.pain_score_min != null || initialVitals.pain_score_max != null) && (
-                  <p><strong>Pain Score:</strong> {
-                    initialVitals.pain_score_min != null && initialVitals.pain_score_max != null
-                      ? initialVitals.pain_score_min === initialVitals.pain_score_max
-                        ? `${initialVitals.pain_score_min}/10`
-                        : `${initialVitals.pain_score_min}-${initialVitals.pain_score_max}/10`
-                      : `${initialVitals.pain_score_min ?? initialVitals.pain_score_max}/10`
-                  }</p>
+                {note.finalized_at && (
+                  <p className="text-xs text-muted-foreground">
+                    Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
+                  </p>
                 )}
               </div>
             </div>
-            <Separator />
-          </>
-        )}
-
-        {/* Introduction — special heading */}
-        {note.introduction && (
-          <div>
-            <h3 className="text-sm font-bold mb-2">To Whom it May Concern</h3>
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.introduction}</p>
           </div>
-        )}
+        </TabsContent>
 
-        {/* Remaining sections with their headings */}
-        {initialVisitSections.slice(1).map((section) => {
-          const content = note[section]
-          if (!content) return null
-          return (
-            <div key={section}>
-              <h3 className="text-sm font-bold mb-2">{sectionLabels[section]}</h3>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{content}</p>
-            </div>
-          )
-        })}
-
-        <Separator />
-
-        {/* Closing + Signature */}
-        <div className="space-y-4">
-          <p className="text-sm">Respectfully,</p>
-          <div className="space-y-2">
-            {providerSignatureUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={providerSignatureUrl} alt="Provider signature" className="h-16" />
-            )}
-            {providerProfile?.display_name && (
-              <p className="text-sm font-semibold">
-                {providerProfile.display_name}
-                {providerProfile.credentials && `, ${providerProfile.credentials}`}
-              </p>
-            )}
-            {providerProfile?.npi_number && (
-              <p className="text-xs text-muted-foreground">NPI: {providerProfile.npi_number}</p>
-            )}
-            {note.finalized_at && (
-              <p className="text-xs text-muted-foreground">
-                Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Companion Documents */}
-      <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
+        <TabsContent value="orders" className="mt-4">
+          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
