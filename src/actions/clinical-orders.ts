@@ -144,14 +144,89 @@ export async function generateClinicalOrder(caseId: string, orderType: OrderType
     return { error: result.error ?? 'Order generation failed' }
   }
 
-  // Update with generated data
+  // Fetch clinic/provider/patient for PDF rendering
+  const [clinicRes, providerRes, patientRes] = await Promise.all([
+    supabase.from('clinic_settings').select('*').limit(1).maybeSingle(),
+    supabase.from('provider_profiles').select('*').limit(1).maybeSingle(),
+    supabase
+      .from('cases')
+      .select('patient:patients!inner(date_of_birth)')
+      .eq('id', caseId)
+      .is('deleted_at', null)
+      .single(),
+  ])
+
+  const patientDob = (patientRes.data?.patient as unknown as { date_of_birth: string | null })?.date_of_birth ?? null
+
+  // Render PDF immediately
+  let pdfBuffer: Buffer
+  let fileName: string
+  const orderData = result.data as Record<string, unknown>
+
+  if (orderType === 'imaging') {
+    const { renderImagingOrdersPdf } = await import('@/lib/pdf/render-imaging-orders-pdf')
+    pdfBuffer = await renderImagingOrdersPdf({
+      orderData,
+      clinicSettings: clinicRes.data,
+      providerProfile: providerRes.data,
+      patientDob,
+    })
+    fileName = 'Imaging Orders'
+  } else {
+    const { renderChiropracticOrderPdf } = await import('@/lib/pdf/render-chiropractic-order-pdf')
+    pdfBuffer = await renderChiropracticOrderPdf({
+      orderData,
+      clinicSettings: clinicRes.data,
+      providerProfile: providerRes.data,
+      patientDob,
+    })
+    fileName = 'Chiropractic Therapy Order'
+  }
+
+  // Upload PDF
+  const storagePath = `cases/${caseId}/${orderType}-order-${Date.now()}.pdf`
+  const fileBlob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' })
+
+  const { error: uploadError } = await supabase.storage
+    .from('case-documents')
+    .upload(storagePath, fileBlob, {
+      contentType: 'application/pdf',
+      upsert: false,
+    })
+
+  if (uploadError) return { error: `Failed to upload order PDF: ${uploadError.message}` }
+
+  // Create documents row
+  const { data: doc, error: docError } = await supabase
+    .from('documents')
+    .insert({
+      case_id: caseId,
+      document_type: 'generated',
+      file_name: fileName,
+      file_path: storagePath,
+      file_size_bytes: pdfBuffer.length,
+      mime_type: 'application/pdf',
+      status: 'reviewed',
+      uploaded_by_user_id: user.id,
+      created_by_user_id: user.id,
+      updated_by_user_id: user.id,
+    })
+    .select('id')
+    .single()
+
+  if (docError || !doc) return { error: 'Failed to create document record' }
+
+  // Update order as completed with PDF attached
   const { error: updateError } = await supabase
     .from('clinical_orders')
     .update({
-      order_data: result.data as Record<string, unknown>,
+      order_data: orderData,
       raw_ai_response: result.rawResponse as Record<string, unknown>,
       ai_model: 'claude-sonnet-4-6',
       status: 'completed',
+      document_id: doc.id,
+      finalized_by_user_id: user.id,
+      finalized_at: new Date().toISOString(),
       updated_by_user_id: user.id,
     })
     .eq('id', order.id)
@@ -171,7 +246,7 @@ export async function getClinicalOrders(caseId: string) {
 
   const { data, error } = await supabase
     .from('clinical_orders')
-    .select('id, order_type, order_data, status, generation_error, finalized_at, document_id, created_at')
+    .select('id, order_type, order_data, status, generation_error, finalized_at, document_id, created_at, document:documents(file_path)')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })

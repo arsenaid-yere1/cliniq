@@ -1948,10 +1948,10 @@ function CompanionDocumentsSection({
     generation_error: string | null
     finalized_at: string | null
     document_id: string | null
+    document: { file_path: string | null } | null
     created_at: string
   }>>([])
   const [loadingType, setLoadingType] = useState<string | null>(null)
-  const [finalizingId, setFinalizingId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
   // Load orders on mount
@@ -1964,7 +1964,10 @@ function CompanionDocumentsSection({
     const { getClinicalOrders } = await import('@/actions/clinical-orders')
     const result = await getClinicalOrders(caseId)
     if (result.data) {
-      setOrders(result.data as typeof orders)
+      setOrders(result.data.map((o: Record<string, unknown>) => ({
+        ...o,
+        document: Array.isArray(o.document) ? (o.document[0] ?? null) : o.document ?? null,
+      })) as typeof orders)
       setLoaded(true)
     }
   }
@@ -1985,22 +1988,11 @@ function CompanionDocumentsSection({
     }
   }
 
-  async function handleFinalize(orderId: string) {
-    setFinalizingId(orderId)
-    startTransition(async () => {
-      try {
-        const { finalizeClinicalOrder } = await import('@/actions/clinical-orders')
-        const result = await finalizeClinicalOrder(orderId, caseId)
-        if (result.error) {
-          toast.error(result.error)
-        } else {
-          toast.success('Order finalized and PDF generated')
-          await loadOrders()
-        }
-      } finally {
-        setFinalizingId(null)
-      }
-    })
+  async function handleDownload(filePath: string) {
+    const { getDocumentDownloadUrl } = await import('@/actions/documents')
+    const result = await getDocumentDownloadUrl(filePath)
+    if (result.url) window.open(result.url, '_blank')
+    else toast.error('Failed to get download URL')
   }
 
   async function handleDelete(orderId: string) {
@@ -2078,39 +2070,31 @@ function CompanionDocumentsSection({
                   <div>
                     <p className="text-sm font-medium">{orderTypeLabel(order.order_type)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {order.status === 'completed' && !order.finalized_at && 'Ready to finalize'}
-                      {order.status === 'completed' && order.finalized_at && `Finalized ${format(new Date(order.finalized_at), 'MM/dd/yyyy')}`}
+                      {order.status === 'completed' && `Generated ${format(new Date(order.created_at), 'MM/dd/yyyy')}`}
                       {order.status === 'generating' && 'Generating...'}
                       {order.status === 'failed' && `Failed: ${order.generation_error}`}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {order.status === 'completed' && !order.finalized_at && (
+                  {order.status === 'completed' && order.document?.file_path && (
                     <Button
-                      variant="default"
+                      variant="outline"
                       size="sm"
-                      disabled={finalizingId === order.id || isPending}
-                      onClick={() => handleFinalize(order.id)}
+                      onClick={() => handleDownload(order.document!.file_path!)}
                     >
-                      {finalizingId === order.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                      Finalize PDF
+                      <Download className="mr-2 h-4 w-4" />
+                      Download PDF
                     </Button>
                   )}
-                  {order.finalized_at && order.document_id && (
-                    <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">
-                      PDF Ready
-                    </Badge>
-                  )}
-                  {!order.finalized_at && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(order.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isLocked}
+                    onClick={() => handleDelete(order.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))}
