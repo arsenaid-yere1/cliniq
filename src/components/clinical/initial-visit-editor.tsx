@@ -1675,7 +1675,7 @@ function DraftEditor({
         </TabsContent>
 
         <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} />
+          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={false} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1912,7 +1912,7 @@ function FinalizedView({
       </div>
 
       {/* Companion Documents */}
-      <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} />
+      <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
     </div>
   )
 }
@@ -1924,11 +1924,13 @@ function CompanionDocumentsSection({
   isPending,
   startTransition,
   isLocked,
+  noteFinalized,
 }: {
   caseId: string
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   isLocked: boolean
+  noteFinalized: boolean
 }) {
   const [orders, setOrders] = useState<Array<{
     id: string
@@ -2025,12 +2027,20 @@ function CompanionDocumentsSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Finalization notice */}
+        {!noteFinalized && (
+          <div className="flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-300">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Finalize the Initial Visit note before generating orders.
+          </div>
+        )}
+
         {/* Generation buttons */}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={hasImaging || loadingType !== null || isPending || isLocked}
+            disabled={hasImaging || loadingType !== null || isPending || isLocked || !noteFinalized}
             onClick={() => handleGenerate('imaging')}
           >
             {loadingType === 'imaging' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileImage className="mr-2 h-4 w-4" />}
@@ -2039,7 +2049,7 @@ function CompanionDocumentsSection({
           <Button
             variant="outline"
             size="sm"
-            disabled={hasChiro || loadingType !== null || isPending || isLocked}
+            disabled={hasChiro || loadingType !== null || isPending || isLocked || !noteFinalized}
             onClick={() => handleGenerate('chiropractic_therapy')}
           >
             {loadingType === 'chiropractic_therapy' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bone className="mr-2 h-4 w-4" />}
