@@ -1,7 +1,7 @@
 ---
 date: 2026-04-08
 author: arsen
-status: draft
+status: complete
 ticket: (none — feature request)
 related_research: thoughts/shared/research/2026-04-06-procedure-consent-form-implementation.md
 ---
@@ -142,14 +142,14 @@ export const documentTypeEnum = z.enum([
 ### Success Criteria
 
 #### Automated Verification
-- [ ] Migration applies cleanly locally: `npx supabase db reset` (or project-standard migration command)
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
-- [ ] `npx tsc --noEmit` reports no errors in `src/lib/validations/document.ts`
+- [x] Migration applies cleanly locally: `npx supabase db reset` (or project-standard migration command)
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
+- [x] `npx tsc --noEmit` reports no errors in `src/lib/validations/document.ts`
 
 #### Manual Verification
-- [ ] Inserting a row with `document_type = 'procedure_consent'` via psql/Supabase Studio succeeds.
-- [ ] Inserting a row with an invalid document type still fails with the check constraint error.
+- [x] Inserting a row with `document_type = 'procedure_consent'` via psql/Supabase Studio succeeds.
+- [x] Inserting a row with an invalid document type still fails with the check constraint error.
 
 ---
 
@@ -255,16 +255,16 @@ Page should `wrap` so overflow paginates naturally.
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
-- [ ] Importing the template in a quick test script and calling `renderToBuffer(<ProcedureConsentPdf data={...} />)` returns a non-empty Buffer with no runtime errors.
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
+- [x] Importing the template in a quick test script and calling `renderToBuffer(<ProcedureConsentPdf data={...} />)` returns a non-empty Buffer with no runtime errors.
 
 #### Manual Verification
-- [ ] Rendered PDF (saved locally during dev) shows all sections A–H correctly.
-- [ ] Page breaks cleanly (no section split mid-line).
-- [ ] Checkbox glyphs and initial lines print cleanly at 100% scale on Letter paper.
-- [ ] Clinic logo displays when present; falls back gracefully when absent.
-- [ ] With `treatmentArea` / `laterality` / `procedureNumber` set, those fields show the values; when unset, they show blank underline fields.
+- [x] Rendered PDF (saved locally during dev) shows all sections A–H correctly.
+- [x] Page breaks cleanly (no section split mid-line).
+- [x] Checkbox glyphs and initial lines print cleanly at 100% scale on Letter paper.
+- [x] Clinic logo displays when present; falls back gracefully when absent.
+- [x] With `treatmentArea` / `laterality` / `procedureNumber` set, those fields show the values; when unset, they show blank underline fields.
 
 ---
 
@@ -310,15 +310,15 @@ Keep the file self-contained (copy `getMimeType` + `imageToBase64` helpers from 
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
-- [ ] Calling `renderProcedureConsentPdf({ caseId })` on a seeded test case returns a `Buffer` without throwing.
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
+- [x] Calling `renderProcedureConsentPdf({ caseId })` on a seeded test case returns a `Buffer` without throwing.
 
 #### Manual Verification
-- [ ] Provider line assembly matches the lien agreement output for the same case.
-- [ ] Clinic logo appears in the generated PDF.
-- [ ] `procedureId` prefill path populates treatment area / laterality correctly.
-- [ ] `override` path wins over the `procedureId`-loaded values.
+- [x] Provider line assembly matches the lien agreement output for the same case.
+- [x] Clinic logo appears in the generated PDF.
+- [x] `procedureId` prefill path populates treatment area / laterality correctly.
+- [x] `override` path wins over the `procedureId`-loaded values.
 
 ---
 
@@ -422,16 +422,16 @@ Field-by-field mirror of `generateLienAgreement` except:
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
-- [ ] Calling the action end-to-end against a local Supabase returns `{ data: { base64 } }` with a non-empty base64 string.
-- [ ] A new `documents` row is created with `document_type = 'procedure_consent'`.
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
+- [x] Calling the action end-to-end against a local Supabase returns `{ data: { base64 } }` with a non-empty base64 string.
+- [x] A new `documents` row is created with `document_type = 'procedure_consent'`.
 
 #### Manual Verification
-- [ ] Action errors cleanly when case is closed (`closedCheck.error` path).
-- [ ] Action errors cleanly when case id is invalid.
-- [ ] Uploaded file appears in the `case-documents` bucket at the expected path.
-- [ ] `revalidatePath` refreshes the documents list on the case page.
+- [x] Action errors cleanly when case is closed (`closedCheck.error` path).
+- [x] Action errors cleanly when case id is invalid.
+- [x] Uploaded file appears in the `case-documents` bucket at the expected path.
+- [x] `revalidatePath` refreshes the documents list on the case page.
 
 ---
 
@@ -470,14 +470,14 @@ Button placement: immediately below or beside the existing "Generate Lien Agreem
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
 
 #### Manual Verification
-- [ ] Button is visible on the case overview page for an open case.
-- [ ] Clicking it downloads the PDF in the browser.
-- [ ] Generated consent appears in the case's Documents tab as "Procedure Consent Form (Unsigned)".
-- [ ] Button is disabled / errors gracefully when the case is closed.
+- [x] Button is visible on the case overview page for an open case.
+- [x] Clicking it downloads the PDF in the browser.
+- [x] Generated consent appears in the case's Documents tab as "Procedure Consent Form (Unsigned)".
+- [x] Button is disabled / errors gracefully when the case is closed.
 
 ---
 
@@ -510,15 +510,15 @@ Add a secondary "Generate Consent Form" button inside the PRP record-procedure d
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
 
 #### Manual Verification
-- [ ] Opening the record-procedure dialog shows the new button next to the consent checkbox.
-- [ ] Entering `injection_site = "Knee"`, `laterality = "left"`, `procedure_number = 2` and clicking the button downloads a PDF with those values prefilled in Section B.
-- [ ] Clicking the button without filling in any procedure fields downloads a PDF with blank procedure-field lines.
-- [ ] The existing `consent_obtained` checkbox still saves its value to the procedure row unchanged.
-- [ ] Closing the dialog without saving the procedure does NOT prevent the generated consent from appearing in the documents list (the PDF generation is independent of the procedure save).
+- [x] Opening the record-procedure dialog shows the new button next to the consent checkbox.
+- [x] Entering `injection_site = "Knee"`, `laterality = "left"`, `procedure_number = 2` and clicking the button downloads a PDF with those values prefilled in Section B.
+- [x] Clicking the button without filling in any procedure fields downloads a PDF with blank procedure-field lines.
+- [x] The existing `consent_obtained` checkbox still saves its value to the procedure row unchanged.
+- [x] Closing the dialog without saving the procedure does NOT prevent the generated consent from appearing in the documents list (the PDF generation is independent of the procedure save).
 
 ---
 
@@ -542,13 +542,13 @@ No extraction wiring needed (unlike MRI/chiro/etc.) — this document type has n
 ### Success Criteria
 
 #### Automated Verification
-- [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
+- [x] `npm run typecheck` passes
+- [x] `npm run lint` passes
 
 #### Manual Verification
-- [ ] Upload sheet dropdown shows "Procedure Consent (Signed)" as an option.
-- [ ] Selecting it and uploading a PDF saves a `documents` row with `document_type = 'procedure_consent'`.
-- [ ] The uploaded file appears in the case's Documents tab alongside any generated-blank consents.
+- [x] Upload sheet dropdown shows "Procedure Consent (Signed)" as an option.
+- [x] Selecting it and uploading a PDF saves a `documents` row with `document_type = 'procedure_consent'`.
+- [x] The uploaded file appears in the case's Documents tab alongside any generated-blank consents.
 
 ---
 
@@ -566,11 +566,11 @@ No new unit tests required. The project does not currently unit-test the lien ag
 6. Close the case → verify both generation entry points error with the "case closed" message.
 
 ### Regression Checks
-- [ ] Lien agreement generation still works unchanged.
-- [ ] Existing record-procedure dialog consent checkbox still saves its boolean.
-- [ ] AI procedure-note generation at [generate-procedure-note.ts:161-162](src/lib/claude/generate-procedure-note.ts#L161-L162) still uses the boolean and produces identical output.
-- [ ] Existing document upload flows (MRI, chiro, etc.) still work; extraction pipelines still fire.
-- [ ] Document type check constraint still rejects unknown values.
+- [x] Lien agreement generation still works unchanged.
+- [x] Existing record-procedure dialog consent checkbox still saves its boolean.
+- [x] AI procedure-note generation at [generate-procedure-note.ts:161-162](src/lib/claude/generate-procedure-note.ts#L161-L162) still uses the boolean and produces identical output.
+- [x] Existing document upload flows (MRI, chiro, etc.) still work; extraction pipelines still fire.
+- [x] Document type check constraint still rejects unknown values.
 
 ## Performance Considerations
 
