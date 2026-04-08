@@ -11,6 +11,7 @@ import { StatusChangeDropdown } from '@/components/patients/status-change-dropdo
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
 import { generateLienAgreement } from '@/actions/lien'
+import { generateProcedureConsent } from '@/actions/procedure-consents'
 
 interface CaseOverviewProps {
   caseData: {
@@ -71,6 +72,7 @@ const quickActions = [
 export function CaseOverview({ caseData }: CaseOverviewProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [generatingLien, setGeneratingLien] = useState(false)
+  const [generatingConsent, setGeneratingConsent] = useState(false)
   const patient = caseData.patient
   const attorney = caseData.attorney
   const isLocked = LOCKED_STATUSES.includes(caseData.case_status as CaseStatus)
@@ -102,6 +104,32 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
       toast.success('Lien agreement generated')
     } finally {
       setGeneratingLien(false)
+    }
+  }
+
+  async function handleGenerateConsent() {
+    setGeneratingConsent(true)
+    try {
+      const result = await generateProcedureConsent({ caseId: caseData.id })
+      if ('error' in result && result.error) {
+        toast.error(result.error)
+        return
+      }
+      if ('data' in result && result.data?.base64) {
+        const bytes = atob(result.data.base64)
+        const arr = new Uint8Array(bytes.length)
+        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+        const blob = new Blob([arr], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'Procedure-Consent-Form.pdf'
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast.success('Procedure consent form generated')
+    } finally {
+      setGeneratingConsent(false)
     }
   }
 
@@ -152,6 +180,18 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
                 <FileSignature className="h-4 w-4 mr-2" />
               )}
               Generate Lien Agreement
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleGenerateConsent}
+              disabled={isLocked || generatingConsent}
+            >
+              {generatingConsent ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileSignature className="h-4 w-4 mr-2" />
+              )}
+              Generate Procedure Consent Form
             </Button>
           </div>
         </CardContent>
