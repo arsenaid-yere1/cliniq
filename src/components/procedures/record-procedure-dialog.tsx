@@ -120,6 +120,7 @@ export function RecordProcedureDialog({
       const values = form.getValues()
       const result = await generateProcedureConsent({
         caseId,
+        procedureId: initialData?.id,
         override: {
           treatmentArea: values.injection_site || undefined,
           laterality: (values.laterality as 'left' | 'right' | 'bilateral' | undefined) || undefined,
