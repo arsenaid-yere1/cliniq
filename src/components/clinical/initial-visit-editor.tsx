@@ -369,7 +369,7 @@ export function InitialVisitEditor({
               <AlertDialogHeader>
                 <AlertDialogTitle>Reset Note</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will discard all generated content and return to the pre-generation state. Vitals will be preserved, but ROM data will need to be re-entered. Continue?
+                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings), vitals, and ROM data will be preserved. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1521,7 +1521,7 @@ function DraftEditor({
               <AlertDialogHeader>
                 <AlertDialogTitle>Reset Note</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will discard all generated content and return to the pre-generation state. Vitals will be preserved, but ROM data will need to be re-entered. Continue?
+                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings), vitals, and ROM data will be preserved. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

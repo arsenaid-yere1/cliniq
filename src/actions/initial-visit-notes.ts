@@ -441,7 +441,7 @@ export async function resetInitialVisitNote(caseId: string) {
   // Only allow reset on draft or failed notes
   const { data: note } = await supabase
     .from('initial_visit_notes')
-    .select('id, status')
+    .select('id, status, rom_data, provider_intake')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -461,6 +461,20 @@ export async function resetInitialVisitNote(caseId: string) {
     .eq('id', note.id)
 
   if (error) return { error: 'Failed to reset note' }
+
+  // Preserve provider-entered data (intake forms and ROM) in a new pending row
+  if (note.provider_intake || note.rom_data) {
+    await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        status: 'pending',
+        rom_data: note.rom_data ?? null,
+        provider_intake: note.provider_intake ?? null,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+  }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }

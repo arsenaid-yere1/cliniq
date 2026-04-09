@@ -811,6 +811,112 @@ If the `vitals` field on `InitialVisitPdfData` is no longer consumed by the temp
 
 ---
 
+## Phase 8: Fix Reset Notes to Preserve Provider Data
+
+### Overview
+`resetInitialVisitNote` currently soft-deletes the entire `initial_visit_notes` row, which destroys provider-entered data (`provider_intake`, `rom_data`) alongside AI-generated content. The fix mirrors the preservation pattern already used by `generateInitialVisitNote` (lines 149-181): read provider data before soft-delete, then insert a new blank row carrying that data forward.
+
+### The Problem
+- `resetInitialVisitNote` ([initial-visit-notes.ts:431-467](src/actions/initial-visit-notes.ts#L431-L467)) sets `deleted_at` on the row, erasing everything
+- `provider_intake` (chief complaints, accident details, PMH, social history, exam findings) is lost — provider must re-enter all intake data
+- `rom_data` is also lost (already acknowledged in the UI warning, but still undesirable)
+- `generateInitialVisitNote` already preserves both fields (lines 149-158, 180-181) — reset should do the same
+
+### Changes Required:
+
+#### 1. Update `resetInitialVisitNote()` Server Action
+**File**: [initial-visit-notes.ts:431-467](src/actions/initial-visit-notes.ts#L431-L467)
+
+Replace the current implementation to preserve `provider_intake` and `rom_data`:
+
+```typescript
+export async function resetInitialVisitNote(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Read full note including provider data to preserve
+  const { data: note } = await supabase
+    .from('initial_visit_notes')
+    .select('id, status, rom_data, provider_intake')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!note) return { error: 'No note found to reset' }
+  if (note.status !== 'draft' && note.status !== 'failed') {
+    return { error: 'Only draft or failed notes can be reset' }
+  }
+
+  // Soft-delete the existing note row
+  const { error: deleteError } = await supabase
+    .from('initial_visit_notes')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('id', note.id)
+
+  if (deleteError) return { error: 'Failed to reset note' }
+
+  // If there's provider data to preserve, create a new empty row carrying it forward
+  if (note.provider_intake || note.rom_data) {
+    await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        status: 'pending',
+        rom_data: note.rom_data ?? null,
+        provider_intake: note.provider_intake ?? null,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+  }
+
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { success: true } }
+}
+```
+
+**Key changes**:
+- Select `rom_data` and `provider_intake` in addition to `id` and `status`
+- After soft-deleting, insert a new `pending` row with only the preserved fields
+- The new row has no AI-generated sections — the UI will show the pre-generation state with intake tabs pre-filled
+
+#### 2. Update UI Confirmation Text
+**File**: [initial-visit-editor.tsx](src/components/clinical/initial-visit-editor.tsx)
+
+Update the `AlertDialog` description text in both reset button instances (lines ~361-390 and ~1513-1542) to accurately reflect what is preserved:
+
+**Old text**:
+```
+This will discard all generated content and return to the pre-generation state. Vitals will be preserved, but ROM data will need to be re-entered.
+```
+
+**New text**:
+```
+This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings), vitals, and ROM data will be preserved.
+```
+
+### Success Criteria:
+
+#### Automated Verification:
+- [ ] TypeScript compiles: `npm run typecheck`
+- [ ] No linting errors: `npm run lint`
+
+#### Manual Verification:
+- [ ] Reset a draft note that has provider intake data filled out → verify all 5 intake sections are preserved on reload
+- [ ] Reset a draft note that has ROM data → verify ROM data is preserved on reload
+- [ ] Reset a draft note with no provider data → verify no new row is inserted (clean reset)
+- [ ] After reset, the pre-generation state shows with intake tabs pre-filled with previous data
+- [ ] Generate a new note after reset → verify the preserved intake data is used by the AI
+- [ ] Vitals (stored in separate `vital_signs` table) are still preserved (unchanged behavior)
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests:
@@ -839,6 +945,8 @@ If the `vitals` field on `InitialVisitPdfData` is no longer consumed by the temp
 11. Verify patient DOB populates correctly in order PDFs
 12. Delete an order — verify it disappears, generation button re-enables
 13. Test Mode B: create case with approved case summary containing imaging — verify PRP evaluation note (no regression)
+14. Reset a draft note with intake data filled — verify intake data and ROM are preserved, AI-generated sections are cleared
+15. Re-generate after reset — verify preserved intake data is used by the AI
 
 ## Performance Considerations
 
