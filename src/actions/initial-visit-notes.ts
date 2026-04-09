@@ -441,7 +441,7 @@ export async function resetInitialVisitNote(caseId: string) {
   // Only allow reset on draft or failed notes
   const { data: note } = await supabase
     .from('initial_visit_notes')
-    .select('id, status, rom_data, provider_intake')
+    .select('id, status')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -451,30 +451,37 @@ export async function resetInitialVisitNote(caseId: string) {
     return { error: 'Only draft or failed notes can be reset' }
   }
 
-  // Soft-delete the note row
+  // Update in-place: null out all AI-generated content but keep provider_intake and rom_data
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
-      deleted_at: new Date().toISOString(),
+      status: 'draft',
+      introduction: null,
+      history_of_accident: null,
+      post_accident_history: null,
+      chief_complaint: null,
+      past_medical_history: null,
+      social_history: null,
+      review_of_systems: null,
+      physical_exam: null,
+      imaging_findings: null,
+      medical_necessity: null,
+      diagnoses: null,
+      treatment_plan: null,
+      patient_education: null,
+      prognosis: null,
+      time_complexity_attestation: null,
+      clinician_disclaimer: null,
+      ai_model: null,
+      raw_ai_response: null,
+      generation_error: null,
+      generation_attempts: 0,
+      source_data_hash: null,
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
 
   if (error) return { error: 'Failed to reset note' }
-
-  // Preserve provider-entered data (intake forms and ROM) in a new pending row
-  if (note.provider_intake || note.rom_data) {
-    await supabase
-      .from('initial_visit_notes')
-      .insert({
-        case_id: caseId,
-        status: 'pending',
-        rom_data: note.rom_data ?? null,
-        provider_intake: note.provider_intake ?? null,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-  }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }

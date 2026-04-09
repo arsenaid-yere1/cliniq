@@ -210,7 +210,7 @@ export function InitialVisitEditor({
   })()
 
   // No note or pre-generation note — show tabs + generate button
-  if (!note || note.status === 'pending' || (note.status === 'draft' && !hasGeneratedContent)) {
+  if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Initial Visit Note</h1>
