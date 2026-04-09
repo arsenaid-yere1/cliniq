@@ -777,6 +777,40 @@ UI behavior:
 
 ---
 
+## Phase 7: Fix Duplicate Vital Signs in PDF
+
+### Overview
+Remove the standalone Vital Signs block that renders at the top of the generated PDF document. Vital Signs are already included within the Physical Examination section (Claude generates a `VITAL SIGNS:` sub-heading with all values per the system prompt instruction), so the standalone block at the top creates an unwanted duplicate.
+
+### Changes Required:
+
+#### 1. Remove Standalone Vital Signs Block from PDF Template
+**File**: [initial-visit-template.tsx:220-254](src/lib/pdf/initial-visit-template.tsx#L220-L254)
+
+**Remove** the entire `{/* Vital Signs Summary */}` block (lines 220–254) that conditionally renders `data.vitals` as a structured table before the Introduction section.
+
+The vitals data will continue to appear correctly within the "Physical Examination" section, where Claude embeds it as a `VITAL SIGNS:` sub-heading with bullet points per the system prompt instruction at [generate-initial-visit.ts:86-88](src/lib/claude/generate-initial-visit.ts#L86-L88).
+
+#### 2. Clean Up Unused Vitals Prop (if applicable)
+**File**: [render-initial-visit-pdf.ts](src/lib/pdf/render-initial-visit-pdf.ts)
+
+If the `vitals` field on `InitialVisitPdfData` is no longer consumed by the template after the removal, remove the DB query for `vital_signs` data (lines ~44-58) and the `vitals` property from `pdfData` (line ~151). Also remove the `vitals` field from the `InitialVisitPdfData` type.
+
+**Note**: Only remove the vitals prop/query if no other part of the template uses `data.vitals`. If it is only used in the removed block, clean it up.
+
+### Success Criteria:
+
+#### Automated Verification:
+- [ ] TypeScript compiles: `npm run typecheck`
+- [ ] No linting errors: `npm run lint`
+
+#### Manual Verification:
+- [ ] Generated PDF does NOT show a standalone "Vital Signs" section at the top of the document
+- [ ] Vital Signs still appear correctly within the "Physical Examination" section
+- [ ] Both Mode A (First Visit) and Mode B (PRP Evaluation) PDFs render correctly without duplicate vitals
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests:

@@ -40,23 +40,12 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     .is('deleted_at', null)
     .single()
 
-  // Fetch clinic settings and vitals in parallel
-  const [{ data: clinicSettings }, { data: vitalsData }] = await Promise.all([
-    supabase
-      .from('clinic_settings')
-      .select('*')
-      .is('deleted_at', null)
-      .maybeSingle(),
-    supabase
-      .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
-      .eq('case_id', input.caseId)
-      .is('procedure_id', null)
-      .is('deleted_at', null)
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
+  // Fetch clinic settings
+  const { data: clinicSettings } = await supabase
+    .from('clinic_settings')
+    .select('*')
+    .is('deleted_at', null)
+    .maybeSingle()
 
   // Fetch provider profile from case's assigned provider
   const assignedProviderId = caseData?.assigned_provider_id as string | null
@@ -147,8 +136,6 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     patient_education: input.note.patient_education as string | null,
     prognosis: input.note.prognosis as string | null,
     clinician_disclaimer: input.note.clinician_disclaimer as string | null,
-
-    vitals: vitalsData ?? undefined,
 
     providerName: providerProfile?.display_name || undefined,
     providerCredentials: providerProfile?.credentials || undefined,
