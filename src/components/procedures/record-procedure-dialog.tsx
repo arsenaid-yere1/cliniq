@@ -154,7 +154,9 @@ export function RecordProcedureDialog({
       procedure_date: initialData?.procedure_date ?? format(new Date(), 'yyyy-MM-dd'),
       injection_site: initialData?.injection_site ?? '',
       laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined) ?? undefined,
-      diagnoses: Array.isArray(initialData?.diagnoses) ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses']) : [],
+      diagnoses: Array.isArray(initialData?.diagnoses)
+        ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
+        : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
       consent_obtained: initialData?.consent_obtained ?? false,
       pain_rating: initialData?.pain_rating ?? null,
       vital_signs: {

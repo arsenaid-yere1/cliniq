@@ -145,26 +145,55 @@ export async function createPrpProcedure(
   return { data: procedure }
 }
 
-// Fetch approved PM diagnoses for this case (ICD-10 combobox source)
+// Fetch approved PM diagnoses + finalized Initial Visit Note diagnoses for this case (ICD-10 combobox source)
 export async function getCaseDiagnoses(caseId: string) {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('pain_management_extractions')
-    .select('diagnoses')
-    .eq('case_id', caseId)
-    .eq('review_status', 'approved')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
+  // Fetch PM extraction diagnoses and Initial Visit Note diagnoses in parallel
+  const [pmRes, ivnRes] = await Promise.all([
+    supabase
+      .from('pain_management_extractions')
+      .select('diagnoses')
+      .eq('case_id', caseId)
+      .eq('review_status', 'approved')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('initial_visit_notes')
+      .select('diagnoses')
+      .eq('case_id', caseId)
+      .eq('status', 'finalized')
+      .is('deleted_at', null)
+      .maybeSingle(),
+  ])
 
-  if (error || !data) return { data: [] }
+  const pmDiagnoses: Array<{ icd10_code: string | null; description: string }> =
+    Array.isArray(pmRes.data?.diagnoses) ? pmRes.data.diagnoses : []
 
-  const diagnoses = Array.isArray(data.diagnoses) ? data.diagnoses : []
-  return {
-    data: diagnoses as Array<{ icd10_code: string | null; description: string }>,
+  // Parse ICD-10 codes from initial visit note diagnoses text
+  // Format: "• M54.5 — Low back pain" or "M54.5 — Low back pain" per line
+  const ivnDiagnoses: Array<{ icd10_code: string; description: string }> = []
+  if (ivnRes.data?.diagnoses) {
+    const lines = (ivnRes.data.diagnoses as string).split('\n')
+    for (const line of lines) {
+      // Match patterns like "• M54.5 — Description" or "M54.5 — Description" or "M54.5 - Description"
+      const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
+      if (match) {
+        ivnDiagnoses.push({ icd10_code: match[1].trim(), description: match[2].trim() })
+      }
+    }
   }
+
+  // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code)
+  const seen = new Set(pmDiagnoses.map((d) => d.icd10_code?.toUpperCase()))
+  const merged = [
+    ...pmDiagnoses,
+    ...ivnDiagnoses.filter((d) => !seen.has(d.icd10_code.toUpperCase())),
+  ]
+
+  return { data: merged }
 }
 
 export async function updatePrpProcedure(
