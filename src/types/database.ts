@@ -2036,7 +2036,6 @@ export type Database = {
           objective_vitals: string | null
           past_medical_history: string | null
           patient_education: string | null
-          patient_header: string | null
           procedure_anesthesia: string | null
           procedure_followup: string | null
           procedure_id: string
@@ -2076,7 +2075,6 @@ export type Database = {
           objective_vitals?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
-          patient_header?: string | null
           procedure_anesthesia?: string | null
           procedure_followup?: string | null
           procedure_id: string
@@ -2116,7 +2114,6 @@ export type Database = {
           objective_vitals?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
-          patient_header?: string | null
           procedure_anesthesia?: string | null
           procedure_followup?: string | null
           procedure_id?: string
