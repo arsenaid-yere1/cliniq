@@ -628,9 +628,14 @@ function buildSystemPrompt(mode: 'first_visit' | 'prp_evaluation'): string {
 - 5. Past Medical History
 - 6. Social History
 - 7. Review of Systems
-- 8. Physical Examination
+- 8. Physical Examination *(with one formatting fix — see below)*
 - 15. Time and Complexity Attestation
 - 16. Clinician Disclaimer
+
+#### 2b. Physical Examination — Bold "GENERAL:" Sub-heading
+**File**: [generate-initial-visit.ts:87](src/lib/claude/generate-initial-visit.ts#L87)
+
+Change the prompt instruction from `Then "General:" appearance statement` to `Then "GENERAL:" appearance statement` so it matches the uppercase sub-heading pattern used by VITAL SIGNS:, NEUROLOGICAL:, and region-specific sub-headings. The PDF renderer's `isSubHeading()` function ([initial-visit-template.tsx:107-116](src/lib/pdf/initial-visit-template.tsx#L107-L116)) requires >60% uppercase letters to render a line as bold — `General:` fails this check while `GENERAL:` passes it. This applies to both modes.
 
 #### 3. Provider Intake Data Instructions
 
