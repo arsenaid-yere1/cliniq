@@ -594,11 +594,6 @@ function FinalizedView({
 
         <Separator />
 
-        {/* Indication Headline */}
-        {procedureInfo.indication && (
-          <h2 className="text-center text-base font-bold">{procedureInfo.indication}</h2>
-        )}
-
         {/* Procedure Header Block */}
         <div className="space-y-1 text-sm">
           {patientName && <p><strong>Patient:</strong> {patientName}</p>}

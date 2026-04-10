@@ -104,12 +104,6 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
 
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
 
-  // Assemble indication from procedure diagnoses
-  const diagnosesArr = Array.isArray(procedure?.diagnoses)
-    ? (procedure.diagnoses as Array<{ description: string }>)
-    : []
-  const indication = diagnosesArr.map((d) => d.description).join(', ') || 'PRP Injection'
-
   // Assemble procedure name string
   const procedureName = procedure?.injection_site
     ? `${procedure.procedure_name} \u2013 ${procedure.injection_site}`
@@ -127,7 +121,6 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
     dateOfVisit: procedure?.procedure_date
       ? format(new Date(procedure.procedure_date + 'T00:00:00'), 'MM/dd/yyyy')
       : format(new Date(), 'MM/dd/yyyy'),
-    indication,
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
     procedureName,
     procedureNumber: procedure?.procedure_number ?? 1,

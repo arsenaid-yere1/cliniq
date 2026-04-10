@@ -13,7 +13,6 @@ export interface ProcedureNotePdfData {
   patientName: string
   dob: string
   dateOfVisit: string
-  indication: string
   dateOfInjury: string
   procedureName: string
   procedureNumber: number
@@ -79,7 +78,6 @@ const styles = StyleSheet.create({
   separator: { borderBottomWidth: 1, borderBottomColor: '#ccc', borderBottomStyle: 'solid', marginTop: 10, marginBottom: 10 },
   patientInfoRow: { flexDirection: 'row', marginBottom: 2 },
   patientLabel: { fontFamily: 'Helvetica-Bold', marginRight: 4 },
-  indicationHeadline: { fontFamily: 'Helvetica-Bold', fontSize: 13, textAlign: 'center' as const, marginBottom: 8 },
   sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
   sectionBody: { fontSize: 10, lineHeight: 1.6 },
   signatureBlock: { marginTop: 24 },
