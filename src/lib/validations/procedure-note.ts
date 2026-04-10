@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export const procedureNoteSections = [
-  'patient_header',
   'subjective',
   'past_medical_history',
   'allergies',
@@ -27,7 +26,6 @@ export const procedureNoteSections = [
 export type ProcedureNoteSection = typeof procedureNoteSections[number]
 
 export const procedureNoteSectionLabels: Record<ProcedureNoteSection, string> = {
-  patient_header:          'Patient Header',
   subjective:              'Subjective',
   past_medical_history:    'Past Medical History',
   allergies:               'Allergies',
@@ -52,7 +50,6 @@ export const procedureNoteSectionLabels: Record<ProcedureNoteSection, string> = 
 
 // AI output schema (validates Claude tool output)
 export const procedureNoteResultSchema = z.object({
-  patient_header:          z.string(),
   subjective:              z.string(),
   past_medical_history:    z.string(),
   allergies:               z.string(),
@@ -79,7 +76,6 @@ export type ProcedureNoteResult = z.infer<typeof procedureNoteResultSchema>
 
 // Provider edit form schema
 export const procedureNoteEditSchema = z.object({
-  patient_header:          z.string().min(1, 'Required'),
   subjective:              z.string().min(1, 'Required'),
   past_medical_history:    z.string().min(1, 'Required'),
   allergies:               z.string().min(1, 'Required'),

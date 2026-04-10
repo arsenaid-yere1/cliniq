@@ -114,86 +114,83 @@ PDF-SAFE FORMATTING:
 
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
-1. patient_header (~1-2 lines):
-Not a prose section — used internally for PDF header data. Write a brief summary only: "Patient Name, [age]-year-old [gender], returns for PRP injection to [site] on [date]."
+1. subjective (~1 paragraph):
+Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain rating. If priorProcedure exists: "Pain is now rated [X]/10, compared to [prior_pain_rating]/10 at [his/her] last visit." If first injection: no comparison.
+Reference: "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 4/10, compared to 6/10 at his last visit."
 
-2. subjective (~1 paragraph):
-Patient narrative paragraph. States patient returns for scheduled PRP injection, describes persistent symptoms, functional limitations, current pain rating. If priorProcedure exists: "Pain is now rated [X]/10, compared to [prior_pain_rating]/10 at [his/her] last visit." If first injection: no comparison.
-Reference: "Mr. Vardanyan returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 4/10, compared to 6/10 at his last visit."
-
-3. past_medical_history (~2 bullets/sentences):
+2. past_medical_history (~2 bullets/sentences):
 Extract the Medical Problems and Surgeries sub-bullets from the initialVisitNote.past_medical_history text blob. Present as 2 plain sentences/bullets (no medications or allergies here — those are their own sections).
 Reference: "No significant past medical issues except Hypertension\\nNo history of orthopedic injuries."
 
-4. allergies (~1 line):
+3. allergies (~1 line):
 Extract the Allergies sub-bullet from initialVisitNote.past_medical_history. Single line.
 Reference: "No Known Drug Allergies"
 
-5. current_medications (~1-4 lines):
+4. current_medications (~1-4 lines):
 Extract the "Medications Prior to Visit" sub-bullet from initialVisitNote.past_medical_history. List each medication on its own line.
 Reference: "Naproxen 500mg 2 tablet every 6 hours as needed for pain\\nAcetaminophen 500mg 2 tablets every 6 hours as needed for pain"
 
-6. social_history (~1 line):
+5. social_history (~1 line):
 From initialVisitNote.social_history. Single line.
 Reference: "Denies alcohol, tobacco, or drug use."
 
-7. review_of_systems (~3 bullets):
+6. review_of_systems (~3 bullets):
 3 bullets only — Musculoskeletal, Neurological, General.
 Reference: "• Musculoskeletal: Ongoing low back pain with bilateral sciatica exacerbation.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Continued headaches on and off.\\n• General: Reports sleep disturbance due to low back pain. No fever, chills, or weight loss."
 
-8. objective_vitals (~6 bullets):
+7. objective_vitals (~6 bullets):
 BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain rating as bullet list. If vital signs were not recorded, write "[not recorded]".
 Reference: "• BP: 135/80 mmHg\\n• HR: 87 bpm\\n• RR: 16 breaths/min\\n• Temp: 98.2°F\\n• SpO2: 98% on room air\\n• Pain: 6/10"
 
-9. objective_physical_exam (~1 page):
+8. objective_physical_exam (~1 page):
 Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment. Populate from PM extraction physical_exam JSONB.
 Reference: "Inspection: The patient exhibits normal posture but demonstrates guarded movements..."
 
-10. assessment_summary (~2-3 sentences):
+9. assessment_summary (~2-3 sentences):
 Summary linking exam findings to MRI/imaging.
 Reference: "Findings indicate cervical, thoracic and lumbar spine dysfunction with restricted mobility, tenderness, muscle spasms, and radicular symptoms consistent with lumbar disc pathology. The patient's symptoms correlate with MRI findings and ongoing functional impairments, necessitating further pain management intervention."
 
-11. procedure_indication (~1-3 bullets):
+10. procedure_indication (~1-3 bullets):
 Bullet per injection site referencing specific imaging finding with measurements.
 Reference: "• PRP injection to promote joint healing and reduce inflammation due to the 3.2 mm disc protrusion at L5-S1, with increased T2 signal extending to the right lateral recess..."
 
-12. procedure_preparation (~1 paragraph):
+11. procedure_preparation (~1 paragraph):
 Standard boilerplate — consent obtained, risks/benefits explained, positioning, sterile prep with chlorhexidine/betadine, time-out.
 Reference: "Informed consent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
 
-13. procedure_prp_prep (~1 paragraph):
+12. procedure_prp_prep (~1 paragraph):
 Blood draw volume from left arm, centrifuge duration, description of PRP product.
 Reference: "Approximately 30 mL of venous blood was drawn from the patient's left arm using a sterile technique. The blood sample was processed using a centrifuge for 15 minutes to separate the platelets from the plasma. The platelet-rich plasma (PRP) was then prepared in a syringe, containing a highly concentrated amount of growth factors intended to promote tissue repair."
 
-14. procedure_anesthesia (~2 sentences):
+13. procedure_anesthesia (~2 sentences):
 Agent, dose in mL, patient tolerance.
 Reference: "5 mL of 1% lidocaine was injected locally to numb the injection site. The patient tolerated the anesthesia well with no adverse reactions."
 
-15. procedure_injection (~1 paragraph):
+14. procedure_injection (~1 paragraph):
 Guidance method, needle gauge, target joint/site, injection volume, needle withdrawal, gauze application, complications.
 Reference: "Under ultrasound guidance, a 25-gauge spinal needle was inserted into the facet joint, targeting the most affected area as visualized on prior imaging. The PRP solution (5 mL) was injected slowly into the joint to maximize distribution and tissue saturation. The needle was withdrawn, and sterile gauze was applied to the injection site. No complications, such as bleeding or infection, were noted."
 
-16. procedure_post_care (~1 paragraph):
+15. procedure_post_care (~1 paragraph):
 Compression bandage, activity restrictions (hrs), medication instructions, infection warning signs.
 Reference: "A compression bandage was applied to the injection site, and the patient was advised to rest the back for 24-48 hours, avoiding any strenuous activity or heavy lifting. Patient was advised to continue his prescribed pain medication (Naproxen and Acetaminophen) and to apply ice to the injection site as needed for pain and swelling. Instructions were given on signs of infection (redness, swelling, increased pain) and to call immediately if any of these symptoms occurred."
 
-17. procedure_followup (~2-3 sentences):
+16. procedure_followup (~2-3 sentences):
 Return timeline, potential additional injections based on procedure_number in series.
 Reference: "Mr. Vardanyan will return for a follow-up in 2 weeks to assess his response to the injection. Additional PRP injections may be considered based on his progress. Patient was reminded of the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement."
 
-18. assessment_and_plan:
+17. assessment_and_plan:
 Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — description format (no bullet prefix, just code space dash space description, one per line). Then "PLAN:" heading with bullet list of action items.
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
 Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n• Rest and ice for 48 hours post-procedure...\\n• Reevaluate in 10-14 days..."
 
-19. patient_education (~1 paragraph):
+18. patient_education (~1 paragraph):
 Covers PRP role, post-injection instructions, follow-up. End with time documentation sentence: "I personally spent a cumulative total of greater than 60 minutes with and examining the patient... Of that, greater than 50% of the time was spent counseling and/or providing education."
 Reference: "Mr. Vardanyan was educated on the PRP procedure, including its role in promoting tissue regeneration, reducing inflammation, and improving function in the injured site..."
 
-20. prognosis (~2 sentences):
+19. prognosis (~2 sentences):
 Reference: "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
 
-21. clinician_disclaimer (~2-3 sentences):
+20. clinician_disclaimer (~2-3 sentences):
 Standard procedure report disclaimer.
 Reference: "This procedure report is for medical-legal assessment and documentation for a personal injury case. Only those symptoms and injuries related to the accident and PRP injection procedure were assessed. Further follow-up and care may be required based on the patient's response to treatment."
 
@@ -205,7 +202,6 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object' as const,
     required: [
-      'patient_header',
       'subjective',
       'past_medical_history',
       'allergies',
@@ -228,8 +224,7 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
       'clinician_disclaimer',
     ],
     properties: {
-      patient_header: { type: 'string', description: 'Brief patient identification line for PDF header' },
-      subjective: { type: 'string', description: 'Patient narrative with symptoms, pain rating, and comparison to prior visit if applicable' },
+      subjective: { type: 'string', description: 'Patient identification and clinical narrative with symptoms, pain rating, and comparison to prior visit if applicable' },
       past_medical_history: { type: 'string', description: 'Medical problems and surgeries from initial visit note' },
       allergies: { type: 'string', description: 'Allergies from initial visit note' },
       current_medications: { type: 'string', description: 'Current medications from initial visit note' },

@@ -52,7 +52,6 @@ interface NoteRow {
   id: string
   case_id: string
   procedure_id: string
-  patient_header: string | null
   subjective: string | null
   past_medical_history: string | null
   allergies: string | null
@@ -140,7 +139,6 @@ function ordinal(n: number): string {
 }
 
 const sectionRows: Record<ProcedureNoteSection, number> = {
-  patient_header:          4,
   subjective:              6,
   past_medical_history:    4,
   allergies:               3,
@@ -596,12 +594,16 @@ function FinalizedView({
 
         <Separator />
 
+        {/* Indication Headline */}
+        {procedureInfo.indication && (
+          <h2 className="text-center text-base font-bold">{procedureInfo.indication}</h2>
+        )}
+
         {/* Procedure Header Block */}
         <div className="space-y-1 text-sm">
           {patientName && <p><strong>Patient:</strong> {patientName}</p>}
           {dob && <p><strong>DOB:</strong> {dob}</p>}
           {procedureDate && <p><strong>Date of Visit:</strong> {procedureDate}</p>}
-          <p><strong>Indication:</strong> {procedureInfo.indication}</p>
           {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
           <p><strong>Procedure:</strong> {procedureDisplayName}</p>
           <p><strong>Injection #:</strong> {ordinal(procedureInfo.procedure_number)} Injection</p>
@@ -609,13 +611,8 @@ function FinalizedView({
 
         <Separator />
 
-        {/* patient_header — opening narrative, no heading */}
-        {note.patient_header && (
-          <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.patient_header}</p>
-        )}
-
-        {/* Remaining sections */}
-        {procedureNoteSections.slice(1).map((section) => {
+        {/* Sections */}
+        {procedureNoteSections.map((section) => {
           const content = note[section]
           if (!content) return null
           return (

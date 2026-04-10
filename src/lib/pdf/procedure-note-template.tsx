@@ -20,8 +20,7 @@ export interface ProcedureNotePdfData {
   injectionSite: string
   laterality: string
 
-  // Note sections (21 sections)
-  patient_header: string | null
+  // Note sections (20 sections)
   subjective: string | null
   past_medical_history: string | null
   allergies: string | null
@@ -80,6 +79,7 @@ const styles = StyleSheet.create({
   separator: { borderBottomWidth: 1, borderBottomColor: '#ccc', borderBottomStyle: 'solid', marginTop: 10, marginBottom: 10 },
   patientInfoRow: { flexDirection: 'row', marginBottom: 2 },
   patientLabel: { fontFamily: 'Helvetica-Bold', marginRight: 4 },
+  indicationHeadline: { fontFamily: 'Helvetica-Bold', fontSize: 13, textAlign: 'center' as const, marginBottom: 8 },
   sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
   sectionBody: { fontSize: 10, lineHeight: 1.6 },
   signatureBlock: { marginTop: 24 },
@@ -191,12 +191,16 @@ export function ProcedureNotePdf({ data }: { data: ProcedureNotePdfData }) {
 
         <View style={styles.separator} />
 
+        {/* Indication Headline */}
+        {data.indication && (
+          <Text style={styles.indicationHeadline}>{data.indication}</Text>
+        )}
+
         {/* Procedure Header Block */}
         <View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text>{data.patientName}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>DOB:</Text><Text>{data.dob}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Visit:</Text><Text>{data.dateOfVisit}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Indication:</Text><Text>{data.indication}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Procedure:</Text><Text>{data.procedureName}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Injection #:</Text><Text>{ordinal(data.procedureNumber)} Injection</Text></View>
@@ -204,14 +208,7 @@ export function ProcedureNotePdf({ data }: { data: ProcedureNotePdfData }) {
 
         <View style={styles.separator} />
 
-        {/* patient_header rendered as opening narrative (no section heading) */}
-        {data.patient_header && (
-          <View>
-            <SectionBody content={data.patient_header} />
-          </View>
-        )}
-
-        {/* Remaining sections */}
+        {/* Sections */}
         {sectionEntries.map(([key, label]) => {
           const content = data[key] as string | null
           if (!content) return null

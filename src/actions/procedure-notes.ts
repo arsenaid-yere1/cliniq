@@ -318,7 +318,6 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   await supabase
     .from('procedure_notes')
     .update({
-      patient_header: data.patient_header,
       subjective: data.subjective,
       past_medical_history: data.past_medical_history,
       allergies: data.allergies,

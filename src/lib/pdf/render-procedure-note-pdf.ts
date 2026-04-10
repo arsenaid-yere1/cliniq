@@ -134,7 +134,6 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
     injectionSite: procedure?.injection_site || '\u2014',
     laterality: procedure?.laterality || '\u2014',
 
-    patient_header: input.note.patient_header as string | null,
     subjective: input.note.subjective as string | null,
     past_medical_history: input.note.past_medical_history as string | null,
     allergies: input.note.allergies as string | null,
