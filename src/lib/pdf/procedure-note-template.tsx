@@ -191,11 +191,6 @@ export function ProcedureNotePdf({ data }: { data: ProcedureNotePdfData }) {
 
         <View style={styles.separator} />
 
-        {/* Indication Headline */}
-        {data.indication && (
-          <Text style={styles.indicationHeadline}>{data.indication}</Text>
-        )}
-
         {/* Procedure Header Block */}
         <View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text>{data.patientName}</Text></View>
