@@ -33,6 +33,7 @@ export interface InitialVisitPdfData {
   treatment_plan: string | null
   patient_education: string | null
   prognosis: string | null
+  time_complexity_attestation: string | null
   clinician_disclaimer: string | null
 
   // Provider info
@@ -56,6 +57,7 @@ const sectionEntries: [keyof InitialVisitPdfData, string][] = [
   ['treatment_plan', 'Treatment Plan'],
   ['patient_education', 'Patient Education'],
   ['prognosis', 'Prognosis'],
+  ['time_complexity_attestation', 'Time & Complexity Attestation'],
   ['clinician_disclaimer', 'Clinician Disclaimer'],
 ]
 

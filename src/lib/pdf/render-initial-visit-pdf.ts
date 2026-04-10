@@ -135,6 +135,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     treatment_plan: input.note.treatment_plan as string | null,
     patient_education: input.note.patient_education as string | null,
     prognosis: input.note.prognosis as string | null,
+    time_complexity_attestation: input.note.time_complexity_attestation as string | null,
     clinician_disclaimer: input.note.clinician_disclaimer as string | null,
 
     providerName: providerProfile?.display_name || undefined,
