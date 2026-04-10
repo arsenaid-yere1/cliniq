@@ -94,6 +94,7 @@ End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentenc
 
 10. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
+If caseSummary.suggested_diagnoses is provided, cross-reference it when selecting clinical diagnosis codes. Use suggested codes with "high" confidence when they align with the examination findings (first visit) or imaging findings (PRP evaluation). You may add or omit codes based on clinical judgment, but the suggested list should serve as a starting reference.
 After the clinical diagnosis codes, include the appropriate External Cause Code based on the accident_type from the case details:
 • If accident_type is "auto": add "• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
 • If accident_type is "slip_and_fall": add "• W01.0XXA – Fall on same level from slipping, initial encounter"
@@ -135,10 +136,15 @@ Do NOT fabricate imaging findings. Do NOT use "[Pending]" brackets. Write it as 
 10-ADDITIONAL. DIAGNOSES — FIRST VISIT SPECIFICS:
 Use clinical impression codes based on physical examination findings and mechanism of injury. These are NOT imaging-confirmed diagnoses. Use strain/sprain codes appropriate to the affected regions:
 • Cervical: S13.4XXA (Sprain of ligaments of cervical spine, initial encounter), M54.2 (Cervicalgia)
+• Thoracic: S23.3XXA (Sprain of ligaments of thoracic spine, initial encounter), M54.6 (Pain in thoracic spine)
 • Lumbar: S39.012A (Strain of muscle, fascia and tendon of lower back, initial encounter), M54.5 (Low back pain)
+• Headache: G44.309 (Post-traumatic headache, unspecified, not intractable) — use when headache onset follows the accident mechanism; R51.9 (Headache, unspecified) if no clear post-traumatic link
+• Shoulder: S43.402A (Sprain of unspecified shoulder joint, initial encounter), M25.511/M25.512 (Pain in right/left shoulder)
+• Knee: S83.509A (Sprain of unspecified cruciate ligament of unspecified knee, initial encounter), M25.561/M25.562 (Pain in right/left knee)
 • General: M79.1 (Myalgia), M79.3 (Panniculitis, unspecified — if applicable)
-Select codes based on the actual regions of complaint from the source data. Do NOT use disc displacement codes (M50.20, M51.16, etc.) — those require imaging confirmation.
-Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
+Select codes based on the actual regions of complaint from the source data (providerIntake.chief_complaints body regions). For body regions not listed above, select the most appropriate ICD-10 strain/sprain or pain code for that anatomical region.
+Do NOT use disc displacement codes (M50.20, M51.16, etc.) — those require imaging confirmation.
+Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S23.3XXA – Sprain of ligaments of thoracic spine, initial encounter\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• G44.309 – Post-traumatic headache, unspecified, not intractable\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) summarizes clinical examination findings by region, (b) names the injury pattern consistent with the mechanism of injury, (c) justifies ordering diagnostic imaging to evaluate the extent of injury, (d) recommends structured follow-up and conservative treatment initiation.
@@ -183,6 +189,20 @@ Reference tone: "Following the collision, the patient presented to the emergency
 
 9. RADIOLOGICAL IMAGING FINDINGS:
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
+
+10-ADDITIONAL. DIAGNOSES — PRP EVALUATION SPECIFICS:
+Use imaging-confirmed diagnosis codes based on MRI findings from caseSummary.imaging_findings. Cross-reference caseSummary.suggested_diagnoses for pre-extracted ICD-10 codes — use suggested codes with "high" confidence when they match the imaging findings.
+Common codes by pathology:
+• Cervical disc displacement: M50.20 (Other cervical disc displacement, unspecified mid-cervical region)
+• Cervical disc degeneration: M50.320 (Other cervical disc degeneration, mid-cervical region)
+• Lumbar disc degeneration: M51.16 (Intervertebral disc degeneration, lumbar region), M51.17 (Intervertebral disc degeneration, lumbosacral region)
+• Lumbar disc displacement: M51.26 (Other intervertebral disc displacement, lumbar region), M51.27 (Other intervertebral disc displacement, lumbosacral region)
+• Annular tear / other disc disorder: M51.86 (Other intervertebral disc disorders, lumbar region), M50.80 (Other cervical disc disorders)
+• Radiculopathy: M54.12 (Radiculopathy, cervical region), M54.17 (Radiculopathy, lumbosacral region)
+• Pain codes: M54.2 (Cervicalgia), M54.5 (Low back pain), M54.6 (Pain in thoracic spine)
+• Headache: G44.309 (Post-traumatic headache, unspecified, not intractable)
+• Myalgia: M79.1 (Myalgia)
+Select codes that correspond to actual MRI findings in the source data. If caseSummary.suggested_diagnoses contains codes with "high" confidence that match imaging findings, prefer those. Do NOT add codes for pathology not documented on imaging.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
