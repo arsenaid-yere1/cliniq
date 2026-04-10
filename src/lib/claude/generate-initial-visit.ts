@@ -202,8 +202,9 @@ Common codes by pathology:
 • Radiculopathy: M54.12 (Radiculopathy, cervical region), M54.17 (Radiculopathy, lumbosacral region)
 • Pain codes: M54.2 (Cervicalgia), M54.5 (Low back pain), M54.6 (Pain in thoracic spine)
 • Headache: G44.309 (Post-traumatic headache, unspecified, not intractable)
+• Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain
 • Myalgia: M79.1 (Myalgia)
-Select codes that correspond to actual MRI findings in the source data. If caseSummary.suggested_diagnoses contains codes with "high" confidence that match imaging findings, prefer those. Do NOT add codes for pathology not documented on imaging.
+Select codes that correspond to actual MRI findings in the source data. If caseSummary.suggested_diagnoses contains codes with "high" confidence that match imaging findings, prefer those. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
