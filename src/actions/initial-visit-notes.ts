@@ -146,48 +146,82 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
-  // Read ROM data and provider_intake from existing note before soft-deleting
+  // Find or create the single note row for this case
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('rom_data, provider_intake')
+    .select('id, rom_data, provider_intake')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
 
   const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
-  const preservedIntake = existingNote?.provider_intake as Record<string, unknown> | null
 
   // Gather source data (include ROM)
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, preservedRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
-  // Soft-delete existing note
-  await supabase
-    .from('initial_visit_notes')
-    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-
-  // Insert generating record (carry ROM data forward)
   const sourceHash = computeSourceHash(inputData)
-  const { data: record, error: insertError } = await supabase
-    .from('initial_visit_notes')
-    .insert({
-      case_id: caseId,
-      status: 'generating',
-      generation_attempts: 1,
-      source_data_hash: sourceHash,
-      rom_data: preservedRom,
-      provider_intake: preservedIntake,
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select('id')
-    .single()
 
-  if (insertError || !record) {
-    revalidatePath(`/patients/${caseId}`)
-    return { error: 'Failed to create note record' }
+  let recordId: string
+
+  if (existingNote) {
+    // Update existing row to generating state (preserves provider_intake and rom_data)
+    const { error: updateError } = await supabase
+      .from('initial_visit_notes')
+      .update({
+        status: 'generating',
+        generation_attempts: 1,
+        source_data_hash: sourceHash,
+        introduction: null,
+        history_of_accident: null,
+        post_accident_history: null,
+        chief_complaint: null,
+        past_medical_history: null,
+        social_history: null,
+        review_of_systems: null,
+        physical_exam: null,
+        imaging_findings: null,
+        medical_necessity: null,
+        diagnoses: null,
+        treatment_plan: null,
+        patient_education: null,
+        prognosis: null,
+        time_complexity_attestation: null,
+        clinician_disclaimer: null,
+        ai_model: null,
+        raw_ai_response: null,
+        generation_error: null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existingNote.id)
+
+    if (updateError) {
+      revalidatePath(`/patients/${caseId}`)
+      return { error: 'Failed to start note generation' }
+    }
+
+    recordId = existingNote.id
+  } else {
+    // No existing row — create one
+    const { data: record, error: insertError } = await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        status: 'generating',
+        generation_attempts: 1,
+        source_data_hash: sourceHash,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !record) {
+      revalidatePath(`/patients/${caseId}`)
+      return { error: 'Failed to create note record' }
+    }
+
+    recordId = record.id
   }
 
   // Call Claude (pass toneHint only on first generation, not retry)
@@ -207,7 +241,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
           raw_ai_response: retry.rawResponse || result.rawResponse || null,
           updated_by_user_id: user.id,
         })
-        .eq('id', record.id)
+        .eq('id', recordId)
 
       revalidatePath(`/patients/${caseId}`)
       return { error: retry.error || result.error || 'Note generation failed after 2 attempts' }
@@ -243,10 +277,10 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
       source_data_hash: sourceHash,
       updated_by_user_id: user.id,
     })
-    .eq('id', record.id)
+    .eq('id', recordId)
 
   revalidatePath(`/patients/${caseId}`)
-  return { data: { id: record.id } }
+  return { data: { id: recordId } }
 }
 
 // --- Get note ---
