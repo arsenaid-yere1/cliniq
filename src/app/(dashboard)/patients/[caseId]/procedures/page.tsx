@@ -1,4 +1,4 @@
-import { listProcedures, getCaseDiagnoses } from '@/actions/procedures'
+import { listProcedures, getCaseDiagnoses, getProcedureDefaults } from '@/actions/procedures'
 import { createClient } from '@/lib/supabase/server'
 import { ProcedureTable } from '@/components/procedures/procedure-table'
 
@@ -10,9 +10,10 @@ export default async function ProceduresPage({
   const { caseId } = await params
   const supabase = await createClient()
 
-  const [{ data: procedures }, { data: diagnosisSuggestions }] = await Promise.all([
+  const [{ data: procedures }, { data: diagnosisSuggestions }, { data: procedureDefaults }] = await Promise.all([
     listProcedures(caseId),
     getCaseDiagnoses(caseId),
+    getProcedureDefaults(caseId),
   ])
 
   // Fetch note statuses for all procedures
@@ -39,6 +40,7 @@ export default async function ProceduresPage({
         caseId={caseId}
         diagnosisSuggestions={diagnosisSuggestions}
         noteStatuses={noteStatusMap}
+        procedureDefaults={procedureDefaults}
       />
     </div>
   )

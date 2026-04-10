@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
 import { prpProcedureFormSchema, type PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
-import { createPrpProcedure, updatePrpProcedure } from '@/actions/procedures'
+import { createPrpProcedure, updatePrpProcedure, type ProcedureDefaults } from '@/actions/procedures'
 import { generateProcedureConsent } from '@/actions/procedure-consents'
 import { toast } from 'sonner'
 import {
@@ -86,6 +86,7 @@ export interface ProcedureInitialData {
 interface RecordProcedureDialogProps {
   caseId: string
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
+  procedureDefaults?: ProcedureDefaults | null
   initialData?: ProcedureInitialData
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -94,6 +95,7 @@ interface RecordProcedureDialogProps {
 export function RecordProcedureDialog({
   caseId,
   diagnosisSuggestions,
+  procedureDefaults,
   initialData,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
@@ -148,24 +150,29 @@ export function RecordProcedureDialog({
     }
   }
 
+  // Apply defaults from Initial Visit data only when creating new procedures
+  const defaults = !isEditing ? procedureDefaults : null
+
   const form = useForm<PrpProcedureFormValues>({
     resolver: zodResolver(prpProcedureFormSchema),
     defaultValues: {
       procedure_date: initialData?.procedure_date ?? format(new Date(), 'yyyy-MM-dd'),
-      injection_site: initialData?.injection_site ?? '',
-      laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined) ?? undefined,
+      injection_site: initialData?.injection_site ?? defaults?.injection_site ?? '',
+      laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined)
+        ?? (defaults?.laterality as 'left' | 'right' | 'bilateral' | undefined)
+        ?? undefined,
       diagnoses: Array.isArray(initialData?.diagnoses)
         ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
         : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
       consent_obtained: initialData?.consent_obtained ?? false,
-      pain_rating: initialData?.pain_rating ?? null,
+      pain_rating: initialData?.pain_rating ?? defaults?.pain_rating ?? null,
       vital_signs: {
-        bp_systolic: initialData?._vitals?.bp_systolic ?? null,
-        bp_diastolic: initialData?._vitals?.bp_diastolic ?? null,
-        heart_rate: initialData?._vitals?.heart_rate ?? null,
-        respiratory_rate: initialData?._vitals?.respiratory_rate ?? null,
-        temperature_f: initialData?._vitals?.temperature_f ?? null,
-        spo2_percent: initialData?._vitals?.spo2_percent ?? null,
+        bp_systolic: initialData?._vitals?.bp_systolic ?? defaults?.vital_signs.bp_systolic ?? null,
+        bp_diastolic: initialData?._vitals?.bp_diastolic ?? defaults?.vital_signs.bp_diastolic ?? null,
+        heart_rate: initialData?._vitals?.heart_rate ?? defaults?.vital_signs.heart_rate ?? null,
+        respiratory_rate: initialData?._vitals?.respiratory_rate ?? defaults?.vital_signs.respiratory_rate ?? null,
+        temperature_f: initialData?._vitals?.temperature_f ?? defaults?.vital_signs.temperature_f ?? null,
+        spo2_percent: initialData?._vitals?.spo2_percent ?? defaults?.vital_signs.spo2_percent ?? null,
       },
       prp_preparation: {
         blood_draw_volume_ml: initialData?.blood_draw_volume_ml ?? undefined,

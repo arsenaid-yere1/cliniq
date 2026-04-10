@@ -292,6 +292,87 @@ export async function updatePrpProcedure(
   return { data: procedure }
 }
 
+// Defaults for pre-populating new procedure dialog from Initial Visit data
+export interface ProcedureDefaults {
+  injection_site: string | null
+  laterality: 'left' | 'right' | 'bilateral' | null
+  pain_rating: number | null
+  vital_signs: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+  }
+}
+
+export async function getProcedureDefaults(caseId: string): Promise<{ data: ProcedureDefaults }> {
+  const supabase = await createClient()
+
+  const [vitalsRes, ivnRes] = await Promise.all([
+    supabase
+      .from('vital_signs')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('initial_visit_notes')
+      .select('provider_intake')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  const vitals = vitalsRes.data
+  const providerIntake = ivnRes.data?.provider_intake as {
+    chief_complaints?: {
+      complaints?: Array<{ body_region: string }>
+    }
+  } | null
+
+  // Derive injection_site and laterality from chief complaints
+  let injection_site: string | null = null
+  let laterality: 'left' | 'right' | 'bilateral' | null = null
+
+  const complaints = providerIntake?.chief_complaints?.complaints ?? []
+  if (complaints.length === 1) {
+    const region = complaints[0].body_region
+    const lowerRegion = region.toLowerCase()
+    if (lowerRegion.startsWith('left ')) {
+      laterality = 'left'
+      injection_site = region.slice(5)
+    } else if (lowerRegion.startsWith('right ')) {
+      laterality = 'right'
+      injection_site = region.slice(6)
+    } else {
+      injection_site = region
+    }
+  }
+
+  return {
+    data: {
+      injection_site,
+      laterality,
+      pain_rating: vitals?.pain_score_max ?? null,
+      vital_signs: {
+        bp_systolic: vitals?.bp_systolic ?? null,
+        bp_diastolic: vitals?.bp_diastolic ?? null,
+        heart_rate: vitals?.heart_rate ?? null,
+        respiratory_rate: vitals?.respiratory_rate ?? null,
+        temperature_f: vitals?.temperature_f ?? null,
+        spo2_percent: vitals?.spo2_percent ?? null,
+      },
+    },
+  }
+}
+
 // Get the most recent prior PRP procedure for comparison
 export async function getPriorPrpProcedure(caseId: string) {
   const supabase = await createClient()

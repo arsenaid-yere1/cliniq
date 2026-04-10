@@ -26,7 +26,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { RecordProcedureDialog, type ProcedureInitialData } from './record-procedure-dialog'
-import { getProcedureById } from '@/actions/procedures'
+import { getProcedureById, type ProcedureDefaults } from '@/actions/procedures'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
@@ -150,9 +150,10 @@ interface ProcedureTableProps {
   caseId: string
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
   noteStatuses?: Record<string, string>
+  procedureDefaults?: ProcedureDefaults | null
 }
 
-export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteStatuses = {} }: ProcedureTableProps) {
+export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteStatuses = {}, procedureDefaults }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
@@ -187,7 +188,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} />}
+        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} procedureDefaults={procedureDefaults} />}
       </div>
 
       {editingProcedure && (
