@@ -141,10 +141,11 @@ Use clinical impression codes based on physical examination findings and mechani
 • Headache: G44.309 (Post-traumatic headache, unspecified, not intractable) — use when headache onset follows the accident mechanism; R51.9 (Headache, unspecified) if no clear post-traumatic link
 • Shoulder: S43.402A (Sprain of unspecified shoulder joint, initial encounter), M25.511/M25.512 (Pain in right/left shoulder)
 • Knee: S83.509A (Sprain of unspecified cruciate ligament of unspecified knee, initial encounter), M25.561/M25.562 (Pain in right/left knee)
+• Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain following the accident
 • General: M79.1 (Myalgia), M79.3 (Panniculitis, unspecified — if applicable)
-Select codes based on the actual regions of complaint from the source data (providerIntake.chief_complaints body regions). For body regions not listed above, select the most appropriate ICD-10 strain/sprain or pain code for that anatomical region.
+Select codes based on the actual regions of complaint from the source data (providerIntake.chief_complaints body regions). If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9. For body regions not listed above, select the most appropriate ICD-10 strain/sprain or pain code for that anatomical region.
 Do NOT use disc displacement codes (M50.20, M51.16, etc.) — those require imaging confirmation.
-Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S23.3XXA – Sprain of ligaments of thoracic spine, initial encounter\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• G44.309 – Post-traumatic headache, unspecified, not intractable\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
+Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S23.3XXA – Sprain of ligaments of thoracic spine, initial encounter\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• G44.309 – Post-traumatic headache, unspecified, not intractable\n• G47.9 – Sleep disorder, unspecified\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) summarizes clinical examination findings by region, (b) names the injury pattern consistent with the mechanism of injury, (c) justifies ordering diagnostic imaging to evaluate the extent of injury, (d) recommends structured follow-up and conservative treatment initiation.
