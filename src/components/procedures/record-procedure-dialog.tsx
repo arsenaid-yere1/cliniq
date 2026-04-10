@@ -223,7 +223,7 @@ export function RecordProcedureDialog({
           <Button>Record Procedure</Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-h-[90vh] w-[95vw] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-fit max-w-[95vw] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit PRP Procedure' : 'Record PRP Procedure'}</DialogTitle>
         </DialogHeader>
