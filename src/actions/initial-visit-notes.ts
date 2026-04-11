@@ -149,12 +149,13 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
   // Find or create the single note row for this case
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('id, rom_data, provider_intake')
+    .select('id, rom_data, provider_intake, visit_date')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
 
   const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
+  const today = new Date().toISOString().slice(0, 10)
 
   // Gather source data (include ROM)
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, preservedRom)
@@ -172,6 +173,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
+        visit_date: existingNote.visit_date ?? today,
         introduction: null,
         history_of_accident: null,
         post_accident_history: null,
@@ -210,6 +212,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
+        visit_date: today,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
@@ -726,6 +729,7 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
         case_id: caseId,
         status: 'draft',
         rom_data: validatedData as unknown as Record<string, unknown>,
+        visit_date: new Date().toISOString().slice(0, 10),
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
@@ -796,6 +800,7 @@ export async function saveProviderIntake(caseId: string, intake: ProviderIntakeV
         case_id: caseId,
         status: 'draft',
         provider_intake: validated.data as unknown as Record<string, unknown>,
+        visit_date: new Date().toISOString().slice(0, 10),
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })

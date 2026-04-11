@@ -4,6 +4,16 @@ import { createClient } from '@/lib/supabase/server'
 import { format, differenceInYears } from 'date-fns'
 import React from 'react'
 
+function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
+  if (visitDate) {
+    return format(new Date(`${visitDate}T00:00:00`), 'MM/dd/yyyy')
+  }
+  if (finalizedAt) {
+    return format(new Date(finalizedAt), 'MM/dd/yyyy')
+  }
+  return format(new Date(), 'MM/dd/yyyy')
+}
+
 function getMimeType(path: string): string {
   if (path.endsWith('.png')) return 'image/png'
   if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
@@ -117,7 +127,10 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     patientName: patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown',
     dob: patientDob ? format(patientDob, 'MM/dd/yyyy') : '—',
     age: patientDob ? differenceInYears(new Date(), patientDob) : 0,
-    dateOfVisit: format(new Date(), 'MM/dd/yyyy'),
+    dateOfVisit: formatVisitDateForPdf(
+      input.note.visit_date as string | null | undefined,
+      input.note.finalized_at as string | null | undefined,
+    ),
     indication: 'Pain Management Evaluation',
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date), 'MM/dd/yyyy') : '—',
 

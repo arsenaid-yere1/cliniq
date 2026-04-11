@@ -91,6 +91,7 @@ interface NoteRow {
   clinician_disclaimer: string | null
   status: string
   generation_error: string | null
+  visit_date: string | null
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
@@ -151,6 +152,17 @@ interface InitialVisitEditorProps {
   caseData: CaseData | null
   documentFilePath: string | null
   initialIntake: ProviderIntakeValues | null
+}
+
+// Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
+function formatVisitDate(visitDate: string | null, finalizedAt: string | null): string {
+  if (visitDate) {
+    return format(new Date(`${visitDate}T00:00:00`), 'MM/dd/yyyy')
+  }
+  if (finalizedAt) {
+    return format(new Date(finalizedAt), 'MM/dd/yyyy')
+  }
+  return '\u2014'
 }
 
 // Textarea row heights per section
@@ -1460,6 +1472,7 @@ function DraftEditor({
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
     defaultValues: {
+      visit_date: note.visit_date ?? new Date().toISOString().slice(0, 10),
       introduction: note.introduction || '',
       history_of_accident: note.history_of_accident || '',
       post_accident_history: note.post_accident_history || '',
@@ -1504,12 +1517,26 @@ function DraftEditor({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Initial Visit Note</h1>
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="visit-date-input" className="text-sm font-medium whitespace-nowrap">
+              Date of Visit
+            </label>
+            <Input
+              id="visit-date-input"
+              type="date"
+              className="w-[160px]"
+              disabled={isLocked || isPending}
+              {...form.register('visit_date', {
+                setValueAs: (v) => (v === '' ? null : v),
+              })}
+            />
+          </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={isLocked || isPending}>
@@ -1824,7 +1851,7 @@ function FinalizedView({
                   {patientName && <p><strong>Patient:</strong> {patientName}</p>}
                   {dob && <p><strong>DOB:</strong> {dob}</p>}
                   {age !== null && <p><strong>Age:</strong> {age}</p>}
-                  <p><strong>Date of Visit:</strong> {note.finalized_at ? format(new Date(note.finalized_at), 'MM/dd/yyyy') : '\u2014'}</p>
+                  <p><strong>Date of Visit:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
                   {note.chief_complaint && <p><strong>Indication:</strong> Pain Management Evaluation</p>}
                   {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
                 </div>

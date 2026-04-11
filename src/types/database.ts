@@ -1146,6 +1146,7 @@ export type Database = {
           treatment_plan: string | null
           updated_at: string
           updated_by_user_id: string | null
+          visit_date: string | null
         }
         Insert: {
           ai_model?: string | null
@@ -1182,6 +1183,7 @@ export type Database = {
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
+          visit_date?: string | null
         }
         Update: {
           ai_model?: string | null
@@ -1218,6 +1220,7 @@ export type Database = {
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
+          visit_date?: string | null
         }
         Relationships: [
           {

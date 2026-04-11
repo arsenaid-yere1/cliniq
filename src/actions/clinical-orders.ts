@@ -21,6 +21,7 @@ async function gatherOrderInputData(
       diagnoses,
       chief_complaint,
       treatment_plan,
+      visit_date,
       finalized_at,
       case:cases!inner(
         id,
@@ -87,7 +88,9 @@ async function gatherOrderInputData(
         phone: clinicRes.data?.phone ?? null,
         fax: clinicRes.data?.fax ?? null,
       },
-      dateOfVisit: note.finalized_at ?? new Date().toISOString(),
+      dateOfVisit: note.visit_date
+        ? new Date(`${note.visit_date}T00:00:00`).toISOString()
+        : note.finalized_at ?? new Date().toISOString(),
     },
   }
 }
