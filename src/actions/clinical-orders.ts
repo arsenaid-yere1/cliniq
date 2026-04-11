@@ -5,14 +5,16 @@ import { revalidatePath } from 'next/cache'
 import { generateImagingOrders, generateChiropracticOrder, type ClinicalOrderInputData } from '@/lib/claude/generate-clinical-orders'
 import { type OrderType } from '@/lib/validations/clinical-orders'
 import { assertCaseNotClosed } from '@/actions/case-status'
+import { type NoteVisitType } from '@/lib/claude/generate-initial-visit'
 
-// --- Helper: gather input data from finalized note ---
+// --- Helper: gather input data from finalized note for a specific visit type ---
 
 async function gatherOrderInputData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
+  visitType: NoteVisitType,
 ): Promise<{ data?: ClinicalOrderInputData; noteId?: string; error?: string }> {
-  // Fetch note (finalized or draft) with case/patient data
+  // Fetch the note matching BOTH case_id and visit_type
   const { data: note, error: noteError } = await supabase
     .from('initial_visit_notes')
     .select(`
@@ -29,10 +31,9 @@ async function gatherOrderInputData(
       )
     `)
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .in('status', ['finalized', 'draft'])
-    .order('created_at', { ascending: false })
-    .limit(1)
     .maybeSingle()
 
   if (noteError || !note) {
@@ -95,9 +96,13 @@ async function gatherOrderInputData(
   }
 }
 
-// --- Generate a clinical order ---
+// --- Generate a clinical order, scoped to a specific visit type ---
 
-export async function generateClinicalOrder(caseId: string, orderType: OrderType) {
+export async function generateClinicalOrder(
+  caseId: string,
+  visitType: NoteVisitType,
+  orderType: OrderType,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -105,8 +110,8 @@ export async function generateClinicalOrder(caseId: string, orderType: OrderType
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Gather input data from finalized note
-  const { data: inputData, noteId, error: gatherError } = await gatherOrderInputData(supabase, caseId)
+  // Gather input data from the visit-type-specific note
+  const { data: inputData, noteId, error: gatherError } = await gatherOrderInputData(supabase, caseId, visitType)
   if (gatherError || !inputData || !noteId) return { error: gatherError ?? 'Failed to gather order data' }
 
   // Create order row in generating state
@@ -240,17 +245,31 @@ export async function generateClinicalOrder(caseId: string, orderType: OrderType
   return { data: { orderId: order.id } }
 }
 
-// --- Get clinical orders for a case ---
+// --- Get clinical orders for a case scoped to a specific visit type ---
 
-export async function getClinicalOrders(caseId: string) {
+export async function getClinicalOrders(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  // Resolve the note row for this (case, visit_type). Orders are linked to
+  // a specific note row so we use that id as the scope filter.
+  const { data: note } = await supabase
+    .from('initial_visit_notes')
+    .select('id')
+    .eq('case_id', caseId)
+    .eq('visit_type', visitType)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  // No note for this visit type yet — there can be no orders either.
+  if (!note) return { data: [] }
 
   const { data, error } = await supabase
     .from('clinical_orders')
     .select('id, order_type, order_data, status, generation_error, finalized_at, document_id, created_at, document:documents(file_path)')
     .eq('case_id', caseId)
+    .eq('initial_visit_note_id', note.id)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
 

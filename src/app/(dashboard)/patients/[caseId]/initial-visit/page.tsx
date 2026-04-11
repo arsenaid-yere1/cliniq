@@ -1,14 +1,26 @@
 import { createClient } from '@/lib/supabase/server'
-import { getInitialVisitNote, checkNotePrerequisites, getInitialVisitVitals, getProviderIntake } from '@/actions/initial-visit-notes'
+import {
+  getInitialVisitNotes,
+  checkNotePrerequisites,
+  getInitialVisitVitals,
+  getProviderIntake,
+  detectDefaultVisitTypeForCase,
+} from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
-import { providerIntakeSchema } from '@/lib/validations/initial-visit-note'
+import { providerIntakeSchema, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
+import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
+
+function parseIntake(raw: unknown) {
+  if (!raw) return null
+  const parsed = providerIntakeSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
 
 export default async function InitialVisitPage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params
   const supabase = await createClient()
 
-  // Fetch case first to get assigned_provider_id for signature lookup
   const caseRes = await supabase
     .from('cases')
     .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
@@ -18,15 +30,28 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
 
   const assignedProviderId = caseRes.data?.assigned_provider_id as string | null
 
-  const [noteResult, prereqResult, vitalsResult, clinicResult, providerResult, logoResult, signatureResult, intakeResult] = await Promise.all([
-    getInitialVisitNote(caseId),
+  const [
+    notesResult,
+    prereqResult,
+    vitalsResult,
+    clinicResult,
+    providerResult,
+    logoResult,
+    signatureResult,
+    initialIntakeResult,
+    painEvalIntakeResult,
+    defaultVisitType,
+  ] = await Promise.all([
+    getInitialVisitNotes(caseId),
     checkNotePrerequisites(caseId),
     getInitialVisitVitals(caseId),
     getClinicSettings(),
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
-    getProviderIntake(caseId),
+    getProviderIntake(caseId, 'initial_visit'),
+    getProviderIntake(caseId, 'pain_evaluation_visit'),
+    detectDefaultVisitTypeForCase(caseId),
   ])
 
   const caseData = caseRes.data
@@ -43,37 +68,64 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       }
     : null
 
-  // Fetch document file_path if note is finalized with a linked document
-  let documentFilePath: string | null = null
-  const note = noteResult.data
-  if (note?.document_id) {
+  // Index notes by visit_type and resolve their document file paths in parallel
+  type NoteRow = Record<string, unknown> & { id: string; visit_type: string; document_id: string | null; rom_data: unknown }
+  const noteRows = ((notesResult.data as NoteRow[] | undefined) ?? []) as NoteRow[]
+  const initialVisitNote = noteRows.find((n) => n.visit_type === 'initial_visit') ?? null
+  const painEvaluationNote = noteRows.find((n) => n.visit_type === 'pain_evaluation_visit') ?? null
+
+  const resolveDocPath = async (note: NoteRow | null): Promise<string | null> => {
+    if (!note?.document_id) return null
     const { data: docRow } = await supabase
       .from('documents')
       .select('file_path')
       .eq('id', note.document_id)
       .is('deleted_at', null)
       .single()
-    documentFilePath = docRow?.file_path ?? null
+    return docRow?.file_path ?? null
+  }
+
+  const [initialVisitDocPath, painEvalDocPath] = await Promise.all([
+    resolveDocPath(initialVisitNote),
+    resolveDocPath(painEvaluationNote),
+  ])
+
+  const notesByVisitType: Record<NoteVisitType, unknown> = {
+    initial_visit: initialVisitNote,
+    pain_evaluation_visit: painEvaluationNote,
+  }
+
+  const intakesByVisitType = {
+    initial_visit: parseIntake(initialIntakeResult.data),
+    pain_evaluation_visit: parseIntake(painEvalIntakeResult.data),
+  }
+
+  const romByVisitType = {
+    initial_visit: (initialVisitNote?.rom_data as InitialVisitRomValues | null) ?? null,
+    pain_evaluation_visit: (painEvaluationNote?.rom_data as InitialVisitRomValues | null) ?? null,
+  }
+
+  const documentFilePathByVisitType = {
+    initial_visit: initialVisitDocPath,
+    pain_evaluation_visit: painEvalDocPath,
   }
 
   return (
     <InitialVisitEditor
       caseId={caseId}
-      note={note ?? null}
+      notesByVisitType={notesByVisitType}
+      intakesByVisitType={intakesByVisitType}
+      romByVisitType={romByVisitType}
+      documentFilePathByVisitType={documentFilePathByVisitType}
+      defaultVisitType={defaultVisitType}
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
       initialVitals={vitalsResult.data ?? null}
-      initialRom={(note?.rom_data as import('@/lib/validations/initial-visit-note').InitialVisitRomValues) ?? null}
       clinicSettings={clinicResult.data ?? null}
       providerProfile={providerResult.data ?? null}
       clinicLogoUrl={logoResult.url ?? null}
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
-      documentFilePath={documentFilePath}
-      initialIntake={(() => {
-        const parsed = providerIntakeSchema.safeParse(intakeResult.data)
-        return parsed.success ? parsed.data : null
-      })()}
     />
   )
 }

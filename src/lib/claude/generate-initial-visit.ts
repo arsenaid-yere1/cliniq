@@ -8,16 +8,26 @@ import { sectionLabels } from '@/lib/validations/initial-visit-note'
 
 const anthropic = new Anthropic()
 
-// --- Note Mode Detection ---
+// --- Visit Type Detection ---
 
-type NoteMode = 'first_visit' | 'prp_evaluation'
+export type NoteVisitType = 'initial_visit' | 'pain_evaluation_visit'
 
-function detectNoteMode(inputData: InitialVisitInputData): NoteMode {
-  const hasImagingFindings = inputData.caseSummary?.imaging_findings != null
-    && Array.isArray(inputData.caseSummary.imaging_findings)
-    && (inputData.caseSummary.imaging_findings as unknown[]).length > 0
+/**
+ * Used by the page component to pick the default open tab, and by gatherSourceData()
+ * to compute hasApprovedDiagnosticExtractions. NEVER used at generation time — the
+ * visit type is always passed explicitly into generateInitialVisitFromData so a
+ * provider explicitly working on an Initial Visit does not get reclassified just
+ * because MRI extractions exist on the case.
+ */
+export function detectDefaultVisitType(inputData: InitialVisitInputData): NoteVisitType {
+  const findings = inputData.caseSummary?.imaging_findings
+  const hasImagingFindings = findings != null
+    && Array.isArray(findings)
+    && (findings as unknown[]).length > 0
 
-  return hasImagingFindings ? 'prp_evaluation' : 'first_visit'
+  if (hasImagingFindings) return 'pain_evaluation_visit'
+  if (inputData.hasApprovedDiagnosticExtractions) return 'pain_evaluation_visit'
+  return 'initial_visit'
 }
 
 // --- System Prompt Builder ---
@@ -111,8 +121,8 @@ FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. 
 
 If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
 
-const FIRST_VISIT_SECTIONS = `
-=== MODE: FIRST VISIT / ACUTE EVALUATION ===
+const INITIAL_VISIT_SECTIONS = `
+=== VISIT TYPE: INITIAL VISIT ===
 This patient is presenting for their INITIAL clinical evaluation following a personal injury event. There are NO prior medical records, NO prior imaging results, and NO prior treatment history (other than self-treatment with OTC medications). Generate the note accordingly — do NOT assume any prior clinical encounters exist.
 
 2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
@@ -171,9 +181,25 @@ State that the patient was educated on: the biomechanics of their injury, the im
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded but favorable given early clinical presentation and absence of neurological compromise. Outcome will depend on diagnostic imaging results, response to conservative treatment, and adherence to the prescribed rehabilitation program."`
 
-const PRP_EVALUATION_SECTIONS = `
-=== MODE: PRP EVALUATION ===
+const PAIN_EVALUATION_VISIT_SECTIONS = `
+=== VISIT TYPE: PAIN EVALUATION VISIT ===
 This patient has completed a course of conservative treatment and has imaging results available. Generate the note as a comprehensive pain management evaluation with PRP treatment recommendations.
+
+=== PRIOR VISIT REFERENCE (READ-ONLY) ===
+
+If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings, vitals, or ROM values into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
+
+1. History of the Accident (Para 3): Reference the prior visit's documented findings and conservative care outcome. Example: "Since the initial evaluation on [priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
+
+2. Post-Accident History: Describe the continuum of care from initial presentation to today. Reference priorVisitData.treatment_plan for what was recommended and summarize adherence/outcome based on the CURRENT visit's providerIntake.
+
+3. Physical Examination: Do NOT restate prior exam findings as current findings. Current findings come from the CURRENT visit's providerIntake.exam_findings. You MAY add one brief comparative sentence at the end of each region: "Compared to the initial evaluation, cervical ROM has [improved/worsened/remained unchanged]." Use priorVisitData.rom_data and priorVisitData.physical_exam for the comparison basis only.
+
+4. Medical Necessity: Cite that conservative care was documented and attempted at the initial visit (reference priorVisitData.treatment_plan) and has failed to produce adequate relief, supporting the escalation to interventional treatment.
+
+5. Prognosis: May reference the evolution from guarded-but-favorable (initial) to the current imaging-informed prognosis.
+
+If priorVisitData is null (no prior Initial Visit exists on this case), generate the Pain Evaluation Visit note without any interval-comparison language — it is a standalone evaluation.
 
 2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
@@ -229,9 +255,9 @@ State that the patient was advised on home exercises, conservative care, nature 
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.`
 
-function buildSystemPrompt(mode: NoteMode): string {
-  const modeSpecificSections = mode === 'first_visit' ? FIRST_VISIT_SECTIONS : PRP_EVALUATION_SECTIONS
-  return `${COMMON_PREAMBLE}\n${COMMON_SECTIONS}\n${modeSpecificSections}`
+function buildSystemPrompt(visitType: NoteVisitType): string {
+  const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS
+  return `${COMMON_PREAMBLE}\n${COMMON_SECTIONS}\n${visitSpecificSections}`
 }
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
@@ -394,10 +420,33 @@ export interface InitialVisitInputData {
     social_history: unknown
     exam_findings: unknown
   } | null
+  /**
+   * Read-only reference data from a prior finalized Initial Visit on the same case.
+   * Populated only when generating a Pain Evaluation Visit. Null otherwise.
+   */
+  priorVisitData: {
+    chief_complaint: string | null
+    physical_exam: string | null
+    imaging_findings: string | null
+    medical_necessity: string | null
+    diagnoses: string | null
+    treatment_plan: string | null
+    prognosis: string | null
+    provider_intake: unknown | null
+    rom_data: unknown | null
+    finalized_at: string | null
+  } | null
+  /**
+   * Whether the case has any approved/edited MRI or CT extractions. Used by
+   * detectDefaultVisitType() as a fallback signal that diagnostic imaging exists
+   * even when no case summary has been generated yet.
+   */
+  hasApprovedDiagnosticExtractions: boolean
 }
 
 export async function generateInitialVisitFromData(
   inputData: InitialVisitInputData,
+  visitType: NoteVisitType,
   toneHint?: string | null,
 ): Promise<{
   data?: InitialVisitNoteResult
@@ -405,10 +454,12 @@ export async function generateInitialVisitFromData(
   error?: string
 }> {
   try {
-    const mode = detectNoteMode(inputData)
-    const systemPrompt = buildSystemPrompt(mode)
+    const systemPrompt = buildSystemPrompt(visitType)
 
-    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nNote mode: ${mode === 'first_visit' ? 'FIRST VISIT (no prior imaging, no prior treatment)' : 'PRP EVALUATION (imaging available, post-conservative treatment)'}\n\n${JSON.stringify(inputData, null, 2)}`
+    const visitLabel = visitType === 'initial_visit'
+      ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
+      : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
+    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(inputData, null, 2)}`
     if (toneHint?.trim()) {
       userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
     }
@@ -464,18 +515,21 @@ const SECTION_REGEN_TOOL: Anthropic.Tool = {
 
 export async function regenerateSection(
   inputData: InitialVisitInputData,
+  visitType: NoteVisitType,
   section: InitialVisitSection,
   currentContent: string,
 ): Promise<{ data?: string; error?: string }> {
   try {
-    const mode = detectNoteMode(inputData)
-    const systemPrompt = buildSystemPrompt(mode)
+    const systemPrompt = buildSystemPrompt(visitType)
     const sectionLabel = sectionLabels[section]
+    const visitLabel = visitType === 'initial_visit'
+      ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
+      : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Note mode: ${mode === 'first_visit' ? 'FIRST VISIT (no prior imaging, no prior treatment)' : 'PRP EVALUATION (imaging available, post-conservative treatment)'}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+      system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
       tools: [SECTION_REGEN_TOOL],
       tool_choice: { type: 'tool', name: 'regenerate_section' },
       messages: [

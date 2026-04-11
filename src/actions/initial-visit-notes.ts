@@ -3,8 +3,23 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
-import { generateInitialVisitFromData, regenerateSection as regenerateSectionAI, type InitialVisitInputData } from '@/lib/claude/generate-initial-visit'
-import { initialVisitNoteEditSchema, initialVisitVitalsSchema, initialVisitRomSchema, providerIntakeSchema, type InitialVisitNoteEditValues, type InitialVisitSection, type InitialVisitVitalsValues, type InitialVisitRomValues, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
+import {
+  generateInitialVisitFromData,
+  regenerateSection as regenerateSectionAI,
+  type InitialVisitInputData,
+  type NoteVisitType,
+} from '@/lib/claude/generate-initial-visit'
+import {
+  initialVisitNoteEditSchema,
+  initialVisitVitalsSchema,
+  initialVisitRomSchema,
+  providerIntakeSchema,
+  type InitialVisitNoteEditValues,
+  type InitialVisitSection,
+  type InitialVisitVitalsValues,
+  type InitialVisitRomValues,
+  type ProviderIntakeValues,
+} from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 
@@ -16,16 +31,46 @@ function computeSourceHash(inputData: InitialVisitInputData): string {
 }
 
 // --- Helper: gather source data for note generation ---
+//
+// `visitType` is required: it determines which intake/ROM row is loaded,
+// and — only for pain_evaluation_visit — triggers an additional read of the
+// finalized Initial Visit row (if one exists) as read-only reference data.
 
 async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
+  visitType: NoteVisitType,
   romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const [caseRes, summaryRes, clinicRes, vitalsRes, feeEstimateTotals, intakeRes] = await Promise.all([
+  const priorVisitQuery = visitType === 'pain_evaluation_visit'
+    ? supabase
+        .from('initial_visit_notes')
+        .select(
+          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, rom_data, finalized_at',
+        )
+        .eq('case_id', caseId)
+        .eq('visit_type', 'initial_visit')
+        .eq('status', 'finalized')
+        .is('deleted_at', null)
+        .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+
+  const [
+    caseRes,
+    summaryRes,
+    clinicRes,
+    vitalsRes,
+    feeEstimateTotals,
+    intakeRes,
+    priorVisitRes,
+    mriCountRes,
+    ctCountRes,
+  ] = await Promise.all([
     supabase
       .from('cases')
-      .select('case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+      .select(
+        'case_number, accident_type, accident_date, accident_description, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)',
+      )
       .eq('id', caseId)
       .is('deleted_at', null)
       .single(),
@@ -56,10 +101,22 @@ async function gatherSourceData(
       .from('initial_visit_notes')
       .select('provider_intake')
       .eq('case_id', caseId)
+      .eq('visit_type', visitType)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
       .maybeSingle(),
+    priorVisitQuery,
+    supabase
+      .from('mri_extractions')
+      .select('id', { count: 'exact', head: true })
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('ct_scan_extractions')
+      .select('id', { count: 'exact', head: true })
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -86,6 +143,24 @@ async function gatherSourceData(
     date_of_birth: string | null
     gender: string | null
   }
+
+  const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0)) > 0
+
+  const priorVisitRow = (priorVisitRes as { data: Record<string, unknown> | null }).data
+  const priorVisitData: InitialVisitInputData['priorVisitData'] = priorVisitRow
+    ? {
+        chief_complaint: (priorVisitRow.chief_complaint as string | null) ?? null,
+        physical_exam: (priorVisitRow.physical_exam as string | null) ?? null,
+        imaging_findings: (priorVisitRow.imaging_findings as string | null) ?? null,
+        medical_necessity: (priorVisitRow.medical_necessity as string | null) ?? null,
+        diagnoses: (priorVisitRow.diagnoses as string | null) ?? null,
+        treatment_plan: (priorVisitRow.treatment_plan as string | null) ?? null,
+        prognosis: (priorVisitRow.prognosis as string | null) ?? null,
+        provider_intake: priorVisitRow.provider_intake ?? null,
+        rom_data: priorVisitRow.rom_data ?? null,
+        finalized_at: (priorVisitRow.finalized_at as string | null) ?? null,
+      }
+    : null
 
   return {
     data: {
@@ -128,7 +203,9 @@ async function gatherSourceData(
       feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
         ? feeEstimateTotals
         : null,
-      providerIntake: intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake'] ?? null,
+      providerIntake: (intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake']) ?? null,
+      priorVisitData,
+      hasApprovedDiagnosticExtractions,
     },
     error: null,
   }
@@ -136,7 +213,11 @@ async function gatherSourceData(
 
 // --- Generate initial visit note ---
 
-export async function generateInitialVisitNote(caseId: string, toneHint?: string | null) {
+export async function generateInitialVisitNote(
+  caseId: string,
+  visitType: NoteVisitType,
+  toneHint?: string | null,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -146,11 +227,14 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
-  // Find or create the single note row for this case
+  // Find or create the note row for this (case, visit_type).
+  // The unique partial index on (case_id, visit_type) guarantees at most one
+  // live row per pair, so the other visit type's row is never touched.
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
     .select('id, rom_data, provider_intake, visit_date')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -158,7 +242,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
   const today = new Date().toISOString().slice(0, 10)
 
   // Gather source data (include ROM)
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, preservedRom)
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, preservedRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const sourceHash = computeSourceHash(inputData)
@@ -166,7 +250,7 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
   let recordId: string
 
   if (existingNote) {
-    // Update existing row to generating state (preserves provider_intake and rom_data)
+    // Update existing row to generating state (preserves provider_intake, rom_data, visit_date)
     const { error: updateError } = await supabase
       .from('initial_visit_notes')
       .update({
@@ -204,11 +288,13 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
 
     recordId = existingNote.id
   } else {
-    // No existing row — create one
+    // No existing row for this visit type — create one. Does NOT touch the
+    // other visit type's row if it exists.
     const { data: record, error: insertError } = await supabase
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
+        visit_type: visitType,
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
@@ -228,11 +314,11 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
   }
 
   // Call Claude (pass toneHint only on first generation, not retry)
-  let result = await generateInitialVisitFromData(inputData, toneHint)
+  let result = await generateInitialVisitFromData(inputData, visitType, toneHint)
 
-  // One retry on failure (without toneHint — retry uses default tone)
+  // One retry on failure
   if (result.error || !result.data) {
-    const retry = await generateInitialVisitFromData(inputData, toneHint)
+    const retry = await generateInitialVisitFromData(inputData, visitType, toneHint)
 
     if (retry.error || !retry.data) {
       await supabase
@@ -253,7 +339,6 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
     result = retry
   }
 
-  // Write success
   const data = result.data!
   await supabase
     .from('initial_visit_notes')
@@ -286,9 +371,29 @@ export async function generateInitialVisitNote(caseId: string, toneHint?: string
   return { data: { id: recordId } }
 }
 
-// --- Get note ---
+// --- Get a single note by (case, visit_type) ---
 
-export async function getInitialVisitNote(caseId: string) {
+export async function getInitialVisitNote(caseId: string, visitType: NoteVisitType) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('initial_visit_notes')
+    .select('*')
+    .eq('case_id', caseId)
+    .eq('visit_type', visitType)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (error) return { error: 'Failed to fetch note' }
+
+  return { data: data || null }
+}
+
+// --- Get ALL live notes for a case (both visit types) ---
+
+export async function getInitialVisitNotes(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -298,18 +403,20 @@ export async function getInitialVisitNote(caseId: string) {
     .select('*')
     .eq('case_id', caseId)
     .is('deleted_at', null)
-    .single()
+    .order('visit_type', { ascending: true })
 
-  if (error && error.code !== 'PGRST116') {
-    return { error: 'Failed to fetch note' }
-  }
+  if (error) return { error: 'Failed to fetch notes' }
 
-  return { data: data || null }
+  return { data: data ?? [] }
 }
 
 // --- Save draft edits ---
 
-export async function saveInitialVisitNote(caseId: string, values: InitialVisitNoteEditValues) {
+export async function saveInitialVisitNote(
+  caseId: string,
+  visitType: NoteVisitType,
+  values: InitialVisitNoteEditValues,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -327,6 +434,7 @@ export async function saveInitialVisitNote(caseId: string, values: InitialVisitN
       updated_by_user_id: user.id,
     })
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .eq('status', 'draft')
 
@@ -338,7 +446,7 @@ export async function saveInitialVisitNote(caseId: string, values: InitialVisitN
 
 // --- Finalize note ---
 
-export async function finalizeInitialVisitNote(caseId: string) {
+export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -346,18 +454,19 @@ export async function finalizeInitialVisitNote(caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Fetch the note
+  // Fetch the draft note for this visit type
   const { data: note, error: fetchError } = await supabase
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
-  // Clean up previous document if re-finalizing (prevents duplicate documents)
+  // Clean up previous document if re-finalizing
   if (note.document_id) {
     const { data: oldDoc } = await supabase
       .from('documents')
@@ -386,8 +495,7 @@ export async function finalizeInitialVisitNote(caseId: string) {
     userId: user.id,
   })
 
-  // Upload PDF to Supabase Storage
-  const storagePath = `cases/${caseId}/initial-visit-note-${Date.now()}.pdf`
+  const storagePath = `cases/${caseId}/${visitType}-note-${Date.now()}.pdf`
   const fileBlob = new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' })
 
   const { error: uploadError } = await supabase.storage
@@ -399,13 +507,14 @@ export async function finalizeInitialVisitNote(caseId: string) {
 
   if (uploadError) return { error: `Failed to upload note: ${uploadError.message}` }
 
-  // Create documents row
+  const fileName = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
+
   const { data: doc, error: docError } = await supabase
     .from('documents')
     .insert({
       case_id: caseId,
       document_type: 'generated',
-      file_name: 'Initial Visit Note',
+      file_name: fileName,
       file_path: storagePath,
       file_size_bytes: pdfBuffer.length,
       mime_type: 'application/pdf',
@@ -419,7 +528,6 @@ export async function finalizeInitialVisitNote(caseId: string) {
 
   if (docError || !doc) return { error: 'Failed to create document record' }
 
-  // Update note as finalized
   const { error: updateError } = await supabase
     .from('initial_visit_notes')
     .update({
@@ -439,7 +547,7 @@ export async function finalizeInitialVisitNote(caseId: string) {
 
 // --- Unfinalize note ---
 
-export async function unfinalizeInitialVisitNote(caseId: string) {
+export async function unfinalizeInitialVisitNote(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -456,6 +564,7 @@ export async function unfinalizeInitialVisitNote(caseId: string) {
       updated_by_user_id: user.id,
     })
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .eq('status', 'finalized')
 
@@ -465,9 +574,9 @@ export async function unfinalizeInitialVisitNote(caseId: string) {
   return { data: { success: true } }
 }
 
-// --- Reset note (discard all generated content) ---
+// --- Reset note (discard all generated content) — scoped to one visit type ---
 
-export async function resetInitialVisitNote(caseId: string) {
+export async function resetInitialVisitNote(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -475,20 +584,22 @@ export async function resetInitialVisitNote(caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Only allow reset on draft or failed notes
+  // Look up ONLY the target visit type's row. The other visit type is untouched.
   const { data: note } = await supabase
     .from('initial_visit_notes')
     .select('id, status')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (!note) return { error: 'No note found to reset' }
+  if (!note) return { error: 'No note to reset for this visit type' }
   if (note.status !== 'draft' && note.status !== 'failed') {
     return { error: 'Only draft or failed notes can be reset' }
   }
 
-  // Update in-place: null out all AI-generated content but keep provider_intake and rom_data
+  // In-place update: null all AI-generated fields. Preserve provider_intake,
+  // rom_data, visit_type, and visit_date.
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
@@ -526,7 +637,11 @@ export async function resetInitialVisitNote(caseId: string) {
 
 // --- Regenerate single section ---
 
-export async function regenerateNoteSection(caseId: string, section: InitialVisitSection) {
+export async function regenerateNoteSection(
+  caseId: string,
+  visitType: NoteVisitType,
+  section: InitialVisitSection,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -534,30 +649,28 @@ export async function regenerateNoteSection(caseId: string, section: InitialVisi
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Fetch current note
   const { data: note, error: fetchError } = await supabase
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
 
-  // Gather fresh source data (include ROM from note row)
   const noteRom = note.rom_data as InitialVisitRomValues | null
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, noteRom)
+  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, noteRom)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
 
-  const result = await regenerateSectionAI(inputData, section, currentContent)
+  const result = await regenerateSectionAI(inputData, visitType, section, currentContent)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
 
-  // Update only the target section
   const { error: updateError } = await supabase
     .from('initial_visit_notes')
     .update({
@@ -574,12 +687,15 @@ export async function regenerateNoteSection(caseId: string, section: InitialVisi
 
 // --- Check prerequisites ---
 
-export async function checkNotePrerequisites(caseId: string) {
+export async function checkNotePrerequisites(
+  caseId: string,
+  _visitType?: NoteVisitType,
+) {
+  void _visitType
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  // Verify case exists and has a patient
   const { data: caseData } = await supabase
     .from('cases')
     .select('id, accident_date, patient:patients!inner(id)')
@@ -617,6 +733,12 @@ export async function getInitialVisitVitals(caseId: string) {
 }
 
 // --- Save initial visit vitals ---
+//
+// Vitals live in a separate vital_signs table keyed by case_id. They are
+// shared across both visit types for a given case — the plan notes this
+// is acceptable because vitals are a snapshot in time, not a per-visit
+// editable artifact. A dedicated per-visit vitals column can be added
+// later if needed.
 
 export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisitVitalsValues) {
   const supabase = await createClient()
@@ -629,7 +751,6 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
   const validated = initialVisitVitalsSchema.safeParse(vitals)
   if (!validated.success) return { error: 'Invalid vitals data' }
 
-  // Check for existing initial visit vitals row
   const { data: existing } = await supabase
     .from('vital_signs')
     .select('id')
@@ -666,9 +787,9 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
   return { data: { success: true } }
 }
 
-// --- Get ROM data ---
+// --- Get ROM data, scoped per visit type ---
 
-export async function getInitialVisitRom(caseId: string) {
+export async function getInitialVisitRom(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -677,6 +798,7 @@ export async function getInitialVisitRom(caseId: string) {
     .from('initial_visit_notes')
     .select('rom_data')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -685,9 +807,13 @@ export async function getInitialVisitRom(caseId: string) {
   return { data: (data?.rom_data as InitialVisitRomValues | null) ?? null }
 }
 
-// --- Save ROM data ---
+// --- Save ROM data, scoped per visit type ---
 
-export async function saveInitialVisitRom(caseId: string, romData: InitialVisitRomValues | null) {
+export async function saveInitialVisitRom(
+  caseId: string,
+  visitType: NoteVisitType,
+  romData: InitialVisitRomValues | null,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -695,7 +821,6 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Validate if non-null
   let validatedData: InitialVisitRomValues | null = null
   if (romData !== null) {
     const validated = initialVisitRomSchema.safeParse(romData)
@@ -703,11 +828,11 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
     validatedData = validated.data
   }
 
-  // Check for existing active note
   const { data: existing } = await supabase
     .from('initial_visit_notes')
     .select('id')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -722,11 +847,11 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
 
     if (error) return { error: 'Failed to update ROM data' }
   } else if (validatedData !== null) {
-    // Create a new draft note with only ROM data (don't create for null)
     const { error } = await supabase
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
+        visit_type: visitType,
         status: 'draft',
         rom_data: validatedData as unknown as Record<string, unknown>,
         visit_date: new Date().toISOString().slice(0, 10),
@@ -741,9 +866,9 @@ export async function saveInitialVisitRom(caseId: string, romData: InitialVisitR
   return { data: { success: true } }
 }
 
-// --- Get provider intake ---
+// --- Get provider intake, scoped per visit type ---
 
-export async function getProviderIntake(caseId: string) {
+export async function getProviderIntake(caseId: string, visitType: NoteVisitType) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -752,9 +877,8 @@ export async function getProviderIntake(caseId: string) {
     .from('initial_visit_notes')
     .select('provider_intake')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
     .maybeSingle()
 
   if (error) return { error: 'Failed to fetch provider intake' }
@@ -762,9 +886,13 @@ export async function getProviderIntake(caseId: string) {
   return { data: data?.provider_intake ?? null }
 }
 
-// --- Save provider intake ---
+// --- Save provider intake, scoped per visit type ---
 
-export async function saveProviderIntake(caseId: string, intake: ProviderIntakeValues) {
+export async function saveProviderIntake(
+  caseId: string,
+  visitType: NoteVisitType,
+  intake: ProviderIntakeValues,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -775,11 +903,11 @@ export async function saveProviderIntake(caseId: string, intake: ProviderIntakeV
   const validated = providerIntakeSchema.safeParse(intake)
   if (!validated.success) return { error: 'Invalid provider intake data' }
 
-  // Check for existing active note
   const { data: existing } = await supabase
     .from('initial_visit_notes')
     .select('id')
     .eq('case_id', caseId)
+    .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -798,6 +926,7 @@ export async function saveProviderIntake(caseId: string, intake: ProviderIntakeV
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
+        visit_type: visitType,
         status: 'draft',
         provider_intake: validated.data as unknown as Record<string, unknown>,
         visit_date: new Date().toISOString().slice(0, 10),
@@ -810,4 +939,47 @@ export async function saveProviderIntake(caseId: string, intake: ProviderIntakeV
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
+}
+
+// --- Default visit type detection for a case (used by the page component) ---
+//
+// Cheap read-side helper: true if the case has any signal that imaging has
+// been reviewed (case_summary with imaging_findings, OR approved MRI/CT
+// extractions). Used only to pick the default tab when the editor opens —
+// never at generation time.
+
+export async function detectDefaultVisitTypeForCase(caseId: string): Promise<NoteVisitType> {
+  const supabase = await createClient()
+
+  const [summaryRes, mriCountRes, ctCountRes] = await Promise.all([
+    supabase
+      .from('case_summaries')
+      .select('imaging_findings')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited'])
+      .eq('generation_status', 'completed')
+      .maybeSingle(),
+    supabase
+      .from('mri_extractions')
+      .select('id', { count: 'exact', head: true })
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('ct_scan_extractions')
+      .select('id', { count: 'exact', head: true })
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
+  ])
+
+  const findings = summaryRes.data?.imaging_findings
+  const hasImagingFindings = findings != null
+    && Array.isArray(findings)
+    && (findings as unknown[]).length > 0
+
+  if (hasImagingFindings) return 'pain_evaluation_visit'
+  if (((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0)) > 0) return 'pain_evaluation_visit'
+  return 'initial_visit'
 }

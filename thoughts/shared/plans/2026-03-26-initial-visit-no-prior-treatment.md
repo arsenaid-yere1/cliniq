@@ -2,7 +2,25 @@
 
 ## Overview
 
-Enable Initial Visit note generation for patients with no prior clinical records. Currently, a two-gate prerequisite chain (extractions -> case summary -> note) completely blocks generation for "fresh" patients — the most common real-world use case. This plan removes the hard case summary gate, adds 5 pre-generation provider intake forms, implements dual-mode prompt auto-detection (First Visit vs PRP Evaluation), and adds companion document generation (Imaging Orders, Chiropractic Therapy Order) with immediate PDF rendering (no separate finalize step for orders).
+Enable Initial Visit note generation for patients with no prior clinical records. Currently, a two-gate prerequisite chain (extractions -> case summary -> note) completely blocks generation for "fresh" patients — the most common real-world use case. This plan removes the hard case summary gate, adds 5 pre-generation provider intake forms, implements dual-mode prompt auto-detection (**Initial Visit** vs **Pain Evaluation Visit**), and adds companion document generation (Imaging Orders, Chiropractic Therapy Order) with immediate PDF rendering (no separate finalize step for orders).
+
+### Two Visit Types
+
+Each visit type is stored as a **separate `initial_visit_notes` row** on the same case, keyed by `visit_type`. A patient may have both: an Initial Visit written Day 3 post-accident, and a Pain Evaluation Visit written Day 30 after MRI results come back. Both are independently editable, finalizable, and PDF-exportable. Neither overwrites the other.
+
+**Exam data isolation with cross-visit reference**: Each visit has its own provider intake, ROM, and vitals — entered fresh at the time of that visit. The Pain Evaluation Visit does NOT edit or overwrite the Initial Visit's exam data. However, at Pain Evaluation Visit generation time, the pipeline loads the finalized Initial Visit note (if one exists) as **read-only reference data** (`priorVisitData`) and passes it to the prompt so the AI can generate interval-comparison language (e.g., "ROM has improved from the initial evaluation", "persistent symptoms despite conservative care documented at the initial visit"). The prior visit data is never displayed as editable in the Pain Evaluation Visit UI.
+
+The visit type is auto-detected from data availability at generation time:
+
+| Visit Type | Trigger | Clinical Context |
+|---|---|---|
+| **Initial Visit** | No diagnostics performed | First clinical encounter. Imaging is *ordered*, not reviewed. Diagnoses are clinical impressions based on exam + mechanism. Treatment is conservative. |
+| **Pain Evaluation Visit** | Patient has completed diagnostic imaging | Follow-up encounter where imaging findings are reviewed. Diagnoses are imaging-confirmed. Evaluation for advanced interventions (e.g., PRP). |
+
+**Detection logic** (first match wins):
+1. **Primary**: `caseSummary.imaging_findings` is populated → Pain Evaluation Visit
+2. **Fallback**: Any approved MRI or CT scan extraction exists (`mri_extractions` or `ct_scan_extractions` with `review_status IN ('approved','edited')`) → Pain Evaluation Visit
+3. **Otherwise** → Initial Visit
 
 ## Current State Analysis
 
@@ -29,23 +47,24 @@ The Initial Visit is the patient's **first clinical encounter** in the PI workfl
 1. A provider can generate a clinically complete Initial Visit note for a patient with **zero prior records** — no extractions, no case summary
 2. Five new pre-generation input tabs let the provider enter: chief complaints, accident details, past medical/social history, and physical exam findings
 3. The system **auto-detects** the note mode based on data availability:
-   - **Mode A (First Visit)**: No imaging findings -> conservative assessment note with imaging orders and therapy referrals
-   - **Mode B (PRP Evaluation)**: Imaging findings present -> current PRP-focused note (existing behavior)
+   - **Initial Visit**: No imaging findings and no approved MRI/CT extractions → conservative assessment note with imaging orders and therapy referrals
+   - **Pain Evaluation Visit**: `caseSummary.imaging_findings` populated OR approved MRI/CT extractions exist → current PRP-focused note (existing behavior)
 4. Companion documents (Imaging Orders, Chiropractic Therapy Order) can be generated from the finalized Initial Visit note data
 5. Existing PRP evaluation workflow is **unchanged** — this is purely additive
 
 ### How to Verify
 - Create a new case with only patient demographics and accident details (no documents uploaded)
 - Fill out all 7 pre-generation tabs (vitals, ROM, chief complaints, accident details, PMH, social history, exam findings)
-- Generate the note — should produce a clinically complete First Visit note with conservative treatment plan, imaging orders mentioned, and clinical impression diagnoses
+- Generate the note — should auto-detect as **Initial Visit** and produce a clinically complete note with conservative treatment plan, imaging orders mentioned, and clinical impression diagnoses
 - Finalize the note and generate companion documents (Imaging Orders, Chiro Order)
-- Create a case WITH an approved case summary containing imaging findings — note should auto-detect as Mode B and produce the existing PRP-focused format
+- Create a case WITH an approved case summary containing imaging findings — note should auto-detect as **Pain Evaluation Visit** and produce the existing PRP-focused format
+- Create a case with approved MRI extractions but no case summary — note should still auto-detect as **Pain Evaluation Visit** via the fallback path
 
 ## What We're NOT Doing
 
 - **Not changing the case summary system** — Gate 1 (extractions required for case summary) stays as-is
 - **Not removing case summary enrichment** — when a case summary exists, it still enriches the note
-- **Not changing the existing PRP evaluation prompt** — Mode B preserves current behavior exactly
+- **Not changing the existing PRP evaluation prompt** — Pain Evaluation Visit mode preserves current behavior exactly
 - **Not building a structured accident intake form** — we use a single textarea for accident narrative (the existing `accident_description` field), enhanced with a few structured fields (seatbelt, airbag, consciousness, ER visit) stored in `provider_intake`
 - **Not auto-generating companion documents** — they are manually triggered after note finalization
 - **Not implementing PT, pain management, or orthopedic orders yet** — the `order_type` CHECK constraint includes them for forward-compatibility, but only Imaging Orders and Chiropractic Therapy Orders are built in this plan. Future order types follow the same pattern and require only: a generation function, Zod schema, server action, PDF template, and UI button.
@@ -72,6 +91,22 @@ ALTER TABLE initial_visit_notes
 ADD COLUMN IF NOT EXISTS provider_intake jsonb;
 
 COMMENT ON COLUMN initial_visit_notes.provider_intake IS 'Provider-entered intake data: chief complaints, accident details, PMH, social history, exam findings';
+
+-- Add visit_type column — separates Initial Visit from Pain Evaluation Visit so both can coexist on the same case
+ALTER TABLE initial_visit_notes
+ADD COLUMN IF NOT EXISTS visit_type text NOT NULL DEFAULT 'initial_visit'
+  CHECK (visit_type IN ('initial_visit', 'pain_evaluation_visit'));
+
+COMMENT ON COLUMN initial_visit_notes.visit_type IS 'Which clinical visit this note represents. Auto-detected at generation time based on diagnostic availability.';
+
+-- Replace the single-row-per-case unique index with one row per (case, visit_type)
+-- Prior migration 010_initial_visit_notes.sql (and 20260309194935_*) created:
+--   create unique index idx_initial_visit_notes_case_active on initial_visit_notes(case_id) where deleted_at is null
+DROP INDEX IF EXISTS idx_initial_visit_notes_case_active;
+
+CREATE UNIQUE INDEX idx_initial_visit_notes_case_visit_type_active
+  ON initial_visit_notes(case_id, visit_type)
+  WHERE deleted_at IS NULL;
 
 -- Create clinical_orders table for companion documents
 CREATE TABLE IF NOT EXISTS clinical_orders (
@@ -177,23 +212,27 @@ interface ProviderIntake {
 - [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
-- [ ] `provider_intake` column exists on `initial_visit_notes` in Supabase dashboard
-- [ ] `clinical_orders` table exists with correct columns and constraints
-- [ ] RLS policies are active on `clinical_orders`
+- [x] `provider_intake` column exists on `initial_visit_notes` in Supabase dashboard
+- [x] `clinical_orders` table exists with correct columns and constraints
+- [x] RLS policies are active on `clinical_orders`
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 2.
 
 ---
 
-## Phase 2: Remove Prerequisites Gate
+## Phase 2: Remove Prerequisites Gate & Thread visit_type
 
 ### Overview
-Make the case summary optional for Initial Visit note generation. When a case summary exists and is approved, use it to enrich the note (existing behavior). When no case summary exists, pass null fields and let the AI generate from provider intake + demographics.
+Make the case summary optional for note generation. When a case summary exists and is approved, use it to enrich the note (existing behavior). When no case summary exists, pass null fields and let the AI generate from provider intake + demographics. Also thread a `visitType` parameter through `gatherSourceData`, `generateInitialVisitNote`, `checkNotePrerequisites`, and the intake save/load functions so each visit type addresses its own row.
+
+**Key rule**: every query and upsert on `initial_visit_notes` must filter by both `case_id` AND `visit_type`. A case may now have up to two live rows (one Initial Visit, one Pain Evaluation Visit). Omitting the `visit_type` filter would conflate them and re-introduce the overwrite bug.
 
 ### Changes Required:
 
-#### 1. Update `gatherSourceData()` — Make Case Summary Optional
+#### 1. Update `gatherSourceData()` — Make Case Summary Optional & Accept visit_type
 **File**: [initial-visit-notes.ts:20-128](src/actions/initial-visit-notes.ts#L20-L128)
+
+**Signature change**: `gatherSourceData(caseId)` becomes `gatherSourceData(caseId, visitType: 'initial_visit' | 'pain_evaluation_visit')`. The `visitType` is used when querying for the existing note row (intake data) so the Initial Visit row and Pain Evaluation Visit row stay separated.
 
 **Change**: The `summaryRes` query at lines 32-39 should use `.maybeSingle()` instead of `.single()`, and the hard gate at lines 61-63 should be replaced with a null fallback.
 
@@ -231,31 +270,58 @@ caseSummary: {
 },
 ```
 
-#### 2. Add `provider_intake` to `gatherSourceData()` Return and `InitialVisitInputData`
+#### 2. Add `provider_intake` and `priorVisitData` to `gatherSourceData()` Return and `InitialVisitInputData`
 **File**: [initial-visit-notes.ts:20-128](src/actions/initial-visit-notes.ts#L20-L128)
 
-Add a query for the `provider_intake` column from the `initial_visit_notes` row (if one exists). This is needed so the AI can use the provider's intake data.
+Add a query for the `provider_intake` column from the `initial_visit_notes` row matching `(case_id, visit_type)`. When the caller is generating a Pain Evaluation Visit, also load the **finalized Initial Visit** row (if one exists) as read-only reference data.
 
 ```typescript
-// Add to the Promise.all block — query for existing note's provider_intake
+// Add to the Promise.all block — query for existing note's provider_intake,
+// keyed by BOTH case_id and visit_type so the two visit types don't collide.
 supabase
   .from('initial_visit_notes')
-  .select('provider_intake')
+  .select('provider_intake, rom_data')
   .eq('case_id', caseId)
+  .eq('visit_type', visitType)
   .is('deleted_at', null)
-  .order('created_at', { ascending: false })
-  .limit(1)
   .maybeSingle(),
 ```
 
-Add `providerIntake` to the returned `inputData`:
+**Prior visit reference query** (only when generating a Pain Evaluation Visit):
+```typescript
+// Added conditionally — only queried when visitType === 'pain_evaluation_visit'
+const priorVisitQuery = visitType === 'pain_evaluation_visit'
+  ? supabase
+      .from('initial_visit_notes')
+      .select(`
+        chief_complaint,
+        physical_exam,
+        imaging_findings,
+        medical_necessity,
+        diagnoses,
+        treatment_plan,
+        prognosis,
+        provider_intake,
+        rom_data,
+        finalized_at
+      `)
+      .eq('case_id', caseId)
+      .eq('visit_type', 'initial_visit')
+      .eq('status', 'finalized')  // only pull FINALIZED Initial Visit notes as reference
+      .is('deleted_at', null)
+      .maybeSingle()
+  : Promise.resolve({ data: null, error: null })
+```
+
+Add `providerIntake` and `priorVisitData` to the returned `inputData`:
 ```typescript
 providerIntake: intakeRes.data?.provider_intake ?? null,
+priorVisitData: priorVisitRes.data ?? null,  // null if this IS an Initial Visit, or if no finalized Initial Visit exists yet
 ```
 
 **File**: [generate-initial-visit.ts:219-278](src/lib/claude/generate-initial-visit.ts#L219-L278)
 
-Add `providerIntake` to the `InitialVisitInputData` interface:
+Add `providerIntake`, `priorVisitData`, and `hasApprovedDiagnosticExtractions` to the `InitialVisitInputData` interface:
 ```typescript
 providerIntake: {
   chief_complaints: unknown
@@ -264,15 +330,35 @@ providerIntake: {
   social_history: unknown
   exam_findings: unknown
 } | null
+
+// Read-only reference data from a prior finalized Initial Visit on the same case.
+// Populated only when generating a Pain Evaluation Visit. Null otherwise.
+priorVisitData: {
+  chief_complaint: string | null
+  physical_exam: string | null
+  imaging_findings: string | null  // typically "Ordered — results pending" from Initial Visit
+  medical_necessity: string | null
+  diagnoses: string | null
+  treatment_plan: string | null
+  prognosis: string | null
+  provider_intake: unknown | null
+  rom_data: unknown | null
+  finalized_at: string | null
+} | null
+
+hasApprovedDiagnosticExtractions: boolean
 ```
 
 #### 3. Update `checkNotePrerequisites()` — Remove Case Summary Requirement
 **File**: [initial-visit-notes.ts:510-529](src/actions/initial-visit-notes.ts#L510-L529)
 
-Replace the case summary check with a minimal data check — at minimum, the case must exist and have a patient linked.
+Replace the case summary check with a minimal data check — at minimum, the case must exist and have a patient linked. Accepts an optional `visitType` so the caller (UI) can check per-visit-type enablement if needed.
 
 ```typescript
-export async function checkNotePrerequisites(caseId: string) {
+export async function checkNotePrerequisites(
+  caseId: string,
+  visitType?: 'initial_visit' | 'pain_evaluation_visit',
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -293,10 +379,12 @@ export async function checkNotePrerequisites(caseId: string) {
 }
 ```
 
-#### 4. Update Page Component — Load Provider Intake
+#### 4. Update Page Component — Load Both Visit Types
 **File**: [page.tsx](src/app/(dashboard)/patients/[caseId]/initial-visit/page.tsx)
 
-Add `getProviderIntake(caseId)` to the parallel fetch and pass `initialIntake` to `InitialVisitEditor`.
+The page now loads **all live `initial_visit_notes` rows for the case** (up to two: one per visit type) and passes them to `InitialVisitEditor` as a `notes: InitialVisitNoteRow[]` prop. The editor picks which note to display based on the active tab (see Phase 4). Also call `getProviderIntake(caseId, visitType)` for each existing row and pass as `intakesByVisitType`.
+
+Dropping the old "one note per page" assumption: the query changes from `.maybeSingle()` to `.order('visit_type')` returning an array (0–2 rows).
 
 ### Success Criteria:
 
@@ -306,9 +394,10 @@ Add `getProviderIntake(caseId)` to the parallel fetch and pass `initialIntake` t
 - [x] Existing tests pass (if any)
 
 #### Manual Verification:
-- [ ] On a case with NO case summary: the "Generate" button is **enabled** (no prerequisite warning)
-- [ ] On a case WITH an approved case summary: generation still works and uses the summary data
-- [ ] The `provider_intake` field is fetched and passed to the editor
+- [x] On a case with NO case summary: the "Generate" button is **enabled** (no prerequisite warning)
+- [x] On a case WITH an approved case summary: generation still works and uses the summary data
+- [x] The `provider_intake` field is fetched and passed to the editor, scoped per visit_type
+- [x] A case with two visit-type rows loads both into the editor without conflating them
 
 **Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 3.
 
@@ -450,31 +539,42 @@ export const defaultProviderIntake: ProviderIntakeValues = {
 #### 2. Server Actions for Save/Load
 **File**: `src/actions/initial-visit-notes.ts` (add to existing file)
 
-**`saveProviderIntake(caseId, intake)`**: Validates against `providerIntakeSchema`, then upserts the `provider_intake` column on the `initial_visit_notes` row (same pattern as `saveInitialVisitRom` — update existing row or insert a new draft row with only `provider_intake` populated).
+**`saveProviderIntake(caseId, visitType, intake)`**: Validates against `providerIntakeSchema`, then upserts the `provider_intake` column on the `initial_visit_notes` row matching `(case_id, visit_type)` (same pattern as `saveInitialVisitRom` — update existing row or insert a new draft row with only `provider_intake` and `visit_type` populated).
 
-**`getProviderIntake(caseId)`**: Reads `provider_intake` from the active `initial_visit_notes` row. Returns null if no row exists or `provider_intake` is null.
+**`getProviderIntake(caseId, visitType)`**: Reads `provider_intake` from the `initial_visit_notes` row matching `(case_id, visit_type)`. Returns null if no row exists or `provider_intake` is null.
 
-Follow the exact patterns from `saveInitialVisitRom` ([initial-visit-notes.ts:624-675](src/actions/initial-visit-notes.ts#L624-L675)) and `getInitialVisitRom` ([initial-visit-notes.ts:605-622](src/actions/initial-visit-notes.ts#L605-L622)).
+**`saveInitialVisitRom(caseId, visitType, rom)`** and **`getInitialVisitRom(caseId, visitType)`** — existing functions must also gain a `visitType` parameter so ROM data does not leak between visit types.
+
+**`saveInitialVisitVitals(caseId, visitType, vitals)`** — likewise gains a `visitType` parameter if vitals are stored per-visit. If vitals live in a separate `vital_signs` table keyed only by `case_id`, add an encounter_type or similar field so two visits on the same case don't share the same vitals blob.
+
+All queries must filter by BOTH `case_id` AND `visit_type`. Follow the existing patterns from `saveInitialVisitRom` ([initial-visit-notes.ts:624-675](src/actions/initial-visit-notes.ts#L624-L675)) and `getInitialVisitRom` ([initial-visit-notes.ts:605-622](src/actions/initial-visit-notes.ts#L605-L622)).
 
 ### Success Criteria:
 
 #### Automated Verification:
 - [x] TypeScript compiles: `npm run typecheck`
 - [x] No linting errors: `npm run lint`
-- [ ] Schema validation tests pass for all 5 intake sections
+- [x] Schema validation tests pass for all 5 intake sections
 
 #### Manual Verification:
-- [ ] `saveProviderIntake` writes to DB correctly (check Supabase dashboard)
-- [ ] `getProviderIntake` returns saved data
+- [x] `saveProviderIntake` writes to DB correctly (check Supabase dashboard)
+- [x] `getProviderIntake` returns saved data
 
 **Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 4.
 
 ---
 
-## Phase 4: Provider Intake UI
+## Phase 4: Provider Intake UI & Visit Type Selector
 
 ### Overview
-Add 5 new tab panels to the pre-generation state in `InitialVisitEditor`, following the existing VitalSignsCard/RomInputCard pattern exactly.
+Add 5 new tab panels to the pre-generation state in `InitialVisitEditor`, following the existing VitalSignsCard/RomInputCard pattern exactly. Also add a **top-level visit-type selector** (two tabs or a segmented control) so the provider chooses which visit they are working on: "Initial Visit" or "Pain Evaluation Visit". Each visit type is a completely independent editor state — its own intake data, its own generated note, its own finalized PDF. Switching tabs loads the other row.
+
+### Visit Type Selector Behavior
+- If the case has **zero notes**, both tabs are visible. Auto-detect which one to default to: if diagnostics are available (case summary with imaging findings OR approved MRI/CT extractions), default to Pain Evaluation Visit; otherwise Initial Visit.
+- If the case has **one note**, open that note's tab by default; the other tab shows an empty "Start this visit" state.
+- If the case has **both notes**, each tab shows its respective editor/finalized state.
+- Generating a note on one tab does NOT modify the other. Resetting a note on one tab does NOT affect the other.
+- Explicit labeling: the tab labels read "Initial Visit" and "Pain Evaluation Visit" so the provider always knows which document they are editing.
 
 ### Changes Required:
 
@@ -548,11 +648,39 @@ This avoids race conditions and partial saves. The component maintains a single 
 #### 4. Props Update
 **File**: [initial-visit-editor.tsx](src/components/clinical/initial-visit-editor.tsx)
 
-Add `initialIntake: ProviderIntakeValues | null` prop to `InitialVisitEditor`. Initialize the intake form with `initialIntake ?? defaultProviderIntake`.
+Replace the single-note props with a per-visit-type map:
+```typescript
+interface InitialVisitEditorProps {
+  caseId: string
+  notesByVisitType: {
+    initial_visit: InitialVisitNoteRow | null
+    pain_evaluation_visit: InitialVisitNoteRow | null
+  }
+  intakesByVisitType: {
+    initial_visit: ProviderIntakeValues | null
+    pain_evaluation_visit: ProviderIntakeValues | null
+  }
+  romByVisitType: {
+    initial_visit: RomData | null
+    pain_evaluation_visit: RomData | null
+  }
+  defaultVisitType: 'initial_visit' | 'pain_evaluation_visit' // auto-detected
+  // ...existing clinic/provider/case props
+}
+```
+
+The editor maintains an `activeVisitType` state (initialized to `defaultVisitType`). All card components receive `activeVisitType` and pass it to their save actions.
 
 **File**: [page.tsx](src/app/(dashboard)/patients/[caseId]/initial-visit/page.tsx)
 
-Load `getProviderIntake(caseId)` in the page's `Promise.all` and pass as `initialIntake` prop.
+Load all note rows and intakes for both visit types in the page's `Promise.all`:
+- `getInitialVisitNotes(caseId)` → returns 0–2 rows
+- `getProviderIntake(caseId, 'initial_visit')`
+- `getProviderIntake(caseId, 'pain_evaluation_visit')`
+- `getInitialVisitRom(caseId, 'initial_visit')`
+- `getInitialVisitRom(caseId, 'pain_evaluation_visit')`
+
+Compute `defaultVisitType` server-side using the same detection logic as `detectNoteMode()` and pass it to the editor.
 
 ### Success Criteria:
 
@@ -561,11 +689,15 @@ Load `getProviderIntake(caseId)` in the page's `Promise.all` and pass as `initia
 - [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
-- [ ] All 7 tabs render correctly in the pre-generation state
-- [ ] Each card saves independently and persists on page reload
-- [ ] Form defaults are sensible for a fresh case
-- [ ] Adding/removing array entries (complaints, exam regions) works
-- [ ] Conditional fields (ER details) show/hide correctly
+- [x] Visit type selector (Initial Visit / Pain Evaluation Visit) appears at the top of the editor
+- [x] Default visit type is auto-detected correctly (Initial Visit for fresh cases, Pain Evaluation Visit when diagnostics exist)
+- [x] All 7 intake tabs render correctly in the pre-generation state
+- [x] Each card saves independently and persists on page reload
+- [x] Form defaults are sensible for a fresh case
+- [x] Adding/removing array entries (complaints, exam regions) works
+- [x] Conditional fields (ER details) show/hide correctly
+- [x] Switching between visit type tabs does NOT lose data on either side
+- [x] Saving intake data on one visit type does NOT populate the other visit type's intake
 
 **Implementation Note**: After completing this phase, pause for manual confirmation before proceeding to Phase 5.
 
@@ -574,24 +706,35 @@ Load `getProviderIntake(caseId)` in the page's `Promise.all` and pass as `initia
 ## Phase 5: Dual-Mode System Prompt
 
 ### Overview
-Update the system prompt to auto-detect and generate two distinct note modes based on data availability. Mode A (First Visit / Acute Evaluation) produces conservative assessment notes. Mode B (PRP Evaluation) preserves the existing prompt behavior.
+Update the system prompt to auto-detect and generate two distinct visit types based on data availability. **Initial Visit** (no diagnostics) produces conservative assessment notes. **Pain Evaluation Visit** (diagnostics complete) preserves the existing PRP-focused prompt behavior. Both modes write to the same note record; only the prompt differs.
 
 ### Changes Required:
 
-#### 1. Mode Detection Logic
+#### 1. Visit Type Detection (for Defaults Only) and Explicit Pass-Through
 **File**: [generate-initial-visit.ts](src/lib/claude/generate-initial-visit.ts)
 
-Add a helper function:
+The visit type is **always explicit** at generation time — it comes from the editor's active visit type tab. The detection function below is used only to choose the **default tab** when opening a case with no notes yet; once the user picks a tab, the tab value is the source of truth and passed into `generateInitialVisitFromData(inputData, visitType, toneHint)`.
+
+This separation is critical: if detection were used at generation time, a provider explicitly working on an Initial Visit note for a case that already has imaging would accidentally get a Pain Evaluation Visit prompt. Explicit pass-through prevents the overwrite risk and gives the user control.
 
 ```typescript
-function detectNoteMode(inputData: InitialVisitInputData): 'first_visit' | 'prp_evaluation' {
-  const hasImagingFindings = inputData.caseSummary?.imaging_findings != null
-    && Array.isArray(inputData.caseSummary.imaging_findings)
-    && (inputData.caseSummary.imaging_findings as unknown[]).length > 0
+export type NoteVisitType = 'initial_visit' | 'pain_evaluation_visit'
 
-  return hasImagingFindings ? 'prp_evaluation' : 'first_visit'
+// Used by the page component to pick the default open tab.
+// Also used by gatherSourceData() to compute hasApprovedDiagnosticExtractions.
+export function detectDefaultVisitType(inputData: InitialVisitInputData): NoteVisitType {
+  const findings = inputData.caseSummary?.imaging_findings
+  const hasImagingFindings = findings != null
+    && Array.isArray(findings)
+    && (findings as unknown[]).length > 0
+
+  if (hasImagingFindings) return 'pain_evaluation_visit'
+  if (inputData.hasApprovedDiagnosticExtractions) return 'pain_evaluation_visit'
+  return 'initial_visit'
 }
 ```
+
+The `hasApprovedDiagnosticExtractions` boolean is added to `InitialVisitInputData` and populated by `gatherSourceData()` in [initial-visit-notes.ts](src/actions/initial-visit-notes.ts) via a count query against `mri_extractions` and `ct_scan_extractions` filtered by `case_id`, `deleted_at IS NULL`, and `review_status IN ('approved','edited')`. This is a single cheap query added to the existing `Promise.all` block.
 
 #### 2. Dual-Mode System Prompt
 **File**: [generate-initial-visit.ts:11-124](src/lib/claude/generate-initial-visit.ts#L11-L124)
@@ -599,19 +742,19 @@ function detectNoteMode(inputData: InitialVisitInputData): 'first_visit' | 'prp_
 The `SYSTEM_PROMPT` constant becomes a function that takes the mode and returns the appropriate prompt. The structure:
 
 ```typescript
-function buildSystemPrompt(mode: 'first_visit' | 'prp_evaluation'): string {
+function buildSystemPrompt(visitType: NoteVisitType): string {
   const COMMON_RULES = `...` // Global rules, PDF formatting, sections 1, 4-8, 10, 15, 16 (unchanged)
 
-  if (mode === 'first_visit') {
-    return `${COMMON_RULES}\n\n${FIRST_VISIT_SECTIONS}`
+  if (visitType === 'initial_visit') {
+    return `${COMMON_RULES}\n\n${INITIAL_VISIT_SECTIONS}`
   }
-  return `${COMMON_RULES}\n\n${PRP_EVALUATION_SECTIONS}`
+  return `${COMMON_RULES}\n\n${PAIN_EVALUATION_VISIT_SECTIONS}`
 }
 ```
 
 **Sections that differ by mode:**
 
-| Section | Mode A (First Visit) | Mode B (PRP Evaluation) |
+| Section | Initial Visit | Pain Evaluation Visit |
 |---|---|---|
 | **2. History of Accident** | Para 3: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living." | Para 3: "Despite conservative treatment, continues to complain..." (current) |
 | **3. Post-Accident History** | Patient-reported symptom progression since accident, self-treatment (OTC meds), functional impact. NO treatment timeline (none exists). Use `providerIntake.chief_complaints` and `providerIntake.accident_details` as primary data sources. | Current behavior: treatment timeline from case summary |
@@ -655,27 +798,53 @@ If providerIntake is provided in the source data, use it as the PRIMARY source f
 If both providerIntake and caseSummary contain data for the same field, prefer providerIntake (it is more recent, entered at this visit).
 ```
 
+#### 3b. Prior Visit Reference Instructions (Pain Evaluation Visit Only)
+
+Add to the Pain Evaluation Visit prompt ONLY:
+
+```
+=== PRIOR VISIT REFERENCE (READ-ONLY) ===
+
+If priorVisitData is provided, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings, vitals, or ROM values into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
+
+1. **History of the Accident (Para 3)**: Reference the prior visit's documented findings and conservative care outcome. Example: "Since the initial evaluation on [priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
+
+2. **Post-Accident History**: Describe the continuum of care from initial presentation to today. Reference priorVisitData.treatment_plan for what was recommended and summarize adherence/outcome based on the CURRENT visit's providerIntake.
+
+3. **Physical Examination**: Do NOT restate prior exam findings as current findings. Current findings come from the CURRENT visit's providerIntake.exam_findings. You MAY add one brief comparative sentence at the end of each region: "Compared to the initial evaluation, cervical ROM has [improved/worsened/remained unchanged]." Use priorVisitData.rom_data and priorVisitData.physical_exam for the comparison basis only.
+
+4. **Medical Necessity**: Cite that conservative care was documented and attempted at the initial visit (reference priorVisitData.treatment_plan) and has failed to produce adequate relief, supporting the escalation to interventional treatment.
+
+5. **Prognosis**: May reference the evolution from guarded-but-favorable (initial) to the current imaging-informed prognosis.
+
+If priorVisitData is null (no prior Initial Visit exists on this case), generate the Pain Evaluation Visit note without any interval-comparison language — it is a standalone evaluation.
+```
+
 #### 4. Update Tool Descriptions
 **File**: [generate-initial-visit.ts:126-216](src/lib/claude/generate-initial-visit.ts#L126-L216)
 
 Update the `INITIAL_VISIT_TOOL` property descriptions for sections that vary by mode. For example, `imaging_findings` description should mention both possibilities: "MRI findings by region with specific measurements OR 'Ordered — results pending' for pending imaging."
 
-#### 5. Pass Mode to API Call
+#### 5. Pass Visit Type to API Call (Explicit, Not Auto-Detected)
 **File**: [generate-initial-visit.ts:281-325](src/lib/claude/generate-initial-visit.ts#L281-L325)
 
 ```typescript
 export async function generateInitialVisitFromData(
   inputData: InitialVisitInputData,
+  visitType: NoteVisitType,  // <-- NEW required parameter, from active editor tab
   toneHint?: string | null,
 ): Promise<...> {
-  const mode = detectNoteMode(inputData)
-  const systemPrompt = buildSystemPrompt(mode)
-
+  const systemPrompt = buildSystemPrompt(visitType)
   // ... rest of function uses systemPrompt instead of SYSTEM_PROMPT
 }
 ```
 
-Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/claude/generate-initial-visit.ts#L344-L380)) to detect mode and use the correct prompt.
+`generateInitialVisitNote()` in [initial-visit-notes.ts](src/actions/initial-visit-notes.ts) gains a `visitType` parameter which it:
+1. Passes to `gatherSourceData(caseId, visitType)` — so the correct intake row is loaded
+2. Passes to `generateInitialVisitFromData(inputData, visitType, toneHint)` — so the correct prompt is used
+3. Uses when looking up / upserting the target row in `initial_visit_notes` — keyed by `(case_id, visit_type)`
+
+Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/claude/generate-initial-visit.ts#L344-L380)) to accept and use `visitType`.
 
 ### Success Criteria:
 
@@ -684,10 +853,14 @@ Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/c
 - [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
-- [ ] **Mode A test**: Case with no case summary, provider intake filled out -> generates First Visit note with conservative treatment plan, "Ordered — results pending" imaging, clinical impression diagnoses, no PRP
-- [ ] **Mode B test**: Case with approved case summary containing imaging findings -> generates PRP evaluation note (current behavior unchanged)
-- [ ] Section regeneration works correctly in both modes
-- [ ] Tone hint still works in both modes
+- [x] **Initial Visit test**: Case with no case summary and no approved MRI/CT extractions, provider intake filled out → generates Initial Visit note with conservative treatment plan, "Ordered — results pending" imaging, clinical impression diagnoses, no PRP
+- [x] **Pain Evaluation Visit test (primary path)**: Case with approved case summary containing imaging findings → generates Pain Evaluation Visit note (current PRP behavior unchanged)
+- [x] **Pain Evaluation Visit test (fallback path)**: Case with approved MRI extraction but no case summary → still generates Pain Evaluation Visit note via the extraction fallback
+- [x] **Prior visit reference test**: Generate + finalize an Initial Visit note, then generate a Pain Evaluation Visit note on the same case. The Pain Evaluation note should contain interval-comparison language (references to "initial evaluation", progression of symptoms, comparison of ROM, etc.) but its physical exam section should reflect the CURRENT Pain Evaluation intake data, not a copy of the Initial Visit exam.
+- [x] **No prior visit test**: Generate a Pain Evaluation Visit note on a case that has no prior Initial Visit (e.g., patient arrived with imaging already in hand). The note should generate correctly without any broken comparison references.
+- [x] **Isolation test**: Edit the Initial Visit intake after the Pain Evaluation Visit note is generated. The Pain Evaluation Visit note content is unaffected (re-generate required to pick up changes).
+- [x] Section regeneration works correctly in both modes
+- [x] Tone hint still works in both modes
 
 **Implementation Note**: Phase 5 is implemented. Phases 6 and 7 have been merged into a single Phase 6 below.
 
@@ -696,7 +869,9 @@ Also update `regenerateSection()` ([generate-initial-visit.ts:344-380](src/lib/c
 ## Phase 6: Companion Document Generation & PDF (merged with former Phase 7)
 
 ### Overview
-Add Imaging Orders and Chiropractic Therapy Order generation with immediate PDF rendering, triggered manually from the "Orders" tab after the Initial Visit note is finalized. Generation is a single step: AI generates structured data → PDF is rendered and uploaded → download button appears immediately. No separate "finalize" step for orders.
+Add Imaging Orders and Chiropractic Therapy Order generation with immediate PDF rendering, triggered manually from the "Orders" tab after a visit note is finalized. Generation is a single step: AI generates structured data → PDF is rendered and uploaded → download button appears immediately. No separate "finalize" step for orders.
+
+**Per-visit-type orders**: `clinical_orders.initial_visit_note_id` already points to a specific note row, so each visit type naturally has its own set of orders. Orders generated from an Initial Visit note (e.g., MRI orders at first encounter) are separate from orders generated from a Pain Evaluation Visit note (e.g., PT referral after imaging review). The "Orders" tab in each visit type's editor only shows/generates orders for that visit.
 
 ### Changes Required:
 
@@ -726,8 +901,8 @@ Two generation functions:
 #### 3. Server Actions
 **File**: [clinical-orders.ts](src/actions/clinical-orders.ts) (new file)
 
-- **`generateClinicalOrder(caseId, orderType)`**: Single action that gathers data from the finalized note, calls AI generation, renders PDF immediately, uploads to storage, creates document record, and saves to `clinical_orders` table — all in one step. No separate finalize needed.
-- **`getClinicalOrders(caseId)`**: Lists all non-deleted orders for a case, joins `documents(file_path)` for download URLs.
+- **`generateClinicalOrder(caseId, visitType, orderType)`**: Single action that gathers data from the finalized note **for the given visit type**, calls AI generation, renders PDF immediately, uploads to storage, creates document record, and saves to `clinical_orders` table with `initial_visit_note_id` pointing to the specific visit-type row. No separate finalize needed.
+- **`getClinicalOrders(caseId, visitType)`**: Lists non-deleted orders for a case **scoped to the given visit type** (filtered by `initial_visit_note_id = <that visit's row id>`), joins `documents(file_path)` for download URLs.
 - **`deleteClinicalOrder(orderId, caseId)`**: Soft-deletes an order.
 - **`finalizeClinicalOrder(orderId, caseId)`**: Retained for edge cases but not used in the standard UI flow.
 
@@ -772,11 +947,11 @@ UI behavior:
 #### Manual Verification:
 - [x] After finalizing an Initial Visit note, "Orders" tab appears with generation buttons
 - [x] Orders tab is NOT shown in draft view
-- [ ] Imaging Orders generate with correct ICD-10 codes from the note and PDF downloads immediately
-- [ ] Chiropractic Order generates with correct diagnoses and treatment plan and PDF downloads immediately
-- [ ] Patient DOB populates correctly in order PDFs
-- [ ] Delete button removes orders
-- [ ] Generation buttons show as disabled/"Generated" after an order exists for that type
+- [x] Imaging Orders generate with correct ICD-10 codes from the note and PDF downloads immediately
+- [x] Chiropractic Order generates with correct diagnoses and treatment plan and PDF downloads immediately
+- [x] Patient DOB populates correctly in order PDFs
+- [x] Delete button removes orders
+- [x] Generation buttons show as disabled/"Generated" after an order exists for that type
 
 **Implementation Note**: This is the final phase. Verify the complete end-to-end workflow: create case → fill intake forms → generate First Visit note → finalize → switch to Orders tab → generate companion documents → download PDFs.
 
@@ -806,13 +981,13 @@ If the `vitals` field on `InitialVisitPdfData` is no longer consumed by the temp
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles: `npm run typecheck`
-- [ ] No linting errors: `npm run lint`
+- [x] TypeScript compiles: `npm run typecheck`
+- [x] No linting errors: `npm run lint`
 
 #### Manual Verification:
-- [ ] Generated PDF does NOT show a standalone "Vital Signs" section at the top of the document
-- [ ] Vital Signs still appear correctly within the "Physical Examination" section
-- [ ] Both Mode A (First Visit) and Mode B (PRP Evaluation) PDFs render correctly without duplicate vitals
+- [x] Generated PDF does NOT show a standalone "Vital Signs" section at the top of the document
+- [x] Vital Signs still appear correctly within the "Physical Examination" section
+- [x] Both Initial Visit and Pain Evaluation Visit PDFs render correctly without duplicate vitals
 
 ---
 
@@ -836,16 +1011,18 @@ The soft-delete + re-insert pattern in `generateInitialVisitNote` was the core i
 Replace the soft-delete + insert pattern with an in-place update of the existing row. If a row exists, update it to `generating` status (clearing section fields, preserving `provider_intake` and `rom_data`). If no row exists, insert one.
 
 ```typescript
-// Find or create the single note row for this case
+// Find or create the note row for this case AND this visit type.
+// The (case_id, visit_type) unique index guarantees at most one live row per pair.
 const { data: existingNote } = await supabase
   .from('initial_visit_notes')
   .select('id, rom_data, provider_intake')
   .eq('case_id', caseId)
+  .eq('visit_type', visitType)  // <-- critical: do NOT conflate Initial Visit with Pain Evaluation Visit
   .is('deleted_at', null)
   .maybeSingle()
 
 if (existingNote) {
-  // Update existing row to generating state (preserves provider_intake and rom_data)
+  // Update existing row to generating state (preserves provider_intake and rom_data for THIS visit type)
   await supabase.from('initial_visit_notes').update({
     status: 'generating',
     generation_attempts: 1,
@@ -856,33 +1033,53 @@ if (existingNote) {
   }).eq('id', existingNote.id)
   recordId = existingNote.id
 } else {
-  // No existing row — insert one
+  // No existing row for this visit type — insert one. Does NOT touch the other visit type's row if it exists.
   const { data: record } = await supabase.from('initial_visit_notes').insert({
-    case_id: caseId, status: 'generating', generation_attempts: 1,
-    source_data_hash: sourceHash, created_by_user_id: user.id, updated_by_user_id: user.id,
+    case_id: caseId,
+    visit_type: visitType,  // <-- REQUIRED: tags the row so the other visit type is never overwritten
+    status: 'generating',
+    generation_attempts: 1,
+    source_data_hash: sourceHash,
+    created_by_user_id: user.id,
+    updated_by_user_id: user.id,
   }).select('id').single()
   recordId = record.id
 }
 ```
 
-#### 2. Update `resetInitialVisitNote()` — Update In-Place
+#### 2. Update `resetInitialVisitNote()` — Update In-Place (Per Visit Type)
 **File**: [initial-visit-notes.ts](src/actions/initial-visit-notes.ts)
 
-Replace the soft-delete with an in-place update that nulls all AI-generated fields while leaving `provider_intake` and `rom_data` untouched:
+Accept `visitType` parameter. Replace the soft-delete with an in-place update that nulls all AI-generated fields while leaving `provider_intake`, `rom_data`, AND the **other visit type's row** untouched:
 
 ```typescript
-await supabase.from('initial_visit_notes').update({
-  status: 'draft',
-  introduction: null, history_of_accident: null, post_accident_history: null,
-  chief_complaint: null, past_medical_history: null, social_history: null,
-  review_of_systems: null, physical_exam: null, imaging_findings: null,
-  medical_necessity: null, diagnoses: null, treatment_plan: null,
-  patient_education: null, prognosis: null, time_complexity_attestation: null,
-  clinician_disclaimer: null, ai_model: null, raw_ai_response: null,
-  generation_error: null, generation_attempts: 0, source_data_hash: null,
-  updated_by_user_id: user.id,
-}).eq('id', note.id)
-// provider_intake and rom_data are NOT in the update — they are preserved
+export async function resetInitialVisitNote(caseId: string, visitType: NoteVisitType) {
+  // ... auth checks ...
+
+  // Look up ONLY the target visit type's row. The other visit type is untouched.
+  const { data: note } = await supabase
+    .from('initial_visit_notes')
+    .select('id')
+    .eq('case_id', caseId)
+    .eq('visit_type', visitType)  // <-- critical
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!note) return { error: 'No note to reset for this visit type' }
+
+  await supabase.from('initial_visit_notes').update({
+    status: 'draft',
+    introduction: null, history_of_accident: null, post_accident_history: null,
+    chief_complaint: null, past_medical_history: null, social_history: null,
+    review_of_systems: null, physical_exam: null, imaging_findings: null,
+    medical_necessity: null, diagnoses: null, treatment_plan: null,
+    patient_education: null, prognosis: null, time_complexity_attestation: null,
+    clinician_disclaimer: null, ai_model: null, raw_ai_response: null,
+    generation_error: null, generation_attempts: 0, source_data_hash: null,
+    updated_by_user_id: user.id,
+  }).eq('id', note.id)
+  // provider_intake, rom_data, and visit_type are NOT in the update — preserved.
+  // The other visit type's row is completely untouched.
+}
 ```
 
 #### 3. Update AlertDialog Confirmation Text
@@ -895,7 +1092,8 @@ Updated text to reflect that all provider-entered data is preserved:
 - The `hasGeneratedContent` check (`note?.introduction || note?.chief_complaint`) correctly returns false after reset, showing the pre-generation UI
 - `parsedIntake` reads `provider_intake` directly from the note row (line 204 in editor) — forms pre-fill from the preserved data
 - `initialRom` is read from `note.rom_data` in the page component — also preserved
-- Always exactly one row per case; the unique partial index `(case_id) WHERE deleted_at IS NULL` is never under pressure
+- Always exactly one row per `(case_id, visit_type)` pair; the unique partial index `(case_id, visit_type) WHERE deleted_at IS NULL` is never under pressure
+- **Visit-type isolation**: every generate/reset/save/load operation filters by `visit_type`, so an Initial Visit note is never overwritten by a Pain Evaluation Visit generation (and vice versa). Both documents coexist and are independently preserved.
 
 ### Success Criteria:
 
@@ -907,8 +1105,10 @@ Updated text to reflect that all provider-entered data is preserved:
 - [x] Reset a draft note → intake data and ROM are preserved on reload
 - [x] After reset, pre-generation UI shows with intake tabs pre-filled
 - [x] Generate after reset → AI uses preserved intake data
-- [x] Multiple generate → reset → generate cycles produce exactly one DB row throughout
+- [x] Multiple generate → reset → generate cycles produce exactly one DB row **per visit type** throughout
 - [x] Vitals (separate `vital_signs` table) are unaffected
+- [x] **Overwrite protection**: Generate an Initial Visit note on a fresh case, finalize it, then have MRI extractions approved and generate a Pain Evaluation Visit on the same case. Both notes must coexist as two separate rows in `initial_visit_notes` (verify via Supabase dashboard), both PDFs downloadable, and resetting one must not affect the other.
+- [x] **Overwrite protection (reverse)**: Generate Pain Evaluation Visit first, then Initial Visit. Same result — two coexisting rows, neither overwritten.
 
 ---
 
@@ -917,20 +1117,29 @@ Updated text to reflect that all provider-entered data is preserved:
 ### Unit Tests:
 - Zod schema validation for all 5 provider intake sections (valid data, missing required fields, boundary values)
 - Zod schema validation for imaging order and chiropractic order results
-- `detectNoteMode()` function: returns `'first_visit'` when no imaging, `'prp_evaluation'` when imaging exists
-- `buildSystemPrompt()` returns different content for each mode
+- `detectDefaultVisitType()` function (used for default tab selection only):
+  - returns `'initial_visit'` when no imaging findings AND no approved MRI/CT extractions
+  - returns `'pain_evaluation_visit'` when `caseSummary.imaging_findings` is populated (primary path)
+  - returns `'pain_evaluation_visit'` when approved MRI or CT extraction exists with no case summary (fallback path)
+- `buildSystemPrompt(visitType)` returns different content for each visit type
+- `generateInitialVisitFromData` requires an explicit `visitType` — never auto-detects at generation time (this is what prevents the overwrite bug)
 
 ### Integration Tests:
-- `gatherSourceData()` returns valid `InitialVisitInputData` with null `caseSummary` fields when no summary exists
-- `gatherSourceData()` returns enriched data when case summary exists
-- `saveProviderIntake()` / `getProviderIntake()` round-trip
+- `gatherSourceData(caseId, visitType)` returns valid `InitialVisitInputData` with null `caseSummary` fields when no summary exists
+- `gatherSourceData(caseId, visitType)` returns enriched data when case summary exists
+- `gatherSourceData(caseId, 'initial_visit')` and `gatherSourceData(caseId, 'pain_evaluation_visit')` return isolated intake data — modifying one does not leak into the other
+- `gatherSourceData(caseId, 'pain_evaluation_visit')` returns `priorVisitData` populated ONLY when a finalized Initial Visit exists on the case
+- `gatherSourceData(caseId, 'initial_visit')` always returns `priorVisitData: null` (the initial visit is never a reference to itself)
+- `saveProviderIntake(caseId, visitType, data)` / `getProviderIntake(caseId, visitType)` round-trip, isolated per visit type
 - `checkNotePrerequisites()` returns `canGenerate: true` for cases without case summaries
+- **Overwrite isolation test**: generate an Initial Visit note, then generate a Pain Evaluation Visit note on the same case. Query `initial_visit_notes` and assert exactly two live rows with distinct `visit_type` values and fully populated (non-overlapping) section content. Delete one and assert the other still exists.
+- **Unique index test**: attempting to insert a second live row with the same `(case_id, visit_type)` must fail with a unique constraint violation.
 
 ### Manual Testing Steps:
 1. Create a new case with patient demographics and accident description only
 2. Navigate to Initial Visit page — verify no prerequisite warning, generate button enabled
 3. Fill out all 7 pre-generation tabs, save each
-4. Generate note — verify Mode A output (conservative, no PRP, ordered imaging)
+4. Generate note — verify Initial Visit output (conservative, no PRP, ordered imaging)
 5. Edit sections, regenerate individual sections — verify mode consistency
 6. Verify Orders tab is NOT shown in draft view
 7. Finalize note — verify PDF renders correctly
@@ -939,7 +1148,11 @@ Updated text to reflect that all provider-entered data is preserved:
 10. Generate Chiropractic Order — verify correct diagnoses/treatment plan, PDF downloads immediately
 11. Verify patient DOB populates correctly in order PDFs
 12. Delete an order — verify it disappears, generation button re-enables
-13. Test Mode B: create case with approved case summary containing imaging — verify PRP evaluation note (no regression)
+13. Test Pain Evaluation Visit (primary path): create case with approved case summary containing imaging — verify default tab is Pain Evaluation Visit and generated note uses the PRP prompt (no regression)
+13a. Test Pain Evaluation Visit (fallback path): create case with approved MRI extraction but no case summary — verify default tab is still Pain Evaluation Visit
+13b. **Coexistence test**: on the same case, generate an Initial Visit note first, then switch to the Pain Evaluation Visit tab and generate that one. Both notes must be finalized and downloadable independently; neither overwrites the other. Verify via Supabase dashboard that the `initial_visit_notes` table has exactly two live rows for the case with distinct `visit_type` values.
+13c. **Explicit visit type override**: on a case with imaging, manually switch to the Initial Visit tab and generate — the prompt must be the Initial Visit prompt even though diagnostics exist (explicit user choice beats auto-detection).
+13d. **Prior visit reference**: after finalizing an Initial Visit note on a case, generate a Pain Evaluation Visit on the same case. Read the generated Pain Evaluation note — it should reference "initial evaluation" in History of the Accident, include interval-comparison language in Physical Examination, and cite conservative care attempted since the initial visit in Medical Necessity. The Physical Examination findings themselves should reflect the Pain Evaluation Visit intake data, not a verbatim copy of the Initial Visit findings.
 14. Reset a draft note with intake data filled — verify intake data and ROM are preserved, AI-generated sections are cleared
 15. Re-generate after reset — verify preserved intake data is used by the AI
 
@@ -952,6 +1165,8 @@ Updated text to reflect that all provider-entered data is preserved:
 ## Migration Notes
 
 - The `provider_intake` column is nullable with no default — existing rows are unaffected
+- The `visit_type` column has a default of `'initial_visit'`. **Existing `initial_visit_notes` rows are backfilled to `'initial_visit'`** automatically via the `DEFAULT`. This preserves clinician-written content without silently reclassifying any pre-migration note. Providers can regenerate in Pain Evaluation Visit mode after migration if they want the PRP-focused prompt for a specific case — this will create a second coexisting row, not overwrite the backfilled one.
+- The old unique index `idx_initial_visit_notes_case_active` is replaced by `idx_initial_visit_notes_case_visit_type_active`. Existing rows are compatible because the new index allows one row per `(case_id, visit_type)` and each case has at most one existing row pre-migration.
 - The `clinical_orders` table is new — no migration of existing data needed
 - No changes to existing case summary or extraction workflows
 

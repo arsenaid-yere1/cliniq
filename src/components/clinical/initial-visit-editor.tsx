@@ -51,6 +51,7 @@ import {
   saveInitialVisitRom,
   saveProviderIntake,
 } from '@/actions/initial-visit-notes'
+import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
   initialVisitNoteEditSchema,
@@ -138,8 +139,26 @@ interface VitalsData {
   pain_score_max: number | null
 }
 
-interface InitialVisitEditorProps {
+interface InitialVisitEditorOuterProps {
   caseId: string
+  notesByVisitType: Record<NoteVisitType, unknown>
+  intakesByVisitType: Record<NoteVisitType, ProviderIntakeValues | null>
+  romByVisitType: Record<NoteVisitType, InitialVisitRomValues | null>
+  documentFilePathByVisitType: Record<NoteVisitType, string | null>
+  defaultVisitType: NoteVisitType
+  canGenerate: boolean
+  prerequisiteReason?: string
+  initialVitals: VitalsData | null
+  clinicSettings: ClinicSettings | null
+  providerProfile: ProviderProfile | null
+  clinicLogoUrl: string | null
+  providerSignatureUrl: string | null
+  caseData: CaseData | null
+}
+
+interface InitialVisitEditorInnerProps {
+  caseId: string
+  visitType: NoteVisitType
   note: NoteRow | null
   canGenerate: boolean
   prerequisiteReason?: string
@@ -152,6 +171,72 @@ interface InitialVisitEditorProps {
   caseData: CaseData | null
   documentFilePath: string | null
   initialIntake: ProviderIntakeValues | null
+}
+
+// Outer wrapper: visit type tab selector. Each tab has its own completely
+// independent InitialVisitEditorInner instance — separate notes, separate
+// intake, separate ROM, separate orders. Switching tabs does not lose or
+// merge data on either side.
+export function InitialVisitEditor({
+  caseId,
+  notesByVisitType,
+  intakesByVisitType,
+  romByVisitType,
+  documentFilePathByVisitType,
+  defaultVisitType,
+  canGenerate,
+  prerequisiteReason,
+  initialVitals,
+  clinicSettings,
+  providerProfile,
+  clinicLogoUrl,
+  providerSignatureUrl,
+  caseData,
+}: InitialVisitEditorOuterProps) {
+  const [activeVisitType, setActiveVisitType] = useState<NoteVisitType>(defaultVisitType)
+
+  const visitTypes: Array<{ value: NoteVisitType; label: string }> = [
+    { value: 'initial_visit', label: 'Initial Visit' },
+    { value: 'pain_evaluation_visit', label: 'Pain Evaluation Visit' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <Tabs value={activeVisitType} onValueChange={(v) => setActiveVisitType(v as NoteVisitType)}>
+        <TabsList>
+          {visitTypes.map((vt) => (
+            <TabsTrigger key={vt.value} value={vt.value}>
+              <FileText className="h-3.5 w-3.5 mr-1.5" />
+              {vt.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {visitTypes.map((vt) => {
+          const note = (notesByVisitType[vt.value] ?? null) as NoteRow | null
+          return (
+            <TabsContent key={vt.value} value={vt.value} className="mt-4">
+              <InitialVisitEditorInner
+                caseId={caseId}
+                visitType={vt.value}
+                note={note}
+                canGenerate={canGenerate}
+                prerequisiteReason={prerequisiteReason}
+                initialVitals={initialVitals}
+                initialRom={romByVisitType[vt.value]}
+                clinicSettings={clinicSettings}
+                providerProfile={providerProfile}
+                clinicLogoUrl={clinicLogoUrl}
+                providerSignatureUrl={providerSignatureUrl}
+                caseData={caseData}
+                documentFilePath={documentFilePathByVisitType[vt.value]}
+                initialIntake={intakesByVisitType[vt.value]}
+              />
+            </TabsContent>
+          )
+        })}
+      </Tabs>
+    </div>
+  )
 }
 
 // Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
@@ -185,8 +270,9 @@ const sectionRows: Record<InitialVisitSection, number> = {
   clinician_disclaimer: 3,
 }
 
-export function InitialVisitEditor({
+function InitialVisitEditorInner({
   caseId,
+  visitType,
   note,
   canGenerate,
   prerequisiteReason,
@@ -199,12 +285,13 @@ export function InitialVisitEditor({
   caseData,
   documentFilePath,
   initialIntake,
-}: InitialVisitEditorProps) {
+}: InitialVisitEditorInnerProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
   const [toneHint, setToneHint] = useState('')
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+  const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
   // A note row may exist with only rom_data/vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
@@ -225,7 +312,7 @@ export function InitialVisitEditor({
   if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+        <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
 
         <Tabs defaultValue="chief-complaints">
           <TabsList className="flex-wrap h-auto gap-1 p-1">
@@ -259,25 +346,25 @@ export function InitialVisitEditor({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="chief-complaints" className="mt-4">
-            <ChiefComplaintsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+            <ChiefComplaintsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="accident-details" className="mt-4">
-            <AccidentDetailsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+            <AccidentDetailsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="pmh" className="mt-4">
-            <PastMedicalHistoryCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+            <PastMedicalHistoryCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="social-history" className="mt-4">
-            <SocialHistoryCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+            <SocialHistoryCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="exam-findings" className="mt-4">
-            <ExamFindingsCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} />
+            <ExamFindingsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="vitals" className="mt-4">
             <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="rom" className="mt-4">
-            <RomInputCard caseId={caseId} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isLocked={isLocked} />
+            <RomInputCard caseId={caseId} visitType={visitType} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
 
@@ -308,7 +395,7 @@ export function InitialVisitEditor({
           <Button
             onClick={() => {
               startTransition(async () => {
-                const result = await generateInitialVisitNote(caseId, toneHint || null)
+                const result = await generateInitialVisitNote(caseId, visitType, toneHint || null)
                 if (result.error) toast.error(result.error)
                 else toast.success('Note generated successfully')
               })
@@ -316,7 +403,7 @@ export function InitialVisitEditor({
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            Generate Initial Visit Note
+            Generate {visitTypeLabel}
           </Button>
         </div>
       </div>
@@ -328,7 +415,7 @@ export function InitialVisitEditor({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+          <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
         <div className="space-y-6">
@@ -348,7 +435,7 @@ export function InitialVisitEditor({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+          <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="destructive">Failed</Badge>
         </div>
         <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
@@ -360,7 +447,7 @@ export function InitialVisitEditor({
             variant="outline"
             onClick={() => {
               startTransition(async () => {
-                const result = await generateInitialVisitNote(caseId)
+                const result = await generateInitialVisitNote(caseId, visitType)
                 if (result.error) toast.error(result.error)
                 else toast.success('Note generated successfully')
               })
@@ -389,7 +476,7 @@ export function InitialVisitEditor({
                 <AlertDialogAction
                   onClick={() => {
                     startTransition(async () => {
-                      const result = await resetInitialVisitNote(caseId)
+                      const result = await resetInitialVisitNote(caseId, visitType)
                       if (result.error) toast.error(result.error)
                       else toast.success('Note reset successfully')
                     })
@@ -410,6 +497,8 @@ export function InitialVisitEditor({
     return (
       <FinalizedView
         caseId={caseId}
+        visitType={visitType}
+        visitTypeLabel={visitTypeLabel}
         note={note}
         clinicSettings={clinicSettings}
         providerProfile={providerProfile}
@@ -429,6 +518,8 @@ export function InitialVisitEditor({
   return (
     <DraftEditor
       caseId={caseId}
+      visitType={visitType}
+      visitTypeLabel={visitTypeLabel}
       note={note}
       initialVitals={initialVitals}
       initialRom={initialRom}
@@ -445,6 +536,7 @@ export function InitialVisitEditor({
 
 interface IntakeCardProps {
   caseId: string
+  visitType: NoteVisitType
   initialIntake: ProviderIntakeValues | null
   isLocked: boolean
 }
@@ -462,7 +554,7 @@ function buildFullIntake(
 
 // --- Chief Complaints Card ---
 
-function ChiefComplaintsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
   const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.chief_complaints ?? defaultProviderIntake.chief_complaints
   const form = useForm({
@@ -478,7 +570,7 @@ function ChiefComplaintsCard({ caseId, initialIntake, isLocked }: IntakeCardProp
     startSaving(async () => {
       const values = form.getValues()
       const full = buildFullIntake(initialIntake, 'chief_complaints', values.chief_complaints)
-      const result = await saveProviderIntake(caseId, full)
+      const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
       else toast.success('Chief complaints saved')
     })
@@ -620,7 +712,7 @@ function ChiefComplaintsCard({ caseId, initialIntake, isLocked }: IntakeCardProp
 
 // --- Accident Details Card ---
 
-function AccidentDetailsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
   const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.accident_details ?? defaultProviderIntake.accident_details
   const form = useForm({ defaultValues: { accident_details: defaults } })
@@ -631,7 +723,7 @@ function AccidentDetailsCard({ caseId, initialIntake, isLocked }: IntakeCardProp
     startSaving(async () => {
       const values = form.getValues()
       const full = buildFullIntake(initialIntake, 'accident_details', values.accident_details)
-      const result = await saveProviderIntake(caseId, full)
+      const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
       else toast.success('Accident details saved')
     })
@@ -736,7 +828,7 @@ function AccidentDetailsCard({ caseId, initialIntake, isLocked }: IntakeCardProp
 
 // --- Past Medical History Card ---
 
-function PastMedicalHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+function PastMedicalHistoryCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
   const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.past_medical_history ?? defaultProviderIntake.past_medical_history
   const form = useForm({ defaultValues: { past_medical_history: defaults } })
@@ -745,7 +837,7 @@ function PastMedicalHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardP
     startSaving(async () => {
       const values = form.getValues()
       const full = buildFullIntake(initialIntake, 'past_medical_history', values.past_medical_history)
-      const result = await saveProviderIntake(caseId, full)
+      const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
       else toast.success('Past medical history saved')
     })
@@ -801,7 +893,7 @@ function PastMedicalHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardP
 
 // --- Social History Card ---
 
-function SocialHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+function SocialHistoryCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
   const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.social_history ?? defaultProviderIntake.social_history
   const form = useForm({ defaultValues: { social_history: defaults } })
@@ -810,7 +902,7 @@ function SocialHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps)
     startSaving(async () => {
       const values = form.getValues()
       const full = buildFullIntake(initialIntake, 'social_history', values.social_history)
-      const result = await saveProviderIntake(caseId, full)
+      const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
       else toast.success('Social history saved')
     })
@@ -889,7 +981,7 @@ function SocialHistoryCard({ caseId, initialIntake, isLocked }: IntakeCardProps)
 
 // --- Exam Findings Card ---
 
-function ExamFindingsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) {
+function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
   const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.exam_findings ?? defaultProviderIntake.exam_findings
   const form = useForm({ defaultValues: { exam_findings: defaults } })
@@ -903,7 +995,7 @@ function ExamFindingsCard({ caseId, initialIntake, isLocked }: IntakeCardProps) 
     startSaving(async () => {
       const values = form.getValues()
       const full = buildFullIntake(initialIntake, 'exam_findings', values.exam_findings)
-      const result = await saveProviderIntake(caseId, full)
+      const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
       else toast.success('Exam findings saved')
     })
@@ -1216,10 +1308,12 @@ function VitalSignsCard({
 
 function RomInputCard({
   caseId,
+  visitType,
   initialRom,
   isLocked,
 }: {
   caseId: string
+  visitType: NoteVisitType
   initialRom: InitialVisitRomValues | null
   isLocked: boolean
 }) {
@@ -1243,7 +1337,7 @@ function RomInputCard({
         toast.error('Invalid ROM data')
         return
       }
-      const result = await saveInitialVisitRom(caseId, validated.data)
+      const result = await saveInitialVisitRom(caseId, visitType, validated.data)
       if (result.error) toast.error(result.error)
       else toast.success('ROM data saved')
     })
@@ -1450,6 +1544,8 @@ function RomRegionSection({
 
 function DraftEditor({
   caseId,
+  visitType,
+  visitTypeLabel,
   note,
   initialVitals,
   initialRom,
@@ -1460,6 +1556,8 @@ function DraftEditor({
   isLocked,
 }: {
   caseId: string
+  visitType: NoteVisitType
+  visitTypeLabel: string
   note: NoteRow
   initialVitals: VitalsData | null
   initialRom: InitialVisitRomValues | null
@@ -1495,7 +1593,7 @@ function DraftEditor({
   function handleSave() {
     startTransition(async () => {
       const values = form.getValues()
-      const result = await saveInitialVisitNote(caseId, values)
+      const result = await saveInitialVisitNote(caseId, visitType, values)
       if (result.error) toast.error(result.error)
       else toast.success('Draft saved')
     })
@@ -1504,7 +1602,7 @@ function DraftEditor({
   function handleRegenerate(section: InitialVisitSection) {
     setRegeneratingSection(section)
     startTransition(async () => {
-      const result = await regenerateNoteSection(caseId, section)
+      const result = await regenerateNoteSection(caseId, visitType, section)
       if (result.error) {
         toast.error(result.error)
       } else if (result.data?.content) {
@@ -1519,7 +1617,7 @@ function DraftEditor({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+          <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -1556,7 +1654,7 @@ function DraftEditor({
                 <AlertDialogAction
                   onClick={() => {
                     startTransition(async () => {
-                      const result = await resetInitialVisitNote(caseId)
+                      const result = await resetInitialVisitNote(caseId, visitType)
                       if (result.error) toast.error(result.error)
                       else toast.success('Note reset successfully')
                     })
@@ -1592,12 +1690,12 @@ function DraftEditor({
                     startTransition(async () => {
                       // Save current form values first
                       const values = form.getValues()
-                      const saveResult = await saveInitialVisitNote(caseId, values)
+                      const saveResult = await saveInitialVisitNote(caseId, visitType, values)
                       if (saveResult.error) {
                         toast.error(saveResult.error)
                         return
                       }
-                      const result = await finalizeInitialVisitNote(caseId)
+                      const result = await finalizeInitialVisitNote(caseId, visitType)
                       if (result.error) toast.error(result.error)
                       else toast.success('Note finalized')
                     })
@@ -1694,7 +1792,7 @@ function DraftEditor({
         </TabsContent>
 
         <TabsContent value="rom" className="mt-4">
-          <RomInputCard caseId={caseId} initialRom={initialRom} isLocked={isLocked} />
+          <RomInputCard caseId={caseId} visitType={visitType} initialRom={initialRom} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1705,6 +1803,8 @@ function DraftEditor({
 
 function FinalizedView({
   caseId,
+  visitType,
+  visitTypeLabel,
   note,
   clinicSettings,
   providerProfile,
@@ -1718,6 +1818,8 @@ function FinalizedView({
   initialVitals,
 }: {
   caseId: string
+  visitType: NoteVisitType
+  visitTypeLabel: string
   note: NoteRow
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
@@ -1730,6 +1832,7 @@ function FinalizedView({
   isLocked: boolean
   initialVitals: VitalsData | null
 }) {
+  void initialVitals
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
     : null
@@ -1748,7 +1851,7 @@ function FinalizedView({
       {/* Action bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Initial Visit Note</h1>
+          <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">Finalized</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -1785,7 +1888,7 @@ function FinalizedView({
               <AlertDialogAction
                 onClick={() => {
                   startTransition(async () => {
-                    const result = await unfinalizeInitialVisitNote(caseId)
+                    const result = await unfinalizeInitialVisitNote(caseId, visitType)
                     if (result.error) toast.error(result.error)
                     else toast.success('Note reopened for editing')
                   })
@@ -1909,7 +2012,7 @@ function FinalizedView({
         </TabsContent>
 
         <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
+          <CompanionDocumentsSection caseId={caseId} visitType={visitType} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1920,17 +2023,20 @@ function FinalizedView({
 
 function CompanionDocumentsSection({
   caseId,
+  visitType,
   isPending,
   startTransition,
   isLocked,
   noteFinalized,
 }: {
   caseId: string
+  visitType: NoteVisitType
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   isLocked: boolean
   noteFinalized: boolean
 }) {
+  void startTransition
   const [orders, setOrders] = useState<Array<{
     id: string
     order_type: string
@@ -1945,15 +2051,15 @@ function CompanionDocumentsSection({
   const [loadingType, setLoadingType] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
-  // Load orders on mount
+  // Load orders on mount and whenever visitType changes
   useEffect(() => {
     loadOrders()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [visitType])
 
   async function loadOrders() {
     const { getClinicalOrders } = await import('@/actions/clinical-orders')
-    const result = await getClinicalOrders(caseId)
+    const result = await getClinicalOrders(caseId, visitType)
     if (result.data) {
       setOrders(result.data.map((o: Record<string, unknown>) => ({
         ...o,
@@ -1967,7 +2073,7 @@ function CompanionDocumentsSection({
     setLoadingType(orderType)
     try {
       const { generateClinicalOrder } = await import('@/actions/clinical-orders')
-      const result = await generateClinicalOrder(caseId, orderType)
+      const result = await generateClinicalOrder(caseId, visitType, orderType)
       if (result.error) {
         toast.error(result.error)
       } else {
