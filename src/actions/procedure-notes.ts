@@ -255,36 +255,89 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
     return { error: prereq.data.reason }
   }
 
-  // Gather source data
+  // Gather source data (always fresh — picks up edits to the procedure record since last generation)
   const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
-  // Soft-delete existing note for this procedure
-  await supabase
+  const sourceHash = computeSourceHash(inputData)
+
+  // Look up existing active note for this procedure
+  const { data: existingNote } = await supabase
     .from('procedure_notes')
-    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
+    .select('id, status')
     .eq('procedure_id', procedureId)
     .is('deleted_at', null)
+    .maybeSingle()
 
-  // Insert generating record
-  const sourceHash = computeSourceHash(inputData)
-  const { data: record, error: insertError } = await supabase
-    .from('procedure_notes')
-    .insert({
-      case_id: caseId,
-      procedure_id: procedureId,
-      status: 'generating',
-      generation_attempts: 1,
-      source_data_hash: sourceHash,
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select('id')
-    .single()
+  if (existingNote && existingNote.status === 'finalized') {
+    return { error: 'Note is finalized — unfinalize before regenerating' }
+  }
 
-  if (insertError || !record) {
-    revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-    return { error: 'Failed to create note record' }
+  let recordId: string
+
+  if (existingNote) {
+    // Update existing row in-place to generating state, clearing any stale content
+    const { error: updateError } = await supabase
+      .from('procedure_notes')
+      .update({
+        status: 'generating',
+        generation_attempts: 1,
+        generation_error: null,
+        source_data_hash: sourceHash,
+        subjective: null,
+        past_medical_history: null,
+        allergies: null,
+        current_medications: null,
+        social_history: null,
+        review_of_systems: null,
+        objective_vitals: null,
+        objective_physical_exam: null,
+        assessment_summary: null,
+        procedure_indication: null,
+        procedure_preparation: null,
+        procedure_prp_prep: null,
+        procedure_anesthesia: null,
+        procedure_injection: null,
+        procedure_post_care: null,
+        procedure_followup: null,
+        assessment_and_plan: null,
+        patient_education: null,
+        prognosis: null,
+        clinician_disclaimer: null,
+        ai_model: null,
+        raw_ai_response: null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existingNote.id)
+
+    if (updateError) {
+      revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+      return { error: 'Failed to start note generation' }
+    }
+
+    recordId = existingNote.id
+  } else {
+    // No existing row — create one
+    const { data: record, error: insertError } = await supabase
+      .from('procedure_notes')
+      .insert({
+        case_id: caseId,
+        procedure_id: procedureId,
+        status: 'generating',
+        generation_attempts: 1,
+        source_data_hash: sourceHash,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !record) {
+      revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+      return { error: 'Failed to create note record' }
+    }
+
+    recordId = record.id
   }
 
   // Call Claude
@@ -304,7 +357,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
           raw_ai_response: retry.rawResponse || result.rawResponse || null,
           updated_by_user_id: user.id,
         })
-        .eq('id', record.id)
+        .eq('id', recordId)
 
       revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
       return { error: retry.error || result.error || 'Note generation failed after 2 attempts' }
@@ -344,10 +397,10 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
       source_data_hash: sourceHash,
       updated_by_user_id: user.id,
     })
-    .eq('id', record.id)
+    .eq('id', recordId)
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-  return { data: { id: record.id } }
+  return { data: { id: recordId } }
 }
 
 // --- Get procedure note ---
@@ -525,6 +578,68 @@ export async function unfinalizeProcedureNote(procedureId: string, caseId: strin
     .eq('status', 'finalized')
 
   if (error) return { error: 'Failed to unfinalize note' }
+
+  revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+  return { data: { success: true } }
+}
+
+// --- Reset note (clear AI content, keep row) ---
+
+export async function resetProcedureNote(procedureId: string, caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Only allow reset on draft or failed notes
+  const { data: note } = await supabase
+    .from('procedure_notes')
+    .select('id, status')
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!note) return { error: 'No note found to reset' }
+  if (note.status !== 'draft' && note.status !== 'failed') {
+    return { error: 'Only draft or failed notes can be reset' }
+  }
+
+  const { error } = await supabase
+    .from('procedure_notes')
+    .update({
+      status: 'draft',
+      subjective: null,
+      past_medical_history: null,
+      allergies: null,
+      current_medications: null,
+      social_history: null,
+      review_of_systems: null,
+      objective_vitals: null,
+      objective_physical_exam: null,
+      assessment_summary: null,
+      procedure_indication: null,
+      procedure_preparation: null,
+      procedure_prp_prep: null,
+      procedure_anesthesia: null,
+      procedure_injection: null,
+      procedure_post_care: null,
+      procedure_followup: null,
+      assessment_and_plan: null,
+      patient_education: null,
+      prognosis: null,
+      clinician_disclaimer: null,
+      ai_model: null,
+      raw_ai_response: null,
+      generation_error: null,
+      generation_attempts: 0,
+      source_data_hash: null,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', note.id)
+
+  if (error) return { error: 'Failed to reset note' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
   return { data: { success: true } }
