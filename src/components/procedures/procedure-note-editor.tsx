@@ -181,8 +181,12 @@ export function ProcedureNoteEditor({
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
-  // No note — show generate button
-  if (!note) {
+  // A note is considered "empty" after a reset — row exists but all AI content is cleared.
+  // Treat it the same as no note at all and show the generate state.
+  const hasGeneratedContent = !!(note?.subjective || note?.assessment_and_plan)
+
+  // No note (or reset draft with no generated content) — show generate button
+  if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Procedure Note</h1>
