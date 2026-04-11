@@ -2,6 +2,9 @@ create table public.discharge_notes (
   id uuid primary key default gen_random_uuid(),
   case_id uuid not null references public.cases(id),
 
+  -- Provider-editable date of the discharge visit
+  visit_date date,
+
   -- Note sections (13 sections matching discharge PDF template)
   patient_header         text,  -- Visit metadata line (not prose — used for PDF header)
   subjective             text,  -- Post-PRP follow-up narrative

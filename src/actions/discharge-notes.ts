@@ -27,6 +27,7 @@ function computeSourceHash(inputData: DischargeNoteInputData): string {
 async function gatherDischargeNoteSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
+  visitDate: string,
 ): Promise<{ data: DischargeNoteInputData | null; error: string | null }> {
   const [
     caseRes,
@@ -172,7 +173,7 @@ async function gatherDischargeNoteSourceData(
         accident_date: caseRes.data.accident_date,
         accident_type: caseRes.data.accident_type,
       },
-      visitDate: new Date().toISOString().split('T')[0],
+      visitDate,
       procedures,
       latestVitals,
       latestPainRating,
@@ -284,8 +285,19 @@ export async function generateDischargeNote(caseId: string) {
     return { error: prereq.data.reason }
   }
 
+  // Look up existing active discharge note to preserve visit_date on regeneration
+  const { data: existingNote } = await supabase
+    .from('discharge_notes')
+    .select('id, visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  const today = new Date().toISOString().slice(0, 10)
+  const visitDate = existingNote?.visit_date ?? today
+
   // Gather source data
-  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId)
+  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId, visitDate)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   // Soft-delete existing discharge note for this case
@@ -304,6 +316,7 @@ export async function generateDischargeNote(caseId: string) {
       status: 'generating',
       generation_attempts: 1,
       source_data_hash: sourceHash,
+      visit_date: visitDate,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -574,8 +587,9 @@ export async function regenerateDischargeNoteSectionAction(
 
   if (fetchError || !note) return { error: 'No draft note found' }
 
-  // Gather fresh source data
-  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId)
+  // Gather fresh source data (preserve the note's existing visit_date)
+  const visitDate = (note.visit_date as string | null) ?? new Date().toISOString().slice(0, 10)
+  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId, visitDate)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''

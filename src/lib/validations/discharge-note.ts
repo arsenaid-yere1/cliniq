@@ -55,6 +55,10 @@ export type DischargeNoteResult = z.infer<typeof dischargeNoteResultSchema>
 
 // Provider edit form schema
 export const dischargeNoteEditSchema = z.object({
+  visit_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Visit date must be YYYY-MM-DD')
+    .nullable(),
   patient_header:          z.string().min(1, 'Required'),
   subjective:              z.string().min(1, 'Required'),
   objective_vitals:        z.string().min(1, 'Required'),

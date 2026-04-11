@@ -4,6 +4,16 @@ import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import React from 'react'
 
+function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
+  if (visitDate) {
+    return format(new Date(`${visitDate}T00:00:00`), 'MM/dd/yyyy')
+  }
+  if (finalizedAt) {
+    return format(new Date(finalizedAt), 'MM/dd/yyyy')
+  }
+  return format(new Date(), 'MM/dd/yyyy')
+}
+
 function getMimeType(path: string): string {
   if (path.endsWith('.png')) return 'image/png'
   if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
@@ -109,7 +119,10 @@ export async function renderDischargeNotePdf(input: RenderPdfInput): Promise<Buf
 
     patientName: patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown',
     dob: patient?.date_of_birth ? format(new Date(patient.date_of_birth + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
-    dateOfVisit: format(new Date(), 'MM/dd/yyyy'),
+    dateOfVisit: formatVisitDateForPdf(
+      input.note.visit_date as string | null | undefined,
+      input.note.finalized_at as string | null | undefined,
+    ),
     visitType: 'Post-PRP Series Follow-Up and Discharge Evaluation',
     indication,
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',

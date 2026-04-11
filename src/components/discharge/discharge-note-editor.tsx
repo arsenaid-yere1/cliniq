@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import {
   Form,
@@ -66,6 +67,7 @@ interface NoteRow {
   clinician_disclaimer: string | null
   status: string
   generation_error: string | null
+  visit_date: string | null
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
@@ -111,6 +113,17 @@ interface DischargeNoteEditorProps {
   providerSignatureUrl: string | null
   caseData: CaseData | null
   documentFilePath: string | null
+}
+
+// Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
+function formatVisitDate(visitDate: string | null, finalizedAt: string | null): string {
+  if (visitDate) {
+    return format(new Date(`${visitDate}T00:00:00`), 'MM/dd/yyyy')
+  }
+  if (finalizedAt) {
+    return format(new Date(finalizedAt), 'MM/dd/yyyy')
+  }
+  return '\u2014'
 }
 
 const sectionRows: Record<DischargeNoteSection, number> = {
@@ -279,9 +292,12 @@ function DraftEditor({
 }) {
   const form = useForm<DischargeNoteEditValues>({
     resolver: zodResolver(dischargeNoteEditSchema),
-    defaultValues: Object.fromEntries(
-      dischargeNoteSections.map((s) => [s, note[s] || ''])
-    ) as DischargeNoteEditValues,
+    defaultValues: {
+      visit_date: note.visit_date ?? new Date().toISOString().slice(0, 10),
+      ...(Object.fromEntries(
+        dischargeNoteSections.map((s) => [s, note[s] || ''])
+      ) as Omit<DischargeNoteEditValues, 'visit_date'>),
+    },
   })
 
   function handleSave() {
@@ -309,12 +325,26 @@ function DraftEditor({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
           <Badge variant="outline">Draft</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="discharge-visit-date-input" className="text-sm font-medium whitespace-nowrap">
+              Date of Visit
+            </label>
+            <Input
+              id="discharge-visit-date-input"
+              type="date"
+              className="w-[160px]"
+              disabled={isLocked || isPending}
+              {...form.register('visit_date', {
+                setValueAs: (v) => (v === '' ? null : v),
+              })}
+            />
+          </div>
           <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
@@ -550,7 +580,7 @@ function FinalizedView({
 
         {/* Patient Info Block */}
         <div className="space-y-1 text-sm">
-          <p><strong>Date of Visit:</strong> {format(new Date(), 'MM/dd/yyyy')}</p>
+          <p><strong>Date of Visit:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
           {patientName && <p><strong>Patient:</strong> {patientName}</p>}
           {dob && <p><strong>DOB:</strong> {dob}</p>}
           <p><strong>Visit Type:</strong> Post-PRP Series Follow-Up and Discharge Evaluation</p>

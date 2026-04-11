@@ -7,9 +7,27 @@ repository: cliniq
 topic: "Initial Visit Note Generation — Handling Cases with No Prior Treatment, No Imaging, No Therapy"
 tags: [research, codebase, initial-visit, minimal-data, prerequisites, epic-3]
 status: complete
-last_updated: 2026-03-26
+last_updated: 2026-04-11
 last_updated_by: Claude
-last_updated_note: "Updated with real-world Initial Visit note example showing day-3 post-accident workflow with no prior records"
+last_updated_note: "Split the note into two visit types: Initial Visit (no diagnostics) and Pain Evaluation Visit (diagnostics exist). Same note record, different prompt mode, auto-detected."
+---
+
+## Two Visit Types: Initial Visit vs Pain Evaluation Visit
+
+The same note record serves two distinct clinical scenarios. The prompt mode is auto-detected based on whether diagnostic imaging is available:
+
+| Visit Type | Trigger | Clinical Context |
+|---|---|---|
+| **Initial Visit** | No diagnostics performed yet | First clinical encounter. Imaging is *ordered*, not reviewed. Diagnoses are clinical impressions based on exam + mechanism. Treatment is conservative (medications, imaging orders, chiro/PT referrals). |
+| **Pain Evaluation Visit** | Patient has completed diagnostic imaging | Follow-up encounter where imaging findings are reviewed. Diagnoses are imaging-confirmed. Evaluation for advanced interventions (e.g., PRP injections) based on correlation of exam findings with imaging. |
+
+**Detection logic** (first match wins):
+1. **Primary**: If `caseSummary.imaging_findings` is populated → **Pain Evaluation Visit**
+2. **Fallback**: If any approved MRI or CT scan extraction exists (`mri_extractions` or `ct_scan_extractions` with `review_status IN ('approved','edited')`) → **Pain Evaluation Visit**
+3. **Otherwise** → **Initial Visit**
+
+Both modes produce the same note record and share the same 16-section structure, but the system prompt, section framing, and default treatment plan differ substantially.
+
 ---
 
 # Research: Initial Visit Note — Handling Cases with No Prior Treatment, No Imaging, No Therapy
@@ -109,11 +127,11 @@ The AI generation system is actually **more flexible** than its prerequisite gat
 - The prompt explicitly handles null `romData` (omit ROM), null `vitalSigns` (use `[XX]` placeholders), and null `feeEstimate` (use `[To be determined]`)
 - **If the gate were removed**, Claude could generate a note with bracket placeholders for imaging, sparse treatment history, and template-based sections
 
-### 3. Current System Prompt Assumes Post-Treatment PRP Evaluation — Not First Visit
+### 3. Current System Prompt Assumes Pain Evaluation Visit — Not Initial Visit
 
-The system prompt in `generate-initial-visit.ts` is written for a patient who has **already completed conservative treatment** and is being evaluated for PRP injections. This is a fundamental mismatch with the "no prior treatment" use case:
+The system prompt in `generate-initial-visit.ts` is written for a **Pain Evaluation Visit** — a patient who has already completed diagnostic imaging and conservative treatment and is being evaluated for PRP injections. This is a fundamental mismatch with the **Initial Visit** use case:
 
-| Section | Current Prompt Assumption | Real "First Visit" Workflow |
+| Section | Current Prompt Assumption (Pain Evaluation Visit) | Initial Visit Workflow |
 |---|---|---|
 | **History of Accident** (Para 3) | "Despite conservative treatment, continues to complain..." | No conservative treatment has occurred yet |
 | **Post-Accident History** | "Timeline of care sought after the accident — ER visits, initial treatment providers (chiro, PT)" | No care has been sought — patient is at their first clinical encounter |
@@ -124,7 +142,7 @@ The system prompt in `generate-initial-visit.ts` is written for a patient who ha
 | **Patient Education** (Section 13) | "PRP mechanism, expected post-injection course" | Injury biomechanics, red-flag symptoms, conservative care guidance, activity modification |
 | **Prognosis** (Section 14) | "MRI-confirmed pathology" | "Guarded but favorable given early presentation and absence of neurologic compromise" |
 
-### 4. What a "No Prior Treatment" Initial Visit Note Actually Looks Like
+### 4. What an Initial Visit Note Actually Looks Like
 
 Based on the real-world example, **all 16 sections can be fully written** — none need to be empty or placeholder-heavy. The data sources shift from extracted records to provider-entered examination data:
 
@@ -296,11 +314,11 @@ The real-world note shows that the provider documents during the visit:
 
 The system already has pre-generation UI for **vitals** and **ROM data**. A similar pre-generation input form for the items above would give Claude everything needed to generate a clinically complete first-visit note without any external records.
 
-### Level 3: Update the System Prompt for Two Note Modes
+### Level 3: Update the System Prompt for Two Visit Types
 
-The system prompt needs to handle two distinct clinical scenarios:
+The system prompt needs to handle two distinct clinical scenarios using the same note record. Mode is auto-detected from data availability (see "Two Visit Types" section above for detection logic).
 
-**Mode A — "First Visit / Acute Evaluation" (no prior records, no imaging)**:
+**Initial Visit (no diagnostics performed)**:
 - Introduction frames as acute/initial evaluation
 - Post-Accident History describes symptom onset and self-treatment only
 - Imaging Findings states what was ordered, notes results pending
@@ -310,7 +328,7 @@ The system prompt needs to handle two distinct clinical scenarios:
 - Patient Education covers injury biomechanics, red-flag symptoms, conservative care
 - Prognosis is "guarded but favorable" without imaging reference
 
-**Mode B — "PRP Evaluation" (post-treatment, imaging available)** — current prompt behavior:
+**Pain Evaluation Visit (diagnostics complete)** — current prompt behavior:
 - Introduction frames as pain management evaluation
 - Post-Accident History includes full treatment timeline
 - Imaging Findings details MRI results with measurements
@@ -320,7 +338,10 @@ The system prompt needs to handle two distinct clinical scenarios:
 - Patient Education covers PRP mechanism
 - Prognosis references MRI-confirmed pathology
 
-The mode can be **auto-detected** based on whether `caseSummary.imaging_findings` is populated (Mode B) or null (Mode A).
+**Mode detection** (first match wins):
+1. `caseSummary.imaging_findings` populated → Pain Evaluation Visit
+2. Approved MRI or CT scan extraction exists → Pain Evaluation Visit
+3. Otherwise → Initial Visit
 
 ### Companion Documents
 
@@ -334,7 +355,7 @@ These could be future stories but should be considered in the design so the Init
 
 1. **How should the pre-generation provider input be structured?** Options: (a) a multi-section form similar to the vitals/ROM panels, (b) a free-text "patient intake" textarea that Claude parses, or (c) a structured questionnaire (checkboxes for body regions, dropdowns for pain ratings, etc.). The real-world note suggests structured input would produce the most consistent results.
 
-2. **Should Mode A vs Mode B be explicit (user selects) or implicit (auto-detected)?** Auto-detection based on data availability is cleaner, but the provider might want to generate a Mode A note even when imaging exists (e.g., to document the initial visit retroactively).
+2. **Should Initial Visit vs Pain Evaluation Visit be explicit (user selects) or implicit (auto-detected)?** Auto-detection based on data availability is cleaner, but the provider might want to generate an Initial Visit note even when imaging exists (e.g., to document the first encounter retroactively after imaging has come back).
 
 3. **Should the companion documents (Imaging Orders, Chiropractic Order) be part of this story or separate stories?** They share the same ICD-10 codes and are generated at the same visit. Including them would make the feature complete for the first-visit workflow.
 
