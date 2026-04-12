@@ -46,6 +46,33 @@ const SECTIONS = [
   { id: 'section-vitals', label: 'Vitals' },
 ]
 
+const STATIC_PROCEDURE_DEFAULTS = {
+  consent_obtained: true,
+  prp_preparation: {
+    blood_draw_volume_ml: 15,
+    centrifuge_duration_min: 5,
+    prep_protocol: 'ACP Double Syringe System',
+    kit_lot_number: '',
+  },
+  anesthesia: {
+    anesthetic_agent: 'Lidocaine 1%',
+    anesthetic_dose_ml: 2,
+    patient_tolerance: 'tolerated_well' as const,
+  },
+  injection: {
+    injection_volume_ml: 5,
+    needle_gauge: '25-gauge spinal',
+    guidance_method: 'ultrasound' as const,
+    target_confirmed_imaging: true,
+  },
+  post_procedure: {
+    complications: 'none',
+    supplies_used: '',
+    compression_bandage: true,
+    activity_restriction_hrs: 48,
+  },
+} as const
+
 function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -112,7 +139,7 @@ export function RecordProcedureDialog({
       : 'other'
     : ''
   const [complicationsMode, setComplicationsMode] = useState<'none' | 'other' | ''>(
-    isEditing ? (initialComplicationsMode as 'none' | 'other' | '') : ''
+    isEditing ? (initialComplicationsMode as 'none' | 'other' | '') : 'none'
   )
   const [generatingConsent, setGeneratingConsent] = useState(false)
 
@@ -164,7 +191,7 @@ export function RecordProcedureDialog({
       diagnoses: Array.isArray(initialData?.diagnoses)
         ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
         : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
-      consent_obtained: initialData?.consent_obtained ?? false,
+      consent_obtained: initialData?.consent_obtained ?? (isEditing ? false : STATIC_PROCEDURE_DEFAULTS.consent_obtained),
       pain_rating: initialData?.pain_rating ?? defaults?.pain_rating ?? null,
       vital_signs: {
         bp_systolic: initialData?._vitals?.bp_systolic ?? defaults?.vital_signs.bp_systolic ?? null,
@@ -175,27 +202,40 @@ export function RecordProcedureDialog({
         spo2_percent: initialData?._vitals?.spo2_percent ?? defaults?.vital_signs.spo2_percent ?? null,
       },
       prp_preparation: {
-        blood_draw_volume_ml: initialData?.blood_draw_volume_ml ?? undefined,
-        centrifuge_duration_min: initialData?.centrifuge_duration_min ?? null,
-        prep_protocol: initialData?.prep_protocol ?? '',
+        blood_draw_volume_ml: initialData?.blood_draw_volume_ml
+          ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.prp_preparation.blood_draw_volume_ml),
+        centrifuge_duration_min: initialData?.centrifuge_duration_min
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.prp_preparation.centrifuge_duration_min),
+        prep_protocol: initialData?.prep_protocol
+          ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.prp_preparation.prep_protocol),
         kit_lot_number: initialData?.kit_lot_number ?? '',
       },
       anesthesia: {
-        anesthetic_agent: initialData?.anesthetic_agent ?? '',
-        anesthetic_dose_ml: initialData?.anesthetic_dose_ml ?? null,
-        patient_tolerance: (initialData?.patient_tolerance as 'tolerated_well' | 'adverse_reaction' | null) ?? null,
+        anesthetic_agent: initialData?.anesthetic_agent
+          ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.anesthesia.anesthetic_agent),
+        anesthetic_dose_ml: initialData?.anesthetic_dose_ml
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.anesthesia.anesthetic_dose_ml),
+        patient_tolerance: (initialData?.patient_tolerance as 'tolerated_well' | 'adverse_reaction' | null)
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.anesthesia.patient_tolerance),
       },
       injection: {
-        injection_volume_ml: initialData?.injection_volume_ml ?? undefined,
-        needle_gauge: initialData?.needle_gauge ?? '',
-        guidance_method: (initialData?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined) ?? undefined,
-        target_confirmed_imaging: initialData?.target_confirmed_imaging ?? null,
+        injection_volume_ml: initialData?.injection_volume_ml
+          ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.injection.injection_volume_ml),
+        needle_gauge: initialData?.needle_gauge
+          ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.injection.needle_gauge),
+        guidance_method: (initialData?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined)
+          ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.injection.guidance_method),
+        target_confirmed_imaging: initialData?.target_confirmed_imaging
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.injection.target_confirmed_imaging),
       },
       post_procedure: {
-        complications: initialData?.complications ?? '',
+        complications: initialData?.complications
+          ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.post_procedure.complications),
         supplies_used: initialData?.supplies_used ?? '',
-        compression_bandage: initialData?.compression_bandage ?? null,
-        activity_restriction_hrs: initialData?.activity_restriction_hrs ?? null,
+        compression_bandage: initialData?.compression_bandage
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.post_procedure.compression_bandage),
+        activity_restriction_hrs: initialData?.activity_restriction_hrs
+          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.post_procedure.activity_restriction_hrs),
       },
     },
   })
@@ -211,7 +251,7 @@ export function RecordProcedureDialog({
     toast.success(isEditing ? 'Procedure updated' : 'Procedure recorded')
     setOpen(false)
     if (!isEditing) {
-      setComplicationsMode('')
+      setComplicationsMode('none')
       form.reset()
     }
   }
