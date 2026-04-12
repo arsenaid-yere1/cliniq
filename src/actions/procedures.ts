@@ -162,21 +162,30 @@ export async function getCaseDiagnoses(caseId: string) {
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('diagnoses')
+      .select('diagnoses, visit_type, status')
       .eq('case_id', caseId)
-      .eq('status', 'finalized')
       .is('deleted_at', null)
-      .maybeSingle(),
+      .in('status', ['draft', 'finalized'])
+      .not('diagnoses', 'is', null),
   ])
 
   const pmDiagnoses: Array<{ icd10_code: string | null; description: string }> =
     Array.isArray(pmRes.data?.diagnoses) ? pmRes.data.diagnoses : []
 
-  // Parse ICD-10 codes from initial visit note diagnoses text
+  // Pick the best IVN row: prefer pain_evaluation_visit (imaging-confirmed codes)
+  // over initial_visit (clinical impression codes). Draft is acceptable so the
+  // dialog pre-fills before the note is finalized.
+  const ivnRows = (ivnRes.data ?? []) as Array<{ diagnoses: string | null; visit_type: string }>
+  const preferredIvn =
+    ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.diagnoses)
+    ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
+    ?? null
+
+  // Parse ICD-10 codes from the chosen IVN diagnoses text.
   // Format: "• M54.5 — Low back pain" or "M54.5 — Low back pain" per line
   const ivnDiagnoses: Array<{ icd10_code: string; description: string }> = []
-  if (ivnRes.data?.diagnoses) {
-    const lines = (ivnRes.data.diagnoses as string).split('\n')
+  if (preferredIvn?.diagnoses) {
+    const lines = preferredIvn.diagnoses.split('\n')
     for (const line of lines) {
       // Match patterns like "• M54.5 — Description" or "M54.5 — Description" or "M54.5 - Description"
       const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
@@ -322,27 +331,35 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('provider_intake')
+      .select('provider_intake, visit_type')
       .eq('case_id', caseId)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .not('provider_intake', 'is', null),
   ])
 
   const vitals = vitalsRes.data
-  const providerIntake = ivnRes.data?.provider_intake as {
-    chief_complaints?: {
-      complaints?: Array<{ body_region: string }>
-    }
-  } | null
 
-  // Derive injection_site and laterality from chief complaints
+  // Pick the best intake row: prefer pain_evaluation_visit (more recent encounter)
+  // over initial_visit, so the defaults reflect the latest clinical state.
+  type IvnIntakeRow = {
+    visit_type: string
+    provider_intake: { chief_complaints?: { complaints?: Array<{ body_region: string }> } } | null
+  }
+  const ivnRows = (ivnRes.data ?? []) as IvnIntakeRow[]
+  const preferredIvn =
+    ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.provider_intake)
+    ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
+    ?? null
+
+  // Derive injection_site and laterality from the first chief complaint.
+  // Providers enter complaints in clinical importance order, so the first
+  // entry is the primary treatment target. If multiple complaints exist, the
+  // provider can still override the defaults before saving.
   let injection_site: string | null = null
   let laterality: 'left' | 'right' | 'bilateral' | null = null
 
-  const complaints = providerIntake?.chief_complaints?.complaints ?? []
-  if (complaints.length === 1) {
+  const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
+  if (complaints.length > 0) {
     const region = complaints[0].body_region
     const lowerRegion = region.toLowerCase()
     if (lowerRegion.startsWith('left ')) {
