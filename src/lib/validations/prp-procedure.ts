@@ -41,23 +41,34 @@ const postProcedureSchema = z.object({
   activity_restriction_hrs: z.number().int().positive().nullable(),
 })
 
-export const prpProcedureFormSchema = z.object({
-  // --- Story 4.1 fields (unchanged) ---
-  procedure_date: z.string().min(1, 'Procedure date is required'),
-  injection_site: z.string().min(1, 'Injection site is required'),
-  laterality: z.enum(['left', 'right', 'bilateral']),
-  diagnoses: z.array(diagnosisSchema).min(1, 'At least one diagnosis is required'),
-  consent_obtained: z.boolean(),
-  pain_rating: z.number().int().min(0).max(10).nullable(),
-  vital_signs: vitalSignsSchema,
-  // --- Story 4.2 fields ---
-  prp_preparation: prpPreparationSchema,
-  anesthesia: anesthesiaSchema,
-  injection: injectionSchema,
-  post_procedure: postProcedureSchema,
-})
+export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) =>
+  z.object({
+    // --- Story 4.1 fields (unchanged) ---
+    procedure_date: z
+      .string()
+      .min(1, 'Procedure date is required')
+      .refine(
+        (v) => !opts?.earliestDate || v >= opts.earliestDate,
+        {
+          message: `Procedure date cannot precede the Initial Visit date${
+            opts?.earliestDate ? ` (${opts.earliestDate})` : ''
+          }`,
+        }
+      ),
+    injection_site: z.string().min(1, 'Injection site is required'),
+    laterality: z.enum(['left', 'right', 'bilateral']),
+    diagnoses: z.array(diagnosisSchema).min(1, 'At least one diagnosis is required'),
+    consent_obtained: z.boolean(),
+    pain_rating: z.number().int().min(0).max(10).nullable(),
+    vital_signs: vitalSignsSchema,
+    // --- Story 4.2 fields ---
+    prp_preparation: prpPreparationSchema,
+    anesthesia: anesthesiaSchema,
+    injection: injectionSchema,
+    post_procedure: postProcedureSchema,
+  })
 
-export type PrpProcedureFormValues = z.infer<typeof prpProcedureFormSchema>
+export type PrpProcedureFormValues = z.infer<ReturnType<typeof prpProcedureFormSchema>>
 export type PrpDiagnosis = z.infer<typeof diagnosisSchema>
 export type PrpVitalSigns = z.infer<typeof vitalSignsSchema>
 export type PrpPreparationValues = z.infer<typeof prpPreparationSchema>

@@ -66,6 +66,25 @@ export async function createPrpProcedure(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
+  const { data: ivnRows } = await supabase
+    .from('initial_visit_notes')
+    .select('visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .not('visit_date', 'is', null)
+
+  const floorDate = (ivnRows ?? [])
+    .map((r) => r.visit_date as string)
+    .sort()
+    .at(-1) ?? null
+
+  if (floorDate && values.procedure_date < floorDate) {
+    return {
+      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
+    }
+  }
+
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Derive procedure number in series
@@ -217,6 +236,25 @@ export async function updatePrpProcedure(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
+  const { data: ivnRows } = await supabase
+    .from('initial_visit_notes')
+    .select('visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .not('visit_date', 'is', null)
+
+  const floorDate = (ivnRows ?? [])
+    .map((r) => r.visit_date as string)
+    .sort()
+    .at(-1) ?? null
+
+  if (floorDate && values.procedure_date < floorDate) {
+    return {
+      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
+    }
+  }
+
   const { data: procedure, error: procError } = await supabase
     .from('procedures')
     .update({
@@ -314,6 +352,7 @@ export interface ProcedureDefaults {
     temperature_f: number | null
     spo2_percent: number | null
   }
+  earliest_procedure_date: string | null
 }
 
 export async function getProcedureDefaults(caseId: string): Promise<{ data: ProcedureDefaults }> {
@@ -331,10 +370,9 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('provider_intake, visit_type')
+      .select('provider_intake, visit_type, visit_date')
       .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .not('provider_intake', 'is', null),
+      .is('deleted_at', null),
   ])
 
   const vitals = vitalsRes.data
@@ -343,9 +381,17 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
   // over initial_visit, so the defaults reflect the latest clinical state.
   type IvnIntakeRow = {
     visit_type: string
+    visit_date: string | null
     provider_intake: { chief_complaints?: { complaints?: Array<{ body_region: string }> } } | null
   }
   const ivnRows = (ivnRes.data ?? []) as IvnIntakeRow[]
+
+  // Floor date = max(visit_date) across all live IVN rows (both visit types)
+  const earliest_procedure_date = ivnRows
+    .map((r) => r.visit_date)
+    .filter((d): d is string => !!d)
+    .sort()
+    .at(-1) ?? null
   const preferredIvn =
     ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.provider_intake)
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
@@ -386,6 +432,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
         temperature_f: vitals?.temperature_f ?? null,
         spo2_percent: vitals?.spo2_percent ?? null,
       },
+      earliest_procedure_date,
     },
   }
 }

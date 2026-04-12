@@ -181,7 +181,9 @@ export function RecordProcedureDialog({
   const defaults = !isEditing ? procedureDefaults : null
 
   const form = useForm<PrpProcedureFormValues>({
-    resolver: zodResolver(prpProcedureFormSchema),
+    resolver: zodResolver(
+      prpProcedureFormSchema({ earliestDate: procedureDefaults?.earliest_procedure_date ?? null })
+    ),
     defaultValues: {
       procedure_date: initialData?.procedure_date ?? format(new Date(), 'yyyy-MM-dd'),
       injection_site: initialData?.injection_site ?? defaults?.injection_site ?? '',
@@ -298,7 +300,11 @@ export function RecordProcedureDialog({
                     <FormItem>
                       <FormLabel>Procedure Date</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input
+                          type="date"
+                          min={procedureDefaults?.earliest_procedure_date ?? undefined}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
