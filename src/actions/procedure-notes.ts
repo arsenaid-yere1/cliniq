@@ -79,6 +79,7 @@ async function gatherProcedureNoteSourceData(
       .eq('case_id', caseId)
       .eq('status', 'finalized')
       .is('deleted_at', null)
+      .limit(1)
       .maybeSingle(),
     // Prior procedure: most recent for this case excluding current
     supabase
@@ -228,6 +229,7 @@ export async function checkProcedureNotePrerequisites(caseId: string) {
     .eq('case_id', caseId)
     .eq('status', 'finalized')
     .is('deleted_at', null)
+    .limit(1)
     .maybeSingle()
 
   if (!ivNote) {
