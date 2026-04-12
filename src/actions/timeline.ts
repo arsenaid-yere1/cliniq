@@ -32,7 +32,7 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
       .order('created_at', { ascending: false }),
     supabase
       .from('procedures')
-      .select('id, procedure_name, procedure_date, cpt_code, provider:users!provider_id(full_name)')
+      .select('id, procedure_name, procedure_date')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('procedure_date', { ascending: false }),
@@ -86,13 +86,12 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
 
   // Map procedures
   for (const p of procRes.data ?? []) {
-    const provider = Array.isArray(p.provider) ? p.provider[0] : p.provider
     events.push({
       id: `proc-${p.id}`,
       type: 'procedure',
       date: p.procedure_date + 'T00:00:00',
       title: p.procedure_name,
-      description: [p.cpt_code, provider?.full_name].filter(Boolean).join(' - ') || null,
+      description: null,
     })
   }
 

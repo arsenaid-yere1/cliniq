@@ -34,10 +34,7 @@ interface Procedure {
   id: string
   procedure_date: string
   procedure_name: string
-  cpt_code: string | null
   charge_amount: number | null
-  notes: string | null
-  provider: { full_name: string } | null
   injection_site: string | null
   laterality: string | null
   procedure_number: number | null
@@ -105,17 +102,6 @@ const columns: ColumnDef<Procedure>[] = [
     },
   },
   {
-    accessorKey: 'cpt_code',
-    header: 'CPT Code',
-    cell: ({ getValue }) => (getValue() as string) || '—',
-  },
-  {
-    accessorFn: (row) => (Array.isArray(row.provider) ? row.provider[0]?.full_name : row.provider?.full_name) ?? null,
-    id: 'provider',
-    header: 'Provider',
-    cell: ({ getValue }) => (getValue() as string) || '—',
-  },
-  {
     accessorKey: 'charge_amount',
     header: ({ column }) => (
       <Button variant="ghost" size="sm" onClick={() => column.toggleSorting()}>
@@ -125,22 +111,6 @@ const columns: ColumnDef<Procedure>[] = [
     cell: ({ getValue }) => {
       const val = getValue() as number | null
       return val != null ? `$${Number(val).toFixed(2)}` : '—'
-    },
-  },
-  {
-    accessorKey: 'notes',
-    header: 'Notes',
-    cell: ({ getValue }) => {
-      const val = getValue() as string | null
-      if (!val) return '—'
-      return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="cursor-default">{val.length > 50 ? val.slice(0, 50) + '...' : val}</span>
-          </TooltipTrigger>
-          {val.length > 50 && <TooltipContent className="max-w-xs">{val}</TooltipContent>}
-        </Tooltip>
-      )
     },
   },
 ]

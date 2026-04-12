@@ -33,7 +33,7 @@ export async function listProcedures(caseId: string) {
 
   const { data, error } = await supabase
     .from('procedures')
-    .select('*, provider:users!provider_id(full_name)')
+    .select('*')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .order('procedure_date', { ascending: false })

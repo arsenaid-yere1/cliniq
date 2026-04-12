@@ -2198,7 +2198,6 @@ export type Database = {
           complications: string | null
           compression_bandage: boolean | null
           consent_obtained: boolean | null
-          cpt_code: string | null
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
@@ -2210,14 +2209,12 @@ export type Database = {
           kit_lot_number: string | null
           laterality: string | null
           needle_gauge: string | null
-          notes: string | null
           pain_rating: number | null
           patient_tolerance: string | null
           prep_protocol: string | null
           procedure_date: string
           procedure_name: string
           procedure_number: number | null
-          provider_id: string | null
           supplies_used: string | null
           target_confirmed_imaging: boolean | null
           updated_at: string
@@ -2234,7 +2231,6 @@ export type Database = {
           complications?: string | null
           compression_bandage?: boolean | null
           consent_obtained?: boolean | null
-          cpt_code?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
@@ -2246,14 +2242,12 @@ export type Database = {
           kit_lot_number?: string | null
           laterality?: string | null
           needle_gauge?: string | null
-          notes?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
           prep_protocol?: string | null
           procedure_date: string
           procedure_name: string
           procedure_number?: number | null
-          provider_id?: string | null
           supplies_used?: string | null
           target_confirmed_imaging?: boolean | null
           updated_at?: string
@@ -2270,7 +2264,6 @@ export type Database = {
           complications?: string | null
           compression_bandage?: boolean | null
           consent_obtained?: boolean | null
-          cpt_code?: string | null
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
@@ -2282,14 +2275,12 @@ export type Database = {
           kit_lot_number?: string | null
           laterality?: string | null
           needle_gauge?: string | null
-          notes?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
           prep_protocol?: string | null
           procedure_date?: string
           procedure_name?: string
           procedure_number?: number | null
-          provider_id?: string | null
           supplies_used?: string | null
           target_confirmed_imaging?: boolean | null
           updated_at?: string
@@ -2306,13 +2297,6 @@ export type Database = {
           {
             foreignKeyName: "procedures_created_by_user_id_fkey"
             columns: ["created_by_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "procedures_provider_id_fkey"
-            columns: ["provider_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
