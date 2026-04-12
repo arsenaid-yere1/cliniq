@@ -252,13 +252,15 @@ export async function checkDischargeNotePrerequisites(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: ivNote } = await supabase
+  const { data: ivNotes } = await supabase
     .from('initial_visit_notes')
     .select('id')
     .eq('case_id', caseId)
     .eq('status', 'finalized')
     .is('deleted_at', null)
-    .maybeSingle()
+    .limit(1)
+
+  const ivNote = ivNotes && ivNotes.length > 0 ? ivNotes[0] : null
 
   if (!ivNote) {
     return { data: { canGenerate: false, reason: 'A finalized Initial Visit Note is required before generating a discharge summary.' } }
