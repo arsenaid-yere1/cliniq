@@ -3,6 +3,7 @@ import { DischargeNotePdf, type DischargeNotePdfData } from './discharge-note-te
 import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import React from 'react'
+import { formatIndication } from '@/lib/constants/clinical-note-header'
 
 function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
   if (visitDate) {
@@ -105,11 +106,6 @@ export async function renderDischargeNotePdf(input: RenderPdfInput): Promise<Buf
 
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
 
-  // Assemble indication from case summary / accident type
-  const indication = caseData?.accident_type
-    ? `Personal injury — ${caseData.accident_type}`
-    : 'Post-PRP Series Follow-Up and Discharge Evaluation'
-
   const pdfData: DischargeNotePdfData = {
     clinicName: clinicSettings?.clinic_name || undefined,
     clinicAddress: addressParts || undefined,
@@ -119,13 +115,13 @@ export async function renderDischargeNotePdf(input: RenderPdfInput): Promise<Buf
 
     patientName: patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown',
     dob: patient?.date_of_birth ? format(new Date(patient.date_of_birth + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
-    dateOfVisit: formatVisitDateForPdf(
+    dateOfService: formatVisitDateForPdf(
       input.note.visit_date as string | null | undefined,
       input.note.finalized_at as string | null | undefined,
     ),
-    visitType: 'Post-PRP Series Follow-Up and Discharge Evaluation',
-    indication,
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
+    indication: formatIndication(caseData?.accident_type as string | null | undefined),
+    visitType: 'Post-PRP Series Follow-Up and Discharge Evaluation',
 
     patient_header: input.note.patient_header as string | null,
     subjective: input.note.subjective as string | null,

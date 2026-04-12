@@ -9,13 +9,14 @@ export interface InitialVisitPdfData {
   clinicFax?: string
   clinicLogoBase64?: string
 
-  // Patient info
+  // Patient info (medical-legal header block)
   patientName: string
   dob: string
   age: number
-  dateOfVisit: string
-  indication: string
+  dateOfService: string
   dateOfInjury: string
+  indication: string    // injury cause, e.g. "Personal injury — motor vehicle accident"
+  visitType: string     // encounter purpose, e.g. "Initial Evaluation"
 
 
   // Note sections (16 sections)
@@ -201,9 +202,10 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text>{data.patientName}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>DOB:</Text><Text>{data.dob}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Age:</Text><Text>{String(data.age)}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Visit:</Text><Text>{data.dateOfVisit}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Indication:</Text><Text>{data.indication}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Service:</Text><Text>{data.dateOfService}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Indication:</Text><Text>{data.indication}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Visit Type:</Text><Text>{data.visitType}</Text></View>
         </View>
 
         <View style={styles.separator} />

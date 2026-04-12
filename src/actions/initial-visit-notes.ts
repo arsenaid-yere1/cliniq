@@ -30,6 +30,25 @@ function computeSourceHash(inputData: InitialVisitInputData): string {
   return createHash('sha256').update(serialized).digest('hex')
 }
 
+// --- Helper: map the visit-date-order trigger's check_violation into a
+// user-facing message so the UI sees a readable string instead of raw SQL.
+// The trigger in 20260414_initial_visit_date_order.sql raises SQLSTATE 23514.
+
+type PgError = { code?: string; message?: string } | null
+
+function mapVisitDateOrderError(err: PgError): string | null {
+  if (!err) return null
+  if (err.code !== '23514') return null
+  const msg = err.message ?? ''
+  if (msg.includes('Pain Evaluation Visit date')) {
+    return 'The Pain Evaluation Visit date cannot be earlier than the Initial Visit date on this case.'
+  }
+  if (msg.includes('Initial Visit date')) {
+    return 'The Initial Visit date cannot be later than the Pain Evaluation Visit date on this case.'
+  }
+  return null
+}
+
 // --- Helper: gather source data for note generation ---
 //
 // `visitType` is required: it determines which intake/ROM row is loaded,
@@ -283,7 +302,7 @@ export async function generateInitialVisitNote(
 
     if (updateError) {
       revalidatePath(`/patients/${caseId}`)
-      return { error: 'Failed to start note generation' }
+      return { error: mapVisitDateOrderError(updateError) ?? 'Failed to start note generation' }
     }
 
     recordId = existingNote.id
@@ -307,7 +326,7 @@ export async function generateInitialVisitNote(
 
     if (insertError || !record) {
       revalidatePath(`/patients/${caseId}`)
-      return { error: 'Failed to create note record' }
+      return { error: mapVisitDateOrderError(insertError) ?? 'Failed to create note record' }
     }
 
     recordId = record.id
@@ -438,7 +457,7 @@ export async function saveInitialVisitNote(
     .is('deleted_at', null)
     .eq('status', 'draft')
 
-  if (error) return { error: 'Failed to save note' }
+  if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save note' }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
@@ -845,7 +864,7 @@ export async function saveInitialVisitRom(
       })
       .eq('id', existing.id)
 
-    if (error) return { error: 'Failed to update ROM data' }
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update ROM data' }
   } else if (validatedData !== null) {
     const { error } = await supabase
       .from('initial_visit_notes')
@@ -859,7 +878,7 @@ export async function saveInitialVisitRom(
         updated_by_user_id: user.id,
       })
 
-    if (error) return { error: 'Failed to save ROM data' }
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save ROM data' }
   }
 
   revalidatePath(`/patients/${caseId}`)
@@ -920,7 +939,7 @@ export async function saveProviderIntake(
       })
       .eq('id', existing.id)
 
-    if (error) return { error: 'Failed to update provider intake' }
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
   } else {
     const { error } = await supabase
       .from('initial_visit_notes')
@@ -934,7 +953,7 @@ export async function saveProviderIntake(
         updated_by_user_id: user.id,
       })
 
-    if (error) return { error: 'Failed to save provider intake' }
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save provider intake' }
   }
 
   revalidatePath(`/patients/${caseId}`)

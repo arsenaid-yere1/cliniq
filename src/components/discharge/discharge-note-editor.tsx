@@ -48,6 +48,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
+import { formatIndication } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
   id: string
@@ -578,14 +579,15 @@ function FinalizedView({
         {/* Document Title */}
         <h2 className="text-center font-bold text-base">FINAL PRP FOLLOW-UP AND DISCHARGE VISIT</h2>
 
-        {/* Patient Info Block */}
+        {/* Patient Info Block — medical-legal header convention:
+              Indication = injury cause, Visit Type = encounter purpose */}
         <div className="space-y-1 text-sm">
-          <p><strong>Date of Visit:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
           {patientName && <p><strong>Patient:</strong> {patientName}</p>}
           {dob && <p><strong>DOB:</strong> {dob}</p>}
+          <p><strong>Date of Service:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
+          {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
+          <p><strong>Indication:</strong> {formatIndication(caseData?.accident_type)}</p>
           <p><strong>Visit Type:</strong> Post-PRP Series Follow-Up and Discharge Evaluation</p>
-          <p><strong>Indication:</strong> {caseData?.accident_type ? `Personal injury — ${caseData.accident_type}` : 'Post-PRP Follow-Up'}</p>
-          {accidentDate && <p><strong>Date(s) of Injury:</strong> {accidentDate}</p>}
         </div>
 
         <Separator />
