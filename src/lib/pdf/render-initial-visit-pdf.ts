@@ -3,7 +3,7 @@ import { InitialVisitPdf, type InitialVisitPdfData } from './initial-visit-templ
 import { createClient } from '@/lib/supabase/server'
 import { format, differenceInYears } from 'date-fns'
 import React from 'react'
-import { formatIndication, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
+import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
 
 function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
   if (visitDate) {
@@ -133,7 +133,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
       input.note.finalized_at as string | null | undefined,
     ),
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date), 'MM/dd/yyyy') : '—',
-    indication: formatIndication(caseData?.accident_type as string | null | undefined),
+    reasonForVisit: formatReasonForVisit(caseData?.accident_type as string | null | undefined),
     visitType: formatVisitTypeLabel(
       input.note.visit_type as 'initial_visit' | 'pain_evaluation_visit' | null | undefined,
     ),

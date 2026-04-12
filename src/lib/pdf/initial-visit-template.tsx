@@ -15,8 +15,8 @@ export interface InitialVisitPdfData {
   age: number
   dateOfService: string
   dateOfInjury: string
-  indication: string    // injury cause, e.g. "Personal injury — motor vehicle accident"
-  visitType: string     // encounter purpose, e.g. "Initial Evaluation"
+  reasonForVisit: string  // medical etiology, e.g. "Post-traumatic musculoskeletal pain following motor vehicle collision"
+  visitType: string       // encounter purpose, e.g. "Initial Evaluation"
 
 
   // Note sections (16 sections)
@@ -204,7 +204,7 @@ export function InitialVisitPdf({ data }: { data: InitialVisitPdfData }) {
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Age:</Text><Text>{String(data.age)}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Service:</Text><Text>{data.dateOfService}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Indication:</Text><Text>{data.indication}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Reason for Visit:</Text><Text>{data.reasonForVisit}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Visit Type:</Text><Text>{data.visitType}</Text></View>
         </View>
 

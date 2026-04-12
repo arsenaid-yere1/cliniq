@@ -3,7 +3,7 @@ import { DischargeNotePdf, type DischargeNotePdfData } from './discharge-note-te
 import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import React from 'react'
-import { formatIndication } from '@/lib/constants/clinical-note-header'
+import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 
 function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
   if (visitDate) {
@@ -120,7 +120,7 @@ export async function renderDischargeNotePdf(input: RenderPdfInput): Promise<Buf
       input.note.finalized_at as string | null | undefined,
     ),
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
-    indication: formatIndication(caseData?.accident_type as string | null | undefined),
+    reasonForVisit: formatReasonForVisit(caseData?.accident_type as string | null | undefined),
     visitType: 'Post-PRP Series Follow-Up and Discharge Evaluation',
 
     patient_header: input.note.patient_header as string | null,

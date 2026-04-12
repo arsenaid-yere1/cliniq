@@ -14,8 +14,8 @@ export interface DischargeNotePdfData {
   dob: string
   dateOfService: string
   dateOfInjury: string
-  indication: string    // injury cause, e.g. "Personal injury — motor vehicle accident"
-  visitType: string     // encounter purpose, e.g. "Post-PRP Series Follow-Up and Discharge Evaluation"
+  reasonForVisit: string  // medical etiology, e.g. "Post-traumatic musculoskeletal pain following motor vehicle collision"
+  visitType: string       // encounter purpose, e.g. "Post-PRP Series Follow-Up and Discharge Evaluation"
 
   // Note sections (13 sections)
   patient_header: string | null
@@ -179,7 +179,7 @@ export function DischargeNotePdf({ data }: { data: DischargeNotePdfData }) {
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>DOB:</Text><Text>{data.dob}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Service:</Text><Text>{data.dateOfService}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Indication:</Text><Text>{data.indication}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Reason for Visit:</Text><Text>{data.reasonForVisit}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Visit Type:</Text><Text>{data.visitType}</Text></View>
         </View>
 

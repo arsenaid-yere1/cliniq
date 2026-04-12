@@ -48,7 +48,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
-import { formatIndication } from '@/lib/constants/clinical-note-header'
+import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
   id: string
@@ -586,7 +586,7 @@ function FinalizedView({
           {dob && <p><strong>DOB:</strong> {dob}</p>}
           <p><strong>Date of Service:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
           {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
-          <p><strong>Indication:</strong> {formatIndication(caseData?.accident_type)}</p>
+          <p><strong>Reason for Visit:</strong> {formatReasonForVisit(caseData?.accident_type)}</p>
           <p><strong>Visit Type:</strong> Post-PRP Series Follow-Up and Discharge Evaluation</p>
         </div>
 

@@ -70,7 +70,7 @@ import {
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
-import { formatIndication, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
+import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
   id: string
@@ -1958,7 +1958,7 @@ function FinalizedView({
                   {age !== null && <p><strong>Age:</strong> {age}</p>}
                   <p><strong>Date of Service:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
                   {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
-                  <p><strong>Indication:</strong> {formatIndication(caseData.accident_type)}</p>
+                  <p><strong>Reason for Visit:</strong> {formatReasonForVisit(caseData.accident_type)}</p>
                   <p><strong>Visit Type:</strong> {formatVisitTypeLabel(visitType)}</p>
                 </div>
                 <Separator />
