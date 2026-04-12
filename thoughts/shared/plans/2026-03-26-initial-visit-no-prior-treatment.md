@@ -1175,3 +1175,79 @@ Updated text to reflect that all provider-entered data is preserved:
 - Research document: [2026-03-26-initial-visit-no-prior-treatment-use-case.md](thoughts/shared/research/2026-03-26-initial-visit-no-prior-treatment-use-case.md)
 - Original design research: [2026-03-09-epic-3-story-3.1-initial-visit-note-design.md](thoughts/shared/research/2026-03-09-epic-3-story-3.1-initial-visit-note-design.md)
 - Case summary design: [2026-03-08-epic-2-story-2.3-clinical-case-summary-design.md](thoughts/shared/research/2026-03-08-epic-2-story-2.3-clinical-case-summary-design.md)
+
+---
+
+## Post-Implementation Fixes (2026-04-11)
+
+Follow-up work after the main dual visit-type rewrite shipped. Each fix addresses a concrete bug or gap surfaced while testing the end-to-end flow.
+
+### Phase 9: Procedure dialog pre-fill regressions after dual visit-type migration
+
+**Context**: `getCaseDiagnoses()` and `getProcedureDefaults()` both queried `initial_visit_notes` without a `visit_type` filter. After the migration a case may have up to two rows, so these queries either silently returned the wrong row or threw `PGRST116` (multiple rows). The Record Procedure dialog stopped pre-filling ICD-10 codes, injection site, and laterality.
+
+#### Changes:
+- **[procedures.ts:149-197](src/actions/procedures.ts#L149-L197)** — `getCaseDiagnoses()`: dropped the `.eq('status','finalized')` gate so draft IVN diagnoses also contribute; dropped `.maybeSingle()` in favor of an array return; in-code, prefer `pain_evaluation_visit` (imaging-confirmed codes) over `initial_visit` (clinical impression codes). PM extraction diagnoses still merge first.
+- **[procedures.ts:319-365](src/actions/procedures.ts#L319-L365)** — `getProcedureDefaults()`: same array-return pattern for the provider intake query, prefer `pain_evaluation_visit` intake, fall back to `initial_visit`. Dropped the `complaints.length === 1` gate — if ≥ 1 complaint exists, use the first one (providers enter complaints in clinical importance order, and the dialog allows override).
+
+#### Success Criteria:
+- [x] TypeScript compiles
+- [x] No lint errors on modified files
+- [x] ICD-10 codes pre-fill from either visit type's diagnoses section (draft or finalized)
+- [x] Injection site + laterality pre-fill from the first chief complaint of the preferred visit type
+
+---
+
+### Phase 10: Enforce Initial Visit → Pain Evaluation Visit date order
+
+**Context**: With both visit types coexisting on the same case, a provider could accidentally set the Pain Evaluation Visit's `visit_date` earlier than the Initial Visit's, producing a clinically impossible timeline. A cross-row constraint cannot be expressed as a single-row CHECK, so the rule is enforced by a `BEFORE INSERT OR UPDATE` trigger that queries the sibling row.
+
+#### Changes:
+- **[20260414_initial_visit_date_order.sql](supabase/migrations/20260414_initial_visit_date_order.sql)** — new migration creates `public.enforce_initial_visit_date_order()` trigger function and attaches it to `initial_visit_notes`. Fires on insert or update of `visit_date`, `visit_type`, or `deleted_at`. Raises SQLSTATE `23514` (`check_violation`) with a descriptive message when the sibling row exists and the dates are out of order. Null `visit_date` and soft-deleted rows are skipped. Equality is allowed (same-day visits).
+- **[initial-visit-notes.ts:33-50](src/actions/initial-visit-notes.ts#L33-L50)** — new `mapVisitDateOrderError()` helper that inspects the Postgres error code and message and returns a user-friendly string; returns `null` for any other error so the generic fallback still applies.
+- **Wired into all write sites**: generate update/insert, `saveInitialVisitNote`, `saveInitialVisitRom`, `saveProviderIntake`. The error surfaces to the existing `toast.error(result.error)` UI calls as:
+  - *"The Pain Evaluation Visit date cannot be earlier than the Initial Visit date on this case."*
+  - *"The Initial Visit date cannot be later than the Pain Evaluation Visit date on this case."*
+
+#### Success Criteria:
+- [x] Migration applies cleanly via `npx supabase db push`
+- [x] Trigger fires on out-of-order `visit_date` updates
+- [x] Server actions catch `23514` and return friendly messages — raw Postgres text never reaches the UI
+- [x] Equality (same-day visits) and null `visit_date` are allowed
+- [x] TypeScript compiles, no lint errors
+
+---
+
+### Phase 11: Medical-legal header block (Initial Visit + Discharge Note)
+
+**Context**: The header block above the note body hardcoded `Indication: Pain Management Evaluation` on the Initial Visit template. This was wrong on two counts: (1) the label conflated the injury cause (indication) with the visit purpose (visit type), and (2) "Pain Management Evaluation" is inaccurate for a first-encounter Initial Visit. Research against medical-legal documentation conventions confirmed the correct split: **Reason for Visit** = medical etiology (not legal claim classification), **Visit Type** = encounter purpose.
+
+Key findings from the research:
+- "Personal injury" is a legal-claim phrase; using it in the medical necessity field is a defense-attorney attack surface (clinician bias argument).
+- "Motor vehicle accident" is deprecated in current trauma-medicine literature in favor of "motor vehicle collision" ("accident" implies unavoidability; Stewart & Lord, 2002).
+- The field should be labeled **Reason for Visit** on visit notes (Initial Visit, Discharge Note). Procedure notes use **Clinical Indication** with ICD-10-first content — different convention, left alone.
+- Universal CMS/billing label is **Date of Service**, not "Date of Visit".
+
+#### Changes:
+- **[clinical-note-header.ts](src/lib/constants/clinical-note-header.ts)** — new shared helper module with `formatReasonForVisit(accident_type)` and `formatVisitTypeLabel(visit_type)`. Accident-type → etiology mapping:
+  - `auto` → "Post-traumatic musculoskeletal pain following motor vehicle collision"
+  - `slip_and_fall` → "Post-traumatic musculoskeletal pain following slip-and-fall injury"
+  - `workplace` → "Post-traumatic musculoskeletal pain sustained in workplace injury"
+  - `other`/null → "Post-traumatic musculoskeletal pain following traumatic injury"
+- **[initial-visit-editor.tsx](src/components/clinical/initial-visit-editor.tsx)** — finalized view header block now renders: Patient / DOB / Age / Date of Service / Date of Injury / Reason for Visit / Visit Type. "Visit Type" is derived from the active `visitType` prop.
+- **[initial-visit-template.tsx](src/lib/pdf/initial-visit-template.tsx) + [render-initial-visit-pdf.ts](src/lib/pdf/render-initial-visit-pdf.ts)** — same header block in the PDF. `InitialVisitPdfData` interface relabeled: `dateOfVisit` → `dateOfService`, added `reasonForVisit`, added `visitType`, removed `indication`. Renderer populates via the shared helpers.
+- **[discharge-note-editor.tsx](src/components/discharge/discharge-note-editor.tsx) + [discharge-note-template.tsx](src/lib/pdf/discharge-note-template.tsx) + [render-discharge-note-pdf.ts](src/lib/pdf/render-discharge-note-pdf.ts)** — same five-field header applied. Visit Type stays `"Post-PRP Series Follow-Up and Discharge Evaluation"`. Relabeled `Date of Visit` → `Date of Service`, `Date(s) of Injury` → `Date of Injury`. Dropped raw `accident_type` code rendering in favor of `formatReasonForVisit()`.
+
+#### Success Criteria:
+- [x] TypeScript compiles, no lint errors (pre-existing `@react-pdf/renderer` alt-text warnings only)
+- [x] Initial Visit finalized view and PDF show the five-field medical-legal header in the correct order
+- [x] Discharge Note finalized view and PDF show the same header structure
+- [x] Reason for Visit varies by `accident_type` and uses medical etiology framing (no "Personal injury")
+- [x] Visit Type varies by `visit_type` column (Initial Evaluation vs Pain Management Evaluation vs Post-PRP Follow-Up)
+- [x] Procedure Note "Clinical Indication" convention preserved — not modified
+
+#### Research sources:
+- [Motor vehicle crash vs. accident: terminology change (Stewart & Lord, 2002)](https://pubmed.ncbi.nlm.nih.gov/12224806/)
+- [Defending treating physicians' opinion testimony (Advocate Magazine)](https://www.advocatemagazine.com/article/2018-april/defending-your-treating-physicians-opinion-testimony)
+- [Pain Management Visit Note Template - Compass HCC](https://www.compasshcc.org/filesimages/Initiatives/OPSS/Pain%20Management%20Visit%20Notes%20Template.pdf)
+- [NY Pain Society — Sample Initial Pain Management Template](https://www.nypainsociety.org/wp-content/uploads/2012/01/sample_initial_pain_management_template.pdf)
