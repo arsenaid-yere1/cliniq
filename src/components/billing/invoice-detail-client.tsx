@@ -68,9 +68,9 @@ interface InvoiceData {
       date_of_birth: string | null
     } | null
     attorney: {
-      first_name: string
-      last_name: string
       firm_name: string | null
+      phone: string | null
+      fax: string | null
       address_line1: string | null
       address_line2: string | null
       city: string | null
@@ -107,9 +107,9 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      first_name: string
-      last_name: string
       firm_name: string | null
+      phone: string | null
+      fax: string | null
       address_line1: string | null
       address_line2: string | null
       city: string | null
@@ -395,51 +395,104 @@ export function InvoiceDetailClient({
           {invoice.invoice_type === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
         </h2>
 
-        {/* 3-column info block */}
-        <div className="grid grid-cols-3 gap-6 text-sm">
-          {/* Patient Info */}
-          <div className="space-y-1">
-            <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wide">Patient</h3>
-            {patient ? (
-              <>
-                <p className="font-medium">{patient.first_name} {patient.last_name}</p>
-                {patient.date_of_birth && <p>DOB: {formatDate(patient.date_of_birth)}</p>}
-              </>
-            ) : <p className="text-muted-foreground">N/A</p>}
-            {invoice.case?.accident_date && <p>Date of Injury: {formatDate(invoice.case.accident_date)}</p>}
-            <p>Claim Type: {invoice.claim_type}</p>
-            {invoice.indication && <p>Indication: {invoice.indication}</p>}
-            {providerProfile && (
-              <p>Provider: {providerProfile.display_name}{providerProfile.credentials ? `, ${providerProfile.credentials}` : ''}</p>
-            )}
-          </div>
+        {/* Patient / Case Info Table */}
+        <div className="rounded-md border">
+          <Table>
+            <TableBody>
+              <TableRow>
+                <TableCell className="font-medium w-[140px]">Patient</TableCell>
+                <TableCell>{patient ? `${patient.first_name} ${patient.last_name}` : 'N/A'}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">DOB</TableCell>
+                <TableCell>{patient?.date_of_birth ? formatDate(patient.date_of_birth) : 'N/A'}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Date of Injury</TableCell>
+                <TableCell>{invoice.case?.accident_date ? formatDate(invoice.case.accident_date) : 'N/A'}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Claim Type</TableCell>
+                <TableCell>{invoice.claim_type}</TableCell>
+              </TableRow>
+              {invoice.indication && (
+                <TableRow>
+                  <TableCell className="font-medium">Indication</TableCell>
+                  <TableCell>{invoice.indication}</TableCell>
+                </TableRow>
+              )}
+              <TableRow>
+                <TableCell className="font-medium">Provider</TableCell>
+                <TableCell>
+                  {providerProfile
+                    ? `${providerProfile.display_name}${providerProfile.credentials ? `, ${providerProfile.credentials}` : ''}`
+                    : 'N/A'}
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Facility</TableCell>
+                <TableCell>{clinic?.clinic_name ?? 'N/A'}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
 
-          {/* Diagnoses */}
-          <div className="space-y-1">
-            <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wide">Diagnoses</h3>
-            {invoice.diagnoses_snapshot && invoice.diagnoses_snapshot.length > 0 ? (
-              <ul className="space-y-0.5">
-                {invoice.diagnoses_snapshot.map((dx, i) => (
-                  <li key={i}>
-                    {dx.icd10_code && <span className="font-mono text-xs mr-1">{dx.icd10_code}</span>}
-                    <span>{dx.description}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="text-muted-foreground">None</p>}
-          </div>
+        {/* Diagnoses Table */}
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[140px]">ICD-10 Code</TableHead>
+                <TableHead>Description</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoice.diagnoses_snapshot && invoice.diagnoses_snapshot.length > 0 ? (
+                invoice.diagnoses_snapshot.map((dx, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs">{dx.icd10_code ?? '—'}</TableCell>
+                    <TableCell>{dx.description}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={2} className="text-muted-foreground">None</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-          {/* Attorney */}
-          <div className="space-y-1">
-            <h3 className="font-semibold text-muted-foreground uppercase text-xs tracking-wide">Attorney</h3>
-            {attorney ? (
-              <>
-                <p className="font-medium">{attorney.first_name} {attorney.last_name}</p>
-                {attorney.firm_name && <p>{attorney.firm_name}</p>}
-                <p>{[attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ')}</p>
-              </>
-            ) : <p className="text-muted-foreground">N/A</p>}
-          </div>
+        {/* Attorney Table */}
+        <div className="rounded-md border">
+          <Table>
+            <TableBody>
+              <TableRow>
+                <TableCell className="font-medium w-[140px]">Firm</TableCell>
+                <TableCell>{attorney?.firm_name ?? 'N/A'}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Address</TableCell>
+                <TableCell>
+                  {attorney
+                    ? [attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ') || 'N/A'
+                    : 'N/A'}
+                </TableCell>
+              </TableRow>
+              {attorney?.phone && (
+                <TableRow>
+                  <TableCell className="font-medium">Phone</TableCell>
+                  <TableCell>{attorney.phone}</TableCell>
+                </TableRow>
+              )}
+              {attorney?.fax && (
+                <TableRow>
+                  <TableCell className="font-medium">Fax</TableCell>
+                  <TableCell>{attorney.fax}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
 
         {/* Line Items Table */}

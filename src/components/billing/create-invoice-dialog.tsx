@@ -37,9 +37,9 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      first_name: string
-      last_name: string
       firm_name: string | null
+      phone: string | null
+      fax: string | null
       address_line1: string | null
       address_line2: string | null
       city: string | null
@@ -293,13 +293,14 @@ export function CreateInvoiceDialog({
                 <h3 className="text-sm font-medium text-muted-foreground">Attorney</h3>
                 {attorney ? (
                   <>
-                    <p className="text-sm font-medium">{attorney.first_name} {attorney.last_name}</p>
-                    {attorney.firm_name && <p className="text-xs text-muted-foreground">{attorney.firm_name}</p>}
+                    {attorney.firm_name && <p className="text-sm font-medium">{attorney.firm_name}</p>}
                     {(attorney.address_line1 || attorney.city) && (
                       <p className="text-xs text-muted-foreground">
                         {[attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ')}
                       </p>
                     )}
+                    {attorney.phone && <p className="text-xs text-muted-foreground">Phone: {attorney.phone}</p>}
+                    {attorney.fax && <p className="text-xs text-muted-foreground">Fax: {attorney.fax}</p>}
                   </>
                 ) : <p className="text-sm text-muted-foreground">N/A</p>}
               </div>
@@ -404,17 +405,18 @@ export function CreateInvoiceDialog({
 
               <div className="overflow-x-auto -mx-1 px-1">
                 {/* Table header */}
-                <div className="grid grid-cols-[100px_80px_1fr_50px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
+                <div className="grid grid-cols-[100px_80px_1fr_50px_80px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
                   <span>Date</span>
                   <span>CPT</span>
                   <span>Description</span>
                   <span>QTY</span>
-                  <span>Price</span>
+                  <span>Unit Price</span>
+                  <span>Total</span>
                   <span />
                 </div>
 
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[100px_80px_1fr_50px_80px_36px] gap-2 items-start">
+                <div key={field.id} className="grid grid-cols-[100px_80px_1fr_50px_80px_80px_36px] gap-2 items-start">
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.service_date`}
@@ -498,6 +500,9 @@ export function CreateInvoiceDialog({
                       </FormItem>
                     )}
                   />
+                  <div className="flex items-center h-9 text-xs font-medium">
+                    ${Number(form.watch(`line_items.${index}.total_price`) ?? 0).toFixed(2)}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"

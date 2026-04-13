@@ -31,9 +31,9 @@ interface InvoiceFormData {
       date_of_birth: string | null
     } | null
     attorney: {
-      first_name: string
-      last_name: string
       firm_name: string | null
+      phone: string | null
+      fax: string | null
       address_line1: string | null
       address_line2: string | null
       city: string | null

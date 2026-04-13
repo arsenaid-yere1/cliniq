@@ -10,6 +10,7 @@ import {
 } from '@/lib/validations/invoice'
 import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service-catalog'
 import { assertCaseNotClosed } from '@/actions/case-status'
+import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 
 export async function listInvoices(caseId: string) {
   const supabase = await createClient()
@@ -57,14 +58,16 @@ export async function getInvoice(invoiceId: string) {
 export async function getInvoiceFormData(caseId: string) {
   const supabase = await createClient()
 
-  const [caseResult, proceduresResult, clinicResult, initialVisitResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated', data: null }
+
+  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
     supabase
       .from('cases')
       .select(`
         *,
         patient:patients(*),
-        attorney:attorneys(*),
-        provider:provider_profiles!assigned_provider_id(id, display_name, credentials)
+        attorney:attorneys(*)
       `)
       .eq('id', caseId)
       .is('deleted_at', null)
@@ -78,6 +81,13 @@ export async function getInvoiceFormData(caseId: string) {
     supabase
       .from('clinic_settings')
       .select('*')
+      .is('deleted_at', null)
+      .maybeSingle(),
+    // Use current user ID for provider profile (single-provider clinic)
+    supabase
+      .from('provider_profiles')
+      .select('*')
+      .eq('user_id', user.id)
       .is('deleted_at', null)
       .maybeSingle(),
     supabase
@@ -117,18 +127,7 @@ export async function getInvoiceFormData(caseId: string) {
 
   if (caseResult.error) return { error: caseResult.error.message, data: null }
 
-  // Get provider profile from case's assigned provider
-  const assignedProviderId = caseResult.data?.assigned_provider_id as string | null
-  let providerProfile = null
-  if (assignedProviderId) {
-    const { data } = await supabase
-      .from('provider_profiles')
-      .select('*')
-      .eq('id', assignedProviderId)
-      .is('deleted_at', null)
-      .maybeSingle()
-    providerProfile = data
-  }
+  const providerProfile = providerProfileResult.data
 
   // Derive diagnoses: prefer structured from procedures, fall back to initial visit text
   let diagnoses: Array<{ icd10_code: string | null; description: string }> = []
@@ -140,17 +139,10 @@ export async function getInvoiceFormData(caseId: string) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
   }
 
-  // Derive indication: build from PM extraction complaint locations with accident context
-  let indication = ''
-  const pmComplaints = pmExtractionResult.data?.chief_complaints as Array<{ location: string }> | null
-  if (Array.isArray(pmComplaints) && pmComplaints.length > 0) {
-    const locations = pmComplaints.map((c) => c.location).filter(Boolean)
-    if (locations.length > 0) {
-      indication = `Post-traumatic ${locations.join(' and ').toLowerCase()} following motor vehicle accident`
-    }
-  } else if (initialVisitResult.data?.chief_complaint) {
-    indication = initialVisitResult.data.chief_complaint
-  }
+  // Derive indication: use formatReasonForVisit() — same medical-legal etiology phrase
+  // used by Initial Visit Notes and Discharge Notes. Ensures the invoice's indication
+  // matches the rest of the chart for defensible PI paperwork.
+  const indication = formatReasonForVisit(caseResult.data.accident_type)
 
   // Fetch default prices and full catalog items from service catalog
   const [priceMap, { data: catalogItems }] = await Promise.all([
@@ -436,8 +428,8 @@ export async function getInvoiceWithContext(invoiceId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', data: null }
 
-  // Fetch invoice+case+patient+attorney, clinic
-  const [invoiceResult, clinicResult] = await Promise.all([
+  // Parallel fetch: invoice+case+patient+attorney, clinic, provider profile (current user)
+  const [invoiceResult, clinicResult, providerProfileResult] = await Promise.all([
     supabase
       .from('invoices')
       .select(`
@@ -457,23 +449,16 @@ export async function getInvoiceWithContext(invoiceId: string) {
       .select('*')
       .is('deleted_at', null)
       .maybeSingle(),
+    // Use current user ID for provider profile (single-provider clinic)
+    supabase
+      .from('provider_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .is('deleted_at', null)
+      .maybeSingle(),
   ])
 
   if (invoiceResult.error) return { error: invoiceResult.error.message, data: null }
 
-  // Get provider profile from case's assigned provider
-  const caseData = invoiceResult.data.case as Record<string, unknown> | null
-  const assignedProviderId = caseData?.assigned_provider_id as string | null
-  let providerProfile = null
-  if (assignedProviderId) {
-    const { data } = await supabase
-      .from('provider_profiles')
-      .select('*')
-      .eq('id', assignedProviderId)
-      .is('deleted_at', null)
-      .maybeSingle()
-    providerProfile = data
-  }
-
-  return { data: { invoice: invoiceResult.data, clinic: clinicResult.data, providerProfile } }
+  return { data: { invoice: invoiceResult.data, clinic: clinicResult.data, providerProfile: providerProfileResult.data } }
 }
