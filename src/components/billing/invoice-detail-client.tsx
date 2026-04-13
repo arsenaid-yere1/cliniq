@@ -122,6 +122,7 @@ interface InvoiceFormData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
   prePopulatedLineItems: InvoiceLineItemFormValues[]
+  facilityLineItems: InvoiceLineItemFormValues[]
   catalogItems: Array<{
     id: string
     cpt_code: string
@@ -249,6 +250,7 @@ export function InvoiceDetailClient({
     diagnoses: invoice.diagnoses_snapshot ?? [],
     indication: invoice.indication ?? '',
     prePopulatedLineItems: [],
+    facilityLineItems: [],
     catalogItems,
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -65,6 +65,7 @@ interface InvoiceFormData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
   prePopulatedLineItems: InvoiceLineItemFormValues[]
+  facilityLineItems: InvoiceLineItemFormValues[]
   catalogItems: Array<{
     id: string
     cpt_code: string
@@ -170,6 +171,19 @@ export function CreateInvoiceDialog({
   const watchedInvoiceType = form.watch('invoice_type')
   const watchedLineItems = form.watch('line_items')
   const runningTotal = watchedLineItems.reduce((sum, item) => sum + (Number(item.total_price) || 0), 0)
+
+  // Swap line items when invoice type changes (create mode only)
+  useEffect(() => {
+    if (isEditing) return
+    const items = watchedInvoiceType === 'facility'
+      ? formData.facilityLineItems
+      : formData.prePopulatedLineItems
+    const newItems = items.length > 0
+      ? items
+      : [{ service_date: '', cpt_code: '', description: '', quantity: 1, unit_price: 0, total_price: 0 }]
+    lineItemFields.replace(newItems)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedInvoiceType])
 
   function handleQuantityOrPriceChange(index: number) {
     const qty = Number(form.getValues(`line_items.${index}.quantity`)) || 0

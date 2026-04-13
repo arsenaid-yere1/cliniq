@@ -189,6 +189,9 @@ export async function getInvoiceFormData(caseId: string) {
     })
   }
 
+  // Facility invoice line items — only PRP procedures with "Medical site utilization" description
+  const facilityLineItems: typeof prePopulatedLineItems = []
+
   // 3. PRP procedure line items (CPT 0232T 86999 76942)
   for (const proc of procedures) {
     const typedProc = proc as {
@@ -219,6 +222,16 @@ export async function getInvoiceFormData(caseId: string) {
       unit_price: catalogPrice,
       total_price: catalogPrice,
     })
+
+    facilityLineItems.push({
+      procedure_id: typedProc.id,
+      service_date: typedProc.procedure_date,
+      cpt_code: '0232T\n86999\n76942',
+      description: 'Medical site utilization',
+      quantity: 1,
+      unit_price: catalogPrice,
+      total_price: catalogPrice,
+    })
   }
 
   // 4. Follow up / Discharge visit (CPT 99213) — if a discharge note exists
@@ -243,6 +256,7 @@ export async function getInvoiceFormData(caseId: string) {
       diagnoses,
       indication,
       prePopulatedLineItems,
+      facilityLineItems,
       catalogItems: catalogItems ?? [],
     },
   }
