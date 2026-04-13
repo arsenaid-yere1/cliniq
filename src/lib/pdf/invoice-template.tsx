@@ -30,9 +30,10 @@ export interface InvoicePdfData {
   diagnoses: Array<{ icd10_code: string | null; description: string }>
 
   // Attorney
-  attorneyName?: string
   firmName?: string
   attorneyAddress?: string
+  attorneyPhone?: string
+  attorneyFax?: string
 
   // Line items
   lineItems: Array<{
@@ -62,23 +63,25 @@ const styles = StyleSheet.create({
   clinicFax: { fontSize: 9 },
   // Title
   title: { fontFamily: 'Helvetica-Bold', fontSize: 16, textAlign: 'center', marginBottom: 14, marginTop: 6 },
-  // 3-column info block
-  infoBlock: { flexDirection: 'row', marginBottom: 20, gap: 12 },
-  infoColumn: { flex: 1 },
-  // Patient info labels
-  label: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
-  value: { fontSize: 10 },
-  infoRow: { flexDirection: 'row', marginBottom: 1 },
-  infoText: { fontSize: 10, marginBottom: 1 },
-  // Diagnoses heading
-  diagHeading: { fontFamily: 'Helvetica-Bold', fontSize: 10, marginBottom: 4 },
-  diagText: { fontSize: 9, marginBottom: 1 },
-  // Table
+  // Info table (2-column label|value)
+  infoTable: { borderWidth: 1, borderColor: '#000', borderStyle: 'solid', marginBottom: 12 },
+  infoTableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'solid', paddingVertical: 4 },
+  infoTableRowLast: { flexDirection: 'row', paddingVertical: 4 },
+  infoLabelCell: { width: '30%', paddingLeft: 8, fontFamily: 'Helvetica-Bold', fontSize: 10 },
+  infoValueCell: { width: '70%', paddingLeft: 6, fontSize: 10 },
+  // Diagnoses table (2-column ICD|Description)
+  diagTable: { borderWidth: 1, borderColor: '#000', borderStyle: 'solid', marginBottom: 12 },
+  diagHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'solid', paddingVertical: 4 },
+  diagRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'solid', paddingVertical: 3 },
+  diagRowLast: { flexDirection: 'row', paddingVertical: 3 },
+  diagCodeCell: { width: '25%', paddingLeft: 8, fontSize: 10 },
+  diagDescCell: { width: '75%', paddingLeft: 6, fontSize: 10 },
+  diagHeaderText: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
+  // Line items table
   table: { borderWidth: 1, borderColor: '#000', borderStyle: 'solid', marginBottom: 16 },
   tableHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'solid', paddingVertical: 6 },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'solid', paddingVertical: 5 },
   tableTotalRow: { flexDirection: 'row', paddingVertical: 6 },
-  // Column widths matching reference
   colDate: { width: '16%', paddingLeft: 8 },
   colCpt: { width: '14%', paddingLeft: 6 },
   colDesc: { width: '38%', paddingLeft: 6 },
@@ -120,79 +123,91 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
           {data.invoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
         </Text>
 
-        {/* 3-column info block */}
-        <View style={styles.infoBlock}>
-          {/* Patient column */}
-          <View style={styles.infoColumn}>
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>Patient: </Text>
-              <Text style={styles.value}>{data.patientName}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>DOB: </Text>
-              <Text style={styles.value}>{data.dob}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>Date(s) of Injury: </Text>
-              <Text style={styles.value}>{data.dateOfInjury}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>Claim Type: </Text>
-              <Text style={styles.value}>{data.claimType}</Text>
-            </View>
-            {data.indication && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>Indication: </Text>
-                <Text style={[styles.value, { flex: 1 }]}>{data.indication}</Text>
-              </View>
-            )}
-            {data.providerName && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>Provider: </Text>
-                <Text style={styles.value}>
-                  {data.providerName}{data.providerCredentials ? `, ${data.providerCredentials}` : ''}
-                </Text>
-              </View>
-            )}
-            {data.facilityName && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>Facility: </Text>
-                <Text style={styles.value}>{data.facilityName}</Text>
-              </View>
-            )}
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>Invoice Date: </Text>
-              <Text style={styles.value}>{data.invoiceDate}</Text>
-            </View>
+        {/* Patient / Case Info Table */}
+        <View style={styles.infoTable}>
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>Patient</Text>
+            <Text style={styles.infoValueCell}>{data.patientName}</Text>
           </View>
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>DOB</Text>
+            <Text style={styles.infoValueCell}>{data.dob}</Text>
+          </View>
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>Date of Injury</Text>
+            <Text style={styles.infoValueCell}>{data.dateOfInjury}</Text>
+          </View>
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>Claim Type</Text>
+            <Text style={styles.infoValueCell}>{data.claimType}</Text>
+          </View>
+          {data.indication && (
+            <View style={styles.infoTableRow}>
+              <Text style={styles.infoLabelCell}>Indication</Text>
+              <Text style={styles.infoValueCell}>{data.indication}</Text>
+            </View>
+          )}
+          {data.providerName && (
+            <View style={styles.infoTableRow}>
+              <Text style={styles.infoLabelCell}>Provider</Text>
+              <Text style={styles.infoValueCell}>
+                {data.providerName}{data.providerCredentials ? `, ${data.providerCredentials}` : ''}
+              </Text>
+            </View>
+          )}
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>Facility</Text>
+            <Text style={styles.infoValueCell}>{data.facilityName ?? '—'}</Text>
+          </View>
+          <View style={styles.infoTableRowLast}>
+            <Text style={styles.infoLabelCell}>Invoice Date</Text>
+            <Text style={styles.infoValueCell}>{data.invoiceDate}</Text>
+          </View>
+        </View>
 
-          {/* Diagnoses column */}
-          <View style={styles.infoColumn}>
-            <Text style={styles.diagHeading}>Diagnoses (ICD 10 codes)</Text>
-            {data.diagnoses.length > 0 ? (
-              data.diagnoses.map((dx, i) => (
-                <Text key={i} style={styles.diagText}>
-                  {dx.icd10_code ? `${dx.icd10_code} – ` : ''}{dx.description}
-                </Text>
-              ))
-            ) : (
-              <Text style={[styles.diagText, { color: '#999' }]}>None</Text>
-            )}
+        {/* Diagnoses Table */}
+        <View style={styles.diagTable}>
+          <View style={styles.diagHeaderRow}>
+            <Text style={[styles.diagCodeCell, styles.diagHeaderText]}>ICD-10 Code</Text>
+            <Text style={[styles.diagDescCell, styles.diagHeaderText]}>Description</Text>
           </View>
+          {data.diagnoses.length > 0 ? (
+            data.diagnoses.map((dx, i) => (
+              <View key={i} style={i === data.diagnoses.length - 1 ? styles.diagRowLast : styles.diagRow}>
+                <Text style={styles.diagCodeCell}>{dx.icd10_code ?? '—'}</Text>
+                <Text style={styles.diagDescCell}>{dx.description}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.diagRowLast}>
+              <Text style={[styles.diagCodeCell, { color: '#999' }]}>—</Text>
+              <Text style={[styles.diagDescCell, { color: '#999' }]}>None</Text>
+            </View>
+          )}
+        </View>
 
-          {/* Attorney column */}
-          <View style={styles.infoColumn}>
-            {data.attorneyName ? (
-              <>
-                <Text style={styles.infoText}>
-                  {data.attorneyName}{data.firmName ? `, ${data.firmName}` : ''}
-                </Text>
-                {data.attorneyAddress && <Text style={styles.infoText}>{data.attorneyAddress}</Text>}
-              </>
-            ) : (
-              <Text style={[styles.infoText, { color: '#999' }]}>N/A</Text>
-            )}
+        {/* Attorney Table */}
+        <View style={styles.infoTable}>
+          <View style={styles.infoTableRow}>
+            <Text style={styles.infoLabelCell}>Firm</Text>
+            <Text style={styles.infoValueCell}>{data.firmName ?? 'N/A'}</Text>
           </View>
+          <View style={data.attorneyPhone || data.attorneyFax ? styles.infoTableRow : styles.infoTableRowLast}>
+            <Text style={styles.infoLabelCell}>Address</Text>
+            <Text style={styles.infoValueCell}>{data.attorneyAddress ?? 'N/A'}</Text>
+          </View>
+          {data.attorneyPhone && (
+            <View style={data.attorneyFax ? styles.infoTableRow : styles.infoTableRowLast}>
+              <Text style={styles.infoLabelCell}>Phone</Text>
+              <Text style={styles.infoValueCell}>{data.attorneyPhone}</Text>
+            </View>
+          )}
+          {data.attorneyFax && (
+            <View style={styles.infoTableRowLast}>
+              <Text style={styles.infoLabelCell}>Fax</Text>
+              <Text style={styles.infoValueCell}>{data.attorneyFax}</Text>
+            </View>
+          )}
         </View>
 
         {/* Line Items Table */}
