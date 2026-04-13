@@ -222,23 +222,24 @@ export async function getInvoiceFormData(caseId: string) {
   }
 
   // Facility invoice line items — one "Medical site utilization" per procedure performed
-  // Uses the same PRP bundle price (0232T + 86999 + 76942) from the service catalog
-  const facilityBundlePrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
+  // Look up price from the catalog entry with description matching "Medical site utilization"
+  const msuItem = (catalogItems ?? []).find(
+    (item: { description: string }) => item.description.toLowerCase().includes('medical site utilization')
+  )
+  const msuPrice = msuItem ? Number((msuItem as { default_price: number }).default_price) : 0
   const facilityLineItems: typeof prePopulatedLineItems = procedures.map((proc) => {
     const typedProc = proc as {
       id: string
       procedure_date: string
-      charge_amount: number | null
     }
-    const catalogPrice = facilityBundlePrice > 0 ? facilityBundlePrice : Number(typedProc.charge_amount ?? 0)
     return {
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
       cpt_code: '0232T\n86999\n76942',
       description: 'Medical site utilization',
       quantity: 1,
-      unit_price: catalogPrice,
-      total_price: catalogPrice,
+      unit_price: msuPrice,
+      total_price: msuPrice,
     }
   })
 
