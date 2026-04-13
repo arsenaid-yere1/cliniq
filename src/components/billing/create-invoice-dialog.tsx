@@ -213,7 +213,7 @@ export function CreateInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit' : 'Create'} {watchedInvoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
@@ -417,125 +417,127 @@ export function CreateInvoiceDialog({
                 </Button>
               </div>
 
-              <div className="overflow-x-auto -mx-1 px-1">
-                {/* Table header */}
-                <div className="grid grid-cols-[100px_80px_1fr_50px_80px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
-                  <span>Date</span>
-                  <span>CPT</span>
-                  <span>Description</span>
-                  <span>QTY</span>
-                  <span>Unit Price</span>
-                  <span>Total</span>
-                  <span />
-                </div>
-
               {lineItemFields.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[100px_80px_1fr_50px_80px_80px_36px] gap-2 items-start">
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.service_date`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl><Input type="date" className="text-xs" {...field} /></FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.cpt_code`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <CptCodeCombobox
-                            value={field.value}
-                            onChange={field.onChange}
-                            catalogItems={formData.catalogItems}
-                            className="text-xs"
-                            onSelect={(item) => {
-                              field.onChange(item.cpt_code)
-                              form.setValue(`line_items.${index}.description`, item.description)
-                              form.setValue(`line_items.${index}.unit_price`, item.default_price)
-                              setTimeout(() => handleQuantityOrPriceChange(index), 0)
-                            }}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                <div key={field.id} className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Item {index + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => lineItemFields.remove(index)}
+                      disabled={lineItemFields.fields.length <= 1}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.service_date`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Date</FormLabel>
+                          <FormControl><Input type="date" className="text-xs" {...field} /></FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.cpt_code`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">CPT</FormLabel>
+                          <FormControl>
+                            <CptCodeCombobox
+                              value={field.value}
+                              onChange={field.onChange}
+                              catalogItems={formData.catalogItems}
+                              className="text-xs"
+                              onSelect={(item) => {
+                                field.onChange(item.cpt_code)
+                                form.setValue(`line_items.${index}.description`, item.description)
+                                form.setValue(`line_items.${index}.unit_price`, item.default_price)
+                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                              }}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <FormField
                     control={form.control}
                     name={`line_items.${index}.description`}
                     render={({ field }) => (
                       <FormItem>
+                        <FormLabel className="text-xs">Description</FormLabel>
                         <FormControl><Input className="text-xs" placeholder="Description" {...field} /></FormControl>
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.quantity`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={1}
-                            className="text-xs"
-                            {...field}
-                            value={field.value as number}
-                            onChange={(e) => {
-                              field.onChange(e)
-                              setTimeout(() => handleQuantityOrPriceChange(index), 0)
-                            }}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.unit_price`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            className="text-xs"
-                            {...field}
-                            value={field.value as number}
-                            onChange={(e) => {
-                              field.onChange(e)
-                              setTimeout(() => handleQuantityOrPriceChange(index), 0)
-                            }}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <div className="flex items-center h-9 text-xs font-medium">
-                    ${Number(form.watch(`line_items.${index}.total_price`) ?? 0).toFixed(2)}
+                  <div className="grid grid-cols-3 gap-2">
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.quantity`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">QTY</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              className="text-xs"
+                              {...field}
+                              value={field.value as number}
+                              onChange={(e) => {
+                                field.onChange(e)
+                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                              }}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.unit_price`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Unit Price</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              className="text-xs"
+                              {...field}
+                              value={field.value as number}
+                              onChange={(e) => {
+                                field.onChange(e)
+                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                              }}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <div>
+                      <p className="text-xs font-medium mb-2">Total</p>
+                      <div className="flex items-center h-9 text-xs font-medium">
+                        ${Number(form.watch(`line_items.${index}.total_price`) ?? 0).toFixed(2)}
+                      </div>
+                    </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => lineItemFields.remove(index)}
-                    disabled={lineItemFields.fields.length <= 1}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
                 </div>
               ))}
 
               {/* Running Total */}
-              <div className="flex justify-end pr-12">
+              <div className="flex justify-end">
                 <div className="text-sm font-semibold">
                   Total: ${runningTotal.toFixed(2)}
                 </div>
-              </div>
               </div>
             </div>
 
