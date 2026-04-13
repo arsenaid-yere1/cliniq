@@ -61,7 +61,7 @@ export async function getInvoiceFormData(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', data: null }
 
-  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
+  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitNotesResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
     supabase
       .from('cases')
       .select(`
@@ -92,12 +92,10 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('chief_complaint, diagnoses, created_at')
+      .select('visit_type, chief_complaint, diagnoses, created_at, visit_date')
       .eq('case_id', caseId)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order('created_at', { ascending: true }),
     supabase
       .from('pain_management_extractions')
       .select('chief_complaints')
@@ -117,7 +115,7 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('discharge_notes')
-      .select('created_at')
+      .select('created_at, visit_date')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -163,24 +161,47 @@ export async function getInvoiceFormData(caseId: string) {
 
   const caseOpenDate = caseResult.data?.case_open_date
 
-  // 1. Initial exam (CPT 99204) — if an initial visit note exists
-  if (initialVisitResult.data) {
+  // 1. Visit line items (CPT 99204) — one per initial_visit_notes row
+  // The initial_visit_notes table stores both Initial Visit and Pain Evaluation Visit,
+  // discriminated by visit_type. Each is a separate billable visit.
+  const visitNotes = (initialVisitNotesResult.data ?? []) as Array<{
+    visit_type: string
+    visit_date: string | null
+    created_at: string | null
+    chief_complaint: string | null
+    diagnoses: string | null
+  }>
+  for (const note of visitNotes) {
     const price = priceMap['99204'] ?? 0
+    const description = note.visit_type === 'pain_evaluation_visit'
+      ? 'Pain evaluation visit (45-60min)'
+      : 'Initial exam (45-60min)'
     prePopulatedLineItems.push({
-      service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
+      service_date: note.visit_date
+        ?? note.created_at?.split('T')[0]
+        ?? caseOpenDate
+        ?? new Date().toISOString().split('T')[0],
       cpt_code: '99204',
-      description: 'Initial exam (45-60min)',
+      description,
       quantity: 1,
       unit_price: price,
       total_price: price,
     })
   }
 
-  // 2. MRI review (CPT 76140) — if approved MRI extractions exist
+  // 2. MRI review (CPT 76140) — if approved MRI extractions exist.
+  // Service date = the visit during which the MRI was reviewed (Pain Evaluation Visit
+  // if it exists, otherwise Initial Visit).
   if (mriExtractionResult.data) {
     const price = priceMap['76140'] ?? 0
+    const painEvalNote = visitNotes.find((n) => n.visit_type === 'pain_evaluation_visit')
+    const initialNote = visitNotes.find((n) => n.visit_type === 'initial_visit')
+    const mriReviewDate = painEvalNote?.visit_date
+      ?? initialNote?.visit_date
+      ?? caseOpenDate
+      ?? new Date().toISOString().split('T')[0]
     prePopulatedLineItems.push({
-      service_date: caseOpenDate ?? new Date().toISOString().split('T')[0],
+      service_date: mriReviewDate,
       cpt_code: '76140',
       description: 'MRI review',
       quantity: 1,
@@ -247,7 +268,9 @@ export async function getInvoiceFormData(caseId: string) {
   if (dischargeNoteResult.data) {
     const price = priceMap['99213'] ?? 0
     prePopulatedLineItems.push({
-      service_date: dischargeNoteResult.data.created_at?.split('T')[0] ?? new Date().toISOString().split('T')[0],
+      service_date: dischargeNoteResult.data.visit_date
+        ?? dischargeNoteResult.data.created_at?.split('T')[0]
+        ?? new Date().toISOString().split('T')[0],
       cpt_code: '99213',
       description: 'Follow up/ Discharge visit',
       quantity: 1,
