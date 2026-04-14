@@ -361,7 +361,6 @@ export async function generateDischargeNote(caseId: string) {
   await supabase
     .from('discharge_notes')
     .update({
-      patient_header: data.patient_header,
       subjective: data.subjective,
       objective_vitals: data.objective_vitals,
       objective_general: data.objective_general,

@@ -120,59 +120,56 @@ This is a DISCHARGE note — the patient has COMPLETED their PRP treatment serie
 
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
-1. patient_header (~2 lines):
-Not a prose section — used internally for PDF header data. Brief summary: "Patient Name, [age]-year-old [gender], presents for comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the [sites] on [last procedure date]."
-
-2. subjective (~3 paragraphs):
+1. subjective (~3 paragraphs):
 Post-PRP follow-up narrative. Describe the patient's self-reported improvement since completing PRP treatment.
 Para 1: Opening sentence identifying patient, age, presents for follow-up after completing PRP treatment to [sites] on [last procedure date]. Report sustained and progressive improvement in pain severity, functional capacity, and quality of life.
 Para 2: Region-by-region symptom status — current pain ratings, quality of remaining pain (mild stiffness vs sharp), improvement in mobility, resolution of radicular symptoms. Compare to pre-treatment baseline.
 Para 3: Additional improvements — sleep quality, ADL function, denial of red-flag symptoms (bowel/bladder dysfunction, saddle anesthesia, gait instability, progressive weakness, new neurologic complaints, adverse effects from PRP). End with patient's overall assessment that PRP provided meaningful relief.
 Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025..."
 
-3. objective_vitals (~6 bullets):
+2. objective_vitals (~6 bullets):
 BP, HR, RR, Temp, SpO2, Pain rating. Use most recent procedure vitals if available, or brackets if not recorded.
 Reference: "• BP: 122/78 mmHg\\n• HR: 74 bpm\\n• RR: 15 breaths/min\\n• Temp: 98.1°F\\n• SpO₂: 98% on room air\\n• Pain: 2-3/10"
 
-4. objective_general (~2-3 sentences):
+3. objective_general (~2-3 sentences):
 General appearance. Alert, oriented, cooperative, no acute distress. Note improved posture and ease of movement compared to prior visits.
 Reference: "The patient is alert, oriented to person, place, time, and situation, cooperative, and in no acute distress. She appears comfortable throughout the examination and demonstrates improved posture and ease of movement compared to prior visits."
 
-5. objective_cervical (~3-4 sentences):
+4. objective_cervical (~3-4 sentences):
 Cervical spine examination findings at discharge. Inspection, palpation (minimal residual findings), ROM (near full), negative provocative tests. Emphasize improvement from baseline.
 Reference: "Inspection reveals no deformity, swelling, or muscle asymmetry. Palpation reveals minimal residual myofascial tightness over the cervical paraspinal musculature without focal tenderness or trigger points. Range of motion is near full in all planes, with only mild end-range stiffness and no reproduction of radicular symptoms. Spurling's maneuver is negative bilaterally."
 
-6. objective_lumbar (~3-4 sentences):
+5. objective_lumbar (~3-4 sentences):
 Lumbar spine examination findings at discharge. Same structure as cervical — inspection, palpation, ROM, SLR. Emphasize improvement.
 Reference: "Inspection shows normal spinal alignment. Palpation reveals minimal paraspinal tenderness at the lower lumbar levels without spasm. Forward flexion, extension, and rotation are performed with good tolerance and only mild tightness at end range. Straight-leg raise testing is negative bilaterally."
 
-7. objective_neurological (~3-4 sentences):
+6. objective_neurological (~3-4 sentences):
 Motor strength, sensation, reflexes, gait. All should be normal/intact at discharge.
 Reference: "Motor strength is 5/5 throughout the upper and lower extremities. Sensation is intact to light touch and pinprick in all dermatomes. Deep tendon reflexes are 2+ and symmetric. Gait is steady and non-antalgic."
 
-8. diagnoses (ICD-10 list):
+7. diagnoses (ICD-10 list):
 List all diagnoses with ICD-10 codes. One per line, format: "• CODE – Description". Pull from procedure diagnoses, case summary, and PM extraction. Include all relevant codes from the treatment course.
 Reference: "• G44.309 – Post-traumatic headaches\\n• M62.83 – Muscle spasm\\n• M54.22 – Cervicalgia\\n• S13.4XXA – Cervical sprain..."
 
-9. assessment (~1 paragraph):
+8. assessment (~1 paragraph):
 Clinical improvement summary. State sustained improvement following PRP treatment. Link pain reduction, functional restoration, and resolution of radicular features to favorable response to biologic regenerative therapy. Note no treatment-related complications. Support stabilization and healing.
 Reference: "The patient demonstrates sustained clinical improvement following completion of a PRP treatment to the cervical and lumbar spine. The degree of pain reduction, functional restoration, and resolution of radicular features is consistent with a favorable response to biologic regenerative therapy. There is no evidence of treatment-related complications. Current findings support stabilization and healing of the involved spinal structures."
 
-10. plan_and_recommendations (~2-3 paragraphs):
+9. plan_and_recommendations (~2-3 paragraphs):
 Para 1: PRP therapy is complete, no additional injections indicated. Patient appropriate for discharge from active interventional pain management care.
 Para 2: Advise structured home exercise/stretching program (cervical mobility, lumbar stabilization, core strengthening, postural alignment). Ergonomic awareness. OTC medications as needed.
 Para 3: Return instructions — if symptoms recur, worsen, or new neurologic deficits develop, return for reevaluation. If conservative measures fail, further imaging, interventional options, or specialist referral may be considered.
 Reference: "The PRP injection therapy is complete, and no additional PRP injections are indicated at this time..."
 
-11. patient_education (~1 paragraph):
+10. patient_education (~1 paragraph):
 Detailed education on long-term recovery expectations, importance of continued rehab, activity modification, proper body mechanics. Red-flag symptoms counseling (worsening pain, numbness, weakness, gait changes, bowel/bladder dysfunction). Patient participation and understanding statement.
 Reference: "The patient received detailed education regarding long-term recovery expectations following PRP therapy..."
 
-12. prognosis (~2-3 sentences):
+11. prognosis (~2-3 sentences):
 Favorable prognosis. Meaningful and sustained improvement in pain control, mobility, and functional capacity. With continued adherence to conservative management, further improvement and long-term symptom control anticipated.
 Reference: "The prognosis is favorable. The patient has demonstrated meaningful and sustained improvement in pain control, mobility, and functional capacity following PRP therapy. With continued adherence to conservative management strategies and ergonomic practices, further improvement and long-term symptom control are anticipated."
 
-13. clinician_disclaimer (~2-3 sentences):
+12. clinician_disclaimer (~2-3 sentences):
 Medical-legal disclaimer. Report prepared for documentation and continuity of care related exclusively to injuries sustained in the accident on [date]. Does not constitute comprehensive general medical exam. Only relevant symptoms addressed. Closing pleasantry and contact instruction.
 Reference: "This report is prepared for medical-legal documentation and continuity of care related exclusively to injuries sustained in the motor vehicle accident dated March 12, 2025..."
 
@@ -184,7 +181,6 @@ const DISCHARGE_NOTE_TOOL: Anthropic.Tool = {
   input_schema: {
     type: 'object' as const,
     required: [
-      'patient_header',
       'subjective',
       'objective_vitals',
       'objective_general',
@@ -199,7 +195,6 @@ const DISCHARGE_NOTE_TOOL: Anthropic.Tool = {
       'clinician_disclaimer',
     ],
     properties: {
-      patient_header: { type: 'string', description: 'Brief patient identification line for PDF header' },
       subjective: { type: 'string', description: 'Post-PRP follow-up narrative with improvement report' },
       objective_vitals: { type: 'string', description: 'Vital signs and pain rating as bullet list' },
       objective_general: { type: 'string', description: 'General appearance findings' },

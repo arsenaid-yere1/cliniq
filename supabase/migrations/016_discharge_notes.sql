@@ -5,8 +5,7 @@ create table public.discharge_notes (
   -- Provider-editable date of the discharge visit
   visit_date date,
 
-  -- Note sections (13 sections matching discharge PDF template)
-  patient_header         text,  -- Visit metadata line (not prose — used for PDF header)
+  -- Note sections (12 sections matching discharge PDF template)
   subjective             text,  -- Post-PRP follow-up narrative
   objective_vitals       text,  -- Vital signs bullet list
   objective_general      text,  -- General appearance

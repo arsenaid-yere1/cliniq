@@ -53,7 +53,6 @@ import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 interface NoteRow {
   id: string
   case_id: string
-  patient_header: string | null
   subjective: string | null
   objective_vitals: string | null
   objective_general: string | null
@@ -128,7 +127,6 @@ function formatVisitDate(visitDate: string | null, finalizedAt: string | null): 
 }
 
 const sectionRows: Record<DischargeNoteSection, number> = {
-  patient_header:          4,
   subjective:              8,
   objective_vitals:        4,
   objective_general:       4,
@@ -592,13 +590,8 @@ function FinalizedView({
 
         <Separator />
 
-        {/* patient_header — opening narrative, no heading */}
-        {note.patient_header && (
-          <p className="text-sm whitespace-pre-wrap leading-relaxed">{note.patient_header}</p>
-        )}
-
-        {/* Remaining sections */}
-        {dischargeNoteSections.slice(1).map((section) => {
+        {/* Sections */}
+        {dischargeNoteSections.map((section) => {
           const content = note[section]
           if (!content) return null
           return (

@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export const dischargeNoteSections = [
-  'patient_header',
   'subjective',
   'objective_vitals',
   'objective_general',
@@ -19,7 +18,6 @@ export const dischargeNoteSections = [
 export type DischargeNoteSection = typeof dischargeNoteSections[number]
 
 export const dischargeNoteSectionLabels: Record<DischargeNoteSection, string> = {
-  patient_header:          'Patient Header',
   subjective:              'Subjective',
   objective_vitals:        'Objective — Vital Signs',
   objective_general:       'General',
@@ -36,7 +34,6 @@ export const dischargeNoteSectionLabels: Record<DischargeNoteSection, string> = 
 
 // AI output schema (validates Claude tool output)
 export const dischargeNoteResultSchema = z.object({
-  patient_header:          z.string(),
   subjective:              z.string(),
   objective_vitals:        z.string(),
   objective_general:       z.string(),
@@ -59,7 +56,6 @@ export const dischargeNoteEditSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Visit date must be YYYY-MM-DD')
     .nullable(),
-  patient_header:          z.string().min(1, 'Required'),
   subjective:              z.string().min(1, 'Required'),
   objective_vitals:        z.string().min(1, 'Required'),
   objective_general:       z.string().min(1, 'Required'),

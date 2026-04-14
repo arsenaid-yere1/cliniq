@@ -123,7 +123,6 @@ export async function renderDischargeNotePdf(input: RenderPdfInput): Promise<Buf
     reasonForVisit: formatReasonForVisit(caseData?.accident_type as string | null | undefined),
     visitType: 'Post-PRP Series Follow-Up and Discharge Evaluation',
 
-    patient_header: input.note.patient_header as string | null,
     subjective: input.note.subjective as string | null,
     objective_vitals: input.note.objective_vitals as string | null,
     objective_general: input.note.objective_general as string | null,

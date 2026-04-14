@@ -847,7 +847,6 @@ export type Database = {
           objective_neurological: string | null
           objective_vitals: string | null
           patient_education: string | null
-          patient_header: string | null
           plan_and_recommendations: string | null
           prognosis: string | null
           raw_ai_response: Json | null
@@ -879,7 +878,6 @@ export type Database = {
           objective_neurological?: string | null
           objective_vitals?: string | null
           patient_education?: string | null
-          patient_header?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
@@ -911,7 +909,6 @@ export type Database = {
           objective_neurological?: string | null
           objective_vitals?: string | null
           patient_education?: string | null
-          patient_header?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null

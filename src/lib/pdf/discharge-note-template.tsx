@@ -17,8 +17,7 @@ export interface DischargeNotePdfData {
   reasonForVisit: string  // medical etiology, e.g. "Post-traumatic musculoskeletal pain following motor vehicle collision"
   visitType: string       // encounter purpose, e.g. "Post-PRP Series Follow-Up and Discharge Evaluation"
 
-  // Note sections (13 sections)
-  patient_header: string | null
+  // Note sections (12 sections)
   subjective: string | null
   objective_vitals: string | null
   objective_general: string | null
@@ -59,7 +58,6 @@ const styles = StyleSheet.create({
   clinicHeader: { textAlign: 'center', alignItems: 'center', marginBottom: 10 },
   clinicDetail: { fontSize: 9, color: '#444' },
   separator: { borderBottomWidth: 1, borderBottomColor: '#ccc', borderBottomStyle: 'solid', marginTop: 10, marginBottom: 10 },
-  title: { fontFamily: 'Helvetica-Bold', fontSize: 12, textAlign: 'center', marginBottom: 10 },
   patientInfoRow: { flexDirection: 'row', marginBottom: 2 },
   patientLabel: { fontFamily: 'Helvetica-Bold', marginRight: 4 },
   sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
@@ -170,9 +168,6 @@ export function DischargeNotePdf({ data }: { data: DischargeNotePdfData }) {
 
         <View style={styles.separator} />
 
-        {/* Document Title */}
-        <Text style={styles.title}>FINAL PRP FOLLOW-UP AND DISCHARGE VISIT</Text>
-
         {/* Patient Info Block */}
         <View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text>{data.patientName}</Text></View>
@@ -183,14 +178,7 @@ export function DischargeNotePdf({ data }: { data: DischargeNotePdfData }) {
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Visit Type:</Text><Text>{data.visitType}</Text></View>
         </View>
 
-        {/* patient_header rendered as opening narrative (no section heading) */}
-        {data.patient_header && (
-          <View style={{ marginTop: 10 }}>
-            <SectionBody content={data.patient_header} />
-          </View>
-        )}
-
-        {/* Remaining sections */}
+        {/* Sections */}
         {sectionEntries.map(([key, label]) => {
           const content = data[key] as string | null
           if (!content) return null
