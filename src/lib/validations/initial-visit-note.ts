@@ -301,7 +301,7 @@ export const defaultProviderIntake: ProviderIntakeValues = {
   chief_complaints: {
     complaints: [
       {
-        body_region: 'Neck',
+        body_region: '',
         pain_character: '',
         severity_min: null,
         severity_max: null,
