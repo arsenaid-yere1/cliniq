@@ -614,3 +614,56 @@ export async function regenerateDischargeNoteSectionAction(
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { content: result.data } }
 }
+
+// --- Reset ---
+
+export async function resetDischargeNote(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const { data: note } = await supabase
+    .from('discharge_notes')
+    .select('id, status')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!note) return { error: 'No note found to reset' }
+  if (note.status !== 'draft' && note.status !== 'failed') {
+    return { error: 'Only draft or failed notes can be reset' }
+  }
+
+  const { error } = await supabase
+    .from('discharge_notes')
+    .update({
+      status: 'draft',
+      subjective: null,
+      objective_vitals: null,
+      objective_general: null,
+      objective_cervical: null,
+      objective_lumbar: null,
+      objective_neurological: null,
+      diagnoses: null,
+      assessment: null,
+      plan_and_recommendations: null,
+      patient_education: null,
+      prognosis: null,
+      clinician_disclaimer: null,
+      ai_model: null,
+      raw_ai_response: null,
+      generation_error: null,
+      generation_attempts: 0,
+      source_data_hash: null,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', note.id)
+
+  if (error) return { error: 'Failed to reset note' }
+
+  revalidatePath(`/patients/${caseId}/discharge`)
+  return { data: { success: true } }
+}

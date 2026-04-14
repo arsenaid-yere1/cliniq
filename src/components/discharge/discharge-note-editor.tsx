@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,6 +37,7 @@ import {
   finalizeDischargeNote,
   unfinalizeDischargeNote,
   regenerateDischargeNoteSectionAction,
+  resetDischargeNote,
 } from '@/actions/discharge-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import {
@@ -158,8 +159,11 @@ export function DischargeNoteEditor({
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
-  // No note — show generate button
-  if (!note) {
+  // A note is considered "empty" after a reset — row exists but all AI content is cleared.
+  const hasGeneratedContent = !!(note?.subjective || note?.assessment)
+
+  // No note (or reset draft with no generated content) — show generate button
+  if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Discharge Summary</h1>
@@ -219,20 +223,52 @@ export function DischargeNoteEditor({
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {note.generation_error || 'Discharge summary generation failed.'}
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            startTransition(async () => {
-              const result = await generateDischargeNote(caseId)
-              if (result.error) toast.error(result.error)
-              else toast.success('Discharge summary generated successfully')
-            })
-          }}
-          disabled={isLocked || isPending}
-        >
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-          Retry
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              startTransition(async () => {
+                const result = await generateDischargeNote(caseId)
+                if (result.error) toast.error(result.error)
+                else toast.success('Discharge summary generated successfully')
+              })
+            }}
+            disabled={isLocked || isPending}
+          >
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            Retry
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isLocked || isPending}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Discharge Summary</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will discard all generated note content and return to the pre-generation state. Continue?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await resetDischargeNote(caseId)
+                      if (result.error) toast.error(result.error)
+                      else toast.success('Discharge summary reset successfully')
+                    })
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
     )
   }
@@ -348,6 +384,36 @@ function DraftEditor({
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isLocked || isPending}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Discharge Summary</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will discard all generated note content and return to the pre-generation state. Continue?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await resetDischargeNote(caseId)
+                      if (result.error) toast.error(result.error)
+                      else toast.success('Discharge summary reset successfully')
+                    })
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={isLocked || isPending}>
