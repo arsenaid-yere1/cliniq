@@ -640,9 +640,6 @@ function FinalizedView({
 
         <Separator />
 
-        {/* Document Title */}
-        <h2 className="text-center font-bold text-base">FINAL PRP FOLLOW-UP AND DISCHARGE VISIT</h2>
-
         {/* Patient Info Block — medical-legal header convention:
               Indication = injury cause, Visit Type = encounter purpose */}
         <div className="space-y-1 text-sm">
