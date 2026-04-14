@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseBodyRegion } from '../procedures'
+import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 
 describe('parseBodyRegion', () => {
   it('parses full "Left" prefix', () => {
