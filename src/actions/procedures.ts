@@ -398,19 +398,34 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
     ?? null
 
-  // Derive injection_site and laterality from the first chief complaint
-  // with a non-empty body_region. Providers often leave earlier template
-  // entries blank, so skip empties to find the first real complaint. The
-  // provider can still override the defaults before saving.
+  // Derive injection_site and laterality from all chief complaints with a
+  // non-empty body_region. Sites are comma-joined (deduped). Laterality is
+  // merged: all-same → that value; mixed left+right or any bilateral →
+  // bilateral; any null in the mix → null (ambiguous, provider picks).
   let injection_site: string | null = null
   let laterality: 'left' | 'right' | 'bilateral' | null = null
 
   const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
-  const firstWithRegion = complaints.find((c) => c.body_region && c.body_region.trim() !== '')
-  if (firstWithRegion) {
-    const parsed = parseBodyRegion(firstWithRegion.body_region)
-    injection_site = parsed.injection_site || null
-    laterality = parsed.laterality
+  const parsed = complaints
+    .filter((c) => c.body_region && c.body_region.trim() !== '')
+    .map((c) => parseBodyRegion(c.body_region))
+    .filter((p) => p.injection_site !== '')
+
+  if (parsed.length > 0) {
+    const sites = Array.from(new Set(parsed.map((p) => p.injection_site)))
+    injection_site = sites.join(', ')
+
+    const lats = parsed.map((p) => p.laterality)
+    if (lats.some((l) => l === null)) {
+      laterality = null
+    } else {
+      const unique = new Set(lats) as Set<'left' | 'right' | 'bilateral'>
+      if (unique.size === 1) {
+        laterality = lats[0]
+      } else {
+        laterality = 'bilateral'
+      }
+    }
   }
 
   return {
