@@ -219,7 +219,6 @@ export async function getInvoiceFormData(caseId: string) {
       procedure_name: string
       injection_site?: string | null
       laterality?: string | null
-      charge_amount: number | null
     }
     // Build description with injection sites listed below the main description
     const sites: string[] = []
@@ -228,8 +227,7 @@ export async function getInvoiceFormData(caseId: string) {
     const description = 'PRP preparation and injection with US guided'
       + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
 
-    const prpBundlePrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
-    const catalogPrice = prpBundlePrice > 0 ? prpBundlePrice : Number(typedProc.charge_amount ?? 0)
+    const catalogPrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
 
     prePopulatedLineItems.push({
       procedure_id: typedProc.id,

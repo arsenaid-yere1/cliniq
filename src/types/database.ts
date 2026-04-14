@@ -2194,7 +2194,6 @@ export type Database = {
           blood_draw_volume_ml: number | null
           case_id: string
           centrifuge_duration_min: number | null
-          charge_amount: number | null
           complications: string | null
           compression_bandage: boolean | null
           consent_obtained: boolean | null
@@ -2227,7 +2226,6 @@ export type Database = {
           blood_draw_volume_ml?: number | null
           case_id: string
           centrifuge_duration_min?: number | null
-          charge_amount?: number | null
           complications?: string | null
           compression_bandage?: boolean | null
           consent_obtained?: boolean | null
@@ -2260,7 +2258,6 @@ export type Database = {
           blood_draw_volume_ml?: number | null
           case_id?: string
           centrifuge_duration_min?: number | null
-          charge_amount?: number | null
           complications?: string | null
           compression_bandage?: boolean | null
           consent_obtained?: boolean | null

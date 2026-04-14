@@ -34,7 +34,6 @@ interface Procedure {
   id: string
   procedure_date: string
   procedure_name: string
-  charge_amount: number | null
   injection_site: string | null
   laterality: string | null
   procedure_number: number | null
@@ -99,18 +98,6 @@ const columns: ColumnDef<Procedure>[] = [
     cell: ({ getValue }) => {
       const val = getValue() as number | null
       return val != null ? ordinal(val) : '—'
-    },
-  },
-  {
-    accessorKey: 'charge_amount',
-    header: ({ column }) => (
-      <Button variant="ghost" size="sm" onClick={() => column.toggleSorting()}>
-        Amount <ArrowUpDown className="ml-1 h-3 w-3" />
-      </Button>
-    ),
-    cell: ({ getValue }) => {
-      const val = getValue() as number | null
-      return val != null ? `$${Number(val).toFixed(2)}` : '—'
     },
   },
 ]
