@@ -398,16 +398,17 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
     ?? null
 
-  // Derive injection_site and laterality from the first chief complaint.
-  // Providers enter complaints in clinical importance order, so the first
-  // entry is the primary treatment target. If multiple complaints exist, the
+  // Derive injection_site and laterality from the first chief complaint
+  // with a non-empty body_region. Providers often leave earlier template
+  // entries blank, so skip empties to find the first real complaint. The
   // provider can still override the defaults before saving.
   let injection_site: string | null = null
   let laterality: 'left' | 'right' | 'bilateral' | null = null
 
   const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
-  if (complaints.length > 0 && complaints[0].body_region) {
-    const parsed = parseBodyRegion(complaints[0].body_region)
+  const firstWithRegion = complaints.find((c) => c.body_region && c.body_region.trim() !== '')
+  if (firstWithRegion) {
+    const parsed = parseBodyRegion(firstWithRegion.body_region)
     injection_site = parsed.injection_site || null
     laterality = parsed.laterality
   }
