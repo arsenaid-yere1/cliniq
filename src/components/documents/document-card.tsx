@@ -59,9 +59,19 @@ const docTypeFilenameLabels: Record<string, string> = {
   pt_report: 'PTReport',
   orthopedic_report: 'OrthopedicReport',
   ct_scan: 'CTScan',
-  generated: 'Generated',
   lien_agreement: 'LienAgreement',
   procedure_consent: 'ProcedureConsent',
+}
+
+// file_name values written by the server when document_type = 'generated'.
+// See src/actions/{discharge-notes,initial-visit-notes,procedure-notes,clinical-orders}.ts.
+const generatedFileNameLabels: Record<string, string> = {
+  'Discharge Summary': 'DischargeSummary',
+  'Initial Visit Note': 'InitialVisitNote',
+  'Pain Evaluation Visit Note': 'PainEvaluationVisitNote',
+  'PRP Procedure Note': 'ProcedureNote',
+  'Imaging Orders': 'ImagingOrders',
+  'Chiropractic Therapy Order': 'ChiropracticOrder',
 }
 
 function buildDocumentCardFilename(doc: {
@@ -69,6 +79,7 @@ function buildDocumentCardFilename(doc: {
   document_type: string
   mime_type: string | null
   created_at: string
+  content_date: string | null
 }, lastName: string | null): string {
   const extension = (() => {
     const match = doc.file_name.match(/\.([a-zA-Z0-9]+)$/)
@@ -77,25 +88,22 @@ function buildDocumentCardFilename(doc: {
     return 'pdf'
   })()
 
+  const date = doc.content_date ?? doc.created_at
+
+  if (doc.document_type === 'generated') {
+    const mapped = generatedFileNameLabels[doc.file_name] ?? 'Generated'
+    return buildDownloadFilename({ lastName, docType: mapped, date, extension })
+  }
+
   const mappedDocType = docTypeFilenameLabels[doc.document_type]
   if (mappedDocType) {
-    return buildDownloadFilename({
-      lastName,
-      docType: mappedDocType,
-      date: doc.created_at,
-      extension,
-    })
+    return buildDownloadFilename({ lastName, docType: mappedDocType, date, extension })
   }
 
   // 'other' or unknown type: preserve the uploader's filename (sanitized) as the doc-type token.
   const baseName = doc.file_name.replace(/\.[a-zA-Z0-9]+$/, '')
   const slug = baseName.replace(/[^A-Za-z0-9-]+/g, '').slice(0, 40) || 'Document'
-  return buildDownloadFilename({
-    lastName,
-    docType: slug,
-    date: doc.created_at,
-    extension,
-  })
+  return buildDownloadFilename({ lastName, docType: slug, date, extension })
 }
 
 interface DocumentCardProps {
@@ -108,6 +116,7 @@ interface DocumentCardProps {
     document_type: string
     status: string
     created_at: string
+    content_date: string | null
     notes: string | null
     uploaded_by: { full_name: string } | null
   }

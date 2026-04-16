@@ -34,7 +34,44 @@ export async function listDocuments(caseId: string, filters?: {
   const { data, error } = await query
 
   if (error) return { error: error.message, data: [] }
-  return { data: data ?? [] }
+
+  const rows = data ?? []
+  const generatedIds = rows
+    .filter((r) => r.document_type === 'generated')
+    .map((r) => r.id)
+
+  if (generatedIds.length === 0) {
+    return { data: rows.map((r) => ({ ...r, content_date: null })) }
+  }
+
+  const [dischargeRes, initialVisitRes, procedureNoteRes, clinicalOrderRes] = await Promise.all([
+    supabase.from('discharge_notes').select('document_id, visit_date').in('document_id', generatedIds),
+    supabase.from('initial_visit_notes').select('document_id, visit_date').in('document_id', generatedIds),
+    supabase.from('procedure_notes').select('document_id, procedure:procedures(procedure_date)').in('document_id', generatedIds),
+    supabase.from('clinical_orders').select('document_id').in('document_id', generatedIds),
+  ])
+
+  const contentDateByDocId = new Map<string, string>()
+  for (const r of dischargeRes.data ?? []) {
+    if (r.document_id && r.visit_date) contentDateByDocId.set(r.document_id, r.visit_date)
+  }
+  for (const r of initialVisitRes.data ?? []) {
+    if (r.document_id && r.visit_date) contentDateByDocId.set(r.document_id, r.visit_date)
+  }
+  for (const r of procedureNoteRes.data ?? []) {
+    const procRaw = r.procedure as unknown as { procedure_date: string | null } | { procedure_date: string | null }[] | null
+    const proc = Array.isArray(procRaw) ? procRaw[0] ?? null : procRaw
+    if (r.document_id && proc?.procedure_date) contentDateByDocId.set(r.document_id, proc.procedure_date)
+  }
+  // clinical_orders has no content-date column; leave to fall back to created_at in the UI
+  void clinicalOrderRes
+
+  return {
+    data: rows.map((r) => ({
+      ...r,
+      content_date: contentDateByDocId.get(r.id) ?? null,
+    })),
+  }
 }
 
 export async function getDocumentCount(caseId: string) {

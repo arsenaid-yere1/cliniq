@@ -40,6 +40,7 @@ interface Document {
   document_type: string
   status: string
   created_at: string
+  content_date: string | null
   notes: string | null
   uploaded_by: { full_name: string } | null
 }
