@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { painManagementExtractionResultSchema, type PainManagementExtractionResult } from '@/lib/validations/pain-management-extraction'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a medical data extraction assistant for a personal injury clinic.
 You are extracting structured data from a pain management evaluation report.
@@ -164,62 +163,45 @@ export async function extractPainManagementFromPdf(pdfBase64: string): Promise<{
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [EXTRACTION_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_pain_management_data' },
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: 'Extract the structured data from this pain management evaluation report now.' },
-        ],
-      }],
-    })
+  return callClaudeTool<PainManagementExtractionResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: SYSTEM_PROMPT,
+    tools: [EXTRACTION_TOOL],
+    toolName: 'extract_pain_management_data',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: 'Extract the structured data from this pain management evaluation report now.' },
+      ],
+    }],
+    parse: (raw) => {
+      const normalized = {
+        report_date: normalizeNullString(raw.report_date),
+        date_of_injury: normalizeNullString(raw.date_of_injury),
+        examining_provider: normalizeNullString(raw.examining_provider),
+        chief_complaints: normalizeNullStringsInArray(raw.chief_complaints, ['radiation']),
+        physical_exam: (Array.isArray(raw.physical_exam) ? raw.physical_exam : []).map(
+          (region: Record<string, unknown>) => ({
+            ...region,
+            palpation_findings: normalizeNullString(region.palpation_findings),
+            neurological_summary: normalizeNullString(region.neurological_summary),
+            range_of_motion: Array.isArray(region.range_of_motion) ? region.range_of_motion : [],
+            orthopedic_tests: Array.isArray(region.orthopedic_tests) ? region.orthopedic_tests : [],
+          }),
+        ),
+        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
+        treatment_plan: normalizeNullStringsInArray(raw.treatment_plan, ['type', 'body_region']),
+        diagnostic_studies_summary: normalizeNullString(raw.diagnostic_studies_summary),
+        confidence: raw.confidence,
+        extraction_notes: normalizeNullString(raw.extraction_notes),
+      }
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize "null" strings to actual nulls
-    const normalized = {
-      report_date: normalizeNullString(raw.report_date),
-      date_of_injury: normalizeNullString(raw.date_of_injury),
-      examining_provider: normalizeNullString(raw.examining_provider),
-      chief_complaints: normalizeNullStringsInArray(raw.chief_complaints, ['radiation']),
-      physical_exam: (Array.isArray(raw.physical_exam) ? raw.physical_exam : []).map(
-        (region: Record<string, unknown>) => ({
-          ...region,
-          palpation_findings: normalizeNullString(region.palpation_findings),
-          neurological_summary: normalizeNullString(region.neurological_summary),
-          range_of_motion: Array.isArray(region.range_of_motion) ? region.range_of_motion : [],
-          orthopedic_tests: Array.isArray(region.orthopedic_tests) ? region.orthopedic_tests : [],
-        }),
-      ),
-      diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
-      treatment_plan: normalizeNullStringsInArray(raw.treatment_plan, ['type', 'body_region']),
-      diagnostic_studies_summary: normalizeNullString(raw.diagnostic_studies_summary),
-      confidence: raw.confidence,
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-    }
-
-    const validated = painManagementExtractionResultSchema.safeParse(normalized)
-
-    if (!validated.success) {
-      return { error: 'Extraction output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+      const validated = painManagementExtractionResultSchema.safeParse(normalized)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }

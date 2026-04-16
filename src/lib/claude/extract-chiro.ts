@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { chiroExtractionResultSchema, type ChiroExtractionResult } from '@/lib/validations/chiro-extraction'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a medical data extraction assistant for a personal injury clinic.
 You are extracting structured data from a chiropractor / conservative care report.
@@ -178,80 +177,63 @@ export async function extractChiroFromPdf(pdfBase64: string): Promise<{
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [EXTRACTION_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_chiro_data' },
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: 'Extract the structured data from this chiropractor report now.' },
-        ],
-      }],
-    })
+  return callClaudeTool<ChiroExtractionResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: SYSTEM_PROMPT,
+    tools: [EXTRACTION_TOOL],
+    toolName: 'extract_chiro_data',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: 'Extract the structured data from this chiropractor report now.' },
+      ],
+    }],
+    parse: (raw) => {
+      const rawTreatmentDates = raw.treatment_dates as Record<string, unknown> | undefined
+      const rawFunctionalOutcomes = raw.functional_outcomes as Record<string, unknown> | undefined
+      const rawPlateauStatement = raw.plateau_statement as Record<string, unknown> | undefined
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
+      const normalized = {
+        report_type: raw.report_type,
+        report_date: normalizeNullString(raw.report_date),
+        treatment_dates: {
+          first_visit: normalizeNullString(rawTreatmentDates?.first_visit),
+          last_visit: normalizeNullString(rawTreatmentDates?.last_visit),
+          total_visits: rawTreatmentDates?.total_visits ?? null,
+          visit_dates: Array.isArray(rawTreatmentDates?.visit_dates) ? rawTreatmentDates.visit_dates : [],
+          treatment_gaps: Array.isArray(rawTreatmentDates?.treatment_gaps) ? rawTreatmentDates.treatment_gaps : [],
+        },
+        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code', 'region']),
+        treatment_modalities: normalizeNullStringsInArray(raw.treatment_modalities, ['cpt_code', 'frequency']),
+        functional_outcomes: {
+          pain_levels: normalizeNullStringsInArray(
+            rawFunctionalOutcomes?.pain_levels, ['date', 'context'],
+          ),
+          disability_scores: normalizeNullStringsInArray(
+            rawFunctionalOutcomes?.disability_scores, ['date', 'interpretation'],
+          ),
+          progress_status: normalizeNullString(rawFunctionalOutcomes?.progress_status),
+        },
+        plateau_statement: {
+          present: rawPlateauStatement?.present ?? false,
+          mmi_reached: rawPlateauStatement?.mmi_reached ?? null,
+          date: normalizeNullString(rawPlateauStatement?.date),
+          verbatim_statement: normalizeNullString(rawPlateauStatement?.verbatim_statement),
+          residual_complaints: Array.isArray(rawPlateauStatement?.residual_complaints) ? rawPlateauStatement.residual_complaints : [],
+          permanent_restrictions: Array.isArray(rawPlateauStatement?.permanent_restrictions) ? rawPlateauStatement.permanent_restrictions : [],
+          impairment_rating_percent: rawPlateauStatement?.impairment_rating_percent ?? null,
+          future_care_recommended: rawPlateauStatement?.future_care_recommended ?? null,
+        },
+        confidence: raw.confidence,
+        extraction_notes: normalizeNullString(raw.extraction_notes),
+      }
 
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize "null" strings to actual nulls
-    const rawTreatmentDates = raw.treatment_dates as Record<string, unknown> | undefined
-    const rawFunctionalOutcomes = raw.functional_outcomes as Record<string, unknown> | undefined
-    const rawPlateauStatement = raw.plateau_statement as Record<string, unknown> | undefined
-
-    const normalized = {
-      report_type: raw.report_type,
-      report_date: normalizeNullString(raw.report_date),
-      treatment_dates: {
-        first_visit: normalizeNullString(rawTreatmentDates?.first_visit),
-        last_visit: normalizeNullString(rawTreatmentDates?.last_visit),
-        total_visits: rawTreatmentDates?.total_visits ?? null,
-        visit_dates: Array.isArray(rawTreatmentDates?.visit_dates) ? rawTreatmentDates.visit_dates : [],
-        treatment_gaps: Array.isArray(rawTreatmentDates?.treatment_gaps) ? rawTreatmentDates.treatment_gaps : [],
-      },
-      diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code', 'region']),
-      treatment_modalities: normalizeNullStringsInArray(raw.treatment_modalities, ['cpt_code', 'frequency']),
-      functional_outcomes: {
-        pain_levels: normalizeNullStringsInArray(
-          rawFunctionalOutcomes?.pain_levels, ['date', 'context'],
-        ),
-        disability_scores: normalizeNullStringsInArray(
-          rawFunctionalOutcomes?.disability_scores, ['date', 'interpretation'],
-        ),
-        progress_status: normalizeNullString(rawFunctionalOutcomes?.progress_status),
-      },
-      plateau_statement: {
-        present: rawPlateauStatement?.present ?? false,
-        mmi_reached: rawPlateauStatement?.mmi_reached ?? null,
-        date: normalizeNullString(rawPlateauStatement?.date),
-        verbatim_statement: normalizeNullString(rawPlateauStatement?.verbatim_statement),
-        residual_complaints: Array.isArray(rawPlateauStatement?.residual_complaints) ? rawPlateauStatement.residual_complaints : [],
-        permanent_restrictions: Array.isArray(rawPlateauStatement?.permanent_restrictions) ? rawPlateauStatement.permanent_restrictions : [],
-        impairment_rating_percent: rawPlateauStatement?.impairment_rating_percent ?? null,
-        future_care_recommended: rawPlateauStatement?.future_care_recommended ?? null,
-      },
-      confidence: raw.confidence,
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-    }
-
-    const validated = chiroExtractionResultSchema.safeParse(normalized)
-
-    if (!validated.success) {
-      return { error: 'Extraction output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+      const validated = chiroExtractionResultSchema.safeParse(normalized)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }

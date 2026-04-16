@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { mriExtractionResponseSchema, type MriExtractionResult } from '@/lib/validations/mri-extraction'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a medical data extraction assistant for a personal injury clinic.
 Extract structured information from MRI radiology reports using the provided tool.
@@ -85,56 +84,38 @@ export async function extractMriFromPdf(pdfBase64: string): Promise<{
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [EXTRACTION_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_mri_data' },
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: 'Extract the structured data from this MRI report now. If the document contains multiple body regions, return a separate report for each.' },
-        ],
-      }],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize "null" strings in each report
-    const rawReports = Array.isArray(raw.reports) ? raw.reports : []
-    const normalizedReports = rawReports.map((r: Record<string, unknown>) => ({
-      body_region: r.body_region,
-      mri_date: normalizeNullString(r.mri_date),
-      findings: Array.isArray(r.findings)
-        ? r.findings.map((f: Record<string, unknown>) => ({
-            ...f,
-            severity: f.severity === 'null' ? null : f.severity,
-          }))
-        : [],
-      impression_summary: normalizeNullString(r.impression_summary),
-      confidence: r.confidence,
-      extraction_notes: normalizeNullString(r.extraction_notes),
-    }))
-
-    const validated = mriExtractionResponseSchema.safeParse({ reports: normalizedReports })
-
-    if (!validated.success) {
-      return { error: 'Extraction output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data.reports, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  return callClaudeTool<MriExtractionResult[]>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: SYSTEM_PROMPT,
+    tools: [EXTRACTION_TOOL],
+    toolName: 'extract_mri_data',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: 'Extract the structured data from this MRI report now. If the document contains multiple body regions, return a separate report for each.' },
+      ],
+    }],
+    parse: (raw) => {
+      const rawReports = Array.isArray(raw.reports) ? raw.reports : []
+      const normalizedReports = rawReports.map((r: Record<string, unknown>) => ({
+        body_region: r.body_region,
+        mri_date: normalizeNullString(r.mri_date),
+        findings: Array.isArray(r.findings)
+          ? r.findings.map((f: Record<string, unknown>) => ({
+              ...f,
+              severity: f.severity === 'null' ? null : f.severity,
+            }))
+          : [],
+        impression_summary: normalizeNullString(r.impression_summary),
+        confidence: r.confidence,
+        extraction_notes: normalizeNullString(r.extraction_notes),
+      }))
+      const validated = mriExtractionResponseSchema.safeParse({ reports: normalizedReports })
+      return validated.success
+        ? { success: true, data: validated.data.reports }
+        : { success: false, error: validated.error }
+    },
+  })
 }

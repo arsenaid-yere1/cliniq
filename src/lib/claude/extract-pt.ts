@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { ptExtractionResultSchema, type PtExtractionResult } from '@/lib/validations/pt-extraction'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a medical data extraction assistant for a personal injury clinic.
 You are extracting structured data from a physical therapy initial evaluation report.
@@ -299,97 +298,80 @@ export async function extractPtFromPdf(pdfBase64: string): Promise<{
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [EXTRACTION_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_pt_data' },
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: 'Extract the structured data from this physical therapy initial evaluation report now.' },
-        ],
-      }],
-    })
+  return callClaudeTool<PtExtractionResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: SYSTEM_PROMPT,
+    tools: [EXTRACTION_TOOL],
+    toolName: 'extract_pt_data',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: 'Extract the structured data from this physical therapy initial evaluation report now.' },
+      ],
+    }],
+    parse: (raw) => {
+      const painRatingsRaw = (raw.pain_ratings ?? {}) as Record<string, unknown>
+      const neuroRaw = (raw.neurological_screening ?? {}) as Record<string, unknown>
+      const pocRaw = (raw.plan_of_care ?? {}) as Record<string, unknown>
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
+      const normalized = {
+        evaluation_date: normalizeNullString(raw.evaluation_date),
+        date_of_injury: normalizeNullString(raw.date_of_injury),
+        evaluating_therapist: normalizeNullString(raw.evaluating_therapist),
+        referring_provider: normalizeNullString(raw.referring_provider),
+        chief_complaint: normalizeNullString(raw.chief_complaint),
+        mechanism_of_injury: normalizeNullString(raw.mechanism_of_injury),
+        pain_ratings: {
+          at_rest: painRatingsRaw.at_rest === 'null' ? null : (painRatingsRaw.at_rest ?? null),
+          with_activity: painRatingsRaw.with_activity === 'null' ? null : (painRatingsRaw.with_activity ?? null),
+          worst: painRatingsRaw.worst === 'null' ? null : (painRatingsRaw.worst ?? null),
+          best: painRatingsRaw.best === 'null' ? null : (painRatingsRaw.best ?? null),
+        },
+        functional_limitations: normalizeNullString(raw.functional_limitations),
+        prior_treatment: normalizeNullString(raw.prior_treatment),
+        work_status: normalizeNullString(raw.work_status),
+        postural_assessment: normalizeNullString(raw.postural_assessment),
+        gait_analysis: normalizeNullString(raw.gait_analysis),
+        range_of_motion: normalizeNullStringsInArray(raw.range_of_motion, ['measurement_type']),
+        muscle_strength: normalizeNullStringsInArray(raw.muscle_strength, ['side']),
+        palpation_findings: normalizeNullStringsInArray(raw.palpation_findings, ['tenderness_grade']),
+        special_tests: normalizeNullStringsInArray(raw.special_tests, ['side', 'notes']),
+        neurological_screening: {
+          reflexes: normalizeNullStringsInArray(
+            neuroRaw.reflexes,
+            ['side'],
+          ),
+          sensation: normalizeNullString(neuroRaw.sensation),
+          motor_notes: normalizeNullString(neuroRaw.motor_notes),
+        },
+        functional_tests: normalizeNullStringsInArray(raw.functional_tests, ['interpretation']),
+        outcome_measures: normalizeNullStringsInArray(raw.outcome_measures, ['interpretation']),
+        clinical_impression: normalizeNullString(raw.clinical_impression),
+        causation_statement: normalizeNullString(raw.causation_statement),
+        prognosis: normalizeNullString(raw.prognosis),
+        short_term_goals: normalizeNullStringsInArray(raw.short_term_goals, ['timeframe', 'baseline', 'target']),
+        long_term_goals: normalizeNullStringsInArray(raw.long_term_goals, ['timeframe', 'baseline', 'target']),
+        plan_of_care: {
+          frequency: normalizeNullString(pocRaw.frequency),
+          duration: normalizeNullString(pocRaw.duration),
+          modalities: normalizeNullStringsInArray(
+            pocRaw.modalities,
+            ['cpt_code'],
+          ),
+          home_exercise_program: pocRaw.home_exercise_program === 'null' ? null : (pocRaw.home_exercise_program ?? null),
+          re_evaluation_schedule: normalizeNullString(pocRaw.re_evaluation_schedule),
+        },
+        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
+        confidence: raw.confidence,
+        extraction_notes: normalizeNullString(raw.extraction_notes),
+      }
 
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize "null" strings to actual nulls
-    const painRatingsRaw = (raw.pain_ratings ?? {}) as Record<string, unknown>
-    const neuroRaw = (raw.neurological_screening ?? {}) as Record<string, unknown>
-    const pocRaw = (raw.plan_of_care ?? {}) as Record<string, unknown>
-
-    const normalized = {
-      evaluation_date: normalizeNullString(raw.evaluation_date),
-      date_of_injury: normalizeNullString(raw.date_of_injury),
-      evaluating_therapist: normalizeNullString(raw.evaluating_therapist),
-      referring_provider: normalizeNullString(raw.referring_provider),
-      chief_complaint: normalizeNullString(raw.chief_complaint),
-      mechanism_of_injury: normalizeNullString(raw.mechanism_of_injury),
-      pain_ratings: {
-        at_rest: painRatingsRaw.at_rest === 'null' ? null : (painRatingsRaw.at_rest ?? null),
-        with_activity: painRatingsRaw.with_activity === 'null' ? null : (painRatingsRaw.with_activity ?? null),
-        worst: painRatingsRaw.worst === 'null' ? null : (painRatingsRaw.worst ?? null),
-        best: painRatingsRaw.best === 'null' ? null : (painRatingsRaw.best ?? null),
-      },
-      functional_limitations: normalizeNullString(raw.functional_limitations),
-      prior_treatment: normalizeNullString(raw.prior_treatment),
-      work_status: normalizeNullString(raw.work_status),
-      postural_assessment: normalizeNullString(raw.postural_assessment),
-      gait_analysis: normalizeNullString(raw.gait_analysis),
-      range_of_motion: normalizeNullStringsInArray(raw.range_of_motion, ['measurement_type']),
-      muscle_strength: normalizeNullStringsInArray(raw.muscle_strength, ['side']),
-      palpation_findings: normalizeNullStringsInArray(raw.palpation_findings, ['tenderness_grade']),
-      special_tests: normalizeNullStringsInArray(raw.special_tests, ['side', 'notes']),
-      neurological_screening: {
-        reflexes: normalizeNullStringsInArray(
-          neuroRaw.reflexes,
-          ['side'],
-        ),
-        sensation: normalizeNullString(neuroRaw.sensation),
-        motor_notes: normalizeNullString(neuroRaw.motor_notes),
-      },
-      functional_tests: normalizeNullStringsInArray(raw.functional_tests, ['interpretation']),
-      outcome_measures: normalizeNullStringsInArray(raw.outcome_measures, ['interpretation']),
-      clinical_impression: normalizeNullString(raw.clinical_impression),
-      causation_statement: normalizeNullString(raw.causation_statement),
-      prognosis: normalizeNullString(raw.prognosis),
-      short_term_goals: normalizeNullStringsInArray(raw.short_term_goals, ['timeframe', 'baseline', 'target']),
-      long_term_goals: normalizeNullStringsInArray(raw.long_term_goals, ['timeframe', 'baseline', 'target']),
-      plan_of_care: {
-        frequency: normalizeNullString(pocRaw.frequency),
-        duration: normalizeNullString(pocRaw.duration),
-        modalities: normalizeNullStringsInArray(
-          pocRaw.modalities,
-          ['cpt_code'],
-        ),
-        home_exercise_program: pocRaw.home_exercise_program === 'null' ? null : (pocRaw.home_exercise_program ?? null),
-        re_evaluation_schedule: normalizeNullString(pocRaw.re_evaluation_schedule),
-      },
-      diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
-      confidence: raw.confidence,
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-    }
-
-    const validated = ptExtractionResultSchema.safeParse(normalized)
-
-    if (!validated.success) {
-      return { error: 'Extraction output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+      const validated = ptExtractionResultSchema.safeParse(normalized)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }

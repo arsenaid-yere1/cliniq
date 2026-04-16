@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { orthopedicExtractionResultSchema, type OrthopedicExtractionResult } from '@/lib/validations/orthopedic-extraction'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a medical data extraction assistant for a personal injury clinic.
 You are extracting structured data from an orthopedic surgical evaluation report (and any accompanying radiographic report).
@@ -227,74 +226,57 @@ export async function extractOrthopedicFromPdf(pdfBase64: string): Promise<{
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [EXTRACTION_TOOL],
-      tool_choice: { type: 'tool', name: 'extract_orthopedic_data' },
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: 'Extract the structured data from this orthopedic surgical evaluation report now.' },
-        ],
-      }],
-    })
+  return callClaudeTool<OrthopedicExtractionResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: SYSTEM_PROMPT,
+    tools: [EXTRACTION_TOOL],
+    toolName: 'extract_orthopedic_data',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: 'Extract the structured data from this orthopedic surgical evaluation report now.' },
+      ],
+    }],
+    parse: (raw) => {
+      const normalized = {
+        report_date: normalizeNullString(raw.report_date),
+        date_of_injury: normalizeNullString(raw.date_of_injury),
+        examining_provider: normalizeNullString(raw.examining_provider),
+        provider_specialty: normalizeNullString(raw.provider_specialty),
+        patient_age: raw.patient_age === 'null' || raw.patient_age === null ? null : raw.patient_age,
+        patient_sex: normalizeNullString(raw.patient_sex),
+        hand_dominance: normalizeNullString(raw.hand_dominance),
+        height: normalizeNullString(raw.height),
+        weight: normalizeNullString(raw.weight),
+        current_employment: normalizeNullString(raw.current_employment),
+        history_of_injury: normalizeNullString(raw.history_of_injury),
+        past_medical_history: normalizeNullString(raw.past_medical_history),
+        surgical_history: normalizeNullString(raw.surgical_history),
+        previous_complaints: normalizeNullString(raw.previous_complaints),
+        subsequent_complaints: normalizeNullString(raw.subsequent_complaints),
+        allergies: normalizeNullString(raw.allergies),
+        social_history: normalizeNullString(raw.social_history),
+        family_history: normalizeNullString(raw.family_history),
+        present_complaints: normalizeNullStringsInArray(raw.present_complaints, ['radiation']),
+        current_medications: normalizeNullStringsInArray(raw.current_medications, ['details']),
+        physical_exam: normalizeNullStringsInArray(raw.physical_exam, [
+          'rom_summary', 'tenderness', 'strength', 'neurovascular', 'special_tests',
+        ]),
+        diagnostics: normalizeNullStringsInArray(raw.diagnostics, ['study_date']),
+        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
+        recommendations: normalizeNullStringsInArray(raw.recommendations, [
+          'type', 'body_region', 'follow_up_timeframe',
+        ]),
+        confidence: raw.confidence,
+        extraction_notes: normalizeNullString(raw.extraction_notes),
+      }
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize "null" strings to actual nulls
-    const normalized = {
-      report_date: normalizeNullString(raw.report_date),
-      date_of_injury: normalizeNullString(raw.date_of_injury),
-      examining_provider: normalizeNullString(raw.examining_provider),
-      provider_specialty: normalizeNullString(raw.provider_specialty),
-      patient_age: raw.patient_age === 'null' || raw.patient_age === null ? null : raw.patient_age,
-      patient_sex: normalizeNullString(raw.patient_sex),
-      hand_dominance: normalizeNullString(raw.hand_dominance),
-      height: normalizeNullString(raw.height),
-      weight: normalizeNullString(raw.weight),
-      current_employment: normalizeNullString(raw.current_employment),
-      history_of_injury: normalizeNullString(raw.history_of_injury),
-      past_medical_history: normalizeNullString(raw.past_medical_history),
-      surgical_history: normalizeNullString(raw.surgical_history),
-      previous_complaints: normalizeNullString(raw.previous_complaints),
-      subsequent_complaints: normalizeNullString(raw.subsequent_complaints),
-      allergies: normalizeNullString(raw.allergies),
-      social_history: normalizeNullString(raw.social_history),
-      family_history: normalizeNullString(raw.family_history),
-      present_complaints: normalizeNullStringsInArray(raw.present_complaints, ['radiation']),
-      current_medications: normalizeNullStringsInArray(raw.current_medications, ['details']),
-      physical_exam: normalizeNullStringsInArray(raw.physical_exam, [
-        'rom_summary', 'tenderness', 'strength', 'neurovascular', 'special_tests',
-      ]),
-      diagnostics: normalizeNullStringsInArray(raw.diagnostics, ['study_date']),
-      diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
-      recommendations: normalizeNullStringsInArray(raw.recommendations, [
-        'type', 'body_region', 'follow_up_timeframe',
-      ]),
-      confidence: raw.confidence,
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-    }
-
-    const validated = orthopedicExtractionResultSchema.safeParse(normalized)
-
-    if (!validated.success) {
-      return { error: 'Extraction output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+      const validated = orthopedicExtractionResultSchema.safeParse(normalized)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }
