@@ -83,30 +83,17 @@ export async function extractCtScanReport(documentId: string) {
   const result = await extractCtScanFromPdf(pdfBase64)
 
   if (result.error || !result.data?.length) {
-    // Retry once on failure
-    const retry = await extractCtScanFromPdf(pdfBase64)
-
-    if (retry.error || !retry.data?.length) {
-      await supabase.from('ct_scan_extractions').update({
-        extraction_status: 'failed',
-        extraction_error: retry.error ?? result.error ?? 'Extraction failed',
-        extraction_attempts: 2,
-        raw_ai_response: retry.rawResponse ?? result.rawResponse ?? null,
-        updated_by_user_id: user.id,
-      }).eq('id', extraction.id)
-      revalidatePath(`/patients/${doc.case_id}/clinical`)
-      return { error: retry.error ?? result.error }
-    }
-
-    // Retry succeeded
-    const ids = await insertMultiRegionExtractions(
-      supabase, extraction.id, documentId, doc.case_id, retry, user.id, 2,
-    )
+    await supabase.from('ct_scan_extractions').update({
+      extraction_status: 'failed',
+      extraction_error: result.error ?? 'Extraction failed',
+      extraction_attempts: 1,
+      raw_ai_response: result.rawResponse ?? null,
+      updated_by_user_id: user.id,
+    }).eq('id', extraction.id)
     revalidatePath(`/patients/${doc.case_id}/clinical`)
-    return { data: { extractionIds: ids } }
+    return { error: result.error }
   }
 
-  // First attempt succeeded
   const ids = await insertMultiRegionExtractions(
     supabase, extraction.id, documentId, doc.case_id, result, user.id, 1,
   )

@@ -83,28 +83,17 @@ export async function extractOrthopedicReport(documentId: string) {
   const result = await extractOrthopedicFromPdf(pdfBase64)
 
   if (result.error || !result.data) {
-    // Retry once on failure
-    const retry = await extractOrthopedicFromPdf(pdfBase64)
-
-    if (retry.error || !retry.data) {
-      await supabase.from('orthopedic_extractions').update({
-        extraction_status: 'failed',
-        extraction_error: retry.error ?? result.error ?? 'Extraction failed',
-        extraction_attempts: 2,
-        raw_ai_response: retry.rawResponse ?? result.rawResponse ?? null,
-        updated_by_user_id: user.id,
-      }).eq('id', extraction.id)
-      revalidatePath(`/patients/${doc.case_id}/clinical`)
-      return { error: retry.error ?? result.error }
-    }
-
-    // Retry succeeded
-    await updateExtractionSuccess(supabase, extraction.id, retry, user.id, 2)
+    await supabase.from('orthopedic_extractions').update({
+      extraction_status: 'failed',
+      extraction_error: result.error ?? 'Extraction failed',
+      extraction_attempts: 1,
+      raw_ai_response: result.rawResponse ?? null,
+      updated_by_user_id: user.id,
+    }).eq('id', extraction.id)
     revalidatePath(`/patients/${doc.case_id}/clinical`)
-    return { data: { extractionId: extraction.id } }
+    return { error: result.error }
   }
 
-  // First attempt succeeded
   await updateExtractionSuccess(supabase, extraction.id, result, user.id, 1)
   revalidatePath(`/patients/${doc.case_id}/clinical`)
   revalidatePath(`/patients/${doc.case_id}/documents`)

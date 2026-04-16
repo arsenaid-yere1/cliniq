@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import {
   imagingOrderResultSchema,
   chiropracticOrderResultSchema,
@@ -6,7 +7,25 @@ import {
   type ChiropracticOrderResult,
 } from '@/lib/validations/clinical-orders'
 
-const anthropic = new Anthropic()
+const IMAGING_ORDER_SYSTEM_PROMPT = `You are a clinical documentation specialist generating imaging orders based on an Initial Visit note from a personal injury pain management clinic.
+
+Generate imaging orders for each affected body region identified in the diagnoses and treatment plan. Each order should include:
+- The body region (e.g., "Cervical Spine", "Lumbar Spine")
+- The imaging modality (typically "MRI" for personal injury cases)
+- The relevant ICD-10 codes from the diagnoses that justify the imaging
+- A brief clinical indication explaining why the imaging is needed
+
+Only generate orders for regions that are explicitly mentioned in the diagnoses or treatment plan. Do NOT add imaging for regions not referenced in the clinical data.`
+
+const CHIRO_ORDER_SYSTEM_PROMPT = `You are a clinical documentation specialist generating a chiropractic therapy referral order based on an Initial Visit note from a personal injury pain management clinic.
+
+Generate a chiropractic therapy order that includes:
+- Relevant ICD-10 diagnoses from the note (musculoskeletal codes only — exclude external cause codes like V43.52XA)
+- A treatment plan with: frequency (typically 2-3 times per week initially), duration (typically 8-12 weeks), treatment modalities (spinal manipulation, soft tissue mobilization, therapeutic exercises, electrical stimulation, etc.), and measurable treatment goals
+- Special instructions if applicable (e.g., "Avoid high-velocity thrust to cervical spine until imaging reviewed")
+- Precautions based on the clinical presentation
+
+Base all recommendations on the clinical data provided. Do NOT recommend treatments for regions not mentioned in the diagnoses.`
 
 // --- Shared input shape ---
 
@@ -71,44 +90,25 @@ const IMAGING_ORDER_TOOL: Anthropic.Tool = {
 export async function generateImagingOrders(
   inputData: ClinicalOrderInputData,
 ): Promise<{ data?: ImagingOrderResult; rawResponse?: unknown; error?: string }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: `You are a clinical documentation specialist generating imaging orders based on an Initial Visit note from a personal injury pain management clinic.
-
-Generate imaging orders for each affected body region identified in the diagnoses and treatment plan. Each order should include:
-- The body region (e.g., "Cervical Spine", "Lumbar Spine")
-- The imaging modality (typically "MRI" for personal injury cases)
-- The relevant ICD-10 codes from the diagnoses that justify the imaging
-- A brief clinical indication explaining why the imaging is needed
-
-Only generate orders for regions that are explicitly mentioned in the diagnoses or treatment plan. Do NOT add imaging for regions not referenced in the clinical data.`,
-      tools: [IMAGING_ORDER_TOOL],
-      tool_choice: { type: 'tool', name: 'generate_imaging_orders' },
-      messages: [
-        {
-          role: 'user',
-          content: `Generate imaging orders based on this Initial Visit note data:\n\n${JSON.stringify(inputData, null, 2)}`,
-        },
-      ],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-    const validated = imagingOrderResultSchema.safeParse(raw)
-    if (!validated.success) {
-      return { error: 'Order output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  return callClaudeTool<ImagingOrderResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: IMAGING_ORDER_SYSTEM_PROMPT,
+    tools: [IMAGING_ORDER_TOOL],
+    toolName: 'generate_imaging_orders',
+    messages: [
+      {
+        role: 'user',
+        content: `Generate imaging orders based on this Initial Visit note data:\n\n${JSON.stringify(inputData, null, 2)}`,
+      },
+    ],
+    parse: (raw) => {
+      const validated = imagingOrderResultSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }
 
 // --- Chiropractic Therapy Order ---
@@ -155,42 +155,23 @@ const CHIRO_ORDER_TOOL: Anthropic.Tool = {
 export async function generateChiropracticOrder(
   inputData: ClinicalOrderInputData,
 ): Promise<{ data?: ChiropracticOrderResult; rawResponse?: unknown; error?: string }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: `You are a clinical documentation specialist generating a chiropractic therapy referral order based on an Initial Visit note from a personal injury pain management clinic.
-
-Generate a chiropractic therapy order that includes:
-- Relevant ICD-10 diagnoses from the note (musculoskeletal codes only — exclude external cause codes like V43.52XA)
-- A treatment plan with: frequency (typically 2-3 times per week initially), duration (typically 8-12 weeks), treatment modalities (spinal manipulation, soft tissue mobilization, therapeutic exercises, electrical stimulation, etc.), and measurable treatment goals
-- Special instructions if applicable (e.g., "Avoid high-velocity thrust to cervical spine until imaging reviewed")
-- Precautions based on the clinical presentation
-
-Base all recommendations on the clinical data provided. Do NOT recommend treatments for regions not mentioned in the diagnoses.`,
-      tools: [CHIRO_ORDER_TOOL],
-      tool_choice: { type: 'tool', name: 'generate_chiropractic_order' },
-      messages: [
-        {
-          role: 'user',
-          content: `Generate a chiropractic therapy order based on this Initial Visit note data:\n\n${JSON.stringify(inputData, null, 2)}`,
-        },
-      ],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-    const validated = chiropracticOrderResultSchema.safeParse(raw)
-    if (!validated.success) {
-      return { error: 'Order output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  return callClaudeTool<ChiropracticOrderResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: CHIRO_ORDER_SYSTEM_PROMPT,
+    tools: [CHIRO_ORDER_TOOL],
+    toolName: 'generate_chiropractic_order',
+    messages: [
+      {
+        role: 'user',
+        content: `Generate a chiropractic therapy order based on this Initial Visit note data:\n\n${JSON.stringify(inputData, null, 2)}`,
+      },
+    ],
+    parse: (raw) => {
+      const validated = chiropracticOrderResultSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }

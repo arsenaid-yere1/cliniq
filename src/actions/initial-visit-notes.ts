@@ -332,30 +332,23 @@ export async function generateInitialVisitNote(
     recordId = record.id
   }
 
-  // Call Claude (pass toneHint only on first generation, not retry)
-  let result = await generateInitialVisitFromData(inputData, visitType, toneHint)
+  // Call Claude
+  const result = await generateInitialVisitFromData(inputData, visitType, toneHint)
 
-  // One retry on failure
   if (result.error || !result.data) {
-    const retry = await generateInitialVisitFromData(inputData, visitType, toneHint)
+    await supabase
+      .from('initial_visit_notes')
+      .update({
+        status: 'failed',
+        generation_error: result.error || 'Unknown error',
+        generation_attempts: 1,
+        raw_ai_response: result.rawResponse || null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', recordId)
 
-    if (retry.error || !retry.data) {
-      await supabase
-        .from('initial_visit_notes')
-        .update({
-          status: 'failed',
-          generation_error: retry.error || result.error || 'Unknown error',
-          generation_attempts: 2,
-          raw_ai_response: retry.rawResponse || result.rawResponse || null,
-          updated_by_user_id: user.id,
-        })
-        .eq('id', recordId)
-
-      revalidatePath(`/patients/${caseId}`)
-      return { error: retry.error || result.error || 'Note generation failed after 2 attempts' }
-    }
-
-    result = retry
+    revalidatePath(`/patients/${caseId}`)
+    return { error: result.error || 'Note generation failed' }
   }
 
   const data = result.data!

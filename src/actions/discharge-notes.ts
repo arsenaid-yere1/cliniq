@@ -331,29 +331,22 @@ export async function generateDischargeNote(caseId: string) {
   }
 
   // Call Claude
-  let result = await generateDischargeNoteFromData(inputData)
+  const result = await generateDischargeNoteFromData(inputData)
 
-  // One retry on failure
   if (result.error || !result.data) {
-    const retry = await generateDischargeNoteFromData(inputData)
+    await supabase
+      .from('discharge_notes')
+      .update({
+        status: 'failed',
+        generation_error: result.error || 'Unknown error',
+        generation_attempts: 1,
+        raw_ai_response: result.rawResponse || null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', record.id)
 
-    if (retry.error || !retry.data) {
-      await supabase
-        .from('discharge_notes')
-        .update({
-          status: 'failed',
-          generation_error: retry.error || result.error || 'Unknown error',
-          generation_attempts: 2,
-          raw_ai_response: retry.rawResponse || result.rawResponse || null,
-          updated_by_user_id: user.id,
-        })
-        .eq('id', record.id)
-
-      revalidatePath(`/patients/${caseId}/discharge`)
-      return { error: retry.error || result.error || 'Note generation failed after 2 attempts' }
-    }
-
-    result = retry
+    revalidatePath(`/patients/${caseId}/discharge`)
+    return { error: result.error || 'Note generation failed' }
   }
 
   // Write success

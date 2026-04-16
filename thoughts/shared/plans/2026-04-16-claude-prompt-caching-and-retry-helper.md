@@ -698,15 +698,15 @@ The `extraction_attempts` DB field stays as-is semantically — it's still "numb
 ### Success Criteria
 
 #### Automated Verification:
-- [ ] Type check passes: `npx tsc --noEmit`
-- [ ] Build succeeds: `npm run build`
-- [ ] Lint passes: `npm run lint`
-- [ ] All tests pass: `npm test`
-- [ ] Grep confirms no module still calls `anthropic.messages.create`: `rg "anthropic.messages.create" src/lib/claude/ --glob '!client.ts'` returns empty for all 11 modules
-- [ ] Grep confirms no `new Anthropic(` outside `client.ts`: `rg "new Anthropic\(" src/lib/claude/ --glob '!client.ts'` returns empty
-- [ ] Grep confirms action-level retry blocks are gone: `rg "Retry once on failure" src/actions/` returns empty
-- [ ] Grep confirms no more `const retry = await (extract|generate)`: `rg "const retry = await (extract|generate)" src/actions/` returns empty
-- [ ] Grep confirms no `budget_tokens:` anywhere in `src/lib/claude/`: `rg "budget_tokens" src/lib/claude/` returns empty
+- [x] Type check passes: `npx tsc --noEmit`
+- [x] Build succeeds: `npm run build`
+- [x] Lint passes: `npm run lint`
+- [x] All tests pass: `npm test`
+- [x] Grep confirms no module still calls `anthropic.messages.create`: `rg "anthropic.messages.create" src/lib/claude/ --glob '!client.ts'` returns empty for all 11 modules
+- [x] Grep confirms no `new Anthropic(` outside `client.ts`: `rg "new Anthropic\(" src/lib/claude/ --glob '!client.ts'` returns empty
+- [x] Grep confirms action-level retry blocks are gone: `rg "Retry once on failure" src/actions/` returns empty
+- [x] Grep confirms no more `const retry = await (extract|generate)`: `rg "const retry = await (extract|generate)" src/actions/` returns empty
+- [x] Grep confirms no `budget_tokens:` anywhere in `src/lib/claude/`: `rg "budget_tokens" src/lib/claude/` returns empty
 
 #### Manual Verification:
 - [ ] End-to-end: create a patient → upload MRI → approve extraction → upload chiro/PT/ortho → generate case summary → generate initial visit note → generate procedure note → generate discharge note. Verify each step works and produces output visually equivalent to pre-migration.

@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { callClaudeTool } from '@/lib/claude/client'
 import { caseSummaryResultSchema, type CaseSummaryResult } from '@/lib/validations/case-summary'
-
-const anthropic = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a clinical data analyst specializing in personal injury cases. Your task is to synthesize clinical data from multiple sources into a comprehensive case summary.
 
@@ -259,87 +258,69 @@ export async function generateCaseSummaryFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 16384,
-      thinking: {
-        type: 'enabled',
-        budget_tokens: 10000,
+  return callClaudeTool<CaseSummaryResult>({
+    model: 'claude-opus-4-6',
+    maxTokens: 16384,
+    thinking: { type: 'adaptive' },
+    system: SYSTEM_PROMPT,
+    tools: [SUMMARY_TOOL],
+    toolName: 'extract_case_summary',
+    toolChoice: { type: 'auto' },
+    messages: [
+      {
+        role: 'user',
+        content: `Synthesize the following clinical data into a comprehensive case summary.\n\n${JSON.stringify(inputData, null, 2)}`,
       },
-      system: SYSTEM_PROMPT,
-      tools: [SUMMARY_TOOL],
-      tool_choice: { type: 'auto' },
-      messages: [
-        {
-          role: 'user',
-          content: `Synthesize the following clinical data into a comprehensive case summary.\n\n${JSON.stringify(inputData, null, 2)}`,
+    ],
+    parse: (raw) => {
+      const rawPriorTreatment = (raw.prior_treatment as Record<string, unknown>) || {}
+      const rawSymptomsTimeline = (raw.symptoms_timeline as Record<string, unknown>) || {}
+
+      const rawTotalVisits = rawPriorTreatment?.total_visits
+      const normalizedTotalVisits = normalizeNullString(rawTotalVisits)
+      const coercedTotalVisits = normalizedTotalVisits === null
+        ? null
+        : Number(normalizedTotalVisits)
+
+      const toArray = (val: unknown): Array<Record<string, unknown>> =>
+        Array.isArray(val) ? val : []
+
+      const normalized = {
+        chief_complaint: normalizeNullString(raw.chief_complaint),
+        extraction_notes: normalizeNullString(raw.extraction_notes),
+        confidence: raw.confidence ?? 'low',
+        imaging_findings: normalizeNullStringsInArray(
+          toArray(raw.imaging_findings),
+          ['severity'],
+        ),
+        prior_treatment: {
+          modalities: (Array.isArray(rawPriorTreatment?.modalities) ? rawPriorTreatment.modalities : []).map((m: unknown) => String(m)),
+          total_visits: Number.isNaN(coercedTotalVisits) ? null : coercedTotalVisits,
+          treatment_period: normalizeNullString(rawPriorTreatment?.treatment_period),
+          gaps: toArray(rawPriorTreatment?.gaps),
         },
-      ],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    // Normalize null strings (same pattern as extract-mri.ts / extract-chiro.ts)
-    const rawPriorTreatment = (raw.prior_treatment as Record<string, unknown>) || {}
-    const rawSymptomsTimeline = (raw.symptoms_timeline as Record<string, unknown>) || {}
-
-    // Coerce total_visits: Claude may return a string like "42" due to type: ['integer', 'string']
-    const rawTotalVisits = rawPriorTreatment?.total_visits
-    const normalizedTotalVisits = normalizeNullString(rawTotalVisits)
-    const coercedTotalVisits = normalizedTotalVisits === null
-      ? null
-      : Number(normalizedTotalVisits)
-
-    // Safely coerce any value to an array (Claude may return null for array fields)
-    const toArray = (val: unknown): Array<Record<string, unknown>> =>
-      Array.isArray(val) ? val : []
-
-    const normalized = {
-      chief_complaint: normalizeNullString(raw.chief_complaint),
-      extraction_notes: normalizeNullString(raw.extraction_notes),
-      confidence: raw.confidence ?? 'low',
-      imaging_findings: normalizeNullStringsInArray(
-        toArray(raw.imaging_findings),
-        ['severity'],
-      ),
-      prior_treatment: {
-        modalities: (Array.isArray(rawPriorTreatment?.modalities) ? rawPriorTreatment.modalities : []).map((m: unknown) => String(m)),
-        total_visits: Number.isNaN(coercedTotalVisits) ? null : coercedTotalVisits,
-        treatment_period: normalizeNullString(rawPriorTreatment?.treatment_period),
-        gaps: toArray(rawPriorTreatment?.gaps),
-      },
-      symptoms_timeline: {
-        onset: normalizeNullString(rawSymptomsTimeline?.onset),
-        current_status: normalizeNullString(rawSymptomsTimeline?.current_status),
-        progression: normalizeNullStringsInArray(
-          toArray(rawSymptomsTimeline?.progression),
-          ['date'],
+        symptoms_timeline: {
+          onset: normalizeNullString(rawSymptomsTimeline?.onset),
+          current_status: normalizeNullString(rawSymptomsTimeline?.current_status),
+          progression: normalizeNullStringsInArray(
+            toArray(rawSymptomsTimeline?.progression),
+            ['date'],
+          ),
+          pain_levels: normalizeNullStringsInArray(
+            toArray(rawSymptomsTimeline?.pain_levels),
+            ['date', 'context'],
+          ),
+        },
+        suggested_diagnoses: normalizeNullStringsInArray(
+          toArray(raw.suggested_diagnoses),
+          ['icd10_code', 'supporting_evidence'],
         ),
-        pain_levels: normalizeNullStringsInArray(
-          toArray(rawSymptomsTimeline?.pain_levels),
-          ['date', 'context'],
-        ),
-      },
-      suggested_diagnoses: normalizeNullStringsInArray(
-        toArray(raw.suggested_diagnoses),
-        ['icd10_code', 'supporting_evidence'],
-      ),
-    }
+      }
 
-    const validated = caseSummaryResultSchema.safeParse(normalized)
-    if (!validated.success) {
-      console.error('[generate-summary] Zod validation errors:', JSON.stringify(validated.error.issues, null, 2))
-      return { error: 'Summary output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+      const validated = caseSummaryResultSchema.safeParse(normalized)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }

@@ -136,30 +136,22 @@ export async function generateCaseSummary(caseId: string) {
   }
 
   // Call Claude
-  let result = await generateCaseSummaryFromData(inputData)
+  const result = await generateCaseSummaryFromData(inputData)
 
-  // One retry on failure (same pattern as mri-extractions.ts)
   if (result.error || !result.data) {
-    const retry = await generateCaseSummaryFromData(inputData)
+    await supabase
+      .from('case_summaries')
+      .update({
+        generation_status: 'failed',
+        generation_error: result.error || 'Unknown error',
+        generation_attempts: 1,
+        raw_ai_response: result.rawResponse || null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', record.id)
 
-    if (retry.error || !retry.data) {
-      await supabase
-        .from('case_summaries')
-        .update({
-          generation_status: 'failed',
-          generation_error: retry.error || result.error || 'Unknown error',
-          generation_attempts: 2,
-          raw_ai_response: retry.rawResponse || result.rawResponse || null,
-          updated_by_user_id: user.id,
-        })
-        .eq('id', record.id)
-
-      revalidatePath(`/patients/${caseId}`)
-      return { error: retry.error || result.error || 'Summary generation failed after 2 attempts' }
-    }
-
-    // Retry succeeded
-    result = retry
+    revalidatePath(`/patients/${caseId}`)
+    return { error: result.error || 'Summary generation failed' }
   }
 
   // Write success

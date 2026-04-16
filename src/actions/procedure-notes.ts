@@ -343,29 +343,22 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   }
 
   // Call Claude
-  let result = await generateProcedureNoteFromData(inputData)
+  const result = await generateProcedureNoteFromData(inputData)
 
-  // One retry on failure
   if (result.error || !result.data) {
-    const retry = await generateProcedureNoteFromData(inputData)
+    await supabase
+      .from('procedure_notes')
+      .update({
+        status: 'failed',
+        generation_error: result.error || 'Unknown error',
+        generation_attempts: 1,
+        raw_ai_response: result.rawResponse || null,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', recordId)
 
-    if (retry.error || !retry.data) {
-      await supabase
-        .from('procedure_notes')
-        .update({
-          status: 'failed',
-          generation_error: retry.error || result.error || 'Unknown error',
-          generation_attempts: 2,
-          raw_ai_response: retry.rawResponse || result.rawResponse || null,
-          updated_by_user_id: user.id,
-        })
-        .eq('id', recordId)
-
-      revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-      return { error: retry.error || result.error || 'Note generation failed after 2 attempts' }
-    }
-
-    result = retry
+    revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+    return { error: result.error || 'Note generation failed' }
   }
 
   // Write success

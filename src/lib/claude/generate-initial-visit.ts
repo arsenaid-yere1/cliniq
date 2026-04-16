@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
+import { callClaudeTool } from '@/lib/claude/client'
 import {
   initialVisitNoteResultSchema,
   type InitialVisitNoteResult,
@@ -6,7 +8,7 @@ import {
 } from '@/lib/validations/initial-visit-note'
 import { sectionLabels } from '@/lib/validations/initial-visit-note'
 
-const anthropic = new Anthropic()
+const sectionRegenSchema = z.object({ content: z.string() })
 
 // --- Visit Type Detection ---
 
@@ -453,47 +455,30 @@ export async function generateInitialVisitFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const systemPrompt = buildSystemPrompt(visitType)
+  const systemPrompt = buildSystemPrompt(visitType)
 
-    const visitLabel = visitType === 'initial_visit'
-      ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
-      : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
-    let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(inputData, null, 2)}`
-    if (toneHint?.trim()) {
-      userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
-    }
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16384,
-      system: systemPrompt,
-      tools: [INITIAL_VISIT_TOOL],
-      tool_choice: { type: 'tool', name: 'generate_initial_visit_note' },
-      messages: [
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    const validated = initialVisitNoteResultSchema.safeParse(raw)
-    if (!validated.success) {
-      return { error: 'Note output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
+  const visitLabel = visitType === 'initial_visit'
+    ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
+    : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
+  let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
+
+  return callClaudeTool<InitialVisitNoteResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 16384,
+    system: systemPrompt,
+    tools: [INITIAL_VISIT_TOOL],
+    toolName: 'generate_initial_visit_note',
+    messages: [{ role: 'user', content: userMessage }],
+    parse: (raw) => {
+      const validated = initialVisitNoteResultSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }
 
 // --- Per-section regeneration ---
@@ -519,39 +504,32 @@ export async function regenerateSection(
   section: InitialVisitSection,
   currentContent: string,
 ): Promise<{ data?: string; error?: string }> {
-  try {
-    const systemPrompt = buildSystemPrompt(visitType)
-    const sectionLabel = sectionLabels[section]
-    const visitLabel = visitType === 'initial_visit'
-      ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
-      : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
+  const systemPrompt = buildSystemPrompt(visitType)
+  const sectionLabel = sectionLabels[section]
+  const visitLabel = visitType === 'initial_visit'
+    ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
+    : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
-      tools: [SECTION_REGEN_TOOL],
-      tool_choice: { type: 'tool', name: 'regenerate_section' },
-      messages: [
-        {
-          role: 'user',
-          content: `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`,
-        },
-      ],
-    })
+  const result = await callClaudeTool<{ content: string }>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+    tools: [SECTION_REGEN_TOOL],
+    toolName: 'regenerate_section',
+    messages: [
+      {
+        role: 'user',
+        content: `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`,
+      },
+    ],
+    parse: (raw) => {
+      const validated = sectionRegenSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-    if (typeof raw.content !== 'string') {
-      return { error: 'Invalid regeneration output' }
-    }
-
-    return { data: raw.content }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  if (result.error) return { error: result.error }
+  return { data: result.data!.content }
 }

@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
+import { callClaudeTool } from '@/lib/claude/client'
 import {
   dischargeNoteResultSchema,
   type DischargeNoteResult,
@@ -6,7 +8,7 @@ import {
   dischargeNoteSectionLabels,
 } from '@/lib/validations/discharge-note'
 
-const anthropic = new Anthropic()
+const sectionRegenSchema = z.object({ content: z.string() })
 
 // --- Input data shape ---
 
@@ -218,37 +220,25 @@ export async function generateDischargeNoteFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16384,
-      system: SYSTEM_PROMPT,
-      tools: [DISCHARGE_NOTE_TOOL],
-      tool_choice: { type: 'tool', name: 'generate_discharge_note' },
-      messages: [
-        {
-          role: 'user',
-          content: `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(inputData, null, 2)}`,
-        },
-      ],
-    })
-
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-
-    const validated = dischargeNoteResultSchema.safeParse(raw)
-    if (!validated.success) {
-      return { error: 'Note output failed validation', rawResponse: raw }
-    }
-
-    return { data: validated.data, rawResponse: raw }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  return callClaudeTool<DischargeNoteResult>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 16384,
+    system: SYSTEM_PROMPT,
+    tools: [DISCHARGE_NOTE_TOOL],
+    toolName: 'generate_discharge_note',
+    messages: [
+      {
+        role: 'user',
+        content: `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(inputData, null, 2)}`,
+      },
+    ],
+    parse: (raw) => {
+      const validated = dischargeNoteResultSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 }
 
 // --- Per-section regeneration ---
@@ -273,35 +263,28 @@ export async function regenerateDischargeNoteSection(
   section: DischargeNoteSection,
   currentContent: string,
 ): Promise<{ data?: string; error?: string }> {
-  try {
-    const sectionLabel = dischargeNoteSectionLabels[section]
+  const sectionLabel = dischargeNoteSectionLabels[section]
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Discharge Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
-      tools: [SECTION_REGEN_TOOL],
-      tool_choice: { type: 'tool', name: 'regenerate_section' },
-      messages: [
-        {
-          role: 'user',
-          content: `Regenerate the "${sectionLabel}" section of the Discharge Note.\n\nCurrent content of this section:\n${currentContent}\n\nFull aggregated case data:\n${JSON.stringify(inputData, null, 2)}`,
-        },
-      ],
-    })
+  const result = await callClaudeTool<{ content: string }>({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Discharge Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+    tools: [SECTION_REGEN_TOOL],
+    toolName: 'regenerate_section',
+    messages: [
+      {
+        role: 'user',
+        content: `Regenerate the "${sectionLabel}" section of the Discharge Note.\n\nCurrent content of this section:\n${currentContent}\n\nFull aggregated case data:\n${JSON.stringify(inputData, null, 2)}`,
+      },
+    ],
+    parse: (raw) => {
+      const validated = sectionRegenSchema.safeParse(raw)
+      return validated.success
+        ? { success: true, data: validated.data }
+        : { success: false, error: validated.error }
+    },
+  })
 
-    const toolBlock = response.content.find((b) => b.type === 'tool_use')
-    if (!toolBlock || toolBlock.type !== 'tool_use') {
-      return { error: 'No tool use response from Claude' }
-    }
-
-    const raw = toolBlock.input as Record<string, unknown>
-    if (typeof raw.content !== 'string') {
-      return { error: 'Invalid regeneration output' }
-    }
-
-    return { data: raw.content }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Claude API call failed' }
-  }
+  if (result.error) return { error: result.error }
+  return { data: result.data!.content }
 }
