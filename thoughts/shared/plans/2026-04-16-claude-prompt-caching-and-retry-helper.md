@@ -751,8 +751,8 @@ Keep the `console.info('[claude]', …)` line (already added in Phase 1) in plac
 ### Success Criteria
 
 #### Automated Verification:
-- [ ] Grep confirms the docstring is in place: `rg "LOGGING:" src/lib/claude/client.ts` returns one match
-- [ ] This plan document includes a Follow-Up section
+- [x] Grep confirms the docstring is in place: `rg "LOGGING:" src/lib/claude/client.ts` returns one match
+- [x] This plan document includes a Follow-Up section
 
 #### Manual Verification:
 - [ ] After 7 days of production traffic, review Vercel logs (or query via `vercel logs` CLI) for `[claude]` lines. Compute the ratio of `cache_read_input_tokens` to `(cache_read_input_tokens + input_tokens)` across all calls. Record the measurement in a follow-up research doc.
