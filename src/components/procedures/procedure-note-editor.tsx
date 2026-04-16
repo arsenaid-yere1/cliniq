@@ -39,6 +39,7 @@ import {
   resetProcedureNote,
 } from '@/actions/procedure-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
   procedureNoteEditSchema,
   procedureNoteSections,
@@ -588,7 +589,12 @@ function FinalizedView({
               variant="outline"
               disabled={isPending}
               onClick={async () => {
-                const result = await getDocumentDownloadUrl(documentFilePath)
+                const filename = buildDownloadFilename({
+                  lastName: caseData?.patient.last_name,
+                  docType: 'ProcedureNote',
+                  date: procedureInfo.procedure_date,
+                })
+                const result = await getDocumentDownloadUrl(documentFilePath, filename)
                 if (result.url) window.open(result.url, '_blank')
                 else toast.error('Failed to get download URL')
               }}

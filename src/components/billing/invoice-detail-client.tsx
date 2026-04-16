@@ -29,6 +29,7 @@ import {
 import { CreateInvoiceDialog } from './create-invoice-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { deleteInvoice, generateInvoicePdf } from '@/actions/billing'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import { issueInvoice, markInvoicePaid, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
 import { ALLOWED_TRANSITIONS, INVOICE_STATUS_COLORS, INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
@@ -289,7 +290,12 @@ export function InvoiceDetailClient({
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
-                a.download = `Invoice-${invoice.invoice_number}.pdf`
+                a.download = buildDownloadFilename({
+                  lastName: invoice.case.patient?.last_name,
+                  docType: 'Invoice',
+                  extra: invoice.invoice_number,
+                  date: invoice.invoice_date,
+                })
                 a.click()
                 URL.revokeObjectURL(url)
               } finally {

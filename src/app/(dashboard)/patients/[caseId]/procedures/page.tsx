@@ -10,11 +10,20 @@ export default async function ProceduresPage({
   const { caseId } = await params
   const supabase = await createClient()
 
-  const [{ data: procedures }, { data: diagnosisSuggestions }, { data: procedureDefaults }] = await Promise.all([
+  const [{ data: procedures }, { data: diagnosisSuggestions }, { data: procedureDefaults }, caseRes] = await Promise.all([
     listProcedures(caseId),
     getCaseDiagnoses(caseId),
     getProcedureDefaults(caseId),
+    supabase
+      .from('cases')
+      .select('patient:patients!inner(last_name)')
+      .eq('id', caseId)
+      .is('deleted_at', null)
+      .single(),
   ])
+
+  const patient = caseRes.data?.patient as unknown as { last_name: string } | null
+  const patientLastName = patient?.last_name ?? null
 
   // Fetch note statuses for all procedures
   const procedureIds = procedures.map((p) => p.id)
@@ -41,6 +50,7 @@ export default async function ProceduresPage({
         diagnosisSuggestions={diagnosisSuggestions}
         noteStatuses={noteStatusMap}
         procedureDefaults={procedureDefaults}
+        patientLastName={patientLastName}
       />
     </div>
   )

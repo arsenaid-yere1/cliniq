@@ -47,9 +47,10 @@ interface Document {
 interface DocumentListProps {
   documents: Document[]
   caseId: string
+  patientLastName: string | null
 }
 
-export function DocumentList({ documents: initialDocuments, caseId }: DocumentListProps) {
+export function DocumentList({ documents: initialDocuments, caseId, patientLastName }: DocumentListProps) {
   const [documents, setDocuments] = useState(initialDocuments)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -166,7 +167,7 @@ export function DocumentList({ documents: initialDocuments, caseId }: DocumentLi
       ) : (
         <div className="grid gap-3">
           {filtered.map((doc) => (
-            <DocumentCard key={doc.id} document={doc} onRemoved={refreshDocuments} />
+            <DocumentCard key={doc.id} document={doc} patientLastName={patientLastName} onRemoved={refreshDocuments} />
           ))}
         </div>
       )}

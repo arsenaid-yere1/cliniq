@@ -40,6 +40,7 @@ import {
   resetDischargeNote,
 } from '@/actions/discharge-notes'
 import { getDocumentDownloadUrl } from '@/actions/documents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
   dischargeNoteEditSchema,
   dischargeNoteSections,
@@ -567,7 +568,12 @@ function FinalizedView({
               variant="outline"
               disabled={isPending}
               onClick={async () => {
-                const result = await getDocumentDownloadUrl(documentFilePath)
+                const filename = buildDownloadFilename({
+                  lastName: caseData?.patient.last_name,
+                  docType: 'DischargeSummary',
+                  date: note.visit_date ?? note.finalized_at,
+                })
+                const result = await getDocumentDownloadUrl(documentFilePath, filename)
                 if (result.url) window.open(result.url, '_blank')
                 else toast.error('Failed to get download URL')
               }}

@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { prpProcedureFormSchema, type PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
 import { createPrpProcedure, updatePrpProcedure, type ProcedureDefaults } from '@/actions/procedures'
 import { generateProcedureConsent } from '@/actions/procedure-consents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -115,6 +116,7 @@ interface RecordProcedureDialogProps {
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
   procedureDefaults?: ProcedureDefaults | null
   initialData?: ProcedureInitialData
+  patientLastName: string | null
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -124,6 +126,7 @@ export function RecordProcedureDialog({
   diagnosisSuggestions,
   procedureDefaults,
   initialData,
+  patientLastName,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: RecordProcedureDialogProps) {
@@ -167,7 +170,11 @@ export function RecordProcedureDialog({
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'Procedure-Consent-Form.pdf'
+        a.download = buildDownloadFilename({
+          lastName: patientLastName,
+          docType: 'ProcedureConsent',
+          date: values.procedure_date,
+        })
         a.click()
         URL.revokeObjectURL(url)
       }

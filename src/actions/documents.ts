@@ -132,11 +132,11 @@ export async function saveDocumentMetadata(input: {
   return { data }
 }
 
-export async function getDocumentDownloadUrl(filePath: string) {
+export async function getDocumentDownloadUrl(filePath: string, downloadName?: string) {
   const supabase = await createClient()
   const { data, error } = await supabase.storage
     .from('case-documents')
-    .createSignedUrl(filePath, 3600, { download: true })
+    .createSignedUrl(filePath, 3600, { download: downloadName ?? true })
 
   if (error) return { error: error.message }
   return { url: data.signedUrl }

@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getDocumentDownloadUrl, getDocumentPreviewUrl, removeDocument } from '@/actions/documents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import dynamic from 'next/dynamic'
 const PdfPreview = dynamic(() => import('./pdf-preview').then(mod => ({ default: mod.PdfPreview })), { ssr: false })
 import { ImagePreview } from './image-preview'
@@ -51,6 +52,52 @@ const docStatusLabels: Record<string, string> = {
   pending_review: 'Pending Review',
 }
 
+const docTypeFilenameLabels: Record<string, string> = {
+  mri_report: 'MRIReport',
+  chiro_report: 'ChiroReport',
+  pain_management: 'PainManagement',
+  pt_report: 'PTReport',
+  orthopedic_report: 'OrthopedicReport',
+  ct_scan: 'CTScan',
+  generated: 'Generated',
+  lien_agreement: 'LienAgreement',
+  procedure_consent: 'ProcedureConsent',
+}
+
+function buildDocumentCardFilename(doc: {
+  file_name: string
+  document_type: string
+  mime_type: string | null
+  created_at: string
+}, lastName: string | null): string {
+  const extension = (() => {
+    const match = doc.file_name.match(/\.([a-zA-Z0-9]+)$/)
+    if (match) return match[1].toLowerCase()
+    if (doc.mime_type === 'application/pdf') return 'pdf'
+    return 'pdf'
+  })()
+
+  const mappedDocType = docTypeFilenameLabels[doc.document_type]
+  if (mappedDocType) {
+    return buildDownloadFilename({
+      lastName,
+      docType: mappedDocType,
+      date: doc.created_at,
+      extension,
+    })
+  }
+
+  // 'other' or unknown type: preserve the uploader's filename (sanitized) as the doc-type token.
+  const baseName = doc.file_name.replace(/\.[a-zA-Z0-9]+$/, '')
+  const slug = baseName.replace(/[^A-Za-z0-9-]+/g, '').slice(0, 40) || 'Document'
+  return buildDownloadFilename({
+    lastName,
+    docType: slug,
+    date: doc.created_at,
+    extension,
+  })
+}
+
 interface DocumentCardProps {
   document: {
     id: string
@@ -64,10 +111,11 @@ interface DocumentCardProps {
     notes: string | null
     uploaded_by: { full_name: string } | null
   }
+  patientLastName: string | null
   onRemoved?: () => void
 }
 
-export function DocumentCard({ document, onRemoved }: DocumentCardProps) {
+export function DocumentCard({ document, patientLastName, onRemoved }: DocumentCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const [isRemoving, setIsRemoving] = useState(false)
@@ -87,7 +135,8 @@ export function DocumentCard({ document, onRemoved }: DocumentCardProps) {
   }
 
   async function handleDownload() {
-    const result = await getDocumentDownloadUrl(document.file_path)
+    const filename = buildDocumentCardFilename(document, patientLastName)
+    const result = await getDocumentDownloadUrl(document.file_path, filename)
     if ('error' in result) {
       toast.error(result.error)
       return

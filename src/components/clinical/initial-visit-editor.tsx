@@ -53,6 +53,7 @@ import {
 } from '@/actions/initial-visit-notes'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 import { getDocumentDownloadUrl } from '@/actions/documents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
@@ -1861,7 +1862,12 @@ function FinalizedView({
               variant="outline"
               disabled={isPending}
               onClick={async () => {
-                const result = await getDocumentDownloadUrl(documentFilePath)
+                const filename = buildDownloadFilename({
+                  lastName: caseData?.patient.last_name,
+                  docType: visitType === 'initial_visit' ? 'InitialVisitNote' : 'PainEvaluationVisitNote',
+                  date: note.visit_date ?? note.finalized_at,
+                })
+                const result = await getDocumentDownloadUrl(documentFilePath, filename)
                 if (result.url) window.open(result.url, '_blank')
                 else toast.error('Failed to get download URL')
               }}
@@ -2015,7 +2021,7 @@ function FinalizedView({
         </TabsContent>
 
         <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} visitType={visitType} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} />
+          <CompanionDocumentsSection caseId={caseId} visitType={visitType} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} patientLastName={caseData?.patient.last_name ?? null} />
         </TabsContent>
       </Tabs>
     </div>
@@ -2031,6 +2037,7 @@ function CompanionDocumentsSection({
   startTransition,
   isLocked,
   noteFinalized,
+  patientLastName,
 }: {
   caseId: string
   visitType: NoteVisitType
@@ -2038,6 +2045,7 @@ function CompanionDocumentsSection({
   startTransition: (callback: () => Promise<void>) => void
   isLocked: boolean
   noteFinalized: boolean
+  patientLastName: string | null
 }) {
   void startTransition
   const [orders, setOrders] = useState<Array<{
@@ -2088,9 +2096,14 @@ function CompanionDocumentsSection({
     }
   }
 
-  async function handleDownload(filePath: string) {
+  async function handleDownload(filePath: string, orderType: string, orderCreatedAt: string) {
     const { getDocumentDownloadUrl } = await import('@/actions/documents')
-    const result = await getDocumentDownloadUrl(filePath)
+    const filename = buildDownloadFilename({
+      lastName: patientLastName,
+      docType: orderType === 'imaging' ? 'ImagingOrders' : 'ChiropracticOrder',
+      date: orderCreatedAt,
+    })
+    const result = await getDocumentDownloadUrl(filePath, filename)
     if (result.url) window.open(result.url, '_blank')
     else toast.error('Failed to get download URL')
   }
@@ -2181,7 +2194,7 @@ function CompanionDocumentsSection({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDownload(order.document!.file_path!)}
+                      onClick={() => handleDownload(order.document!.file_path!, order.order_type, order.created_at)}
                     >
                       <Download className="mr-2 h-4 w-4" />
                       Download PDF

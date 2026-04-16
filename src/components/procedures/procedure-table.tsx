@@ -108,9 +108,10 @@ interface ProcedureTableProps {
   diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
   noteStatuses?: Record<string, string>
   procedureDefaults?: ProcedureDefaults | null
+  patientLastName: string | null
 }
 
-export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteStatuses = {}, procedureDefaults }: ProcedureTableProps) {
+export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteStatuses = {}, procedureDefaults, patientLastName }: ProcedureTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
@@ -145,7 +146,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} procedureDefaults={procedureDefaults} />}
+        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} procedureDefaults={procedureDefaults} patientLastName={patientLastName} />}
       </div>
 
       {editingProcedure && (
@@ -153,6 +154,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
           caseId={caseId}
           diagnosisSuggestions={diagnosisSuggestions}
           initialData={editingProcedure}
+          patientLastName={patientLastName}
           open={true}
           onOpenChange={(open) => { if (!open) setEditingProcedure(null) }}
         />

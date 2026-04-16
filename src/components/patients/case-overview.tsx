@@ -12,6 +12,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
 import { generateLienAgreement } from '@/actions/lien'
 import { generateProcedureConsent } from '@/actions/procedure-consents'
+import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 
 interface CaseOverviewProps {
   caseData: {
@@ -97,7 +98,11 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'Authorization-and-Lien-Agreement.pdf'
+        a.download = buildDownloadFilename({
+          lastName: patient?.last_name,
+          docType: 'LienAgreement',
+          date: caseData.accident_date,
+        })
         a.click()
         URL.revokeObjectURL(url)
       }
@@ -123,7 +128,10 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'Procedure-Consent-Form.pdf'
+        a.download = buildDownloadFilename({
+          lastName: patient?.last_name,
+          docType: 'ProcedureConsent',
+        })
         a.click()
         URL.revokeObjectURL(url)
       }
