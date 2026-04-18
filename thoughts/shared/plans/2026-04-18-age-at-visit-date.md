@@ -109,9 +109,9 @@ export function pickVisitAnchor(
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `npm run typecheck`
-- [ ] Lint passes: `npm run lint`
-- [ ] New unit tests pass: `npm test -- age` (see Testing Strategy)
+- [x] Type check passes: `npm run typecheck`
+- [x] Lint passes: `npm run lint`
+- [x] New unit tests pass: `npm test -- age` (see Testing Strategy)
 
 #### Manual Verification:
 - None — pure helper, exercised by later phases.
@@ -165,15 +165,15 @@ const age = computeAgeAtDate(caseData?.patient.date_of_birth, visitAnchor)
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `npm run typecheck`
-- [ ] Lint passes: `npm run lint`
-- [ ] Full test suite passes: `npm test`
+- [x] Type check passes: `npm run typecheck`
+- [x] Lint passes: `npm run lint`
+- [x] Full test suite passes: `npm test`
 
 #### Manual Verification:
-- [ ] Open an existing finalized Initial Visit note where the visit happened in a prior year; preview shows age equal to (visit_date - DOB) in whole years, **not** today's age.
-- [ ] Generate the PDF for the same note; `Age:` row matches the preview.
-- [ ] Open a draft note with no `visit_date` set yet; preview age falls back to `finalized_at` if present, otherwise today (consistent with `dateOfService`).
-- [ ] Edge case: if DOB is after visit_date (data-entry error), the preview omits the Age row and the PDF shows `Age: 0` (matching the existing missing-DOB behavior).
+- [x] Open an existing finalized Initial Visit note where the visit happened in a prior year; preview shows age equal to (visit_date - DOB) in whole years, **not** today's age.
+- [x] Generate the PDF for the same note; `Age:` row matches the preview.
+- [x] Open a draft note with no `visit_date` set yet; preview age falls back to `finalized_at` if present, otherwise today (consistent with `dateOfService`).
+- [x] Edge case: if DOB is after visit_date (data-entry error), the preview omits the Age row and the PDF shows `Age: 0` (matching the existing missing-DOB behavior).
 
 **Implementation Note**: Pause here for manual confirmation before Phase 3.
 
@@ -316,16 +316,16 @@ return {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `npm run typecheck`
-- [ ] Lint passes: `npm run lint`
-- [ ] All Claude generator tests pass: `npm test -- claude`
-- [ ] Full test suite: `npm test`
+- [x] Type check passes: `npm run typecheck`
+- [x] Lint passes: `npm run lint`
+- [x] All Claude generator tests pass: `npm test -- claude`
+- [x] Full test suite: `npm test`
 
 #### Manual Verification:
-- [ ] Regenerate an Initial Visit note via the "Generate" button for a case whose `visit_date` is in a prior year; the introduction paragraph opens with the age that corresponds to `visit_date - DOB`, not today's age.
-- [ ] Regenerate a PRP Procedure Note for the same patient on a different procedure date; the subjective paragraph uses the age as of `procedure_date`.
-- [ ] Regenerate a Discharge Note; the first paragraph uses the age as of the discharge `visitDate`.
-- [ ] Regenerate a single section (per-section regeneration path) — the age is still anchored to the visit/procedure date because the same `inputData` is stringified.
+- [x] Regenerate an Initial Visit note via the "Generate" button for a case whose `visit_date` is in a prior year; the introduction paragraph opens with the age that corresponds to `visit_date - DOB`, not today's age.
+- [x] Regenerate a PRP Procedure Note for the same patient on a different procedure date; the subjective paragraph uses the age as of `procedure_date`.
+- [x] Regenerate a Discharge Note; the first paragraph uses the age as of the discharge `visitDate`.
+- [x] Regenerate a single section (per-section regeneration path) — the age is still anchored to the visit/procedure date because the same `inputData` is stringified.
 
 **Implementation Note**: Pause here for manual confirmation.
 
@@ -366,6 +366,17 @@ None — one `differenceInYears` call per document render and one per Claude inv
 ## Migration Notes
 
 No data migration. Existing finalized notes carry whatever age Claude wrote into the prose at the time; they are not retroactively edited. Only the next render/regeneration uses the new logic.
+
+### Remediation for previously-finalized PDFs
+
+Finalized Initial Visit PDFs are rendered once and stored in Supabase Storage (linked via `initial_visit_notes.document_id` — see [finalize path](src/actions/initial-visit-notes.ts#L511-L557)). Viewing a finalized note serves the stored file — it does **not** re-render. Any note finalized before this plan shipped has the old `today`-anchored age frozen into:
+
+1. The header **"Age:"** row of the stored PDF, and
+2. The `introduction` prose in the DB (and therefore the stored PDF), which Claude wrote against the old prompt.
+
+**To correct a specific finalized note**: unfinalize the note (returns to draft, preserves section content), then finalize again. This re-runs [renderInitialVisitPdf](src/lib/pdf/render-initial-visit-pdf.ts) with the corrected header age and uploads a fresh PDF. The `introduction` prose is **not** regenerated by finalize — if the stated age in the prose is also wrong, the user must additionally regenerate the Introduction section (or regenerate the whole note) before finalizing.
+
+No automated backfill script is provided: remediation is per-case and under user control. If a large-scale re-finalize becomes necessary later, that would be a separate change.
 
 ## References
 
