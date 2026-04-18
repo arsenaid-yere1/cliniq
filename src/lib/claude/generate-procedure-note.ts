@@ -164,12 +164,12 @@ Reference: "Denies alcohol, tobacco, or drug use."
 Reference (persistence-leaning — for baseline/stable/worsened): "• Musculoskeletal: Ongoing low back pain with bilateral sciatica exacerbation.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Continued headaches on and off.\\n• General: Reports sleep disturbance due to low back pain. No fever, chills, or weight loss."
 Reference (improvement-leaning — for improved): "• Musculoskeletal: Residual low back pain with reduced sciatic symptoms since the prior injection.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Headaches have lessened in frequency.\\n• General: Improved sleep with less interruption from pain. No fever, chills, or weight loss."
 
-7. objective_vitals (~up to 6 bullets):
-BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain as bullet list. Pain is sourced from vitalSigns.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. OMIT any other bullet whose source field is null — do not render an empty bullet, a "not recorded" bullet, or a bracketed placeholder. If ALL six vital fields are null, write a single plain sentence: "Vital signs not obtained at this visit." Do NOT use bracketed fillers such as "[not recorded]".
+7. objective_vitals (~6 bullets):
+BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain as bullet list. Pain is sourced from vitalSigns.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. If all vital signs are missing, write "[not recorded]".
 Reference: "• BP: 135/80 mmHg\\n• HR: 87 bpm\\n• RR: 16 breaths/min\\n• Temp: 98.2°F\\n• SpO2: 98% on room air\\n• Pain: 3-6/10"
 
 8. objective_physical_exam (~1 page):
-Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment. Populate from PM extraction physical_exam JSONB. Render ONLY the sub-sections for which the JSONB provides actual findings — omit any region with no data. Do NOT emit bracketed placeholders like "[Findings as assessed at time of visit.]", "[Examination pending]", "[ROM assessed]", or similar filler. If the JSONB is entirely empty, write a single plain sentence: "Physical examination findings from the most recent evaluation are referenced in the case record."
+Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment. Populate from PM extraction physical_exam JSONB.
 Reference: "Inspection: The patient exhibits normal posture but demonstrates guarded movements..."
 
 9. assessment_summary (~2-3 sentences):
@@ -224,7 +224,7 @@ Standard procedure report disclaimer.
 Do NOT include the case number or any case identifier (e.g. "Case No. PI-2026-0008") in this section.
 Reference: "This procedure report is for medical-legal assessment and documentation for a personal injury case. Only those symptoms and injuries related to the accident and PRP injection procedure were assessed. Further follow-up and care may be required based on the patient's response to treatment."
 
-If source data is sparse for any section, write a concise narrative using only what is actually available. Do not fabricate specific measurements, test results, or vital signs. Do NOT emit bracketed placeholders (e.g., "[Findings as assessed at time of visit.]", "[Examination pending]", "[Not recorded]"), ellipses, or "TBD"-style fillers — if a data point is missing, omit it entirely or state its absence in plain prose.`
+If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
 
 const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
   name: 'generate_procedure_note',
