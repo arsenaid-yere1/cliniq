@@ -123,8 +123,25 @@ PDF-SAFE FORMATTING:
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~1 paragraph):
-Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Use the top-level "age" field verbatim (the patient's age on procedureRecord.procedure_date); do NOT recompute from date_of_birth. Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain. Pain is captured as a MIN/MAX range on vitalSigns.pain_score_min / pain_score_max. Render as a range when both are present and differ (e.g. "rated 3-6/10"); render as a single value when they match or only one is present (e.g. "rated 5/10"); omit the pain sentence entirely if both are null. If priorProcedure exists AND priorProcedure.pain_score_max is not null, compare to the prior visit using the prior pain_score_max as the reference ("compared to [prior_pain_score_max]/10 at [his/her] last visit"). If first injection or no prior pain recorded: no comparison.
-Reference: "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 3-4/10, compared to 6/10 at his last visit."
+Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Use the top-level "age" field verbatim (the patient's age on procedureRecord.procedure_date); do NOT recompute from date_of_birth.
+
+NARRATIVE TONE — choose framing based on the top-level "paintoneLabel" field:
+• "baseline" (first injection or no prior pain recorded) — describe current symptoms, functional limitations, and current pain. Do NOT compare to any prior visit.
+• "improved" — the patient's pain has meaningfully decreased (≥2 points on the 0-10 scale) since the most recent injection. Describe this as improvement or reduced pain; remaining symptoms should be characterized as residual, intermittent, or mild where supported by the data. Do NOT use the words "persistent" or "continues to report" in this branch. Reference the prior visit's pain_score_max explicitly.
+• "stable" — the patient's pain has not meaningfully changed (within ±1 point). Describe symptoms as largely unchanged, persistent at a similar level, or modestly altered. Reference the prior visit's pain_score_max explicitly.
+• "worsened" — the patient's pain has meaningfully increased (≥2 points). Describe symptoms as persistent or worsening. Reference the prior visit's pain_score_max explicitly.
+
+PAIN RATING: Pain is captured as a MIN/MAX range on vitalSigns.pain_score_min / pain_score_max. Render as a range when both are present and differ (e.g. "rated 3-6/10"); render as a single value when they match or only one is present (e.g. "rated 5/10"); omit the pain sentence entirely if both are null.
+
+TRAJECTORY (when priorProcedures has 2 or more entries): In addition to the most-recent comparison, briefly describe the progression across the series using each prior procedure's pain_score_max in chronological order (e.g., "pain has progressively decreased from 8/10 → 5/10 → 3/10 across the injection series"). Keep this to one short clause — do not list every procedure date.
+
+SECONDARY SIGNAL (optional): If the top-level "chiroProgress" field is non-null, you may reference chiropractic functional progress in the narrative (e.g., "with concurrent improvement in mobility during chiropractic care") when it aligns with paintoneLabel. Do NOT cite chiroProgress when it conflicts with the pain data — the pain data takes precedence.
+
+Reference (paintoneLabel="baseline", first injection): "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled PRP injection to the lumbosacral region. He reports ongoing low back pain with functional limitations affecting daily activities. Pain is rated 6-7/10."
+Reference (paintoneLabel="improved", one prior): "Mr. Vardanyan is a 45-year-old male who returns for his scheduled follow-up PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection. Residual pain is intermittent and rated 3-4/10, compared to 6/10 at his last visit."
+Reference (paintoneLabel="stable", one prior): "Mr. Vardanyan is a 45-year-old male who returns for his scheduled follow-up PRP injection to the lumbosacral region. Symptoms remain largely unchanged since the prior injection, with modest day-to-day variability. Pain is rated 5-6/10, compared to 6/10 at his last visit."
+Reference (paintoneLabel="worsened", one prior): "Mr. Vardanyan is a 45-year-old male who returns for his scheduled follow-up PRP injection to the lumbosacral region. He reports persistent low back pain with ongoing functional limitations despite the initial injection. Pain is rated 7-8/10, compared to 6/10 at his last visit."
+Reference (paintoneLabel="improved", 2+ prior — trajectory narrative): "Ms. Taylor is a 34-year-old female who returns for her scheduled PRP injection to the cervical spine. She reports sustained improvement in neck pain across the injection series; pain has progressively decreased from 8/10 → 5/10 → 3/10. Current pain is rated 2-3/10, compared to 5/10 at her last visit."
 
 2. past_medical_history (~2 bullets/sentences):
 Extract the Medical Problems and Surgeries sub-bullets from the initialVisitNote.past_medical_history text blob. Present as 2 plain sentences/bullets (no medications or allergies here — those are their own sections).
@@ -143,8 +160,9 @@ From initialVisitNote.social_history. Single line.
 Reference: "Denies alcohol, tobacco, or drug use."
 
 6. review_of_systems (~3 bullets):
-3 bullets only — Musculoskeletal, Neurological, General.
-Reference: "• Musculoskeletal: Ongoing low back pain with bilateral sciatica exacerbation.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Continued headaches on and off.\\n• General: Reports sleep disturbance due to low back pain. No fever, chills, or weight loss."
+3 bullets only — Musculoskeletal, Neurological, General. Tailor the wording to the top-level "paintoneLabel": use "ongoing" / "continued" phrasing when paintoneLabel is "worsened" or "stable"; use "improving" / "reduced" / "residual" phrasing when paintoneLabel is "improved". When paintoneLabel is "baseline", match the persistence-leaning example.
+Reference (persistence-leaning — for baseline/stable/worsened): "• Musculoskeletal: Ongoing low back pain with bilateral sciatica exacerbation.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Continued headaches on and off.\\n• General: Reports sleep disturbance due to low back pain. No fever, chills, or weight loss."
+Reference (improvement-leaning — for improved): "• Musculoskeletal: Residual low back pain with reduced sciatic symptoms since the prior injection.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Headaches have lessened in frequency.\\n• General: Improved sleep with less interruption from pain. No fever, chills, or weight loss."
 
 7. objective_vitals (~6 bullets):
 BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain as bullet list. Pain is sourced from vitalSigns.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. If all vital signs are missing, write "[not recorded]".
@@ -155,8 +173,9 @@ Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Se
 Reference: "Inspection: The patient exhibits normal posture but demonstrates guarded movements..."
 
 9. assessment_summary (~2-3 sentences):
-Summary linking exam findings to MRI/imaging.
-Reference: "Findings indicate cervical, thoracic and lumbar spine dysfunction with restricted mobility, tenderness, muscle spasms, and radicular symptoms consistent with lumbar disc pathology. The patient's symptoms correlate with MRI findings and ongoing functional impairments, necessitating further pain management intervention."
+Summary linking exam findings to MRI/imaging. Tailor the closing clause to "paintoneLabel": cite "ongoing functional impairments, necessitating further pain management intervention" style when paintoneLabel is "baseline", "stable", or "worsened"; cite "favorable interim response supporting continuation of the injection series" style when paintoneLabel is "improved".
+Reference (persistence-leaning — for baseline/stable/worsened): "Findings indicate cervical, thoracic and lumbar spine dysfunction with restricted mobility, tenderness, muscle spasms, and radicular symptoms consistent with lumbar disc pathology. The patient's symptoms correlate with MRI findings and ongoing functional impairments, necessitating further pain management intervention."
+Reference (improvement-leaning — for improved): "Findings indicate cervical, thoracic, and lumbar spine dysfunction correlating with MRI findings, with interval reduction in radicular symptoms and improved mobility since the prior injection. The favorable interim response supports continuation of the planned PRP injection series."
 
 10. procedure_indication (~1-3 bullets):
 Bullet per injection site referencing specific imaging finding with measurements.
@@ -196,7 +215,9 @@ Covers PRP role, post-injection instructions, follow-up. End with time documenta
 Reference: "Mr. Vardanyan was educated on the PRP procedure, including its role in promoting tissue regeneration, reducing inflammation, and improving function in the injured site..."
 
 19. prognosis (~2 sentences):
-Reference: "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
+Match the "paintoneLabel". Use the guarded reference when paintoneLabel is "baseline", "stable", or "worsened"; use the guarded-to-favorable reference when paintoneLabel is "improved".
+Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
+Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on completion of the injection series and adherence to the prescribed rehabilitation program."
 
 20. clinician_disclaimer (~2-3 sentences):
 Standard procedure report disclaimer.
