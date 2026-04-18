@@ -27,10 +27,10 @@ const REASON_FOR_VISIT_BY_ACCIDENT_TYPE: Record<AccidentType, string> = {
 }
 
 const INITIAL_VISIT_REASON_BY_ACCIDENT_TYPE: Record<AccidentType, string> = {
-  auto: 'Initial medical evaluation following motor vehicle collision for assessment of acute post-traumatic injuries and associated symptoms',
-  slip_and_fall: 'Initial medical evaluation following slip-and-fall injury for assessment of acute post-traumatic injuries and associated symptoms',
-  workplace: 'Initial medical evaluation following workplace injury for assessment of acute post-traumatic injuries and associated symptoms',
-  other: 'Initial medical evaluation following traumatic injury for assessment of acute post-traumatic injuries and associated symptoms',
+  auto: 'Post motor vehicle collision evaluation',
+  slip_and_fall: 'Post slip-and-fall injury evaluation',
+  workplace: 'Post workplace injury evaluation',
+  other: 'Post-traumatic injury evaluation',
 }
 
 /**
@@ -39,12 +39,11 @@ const INITIAL_VISIT_REASON_BY_ACCIDENT_TYPE: Record<AccidentType, string> = {
  * Procedure notes use "Clinical Indication" with ICD-10-first content, which
  * is a separate convention and not produced by this helper.
  *
- * For `initial_visit` notes, the label is expanded to a detailed evaluative
- * statement naming the precipitating event (e.g. "Initial medical evaluation
- * following motor vehicle collision for assessment of acute post-traumatic
- * injuries and associated symptoms"). All other callers (pain evaluation
- * visits, discharge notes, CMS-1500 indication) keep the concise etiology
- * phrase so billing and post-treatment records remain medically framed.
+ * For `initial_visit` notes, the label is swapped to a concise evaluative
+ * statement naming the precipitating event (e.g. "Post motor vehicle
+ * collision evaluation"). All other callers (pain evaluation visits,
+ * discharge notes, CMS-1500 indication) keep the etiology phrase so billing
+ * and post-treatment records remain medically framed.
  */
 export function formatReasonForVisit(
   accidentType: string | null | undefined,
