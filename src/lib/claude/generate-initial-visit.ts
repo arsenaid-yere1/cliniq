@@ -34,7 +34,11 @@ export function detectDefaultVisitType(inputData: InitialVisitInputData): NoteVi
 
 // --- System Prompt Builder ---
 
-const COMMON_PREAMBLE = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate an Initial Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
+function buildPreamble(visitType: NoteVisitType): string {
+  const clinicDescriptor = visitType === 'initial_visit'
+    ? 'personal injury medical evaluation clinic'
+    : 'personal injury pain management clinic'
+  return `You are a clinical documentation specialist for a ${clinicDescriptor}. Generate an Initial Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
 
 This document is for medical-legal assessment of injuries sustained in a motor vehicle accident or other personal injury event. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
 
@@ -69,14 +73,23 @@ If providerIntake is provided in the source data, use it as the PRIMARY source f
 • Post-Accident History: Use providerIntake.chief_complaints and accident_details for symptom/functional impact narrative
 
 If both providerIntake and caseSummary contain data for the same field, prefer providerIntake (it is more recent, entered at this visit).`
+}
 
-const COMMON_SECTIONS = `
+function buildCommonSections(visitType: NoteVisitType): string {
+  const introInstruction = visitType === 'initial_visit'
+    ? `Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age (use the top-level "age" field verbatim — this is the patient's age on the visit date; do NOT recompute from date_of_birth), gender, presents for initial medical evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
+DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
+DO NOT characterize this encounter as a "pain management visit" or use "pain management evaluation" phrasing in the introduction or chief complaint. Use "initial medical evaluation" or "initial evaluation" instead.
+Reference: "Ms. [Name] is a 21-year-old female who presents for initial medical evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
+    : `Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age (use the top-level "age" field verbatim — this is the patient's age on the visit date; do NOT recompute from date_of_birth), gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
+DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
+Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
+
+  return `
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. INTRODUCTION (~3 sentences):
-Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age (use the top-level "age" field verbatim — this is the patient's age on the visit date; do NOT recompute from date_of_birth), gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
-DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
-Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."
+${introInstruction}
 
 4. CHIEF COMPLAINT (~1 intro sentence + bullet list):
 Brief intro sentence, then "• " bullet per complaint with: region, persistent/intermittent, pain rating X–X/10, radiation status, aggravating factors, alleviating factors. Include sleep disturbance. Use SPECIFIC ratings from the source data — do not use "[X/10]" if pain data is available.
@@ -122,6 +135,7 @@ Standard disclaimer: "This report is for medical-legal assessment of the injury 
 FOLLOWED BY a personalized closing: "It has been a pleasure evaluating [Mr./Ms. Patient Name]. For any further questions or concerns, please contact our office directly."
 
 If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
+}
 
 const INITIAL_VISIT_SECTIONS = `
 === VISIT TYPE: INITIAL VISIT ===
@@ -259,7 +273,7 @@ State that the patient was advised on home exercises, conservative care, nature 
 
 function buildSystemPrompt(visitType: NoteVisitType): string {
   const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS
-  return `${COMMON_PREAMBLE}\n${COMMON_SECTIONS}\n${visitSpecificSections}`
+  return `${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}`
 }
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
