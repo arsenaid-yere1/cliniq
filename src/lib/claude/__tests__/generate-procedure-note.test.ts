@@ -60,7 +60,7 @@ describe('generateProcedureNoteFromData', () => {
     ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
     await generateProcedureNoteFromData(emptyInput)
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
-    expect(opts.model).toBe('claude-sonnet-4-6')
+    expect(opts.model).toBe('claude-opus-4-7')
     expect(opts.toolName).toBe('generate_procedure_note')
     expect(opts.maxTokens).toBe(16384)
   })

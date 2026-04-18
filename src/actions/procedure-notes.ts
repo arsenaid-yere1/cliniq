@@ -434,7 +434,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
       patient_education: data.patient_education,
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
-      ai_model: 'claude-sonnet-4-6',
+      ai_model: 'claude-opus-4-7',
       raw_ai_response: result.rawResponse || null,
       status: 'draft',
       source_data_hash: sourceHash,
