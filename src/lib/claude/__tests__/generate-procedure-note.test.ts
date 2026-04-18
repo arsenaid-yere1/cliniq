@@ -108,9 +108,9 @@ describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
     // Use [\s\S]*? (non-greedy, matches across newlines) instead of .*/s so the
     // source stays compatible with the project's ES2017 TypeScript target.
     expect(system).toMatch(/"baseline"[\s\S]*?first injection or no prior pain recorded/)
-    expect(system).toMatch(/"improved"[\s\S]*?current pain ≥3 points lower than prior/)
-    expect(system).toMatch(/"stable"[\s\S]*?delta in \[-2, \+1\]/)
-    expect(system).toMatch(/"worsened"[\s\S]*?current pain ≥2 points higher than prior/)
+    expect(system).toMatch(/"improved"[\s\S]*?current pain ≥3 points lower than the first-injection baseline/)
+    expect(system).toMatch(/"stable"[\s\S]*?current pain within \[baseline-2, baseline\+1\]/)
+    expect(system).toMatch(/"worsened"[\s\S]*?current pain ≥2 points higher than the first-injection baseline/)
   })
 
   it('includes three parallel reference examples for baseline / improved / stable-or-worsened', async () => {

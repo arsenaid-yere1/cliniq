@@ -5,21 +5,28 @@ describe('computePainToneLabel', () => {
   it('returns baseline when current is null', () => {
     expect(computePainToneLabel(null, 7)).toBe('baseline')
   })
-  it('returns baseline when prior is null', () => {
+  it('returns baseline when reference is null', () => {
     expect(computePainToneLabel(5, null)).toBe('baseline')
   })
   it('returns baseline when both null', () => {
     expect(computePainToneLabel(null, null)).toBe('baseline')
   })
-  it('returns improved when current is 3+ less than prior', () => {
+  it('returns improved when current is 3+ less than reference', () => {
     expect(computePainToneLabel(4, 7)).toBe('improved')
     expect(computePainToneLabel(2, 8)).toBe('improved')
     expect(computePainToneLabel(0, 10)).toBe('improved')
   })
-  it('returns stable for a 2-point drop (boundary — was improved in v1)', () => {
-    // 9→7 is the real-world case that motivated the threshold bump: still
-    // high-severity pain, exam reads persistent, so forcing "improved" tone
-    // produced contradictory output.
+  it('returns improved for cumulative series progress (9 → 5 across 3 sessions)', () => {
+    // Motivating case: callers pass the series baseline (first procedure) as
+    // the reference, not the most-recent prior. A patient at 5/10 today whose
+    // first injection started at 9/10 should read as "improved" regardless of
+    // how modest the interval deltas were (9→7→5).
+    expect(computePainToneLabel(5, 9)).toBe('improved')
+    expect(computePainToneLabel(6, 9)).toBe('improved')
+  })
+  it('returns stable for a 2-point drop (threshold case — was improved in pre-threshold-bump v1)', () => {
+    // 9→7 baseline-to-current is still stable under the v2 threshold because
+    // at 7/10 residual pain the physical exam reads persistence-leaning.
     expect(computePainToneLabel(7, 9)).toBe('stable')
     expect(computePainToneLabel(5, 7)).toBe('stable')
     expect(computePainToneLabel(3, 5)).toBe('stable')
@@ -29,7 +36,7 @@ describe('computePainToneLabel', () => {
     expect(computePainToneLabel(6, 7)).toBe('stable')
     expect(computePainToneLabel(8, 7)).toBe('stable')
   })
-  it('returns worsened when current is 2+ more than prior (unchanged threshold)', () => {
+  it('returns worsened when current is 2+ more than reference (unchanged threshold)', () => {
     expect(computePainToneLabel(9, 7)).toBe('worsened')
     expect(computePainToneLabel(8, 6)).toBe('worsened')
   })

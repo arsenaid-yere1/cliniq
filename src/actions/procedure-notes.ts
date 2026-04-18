@@ -209,10 +209,17 @@ async function gatherProcedureNoteSourceData(
         pain_score_min: priorVitalsByProcedureId.get(p.id)?.pain_score_min ?? null,
         pain_score_max: priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null,
       })),
+      // paintoneLabel compares current pain to the FIRST procedure's pain (the
+      // series baseline), not the most recent prior. This matches the discharge
+      // note's `overallPainTrend` semantics and lets cumulative series progress
+      // earn the "improved" label — e.g. 9 → 7 → 5 across three sessions is
+      // "improved" overall even though each interval delta is only -2.
+      // priorProcedureRows is ordered ascending (oldest first) per the DB query
+      // at the top of this function, so index 0 is the series baseline.
       paintoneLabel: computePainToneLabel(
         vitalsRes.data?.pain_score_max ?? null,
         priorProcedureRows.length > 0
-          ? priorVitalsByProcedureId.get(priorProcedureRows[priorProcedureRows.length - 1].id)?.pain_score_max ?? null
+          ? priorVitalsByProcedureId.get(priorProcedureRows[0].id)?.pain_score_max ?? null
           : null,
       ),
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
