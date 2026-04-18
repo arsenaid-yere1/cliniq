@@ -197,6 +197,7 @@ Reference: "Due to the chronic nature of the injury, the prognosis is guarded. F
 
 20. clinician_disclaimer (~2-3 sentences):
 Standard procedure report disclaimer.
+Do NOT include the case number or any case identifier (e.g. "Case No. PI-2026-0008") in this section.
 Reference: "This procedure report is for medical-legal assessment and documentation for a personal injury case. Only those symptoms and injuries related to the accident and PRP injection procedure were assessed. Further follow-up and care may be required based on the patient's response to treatment."
 
 If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
