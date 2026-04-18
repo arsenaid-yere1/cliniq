@@ -36,7 +36,6 @@ interface Procedure {
   procedure_name: string
   injection_site: string | null
   laterality: string | null
-  site_count: number | null
   procedure_number: number | null
   // Story 4.2 fields
   blood_draw_volume_ml: number | null
@@ -81,12 +80,7 @@ const columns: ColumnDef<Procedure>[] = [
   {
     accessorKey: 'injection_site',
     header: 'Injection Site',
-    cell: ({ row }) => {
-      const site = row.original.injection_site
-      const count = row.original.site_count ?? 1
-      if (!site) return '—'
-      return count > 1 ? `${site} ×${count}` : site
-    },
+    cell: ({ getValue }) => (getValue() as string | null) || '—',
   },
   {
     accessorKey: 'laterality',

@@ -2211,7 +2211,6 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number: number | null
-          site_count: number
           supplies_used: string | null
           target_confirmed_imaging: boolean | null
           updated_at: string
@@ -2244,7 +2243,6 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number?: number | null
-          site_count?: number
           supplies_used?: string | null
           target_confirmed_imaging?: boolean | null
           updated_at?: string
@@ -2277,7 +2275,6 @@ export type Database = {
           procedure_date?: string
           procedure_name?: string
           procedure_number?: number | null
-          site_count?: number
           supplies_used?: string | null
           target_confirmed_imaging?: boolean | null
           updated_at?: string

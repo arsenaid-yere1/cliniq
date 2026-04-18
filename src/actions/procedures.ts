@@ -107,7 +107,6 @@ export async function createPrpProcedure(
       procedure_name: 'PRP Injection',
       injection_site: values.injection_site,
       laterality: values.laterality,
-      site_count: values.site_count,
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
       procedure_number: procedureNumber,
@@ -264,7 +263,6 @@ export async function updatePrpProcedure(
       procedure_date: values.procedure_date,
       injection_site: values.injection_site,
       laterality: values.laterality,
-      site_count: values.site_count,
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
       // PRP Preparation

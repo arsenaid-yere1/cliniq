@@ -12,6 +12,22 @@ import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 
+// Count distinct injection sites in a free-text string.
+// Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
+// Examples:
+//   "Cervical and Lumbar"      → 2
+//   "Cervical, Lumbar, Thoracic" → 3
+//   "Knee"                     → 1
+//   "" | null | undefined      → 1
+function countInjectionSites(injectionSite: string | null | undefined): number {
+  if (!injectionSite) return 1
+  const parts = injectionSite
+    .split(/,|;|\/|&|\+|\s+and\s+/i)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+  return Math.max(1, parts.length)
+}
+
 export async function listInvoices(caseId: string) {
   const supabase = await createClient()
 
@@ -219,7 +235,6 @@ export async function getInvoiceFormData(caseId: string) {
       procedure_name: string
       injection_site?: string | null
       laterality?: string | null
-      site_count?: number | null
     }
     // Build description with injection sites listed below the main description
     const sites: string[] = []
@@ -229,7 +244,7 @@ export async function getInvoiceFormData(caseId: string) {
       + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
 
     const unitPrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
-    const quantity = Math.max(1, typedProc.site_count ?? 1)
+    const quantity = countInjectionSites(typedProc.injection_site)
 
     prePopulatedLineItems.push({
       procedure_id: typedProc.id,
@@ -252,9 +267,9 @@ export async function getInvoiceFormData(caseId: string) {
     const typedProc = proc as {
       id: string
       procedure_date: string
-      site_count?: number | null
+      injection_site?: string | null
     }
-    const quantity = Math.max(1, typedProc.site_count ?? 1)
+    const quantity = countInjectionSites(typedProc.injection_site)
     return {
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,

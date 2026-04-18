@@ -83,7 +83,6 @@ export interface ProcedureInitialData {
   procedure_date: string
   injection_site: string | null
   laterality: string | null
-  site_count: number | null
   diagnoses: unknown
   consent_obtained: boolean | null
   blood_draw_volume_ml: number | null
@@ -199,7 +198,6 @@ export function RecordProcedureDialog({
       laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined)
         ?? (defaults?.laterality as 'left' | 'right' | 'bilateral' | undefined)
         ?? undefined,
-      site_count: initialData?.site_count ?? 1,
       diagnoses: Array.isArray(initialData?.diagnoses)
         ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
         : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
@@ -346,41 +344,19 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-[1fr_10rem] gap-4">
-                <FormField
-                  control={form.control}
-                  name="injection_site"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Injection Site</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Knee, Shoulder" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="site_count"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Number of Sites</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          step={1}
-                          {...field}
-                          onChange={(e) => field.onChange(e.target.valueAsNumber || 1)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="injection_site"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Injection Site</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Knee, Shoulder" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
