@@ -70,6 +70,7 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
       ),
     injection_site: z.string().min(1, 'Injection site is required'),
     laterality: z.enum(['left', 'right', 'bilateral']),
+    site_count: z.number().int().min(1, 'At least 1 site is required'),
     diagnoses: z.array(diagnosisSchema).min(1, 'At least one diagnosis is required'),
     consent_obtained: z.boolean(),
     vital_signs: vitalSignsSchema,

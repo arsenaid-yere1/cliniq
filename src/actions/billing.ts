@@ -219,6 +219,7 @@ export async function getInvoiceFormData(caseId: string) {
       procedure_name: string
       injection_site?: string | null
       laterality?: string | null
+      site_count?: number | null
     }
     // Build description with injection sites listed below the main description
     const sites: string[] = []
@@ -227,16 +228,17 @@ export async function getInvoiceFormData(caseId: string) {
     const description = 'PRP preparation and injection with US guided'
       + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
 
-    const catalogPrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
+    const unitPrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
+    const quantity = Math.max(1, typedProc.site_count ?? 1)
 
     prePopulatedLineItems.push({
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
       cpt_code: '0232T\n86999\n76942',
       description,
-      quantity: 1,
-      unit_price: catalogPrice,
-      total_price: catalogPrice,
+      quantity,
+      unit_price: unitPrice,
+      total_price: unitPrice * quantity,
     })
   }
 
@@ -250,15 +252,17 @@ export async function getInvoiceFormData(caseId: string) {
     const typedProc = proc as {
       id: string
       procedure_date: string
+      site_count?: number | null
     }
+    const quantity = Math.max(1, typedProc.site_count ?? 1)
     return {
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
       cpt_code: '0232T\n86999\n76942',
       description: 'Medical site utilization',
-      quantity: 1,
+      quantity,
       unit_price: msuPrice,
-      total_price: msuPrice,
+      total_price: msuPrice * quantity,
     }
   })
 
