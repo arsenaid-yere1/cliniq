@@ -7,6 +7,7 @@ import {
   type ProcedureNoteSection,
   procedureNoteSectionLabels,
 } from '@/lib/validations/procedure-note'
+import type { PainToneLabel, ChiroProgress } from '@/lib/claude/pain-tone'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -59,12 +60,14 @@ export interface ProcedureNoteInputData {
     pain_score_min: number | null
     pain_score_max: number | null
   } | null
-  priorProcedure: {
+  priorProcedures: Array<{
     procedure_date: string
     pain_score_min: number | null
     pain_score_max: number | null
     procedure_number: number
-  } | null
+  }>
+  paintoneLabel: PainToneLabel
+  chiroProgress: ChiroProgress
   pmExtraction: {
     chief_complaints: unknown
     physical_exam: unknown

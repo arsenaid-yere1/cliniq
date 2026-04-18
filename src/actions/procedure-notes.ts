@@ -15,6 +15,7 @@ import {
 } from '@/lib/validations/procedure-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
+import { computePainToneLabel, deriveChiroProgress } from '@/lib/claude/pain-tone'
 
 // --- Helper: compute source data hash ---
 
@@ -37,8 +38,9 @@ async function gatherProcedureNoteSourceData(
     pmRes,
     mriRes,
     ivNoteRes,
-    priorProcedureRes,
+    priorProceduresRes,
     clinicRes,
+    chiroRes,
   ] = await Promise.all([
     supabase
       .from('procedures')
@@ -82,20 +84,27 @@ async function gatherProcedureNoteSourceData(
       .is('deleted_at', null)
       .limit(1)
       .maybeSingle(),
-    // Prior procedure: most recent for this case excluding current
+    // Prior procedures: all for this case excluding current, chronological (oldest → newest)
     supabase
       .from('procedures')
       .select('id, procedure_date, procedure_number')
       .eq('case_id', caseId)
       .neq('id', procedureId)
       .is('deleted_at', null)
-      .order('procedure_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order('procedure_date', { ascending: true }),
     supabase
       .from('clinic_settings')
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
       .is('deleted_at', null)
+      .maybeSingle(),
+    supabase
+      .from('chiro_extractions')
+      .select('functional_outcomes')
+      .eq('case_id', caseId)
+      .eq('review_status', 'approved')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -106,20 +115,27 @@ async function gatherProcedureNoteSourceData(
     return { data: null, error: 'Failed to fetch case details' }
   }
 
-  // Fetch prior procedure's pain range from its vital_signs row
-  let priorProcedurePain: { pain_score_min: number | null; pain_score_max: number | null } = {
-    pain_score_min: null,
-    pain_score_max: null,
-  }
-  if (priorProcedureRes.data?.id) {
-    const { data: priorVitals } = await supabase
+  // Batch-fetch prior procedures' pain ranges in a single query
+  const priorProcedureRows = priorProceduresRes.data ?? []
+  const priorProcedureIds = priorProcedureRows.map((p) => p.id)
+  const priorVitalsByProcedureId = new Map<string, {
+    pain_score_min: number | null
+    pain_score_max: number | null
+  }>()
+  if (priorProcedureIds.length > 0) {
+    const { data: priorVitalsRows } = await supabase
       .from('vital_signs')
-      .select('pain_score_min, pain_score_max')
-      .eq('procedure_id', priorProcedureRes.data.id)
+      .select('procedure_id, pain_score_min, pain_score_max')
+      .in('procedure_id', priorProcedureIds)
       .is('deleted_at', null)
-      .limit(1)
-      .maybeSingle()
-    if (priorVitals) priorProcedurePain = priorVitals
+    for (const row of priorVitalsRows ?? []) {
+      if (row.procedure_id) {
+        priorVitalsByProcedureId.set(row.procedure_id, {
+          pain_score_min: row.pain_score_min,
+          pain_score_max: row.pain_score_max,
+        })
+      }
+    }
   }
 
   // Fetch provider profile from case's assigned provider
@@ -187,14 +203,19 @@ async function gatherProcedureNoteSourceData(
         activity_restriction_hrs: proc.activity_restriction_hrs,
       },
       vitalSigns: vitalsRes.data ?? null,
-      priorProcedure: priorProcedureRes.data
-        ? {
-            procedure_date: priorProcedureRes.data.procedure_date,
-            pain_score_min: priorProcedurePain.pain_score_min,
-            pain_score_max: priorProcedurePain.pain_score_max,
-            procedure_number: priorProcedureRes.data.procedure_number ?? 1,
-          }
-        : null,
+      priorProcedures: priorProcedureRows.map((p) => ({
+        procedure_date: p.procedure_date,
+        procedure_number: p.procedure_number ?? 1,
+        pain_score_min: priorVitalsByProcedureId.get(p.id)?.pain_score_min ?? null,
+        pain_score_max: priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null,
+      })),
+      paintoneLabel: computePainToneLabel(
+        vitalsRes.data?.pain_score_max ?? null,
+        priorProcedureRows.length > 0
+          ? priorVitalsByProcedureId.get(priorProcedureRows[priorProcedureRows.length - 1].id)?.pain_score_max ?? null
+          : null,
+      ),
+      chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
       pmExtraction: pmRes.data
         ? {
             chief_complaints: pmRes.data.chief_complaints,
