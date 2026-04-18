@@ -38,13 +38,28 @@ export function formatReasonForVisit(accidentType: string | null | undefined): s
   return label ?? REASON_FOR_VISIT_BY_ACCIDENT_TYPE.other
 }
 
+const INITIAL_VISIT_TYPE_BY_ACCIDENT_TYPE: Record<AccidentType, string> = {
+  auto: 'Initial medical evaluation following motor vehicle collision for assessment of acute post-traumatic injuries and associated symptoms',
+  slip_and_fall: 'Initial medical evaluation following slip-and-fall injury for assessment of acute post-traumatic injuries and associated symptoms',
+  workplace: 'Initial medical evaluation following workplace injury for assessment of acute post-traumatic injuries and associated symptoms',
+  other: 'Initial medical evaluation following traumatic injury for assessment of acute post-traumatic injuries and associated symptoms',
+}
+
 /**
  * "Visit Type" header value — encounter purpose.
  * Maps the stored visit_type code to a medical-legal label.
+ *
+ * For `initial_visit`, the label is parameterized by accident type to produce
+ * a detailed encounter-purpose statement (e.g. "Initial medical evaluation
+ * following motor vehicle collision for assessment of acute post-traumatic
+ * injuries and associated symptoms"). The `pain_evaluation_visit` variant
+ * retains its concise label.
  */
 export function formatVisitTypeLabel(
   visitType: 'initial_visit' | 'pain_evaluation_visit' | null | undefined,
+  accidentType?: string | null | undefined,
 ): string {
   if (visitType === 'pain_evaluation_visit') return 'Pain Management Evaluation'
-  return 'Initial Evaluation'
+  const key = (accidentType as AccidentType) ?? 'other'
+  return INITIAL_VISIT_TYPE_BY_ACCIDENT_TYPE[key] ?? INITIAL_VISIT_TYPE_BY_ACCIDENT_TYPE.other
 }

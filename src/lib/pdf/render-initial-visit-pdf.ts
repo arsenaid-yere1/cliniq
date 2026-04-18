@@ -142,6 +142,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
     reasonForVisit: formatReasonForVisit(caseData?.accident_type as string | null | undefined),
     visitType: formatVisitTypeLabel(
       input.note.visit_type as 'initial_visit' | 'pain_evaluation_visit' | null | undefined,
+      caseData?.accident_type as string | null | undefined,
     ),
 
     introduction: input.note.introduction as string | null,

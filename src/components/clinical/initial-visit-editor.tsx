@@ -1967,7 +1967,7 @@ function FinalizedView({
                   <p><strong>Date of Service:</strong> {formatVisitDate(note.visit_date, note.finalized_at)}</p>
                   {accidentDate && <p><strong>Date of Injury:</strong> {accidentDate}</p>}
                   <p><strong>Reason for Visit:</strong> {formatReasonForVisit(caseData.accident_type)}</p>
-                  <p><strong>Visit Type:</strong> {formatVisitTypeLabel(visitType)}</p>
+                  <p><strong>Visit Type:</strong> {formatVisitTypeLabel(visitType, caseData.accident_type)}</p>
                 </div>
                 <Separator />
               </>
