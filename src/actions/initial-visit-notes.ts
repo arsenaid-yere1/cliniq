@@ -22,6 +22,7 @@ import {
 } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
+import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 
 // --- Helper: compute source data hash ---
 
@@ -118,7 +119,7 @@ async function gatherSourceData(
     getFeeEstimateTotals(),
     supabase
       .from('initial_visit_notes')
-      .select('provider_intake')
+      .select('provider_intake, visit_date, finalized_at')
       .eq('case_id', caseId)
       .eq('visit_type', visitType)
       .is('deleted_at', null)
@@ -181,6 +182,12 @@ async function gatherSourceData(
       }
     : null
 
+  const visitAnchor = pickVisitAnchor(
+    (intakeRes.data?.visit_date as string | null | undefined) ?? null,
+    (intakeRes.data?.finalized_at as string | null | undefined) ?? null,
+  )
+  const age = computeAgeAtDate(patient.date_of_birth, visitAnchor)
+
   return {
     data: {
       patientInfo: {
@@ -189,6 +196,7 @@ async function gatherSourceData(
         date_of_birth: patient.date_of_birth,
         gender: patient.gender,
       },
+      age,
       caseDetails: {
         case_number: caseRes.data.case_number,
         accident_type: caseRes.data.accident_type,

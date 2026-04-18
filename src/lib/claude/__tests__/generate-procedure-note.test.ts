@@ -13,6 +13,7 @@ import { callClaudeTool } from '@/lib/claude/client'
 
 const emptyInput: ProcedureNoteInputData = {
   patientInfo: { first_name: 'A', last_name: 'B', date_of_birth: null, gender: null },
+  age: null,
   caseDetails: { case_number: 'C1', accident_date: null, accident_type: null },
   procedureRecord: {
     procedure_date: '2026-04-16',

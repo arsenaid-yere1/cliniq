@@ -19,6 +19,7 @@ export interface DischargeNoteInputData {
     date_of_birth: string | null
     gender: string | null
   }
+  age: number | null
   caseDetails: {
     case_number: string
     accident_date: string | null
@@ -124,7 +125,7 @@ This is a DISCHARGE note — the patient has COMPLETED their PRP treatment serie
 
 1. subjective (~3 paragraphs):
 Post-PRP follow-up narrative. Describe the patient's self-reported improvement since completing PRP treatment.
-Para 1: Opening sentence identifying patient, age, presents for follow-up after completing PRP treatment to [sites] on [last procedure date]. Report sustained and progressive improvement in pain severity, functional capacity, and quality of life.
+Para 1: Opening sentence identifying patient, age (use the top-level "age" field verbatim — the patient's age on visitDate; do NOT recompute from date_of_birth), presents for follow-up after completing PRP treatment to [sites] on [last procedure date]. Report sustained and progressive improvement in pain severity, functional capacity, and quality of life.
 Para 2: Region-by-region symptom status — current pain ratings, quality of remaining pain (mild stiffness vs sharp), improvement in mobility, resolution of radicular symptoms. Compare to pre-treatment baseline.
 Para 3: Additional improvements — sleep quality, ADL function, denial of red-flag symptoms (bowel/bladder dysfunction, saddle anesthesia, gait instability, progressive weakness, new neurologic complaints, adverse effects from PRP). End with patient's overall assessment that PRP provided meaningful relief.
 Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025..."

@@ -19,6 +19,7 @@ export interface ProcedureNoteInputData {
     date_of_birth: string | null
     gender: string | null
   }
+  age: number | null
   caseDetails: {
     case_number: string
     accident_date: string | null
@@ -117,7 +118,7 @@ PDF-SAFE FORMATTING:
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~1 paragraph):
-Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain rating. If priorProcedure exists: "Pain is now rated [X]/10, compared to [prior_pain_rating]/10 at [his/her] last visit." If first injection: no comparison.
+Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Use the top-level "age" field verbatim (the patient's age on procedureRecord.procedure_date); do NOT recompute from date_of_birth. Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain rating. If priorProcedure exists: "Pain is now rated [X]/10, compared to [prior_pain_rating]/10 at [his/her] last visit." If first injection: no comparison.
 Reference: "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 4/10, compared to 6/10 at his last visit."
 
 2. past_medical_history (~2 bullets/sentences):

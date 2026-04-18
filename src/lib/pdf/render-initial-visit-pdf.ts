@@ -1,9 +1,10 @@
 import { renderToBuffer } from '@react-pdf/renderer'
 import { InitialVisitPdf, type InitialVisitPdfData } from './initial-visit-template'
 import { createClient } from '@/lib/supabase/server'
-import { format, differenceInYears } from 'date-fns'
+import { format } from 'date-fns'
 import React from 'react'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
+import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 
 function formatVisitDateForPdf(visitDate: string | null | undefined, finalizedAt: string | null | undefined): string {
   if (visitDate) {
@@ -117,6 +118,11 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
 
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
   const patientDob = patient?.date_of_birth ? new Date(patient.date_of_birth) : null
+  const visitAnchor = pickVisitAnchor(
+    input.note.visit_date as string | null | undefined,
+    input.note.finalized_at as string | null | undefined,
+  )
+  const ageAtVisit = computeAgeAtDate(patient?.date_of_birth, visitAnchor)
 
   const pdfData: InitialVisitPdfData = {
     clinicName: clinicSettings?.clinic_name || undefined,
@@ -127,7 +133,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
 
     patientName: patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown',
     dob: patientDob ? format(patientDob, 'MM/dd/yyyy') : '—',
-    age: patientDob ? differenceInYears(new Date(), patientDob) : 0,
+    age: ageAtVisit ?? 0,
     dateOfService: formatVisitDateForPdf(
       input.note.visit_date as string | null | undefined,
       input.note.finalized_at as string | null | undefined,

@@ -14,6 +14,7 @@ import {
   type ProcedureNoteSection,
 } from '@/lib/validations/procedure-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
+import { computeAgeAtDate } from '@/lib/age'
 
 // --- Helper: compute source data hash ---
 
@@ -129,6 +130,8 @@ async function gatherProcedureNoteSourceData(
     ? (proc.diagnoses as Array<{ icd10_code: string | null; description: string }>)
     : []
 
+  const age = computeAgeAtDate(patient.date_of_birth, proc.procedure_date)
+
   return {
     data: {
       patientInfo: {
@@ -137,6 +140,7 @@ async function gatherProcedureNoteSourceData(
         date_of_birth: patient.date_of_birth,
         gender: patient.gender,
       },
+      age,
       caseDetails: {
         case_number: caseRes.data.case_number,
         accident_date: caseRes.data.accident_date,

@@ -4,7 +4,8 @@ import { useState, useTransition, useEffect } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { format, differenceInYears } from 'date-fns'
+import { format } from 'date-fns'
+import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1841,9 +1842,10 @@ function FinalizedView({
   const dob = caseData?.patient.date_of_birth
     ? format(new Date(caseData.patient.date_of_birth), 'MM/dd/yyyy')
     : null
-  const age = caseData?.patient.date_of_birth
-    ? differenceInYears(new Date(), new Date(caseData.patient.date_of_birth))
-    : null
+  const age = computeAgeAtDate(
+    caseData?.patient.date_of_birth,
+    pickVisitAnchor(note.visit_date, note.finalized_at),
+  )
   const accidentDate = caseData?.accident_date
     ? format(new Date(caseData.accident_date), 'MM/dd/yyyy')
     : null
