@@ -178,18 +178,36 @@ Write a concise paragraph that: (a) summarizes clinical examination findings by 
 Do NOT reference imaging results (none exist). Do NOT reference prior conservative care failure (no prior care exists). Do NOT recommend PRP or interventional procedures at this stage.
 Reference: "Clinical examination findings reveal cervical and lumbar paraspinal muscle spasm with restricted range of motion, consistent with post-traumatic cervical and lumbar strain/sprain sustained during the motor vehicle accident. Physical examination findings warrant diagnostic imaging to further evaluate the extent of musculoskeletal and potential structural injury. A structured treatment program including chiropractic care, physical therapy, and medical follow-up is recommended to facilitate recovery and monitor clinical progress."
 
-12. TREATMENT PLAN (~3-4 paragraphs, NO cost estimate):
-Para 1 — Clinical rationale: Summarize the patient's post-traumatic complaints by region and the physical examination findings that support the need for structured treatment. State that diagnostic imaging has been ordered to further evaluate the extent of injury.
-Para 2 — Conservative treatment orders: Outline the initial treatment plan:
-(a) Continue current OTC medications (Tylenol, Ibuprofen) as needed for pain management
-(b) Diagnostic imaging orders — list each MRI ordered by region
-(c) Referral to chiropractic care for spinal manipulation and soft tissue therapy
-(d) Referral to physical therapy for strengthening and functional rehabilitation
-(e) Activity modification and ergonomic guidance
-(f) Follow-up appointment to review imaging results and reassess treatment plan
-Para 3 — Supportive care: Home exercise program, ergonomic modifications, activity modification guidance.
-Para 4 — Monitoring and escalation: The patient will be re-evaluated after imaging results are available. Should diagnostic imaging reveal structural pathology and conservative measures prove insufficient, advanced interventional treatments including regenerative injection therapy may be considered.
-Do NOT include PRP injection protocol. Do NOT include cost estimates. The treatment plan should be conservative and imaging/referral focused.
+12. TREATMENT PLAN (brief rationale paragraph + four sub-headed sections, NO cost estimate):
+Structure: Open with a 1-2 sentence clinical rationale paragraph, then output EXACTLY the four sub-headings below in order, each on its own line, followed by their content. Do NOT number the sub-headings. Do NOT use bullet markers before the sub-heading names.
+
+Rationale paragraph (1-2 sentences, plain prose, no heading):
+Summarize the patient's post-traumatic complaints by region and the physical examination findings that support the need for structured treatment. State that diagnostic imaging has been ordered to further evaluate the extent of injury.
+
+Then emit each of the following sub-headings exactly as written, each followed by its content:
+
+Medication Management
+Provide specific OTC medication guidance with dose, route, frequency, indication, and daily maximum. Use the patient's reported current medications from the case summary when available; otherwise default to the two standard OTC agents below. Include a third line for muscle relaxant ONLY if the case data documents muscle spasm on exam or in complaints.
+Reference tone (adapt dosing to adult vs. pediatric as clinically appropriate):
+• "Ibuprofen 600 mg by mouth three times daily as needed with food for pain and inflammation (do not exceed 2,400 mg/day)."
+• "Acetaminophen (Tylenol) 500–1,000 mg by mouth every 6–8 hours as needed (do not exceed 3,000 mg/day)."
+• "Muscle relaxant may be considered at bedtime if muscle spasm persists." (include only if indicated)
+Each medication line should be a separate sentence/bullet on its own line. Do NOT recommend prescription opioids, gabapentinoids, or NSAIDs beyond ibuprofen at this stage.
+
+Conservative Therapies
+One short paragraph (2-3 sentences) covering: (a) chiropractic therapy with specific focus areas tailored to the affected regions (e.g., cervical and lumbar mobility, postural training, core stabilization, gradual functional re-conditioning); (b) home exercise program; heat/ice as tolerated; (c) ergonomic and work/school-related activity modifications.
+Reference tone: "Initiate chiropractic therapy focusing on cervical and lumbar mobility, postural training, core stabilization, and gradual functional re-conditioning. Home exercise program; heat/ice as tolerated; ergonomic and school-related activity modifications."
+Tailor the specific focus areas to the patient's affected regions from the case summary (cervical, thoracic, lumbar, etc.). If the patient is a student, use "school-related"; if working, use "work-related"; otherwise use "daily activity modifications".
+
+Activity Modification
+One short paragraph (1-2 sentences) listing things to avoid (e.g., heavy lifting, repetitive bending, prolonged static positions) and positive guidance (e.g., encourage frequent position changes during daily activities).
+Reference tone: "Avoid heavy lifting, repetitive bending, and prolonged static positions. Encourage frequent position changes during school and daily activities."
+
+Follow-Up
+One short paragraph (1-2 sentences) stating: (a) re-evaluation following imaging to review results and reassess symptoms, and (b) consideration of referral to pain management if symptoms fail to improve with conservative care.
+Reference tone: "Re-evaluation following imaging to review results and reassess symptoms. Consider referral to pain management if symptoms fail to improve."
+
+Do NOT include PRP injection protocol. Do NOT include cost estimates. Do NOT collapse the sub-headings into a single paragraph. Do NOT emit additional sub-headings beyond these four.
 
 13. PATIENT EDUCATION (~1 paragraph):
 State that the patient was educated on: the biomechanics of their injury, the importance of diagnostic imaging for accurate diagnosis, red-flag symptoms to monitor (progressive neurological deficits, bowel/bladder changes, severe worsening), conservative care expectations, activity modification and ergonomic strategies, medication guidance, and the importance of compliance with the prescribed treatment program. End with "The patient verbalized understanding." Keep to ONE paragraph. Do NOT mention PRP or regenerative therapy education.
@@ -346,7 +364,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       treatment_plan: {
         type: 'string',
-        description: 'For first-visit: conservative plan with imaging orders, therapy referrals, activity modification, and follow-up. For PRP evaluation: PRP injection protocol with spinal levels, cost estimate, supportive care, and monitoring/escalation',
+        description: 'For first-visit: brief clinical rationale paragraph followed by four sub-headings — Medication Management (specific OTC dosing with daily maxes), Conservative Therapies (chiropractic focus areas, home exercise, ergonomics), Activity Modification (avoidance + positive guidance), Follow-Up (re-evaluation after imaging, pain management referral trigger). For PRP evaluation: PRP injection protocol with spinal levels, cost estimate, supportive care, and monitoring/escalation',
       },
       patient_education: {
         type: 'string',
