@@ -46,6 +46,16 @@ export interface DischargeNoteInputData {
     pain_score_min: number | null
     pain_score_max: number | null
   } | null
+  baselinePain: {
+    procedure_date: string
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null
+  initialVisitBaseline: {
+    chief_complaint: string | null
+    physical_exam: string | null
+  } | null
+  overallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened'
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -123,17 +133,35 @@ PDF-SAFE FORMATTING:
 
 This is a DISCHARGE note — the patient has COMPLETED their PRP treatment series and is being evaluated for discharge from active interventional pain management care. The tone should reflect completion, improvement, and forward-looking recommendations. Summarize the entire treatment course and outcomes.
 
+=== PAIN TRAJECTORY (MANDATORY) ===
+
+A discharge note MUST demonstrate that pain decreased over the treatment course. You are provided:
+• "baselinePain" — the pain range recorded at the FIRST procedure (pre-treatment anchor).
+• "initialVisitBaseline.chief_complaint" — intake narrative, often referencing the original pain rating before any PRP.
+• "procedures[]" — every procedure in chronological order, each with its own pain_score_min/max. The LAST element is the discharge-visit pain.
+• "latestVitals.pain_score_min/max" — the pain reading at the discharge visit.
+• "overallPainTrend" — the computed label comparing last procedure pain to first procedure pain.
+
+RULES:
+• In \`subjective\`, you MUST explicitly narrate the downward trajectory using concrete numbers. Format: "pain has decreased from X/10 at the initial evaluation to Y/10 at today's discharge visit" or, when more than 2 procedures exist, render the full series (e.g., "8/10 → 6/10 → 4/10 → 2/10 across the injection series").
+• Render pain ranges when min/max differ (e.g., "6-7/10"); single value when they match or only one is present.
+• In \`assessment\`, reinforce the measurable pain reduction (cite the numeric delta, e.g., "a reduction from 7/10 to 2/10 over the four-injection course").
+• In \`prognosis\`, tie the favorable outlook to the demonstrated numeric improvement.
+• If "overallPainTrend" is "stable" or "worsened", DO NOT fabricate improvement. Instead describe the actual course honestly — but this should be rare for a discharge note; if source data shows no improvement, flag it by writing the narrative truthfully rather than forcing an optimistic framing.
+• If "overallPainTrend" is "baseline" (only one procedure, or pain data missing), fall back to narrative comparison using "initialVisitBaseline.chief_complaint" if it contains a pre-treatment pain descriptor; otherwise describe current status without fabricating a delta.
+• Never invent pain numbers that are not in the source data.
+
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~3 paragraphs):
-Post-PRP follow-up narrative. Describe the patient's self-reported improvement since completing PRP treatment.
+Post-PRP follow-up narrative. Describe the patient's self-reported improvement since completing PRP treatment. MUST include the explicit pain trajectory per the PAIN TRAJECTORY rules above.
 Para 1: Opening sentence identifying patient, age (use the top-level "age" field verbatim — the patient's age on visitDate; do NOT recompute from date_of_birth), presents for follow-up after completing PRP treatment to [sites] on [last procedure date]. Report sustained and progressive improvement in pain severity, functional capacity, and quality of life.
-Para 2: Region-by-region symptom status — current pain ratings, quality of remaining pain (mild stiffness vs sharp), improvement in mobility, resolution of radicular symptoms. Compare to pre-treatment baseline.
+Para 2: Region-by-region symptom status — current pain rating at discharge, quality of remaining pain (mild stiffness vs sharp), improvement in mobility, resolution of radicular symptoms. REQUIRED: cite the pain trajectory using concrete numbers from baselinePain → each procedure → latestVitals (e.g., "pain has decreased from 7-8/10 at the initial evaluation to 2-3/10 at today's discharge visit"). When procedures[] has 3+ entries, render the full series (e.g., "8/10 → 6/10 → 4/10 → 2/10").
 Para 3: Additional improvements — sleep quality, ADL function, denial of red-flag symptoms (bowel/bladder dysfunction, saddle anesthesia, gait instability, progressive weakness, new neurologic complaints, adverse effects from PRP). End with patient's overall assessment that PRP provided meaningful relief.
-Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025..."
+Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025. She reports sustained and progressive improvement, with pain decreasing from 7/10 at her initial evaluation to 2-3/10 at today's discharge visit..."
 
 2. objective_vitals (~6 bullets):
-BP, HR, RR, Temp, SpO2, Pain. Use most recent procedure vitals (latestVitals) if available, or brackets if not recorded. Pain is sourced from latestVitals.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. When describing pain progression across visits elsewhere in the note, use each procedure's pain_score_max as the trendline value.
+BP, HR, RR, Temp, SpO2, Pain. Use \`latestVitals\` (the most recent procedure's vitals). Pain is sourced from \`latestVitals.pain_score_min\` / \`pain_score_max\`: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. Use brackets for any other missing vital.
 Reference: "• BP: 122/78 mmHg\\n• HR: 74 bpm\\n• RR: 15 breaths/min\\n• Temp: 98.1°F\\n• SpO₂: 98% on room air\\n• Pain: 2-3/10"
 
 3. objective_general (~2-3 sentences):
@@ -157,8 +185,8 @@ List all diagnoses with ICD-10 codes. One per line, format: "• CODE – Descri
 Reference: "• G44.309 – Post-traumatic headaches\\n• M62.83 – Muscle spasm\\n• M54.22 – Cervicalgia\\n• S13.4XXA – Cervical sprain..."
 
 8. assessment (~1 paragraph):
-Clinical improvement summary. State sustained improvement following PRP treatment. Link pain reduction, functional restoration, and resolution of radicular features to favorable response to biologic regenerative therapy. Note no treatment-related complications. Support stabilization and healing.
-Reference: "The patient demonstrates sustained clinical improvement following completion of a PRP treatment to the cervical and lumbar spine. The degree of pain reduction, functional restoration, and resolution of radicular features is consistent with a favorable response to biologic regenerative therapy. There is no evidence of treatment-related complications. Current findings support stabilization and healing of the involved spinal structures."
+Clinical improvement summary. State sustained improvement following PRP treatment. Link pain reduction, functional restoration, and resolution of radicular features to favorable response to biologic regenerative therapy. REQUIRED: cite the numeric pain delta from baselinePain to latestVitals (e.g., "a reduction from 7/10 at baseline to 2/10 at discharge"). Note no treatment-related complications. Support stabilization and healing.
+Reference: "The patient demonstrates sustained clinical improvement following completion of a PRP treatment to the cervical and lumbar spine, with pain scores decreasing from 7/10 at the initial evaluation to 2-3/10 at discharge. The degree of pain reduction, functional restoration, and resolution of radicular features is consistent with a favorable response to biologic regenerative therapy. There is no evidence of treatment-related complications. Current findings support stabilization and healing of the involved spinal structures."
 
 9. plan_and_recommendations (~2-3 paragraphs):
 Para 1: PRP therapy is complete, no additional injections indicated. Patient appropriate for discharge from active interventional pain management care.
@@ -171,8 +199,8 @@ Detailed education on long-term recovery expectations, importance of continued r
 Reference: "The patient received detailed education regarding long-term recovery expectations following PRP therapy..."
 
 11. prognosis (~2-3 sentences):
-Favorable prognosis. Meaningful and sustained improvement in pain control, mobility, and functional capacity. With continued adherence to conservative management, further improvement and long-term symptom control anticipated.
-Reference: "The prognosis is favorable. The patient has demonstrated meaningful and sustained improvement in pain control, mobility, and functional capacity following PRP therapy. With continued adherence to conservative management strategies and ergonomic practices, further improvement and long-term symptom control are anticipated."
+Favorable prognosis. Meaningful and sustained improvement in pain control, mobility, and functional capacity. Tie the outlook to the demonstrated numeric pain reduction across the treatment course. With continued adherence to conservative management, further improvement and long-term symptom control anticipated.
+Reference: "The prognosis is favorable. The patient has demonstrated meaningful and sustained improvement in pain control — pain scores decreased from 7/10 at baseline to 2/10 at discharge — alongside restored mobility and functional capacity following PRP therapy. With continued adherence to conservative management strategies and ergonomic practices, further improvement and long-term symptom control are anticipated."
 
 12. clinician_disclaimer (~2-3 sentences):
 Medical-legal disclaimer. Report prepared for documentation and continuity of care related exclusively to injuries sustained in the accident on [date]. Does not constitute comprehensive general medical exam. Only relevant symptoms addressed. Closing pleasantry and contact instruction.

@@ -15,6 +15,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
+import { computePainToneLabel } from '@/lib/claude/pain-tone'
 
 // --- Helper: compute source data hash ---
 
@@ -191,6 +192,31 @@ async function gatherDischargeNoteSourceData(
       }
     : null
 
+  // Baseline pain = first procedure's vitals (pre-treatment anchor)
+  const firstProcedure = procRows[0]
+  const firstVitals = firstProcedure ? vitalsByProcedureId.get(firstProcedure.id) : null
+  const baselinePain: DischargeNoteInputData['baselinePain'] = firstProcedure
+    ? {
+        procedure_date: firstProcedure.procedure_date,
+        pain_score_min: firstVitals?.pain_score_min ?? null,
+        pain_score_max: firstVitals?.pain_score_max ?? null,
+      }
+    : null
+
+  // Initial visit baseline — chief_complaint + physical_exam for pre-PRP pain narrative
+  const initialVisitBaseline: DischargeNoteInputData['initialVisitBaseline'] = ivNoteRes.data
+    ? {
+        chief_complaint: ivNoteRes.data.chief_complaint,
+        physical_exam: ivNoteRes.data.physical_exam,
+      }
+    : null
+
+  // Overall trajectory label: compare last procedure pain_max to first procedure pain_max
+  const overallPainTrend = computePainToneLabel(
+    latestVitals?.pain_score_max ?? null,
+    baselinePain?.pain_score_max ?? null,
+  )
+
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
   return {
@@ -210,6 +236,9 @@ async function gatherDischargeNoteSourceData(
       visitDate,
       procedures,
       latestVitals,
+      baselinePain,
+      initialVisitBaseline,
+      overallPainTrend,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,
