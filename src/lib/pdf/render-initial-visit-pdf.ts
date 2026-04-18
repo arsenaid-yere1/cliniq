@@ -139,10 +139,12 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
       input.note.finalized_at as string | null | undefined,
     ),
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date), 'MM/dd/yyyy') : '—',
-    reasonForVisit: formatReasonForVisit(caseData?.accident_type as string | null | undefined),
+    reasonForVisit: formatReasonForVisit(
+      caseData?.accident_type as string | null | undefined,
+      input.note.visit_type as 'initial_visit' | 'pain_evaluation_visit' | null | undefined,
+    ),
     visitType: formatVisitTypeLabel(
       input.note.visit_type as 'initial_visit' | 'pain_evaluation_visit' | null | undefined,
-      caseData?.accident_type as string | null | undefined,
     ),
 
     introduction: input.note.introduction as string | null,
