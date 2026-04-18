@@ -35,11 +35,11 @@ const emptyInput: InitialVisitInputData = {
 describe('generateInitialVisitFromData', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('calls callClaudeTool with Sonnet 4.6 and the initial visit tool', async () => {
+  it('calls callClaudeTool with Opus 4.7 and the initial visit tool', async () => {
     ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
     await generateInitialVisitFromData(emptyInput, 'initial_visit')
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
-    expect(opts.model).toBe('claude-sonnet-4-6')
+    expect(opts.model).toBe('claude-opus-4-7')
     expect(opts.toolName).toBe('generate_initial_visit_note')
     expect(opts.maxTokens).toBe(16384)
   })

@@ -252,7 +252,7 @@ export async function generateDischargeNoteFromData(
   error?: string
 }> {
   return callClaudeTool<DischargeNoteResult>({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [DISCHARGE_NOTE_TOOL],
@@ -297,7 +297,7 @@ export async function regenerateDischargeNoteSection(
   const sectionLabel = dischargeNoteSectionLabels[section]
 
   const result = await callClaudeTool<{ content: string }>({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     maxTokens: 4096,
     system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Discharge Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
     tools: [SECTION_REGEN_TOOL],

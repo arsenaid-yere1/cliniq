@@ -500,7 +500,7 @@ export async function generateInitialVisitFromData(
   }
 
   return callClaudeTool<InitialVisitNoteResult>({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     maxTokens: 16384,
     system: systemPrompt,
     tools: [INITIAL_VISIT_TOOL],
@@ -545,7 +545,7 @@ export async function regenerateSection(
     : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
 
   const result = await callClaudeTool<{ content: string }>({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     maxTokens: 4096,
     system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
     tools: [SECTION_REGEN_TOOL],

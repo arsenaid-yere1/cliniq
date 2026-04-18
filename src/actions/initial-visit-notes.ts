@@ -380,7 +380,7 @@ export async function generateInitialVisitNote(
       prognosis: data.prognosis,
       time_complexity_attestation: data.time_complexity_attestation,
       clinician_disclaimer: data.clinician_disclaimer,
-      ai_model: 'claude-sonnet-4-6',
+      ai_model: 'claude-opus-4-7',
       raw_ai_response: result.rawResponse || null,
       status: 'draft',
       source_data_hash: sourceHash,
