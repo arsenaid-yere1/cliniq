@@ -77,3 +77,104 @@ describe('regenerateProcedureNoteSection', () => {
     expect(result.data).toBe('fresh')
   })
 })
+
+describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('includes the STARTING REFERENCE rule for pmExtraction.physical_exam', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('STARTING REFERENCE')
+    expect(system).toContain('NOT as a source to paste verbatim')
+  })
+
+  it('includes the MANDATORY interval-change rule for repeat procedures', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('INTERVAL-CHANGE RULE')
+    expect(system).toContain('Do NOT reproduce the baseline pmExtraction findings word-for-word')
+    expect(system).toContain('stable')
+    expect(system).toContain('unchanged since the prior injection')
+  })
+
+  it('includes all four paintoneLabel tone branches for the physical exam', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Each branch must be described by name in the TONE BY paintoneLabel block.
+    // Use [\s\S]*? (non-greedy, matches across newlines) instead of .*/s so the
+    // source stays compatible with the project's ES2017 TypeScript target.
+    expect(system).toMatch(/"baseline"[\s\S]*?first injection or no prior pain recorded/)
+    expect(system).toMatch(/"improved"[\s\S]*?current pain ≥2 points lower than prior/)
+    expect(system).toMatch(/"stable"[\s\S]*?within ±1 point of prior/)
+    expect(system).toMatch(/"worsened"[\s\S]*?current pain ≥2 points higher than prior/)
+  })
+
+  it('includes three parallel reference examples for baseline / improved / stable-or-worsened', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Reference (paintoneLabel="baseline")')
+    expect(system).toContain('Reference (paintoneLabel="improved")')
+    expect(system).toContain('Reference (paintoneLabel="stable" or "worsened")')
+  })
+
+  it('includes the chiroProgress secondary-signal rule with pain-data precedence', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('SECONDARY SIGNAL')
+    expect(system).toContain('chiroProgress')
+    expect(system).toContain('pain data takes precedence')
+  })
+
+  it('forbids fabricating specific measurements not in pmExtraction', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('DO NOT fabricate specific measurements')
+  })
+
+  it('does not add tone branching to objective_vitals (section 7)', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Section 7's instruction should still be numeric-only: look for the exact
+    // known phrasing and assert no paintoneLabel reference appears between
+    // section 7's heading and section 8's heading.
+    const s7Start = system.indexOf('7. objective_vitals')
+    const s8Start = system.indexOf('8. objective_physical_exam')
+    expect(s7Start).toBeGreaterThan(0)
+    expect(s8Start).toBeGreaterThan(s7Start)
+    const s7Block = system.slice(s7Start, s8Start)
+    expect(s7Block).not.toContain('paintoneLabel')
+    expect(s7Block).not.toContain('INTERVAL-CHANGE')
+  })
+})
+
+describe('generateProcedureNoteFromData — paintoneLabel and chiroProgress threading', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function captureUserPayload(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.messages[0].content as string
+  }
+
+  it.each(['baseline', 'improved', 'stable', 'worsened'] as const)(
+    'threads paintoneLabel="%s" into the user payload',
+    async (label) => {
+      const payload = await captureUserPayload({ ...emptyInput, paintoneLabel: label })
+      expect(payload).toContain(`"paintoneLabel": "${label}"`)
+    },
+  )
+
+  it.each(['improving', 'stable', 'plateauing', 'worsening'] as const)(
+    'threads chiroProgress="%s" into the user payload',
+    async (progress) => {
+      const payload = await captureUserPayload({ ...emptyInput, chiroProgress: progress })
+      expect(payload).toContain(`"chiroProgress": "${progress}"`)
+    },
+  )
+
+  it('threads chiroProgress=null into the user payload as JSON null', async () => {
+    const payload = await captureUserPayload({ ...emptyInput, chiroProgress: null })
+    expect(payload).toContain('"chiroProgress": null')
+  })
+})

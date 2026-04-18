@@ -169,8 +169,25 @@ BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain as bullet list. Pain
 Reference: "• BP: 135/80 mmHg\\n• HR: 87 bpm\\n• RR: 16 breaths/min\\n• Temp: 98.2°F\\n• SpO2: 98% on room air\\n• Pain: 3-6/10"
 
 8. objective_physical_exam (~1 page):
-Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment. Populate from PM extraction physical_exam JSONB.
-Reference: "Inspection: The patient exhibits normal posture but demonstrates guarded movements..."
+Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment.
+
+SOURCE: Treat pmExtraction.physical_exam as a STARTING REFERENCE describing the patient's baseline exam at intake — NOT as a source to paste verbatim. The output for this procedure must reflect the patient's current state on procedureRecord.procedure_date, informed by the paintoneLabel.
+
+INTERVAL-CHANGE RULE (MANDATORY when paintoneLabel is "improved", "stable", or "worsened"): Do NOT reproduce the baseline pmExtraction findings word-for-word. For each region present in the baseline exam, shift the description in the direction of the pain delta and label any region whose findings have not meaningfully changed as "stable" or "unchanged since the prior injection" — do not silently repeat prior language. Do not invent new anatomic regions that are not present in pmExtraction; the scope of the exam is bounded by what was captured at intake.
+
+TONE BY paintoneLabel:
+• "baseline" (first injection or no prior pain recorded) — render the exam from pmExtraction.physical_exam without interval-change commentary. Use the baseline reference example below.
+• "improved" (current pain ≥2 points lower than prior) — describe reduced tenderness, improved ROM, resolved or reduced guarding, and mention the improvement is since the prior injection. Replace baseline language like "guarded movements" / "significantly restricted ROM" / "marked tenderness" with "residual" / "minimal" / "improved from prior" wording where supported by the pain delta.
+• "stable" (within ±1 point of prior) — describe findings as largely unchanged from the prior injection; you may use "persistent at a similar level" or "without meaningful interval change" framing. Do not artificially soften or harden findings.
+• "worsened" (current pain ≥2 points higher than prior) — describe persistent or increased tenderness, restricted ROM, or continued guarding; characterize findings as ongoing or progressive despite the prior injection.
+
+SECONDARY SIGNAL (optional): If the top-level "chiroProgress" field is non-null AND aligns with paintoneLabel (improving↔improved, worsening↔worsened, stable/plateauing↔stable), you MAY include a single mobility/gait phrase reflecting chiropractic progress (e.g., "gait has become less antalgic with concurrent chiropractic care"). Do NOT cite chiroProgress when it conflicts with the pain data — pain data takes precedence.
+
+DO NOT fabricate specific measurements (ROM degrees, reflex grades, dermatomal findings) that are not in pmExtraction; describe changes qualitatively. Use brackets "[not assessed]" only for data that requires in-person examination and is genuinely absent.
+
+Reference (paintoneLabel="baseline"): "Inspection: The patient exhibits normal posture but demonstrates guarded movements of the lumbar spine. Palpation reveals tenderness over the bilateral lumbar paraspinals with associated muscle spasm. Range of motion is restricted in flexion and extension, reproducing the patient's axial pain at end range. Neurological examination demonstrates 5/5 strength in bilateral lower extremities, intact sensation to light touch, and symmetric 2+ reflexes. Straight-leg raise is positive on the right at 45 degrees. Gait is mildly antalgic."
+Reference (paintoneLabel="improved"): "Inspection: Posture is improved with reduced guarding compared to the prior injection. Palpation reveals residual mild tenderness over the lumbar paraspinals with decreased muscle spasm. Range of motion is improved in flexion and extension, with only mild discomfort at end range. Neurological examination is unchanged: 5/5 strength in bilateral lower extremities, intact sensation, and symmetric 2+ reflexes. Straight-leg raise is now negative bilaterally. Gait is less antalgic than at the prior visit."
+Reference (paintoneLabel="stable" or "worsened"): "Inspection: The patient continues to demonstrate guarded movements of the lumbar spine, without meaningful interval change. Palpation reveals persistent tenderness over the bilateral lumbar paraspinals with ongoing muscle spasm. Range of motion remains restricted in flexion and extension, reproducing axial pain at end range. Neurological examination is stable: 5/5 strength, intact sensation, symmetric reflexes. Straight-leg raise remains positive on the right. Gait is unchanged, mildly antalgic."
 
 9. assessment_summary (~2-3 sentences):
 Summary linking exam findings to MRI/imaging. Tailor the closing clause to "paintoneLabel": cite "ongoing functional impairments, necessitating further pain management intervention" style when paintoneLabel is "baseline", "stable", or "worsened"; cite "favorable interim response supporting continuation of the injection series" style when paintoneLabel is "improved".
