@@ -33,7 +33,6 @@ export interface ProcedureNoteInputData {
     laterality: string | null
     diagnoses: Array<{ icd10_code: string | null; description: string }>
     consent_obtained: boolean | null
-    pain_rating: number | null
     blood_draw_volume_ml: number | null
     centrifuge_duration_min: number | null
     prep_protocol: string | null
@@ -57,10 +56,13 @@ export interface ProcedureNoteInputData {
     respiratory_rate: number | null
     temperature_f: number | null
     spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
   } | null
   priorProcedure: {
     procedure_date: string
-    pain_rating: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
     procedure_number: number
   } | null
   pmExtraction: {
@@ -118,8 +120,8 @@ PDF-SAFE FORMATTING:
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~1 paragraph):
-Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Use the top-level "age" field verbatim (the patient's age on procedureRecord.procedure_date); do NOT recompute from date_of_birth. Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain rating. If priorProcedure exists: "Pain is now rated [X]/10, compared to [prior_pain_rating]/10 at [his/her] last visit." If first injection: no comparison.
-Reference: "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 4/10, compared to 6/10 at his last visit."
+Open with a one-sentence patient identification: "[Patient Name] is a [age]-year-old [gender] who returns for [his/her] scheduled PRP injection to the [site]." Use the top-level "age" field verbatim (the patient's age on procedureRecord.procedure_date); do NOT recompute from date_of_birth. Then continue with the clinical narrative: persistent symptoms, functional limitations, current pain. Pain is captured as a MIN/MAX range on vitalSigns.pain_score_min / pain_score_max. Render as a range when both are present and differ (e.g. "rated 3-6/10"); render as a single value when they match or only one is present (e.g. "rated 5/10"); omit the pain sentence entirely if both are null. If priorProcedure exists AND priorProcedure.pain_score_max is not null, compare to the prior visit using the prior pain_score_max as the reference ("compared to [prior_pain_score_max]/10 at [his/her] last visit"). If first injection or no prior pain recorded: no comparison.
+Reference: "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled follow-up visit, 14 days after receiving his first PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection... Pain is now rated 3-4/10, compared to 6/10 at his last visit."
 
 2. past_medical_history (~2 bullets/sentences):
 Extract the Medical Problems and Surgeries sub-bullets from the initialVisitNote.past_medical_history text blob. Present as 2 plain sentences/bullets (no medications or allergies here — those are their own sections).
@@ -142,8 +144,8 @@ Reference: "Denies alcohol, tobacco, or drug use."
 Reference: "• Musculoskeletal: Ongoing low back pain with bilateral sciatica exacerbation.\\n• Neurological: No dizziness, vertigo, or recent episodes of loss of consciousness. Continued headaches on and off.\\n• General: Reports sleep disturbance due to low back pain. No fever, chills, or weight loss."
 
 7. objective_vitals (~6 bullets):
-BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain rating as bullet list. If vital signs were not recorded, write "[not recorded]".
-Reference: "• BP: 135/80 mmHg\\n• HR: 87 bpm\\n• RR: 16 breaths/min\\n• Temp: 98.2°F\\n• SpO2: 98% on room air\\n• Pain: 6/10"
+BP systolic/diastolic, HR, RR, Temp, SpO2, and current Pain as bullet list. Pain is sourced from vitalSigns.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. If all vital signs are missing, write "[not recorded]".
+Reference: "• BP: 135/80 mmHg\\n• HR: 87 bpm\\n• RR: 16 breaths/min\\n• Temp: 98.2°F\\n• SpO2: 98% on room air\\n• Pain: 3-6/10"
 
 8. objective_physical_exam (~1 page):
 Inspection, Palpation, ROM (by spine region), Neurological Examination (Motor/Sensory/Reflexes), Straight Leg Raise if applicable, Gait Assessment. Populate from PM extraction physical_exam JSONB.

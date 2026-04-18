@@ -32,7 +32,8 @@ export interface DischargeNoteInputData {
     procedure_number: number
     injection_site: string | null
     laterality: string | null
-    pain_rating: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
     diagnoses: Array<{ icd10_code: string | null; description: string }>
   }>
   latestVitals: {
@@ -42,8 +43,9 @@ export interface DischargeNoteInputData {
     respiratory_rate: number | null
     temperature_f: number | null
     spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
   } | null
-  latestPainRating: number | null
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -131,7 +133,7 @@ Para 3: Additional improvements — sleep quality, ADL function, denial of red-f
 Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025..."
 
 2. objective_vitals (~6 bullets):
-BP, HR, RR, Temp, SpO2, Pain rating. Use most recent procedure vitals if available, or brackets if not recorded.
+BP, HR, RR, Temp, SpO2, Pain. Use most recent procedure vitals (latestVitals) if available, or brackets if not recorded. Pain is sourced from latestVitals.pain_score_min / pain_score_max: render as "• Pain: X-Y/10" when both are present and differ, "• Pain: X/10" when they match or only one is present, and omit the Pain bullet entirely when both are null. When describing pain progression across visits elsewhere in the note, use each procedure's pain_score_max as the trendline value.
 Reference: "• BP: 122/78 mmHg\\n• HR: 74 bpm\\n• RR: 15 breaths/min\\n• Temp: 98.1°F\\n• SpO₂: 98% on room air\\n• Pain: 2-3/10"
 
 3. objective_general (~2-3 sentences):

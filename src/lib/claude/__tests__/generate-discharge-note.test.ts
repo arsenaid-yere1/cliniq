@@ -18,7 +18,6 @@ const emptyInput: DischargeNoteInputData = {
   visitDate: '2026-04-16',
   procedures: [],
   latestVitals: null,
-  latestPainRating: null,
   caseSummary: null,
   initialVisitNote: null,
   ptExtraction: null,

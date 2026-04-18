@@ -5,14 +5,27 @@ const diagnosisSchema = z.object({
   description: z.string().min(1, 'Description is required'),
 })
 
-const vitalSignsSchema = z.object({
-  bp_systolic: z.number().int().min(1).max(300).nullable(),
-  bp_diastolic: z.number().int().min(1).max(200).nullable(),
-  heart_rate: z.number().int().min(1).max(300).nullable(),
-  respiratory_rate: z.number().int().min(1).max(60).nullable(),
-  temperature_f: z.number().min(90).max(110).nullable(),
-  spo2_percent: z.number().int().min(0).max(100).nullable(),
-})
+const vitalSignsSchema = z
+  .object({
+    bp_systolic: z.number().int().min(1).max(300).nullable(),
+    bp_diastolic: z.number().int().min(1).max(200).nullable(),
+    heart_rate: z.number().int().min(1).max(300).nullable(),
+    respiratory_rate: z.number().int().min(1).max(60).nullable(),
+    temperature_f: z.number().min(90).max(110).nullable(),
+    spo2_percent: z.number().int().min(0).max(100).nullable(),
+    pain_score_min: z.number().int().min(0).max(10).nullable(),
+    pain_score_max: z.number().int().min(0).max(10).nullable(),
+  })
+  .refine(
+    (v) =>
+      v.pain_score_min == null ||
+      v.pain_score_max == null ||
+      v.pain_score_min <= v.pain_score_max,
+    {
+      message: 'Pain minimum cannot exceed pain maximum',
+      path: ['pain_score_max'],
+    },
+  )
 
 const prpPreparationSchema = z.object({
   blood_draw_volume_ml: z.number().positive('Blood draw volume is required'),
@@ -59,7 +72,6 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
     laterality: z.enum(['left', 'right', 'bilateral']),
     diagnoses: z.array(diagnosisSchema).min(1, 'At least one diagnosis is required'),
     consent_obtained: z.boolean(),
-    pain_rating: z.number().int().min(0).max(10).nullable(),
     vital_signs: vitalSignsSchema,
     // --- Story 4.2 fields ---
     prp_preparation: prpPreparationSchema,

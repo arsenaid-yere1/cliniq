@@ -9,7 +9,6 @@ const validForm = {
     { icd10_code: 'M17.11', description: 'Primary osteoarthritis, right knee' },
   ],
   consent_obtained: true,
-  pain_rating: 6,
   vital_signs: {
     bp_systolic: 120,
     bp_diastolic: 80,
@@ -17,6 +16,8 @@ const validForm = {
     respiratory_rate: 16,
     temperature_f: 98.6,
     spo2_percent: 98,
+    pain_score_min: 3,
+    pain_score_max: 6,
   },
   prp_preparation: {
     blood_draw_volume_ml: 60,
@@ -104,25 +105,7 @@ describe('prpProcedureFormSchema', () => {
     ).toBe(false)
   })
 
-  // --- Pain rating ---
-
-  it('accepts pain_rating as null', () => {
-    expect(
-      prpProcedureFormSchema().safeParse({ ...validForm, pain_rating: null }).success,
-    ).toBe(true)
-  })
-
-  it('accepts pain_rating boundary values 0 and 10', () => {
-    expect(prpProcedureFormSchema().safeParse({ ...validForm, pain_rating: 0 }).success).toBe(true)
-    expect(prpProcedureFormSchema().safeParse({ ...validForm, pain_rating: 10 }).success).toBe(true)
-  })
-
-  it('rejects pain_rating out of range', () => {
-    expect(prpProcedureFormSchema().safeParse({ ...validForm, pain_rating: -1 }).success).toBe(false)
-    expect(prpProcedureFormSchema().safeParse({ ...validForm, pain_rating: 11 }).success).toBe(false)
-  })
-
-  // --- Vital signs ---
+  // --- Vital signs (including pain range) ---
 
   it('accepts all vital signs as null', () => {
     const result = prpProcedureFormSchema().safeParse({
@@ -130,6 +113,7 @@ describe('prpProcedureFormSchema', () => {
       vital_signs: {
         bp_systolic: null, bp_diastolic: null, heart_rate: null,
         respiratory_rate: null, temperature_f: null, spo2_percent: null,
+        pain_score_min: null, pain_score_max: null,
       },
     })
     expect(result.success).toBe(true)
@@ -140,6 +124,42 @@ describe('prpProcedureFormSchema', () => {
       ...validForm,
       vital_signs: { ...validForm.vital_signs, bp_systolic: 301 },
     }).success).toBe(false)
+  })
+
+  it('accepts pain score boundary values 0 and 10', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_min: 0, pain_score_max: 10 },
+    }).success).toBe(true)
+  })
+
+  it('rejects pain score out of range', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_max: 11 },
+    }).success).toBe(false)
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_min: -1 },
+    }).success).toBe(false)
+  })
+
+  it('rejects pain_score_min greater than pain_score_max', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_min: 8, pain_score_max: 3 },
+    }).success).toBe(false)
+  })
+
+  it('accepts pain range when only one side provided', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_min: null, pain_score_max: 5 },
+    }).success).toBe(true)
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      vital_signs: { ...validForm.vital_signs, pain_score_min: 2, pain_score_max: null },
+    }).success).toBe(true)
   })
 
   // --- PRP preparation ---

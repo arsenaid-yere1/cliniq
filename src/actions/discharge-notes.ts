@@ -49,7 +49,7 @@ async function gatherDischargeNoteSourceData(
       .single(),
     supabase
       .from('procedures')
-      .select('id, procedure_date, procedure_name, procedure_number, injection_site, laterality, pain_rating, diagnoses')
+      .select('id, procedure_date, procedure_name, procedure_number, injection_site, laterality, diagnoses')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('procedure_date', { ascending: true }),
@@ -133,33 +133,63 @@ async function gatherDischargeNoteSourceData(
     gender: string | null
   }
 
-  const procedures = (proceduresRes.data ?? []).map((p) => ({
-    procedure_date: p.procedure_date,
-    procedure_name: p.procedure_name,
-    procedure_number: p.procedure_number ?? 1,
-    injection_site: p.injection_site,
-    laterality: p.laterality,
-    pain_rating: p.pain_rating,
-    diagnoses: Array.isArray(p.diagnoses)
-      ? (p.diagnoses as Array<{ icd10_code: string | null; description: string }>)
-      : [],
-  }))
+  // Fetch vital_signs rows for all procedures in a single batched query so we
+  // can attach per-procedure pain range to the summary array.
+  const procRows = proceduresRes.data ?? []
+  const procIds = procRows.map((p) => p.id)
+  const { data: allVitalsRows } = procIds.length
+    ? await supabase
+        .from('vital_signs')
+        .select('procedure_id, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+        .in('procedure_id', procIds)
+        .is('deleted_at', null)
+    : { data: [] as Array<{
+        procedure_id: string
+        bp_systolic: number | null
+        bp_diastolic: number | null
+        heart_rate: number | null
+        respiratory_rate: number | null
+        temperature_f: number | null
+        spo2_percent: number | null
+        pain_score_min: number | null
+        pain_score_max: number | null
+      }> }
 
-  // Fetch latest vitals from the most recent procedure
-  let latestVitals: DischargeNoteInputData['latestVitals'] = null
-  const lastProcedure = proceduresRes.data?.at(-1)
-  if (lastProcedure) {
-    const { data: vitals } = await supabase
-      .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
-      .eq('procedure_id', lastProcedure.id)
-      .is('deleted_at', null)
-      .limit(1)
-      .maybeSingle()
-    latestVitals = vitals ?? null
-  }
+  const vitalsByProcedureId = new Map(
+    (allVitalsRows ?? []).map((v) => [v.procedure_id, v]),
+  )
 
-  const latestPainRating = lastProcedure?.pain_rating ?? null
+  const procedures = procRows.map((p) => {
+    const v = vitalsByProcedureId.get(p.id)
+    return {
+      procedure_date: p.procedure_date,
+      procedure_name: p.procedure_name,
+      procedure_number: p.procedure_number ?? 1,
+      injection_site: p.injection_site,
+      laterality: p.laterality,
+      pain_score_min: v?.pain_score_min ?? null,
+      pain_score_max: v?.pain_score_max ?? null,
+      diagnoses: Array.isArray(p.diagnoses)
+        ? (p.diagnoses as Array<{ icd10_code: string | null; description: string }>)
+        : [],
+    }
+  })
+
+  // Latest vitals come from the most recent procedure's vital_signs row
+  const lastProcedure = procRows.at(-1)
+  const lastVitals = lastProcedure ? vitalsByProcedureId.get(lastProcedure.id) : null
+  const latestVitals: DischargeNoteInputData['latestVitals'] = lastVitals
+    ? {
+        bp_systolic: lastVitals.bp_systolic,
+        bp_diastolic: lastVitals.bp_diastolic,
+        heart_rate: lastVitals.heart_rate,
+        respiratory_rate: lastVitals.respiratory_rate,
+        temperature_f: lastVitals.temperature_f,
+        spo2_percent: lastVitals.spo2_percent,
+        pain_score_min: lastVitals.pain_score_min,
+        pain_score_max: lastVitals.pain_score_max,
+      }
+    : null
 
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
@@ -180,7 +210,6 @@ async function gatherDischargeNoteSourceData(
       visitDate,
       procedures,
       latestVitals,
-      latestPainRating,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,

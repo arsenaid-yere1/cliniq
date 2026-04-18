@@ -109,7 +109,6 @@ export async function createPrpProcedure(
       laterality: values.laterality,
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
-      pain_rating: values.pain_rating,
       procedure_number: procedureNumber,
       // --- Story 4.2: PRP Preparation ---
       blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,
@@ -154,6 +153,8 @@ export async function createPrpProcedure(
         respiratory_rate: vs.respiratory_rate,
         temperature_f: vs.temperature_f,
         spo2_percent: vs.spo2_percent,
+        pain_score_min: vs.pain_score_min,
+        pain_score_max: vs.pain_score_max,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
@@ -264,7 +265,6 @@ export async function updatePrpProcedure(
       laterality: values.laterality,
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
-      pain_rating: values.pain_rating,
       // PRP Preparation
       blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,
       centrifuge_duration_min: values.prp_preparation.centrifuge_duration_min,
@@ -315,6 +315,8 @@ export async function updatePrpProcedure(
           respiratory_rate: vs.respiratory_rate,
           temperature_f: vs.temperature_f,
           spo2_percent: vs.spo2_percent,
+          pain_score_min: vs.pain_score_min,
+          pain_score_max: vs.pain_score_max,
           updated_by_user_id: user.id,
         })
         .eq('id', existingVitals.id)
@@ -330,6 +332,8 @@ export async function updatePrpProcedure(
           respiratory_rate: vs.respiratory_rate,
           temperature_f: vs.temperature_f,
           spo2_percent: vs.spo2_percent,
+          pain_score_min: vs.pain_score_min,
+          pain_score_max: vs.pain_score_max,
           created_by_user_id: user.id,
           updated_by_user_id: user.id,
         })
@@ -344,7 +348,6 @@ export async function updatePrpProcedure(
 export interface ProcedureDefaults {
   injection_site: string | null
   laterality: 'left' | 'right' | 'bilateral' | null
-  pain_rating: number | null
   vital_signs: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -352,6 +355,8 @@ export interface ProcedureDefaults {
     respiratory_rate: number | null
     temperature_f: number | null
     spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
   }
   earliest_procedure_date: string | null
 }
@@ -362,7 +367,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
   const [vitalsRes, ivnRes] = await Promise.all([
     supabase
       .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_max')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
       .is('procedure_id', null)
       .is('deleted_at', null)
@@ -432,7 +437,6 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     data: {
       injection_site,
       laterality,
-      pain_rating: vitals?.pain_score_max ?? null,
       vital_signs: {
         bp_systolic: vitals?.bp_systolic ?? null,
         bp_diastolic: vitals?.bp_diastolic ?? null,
@@ -440,6 +444,8 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
         respiratory_rate: vitals?.respiratory_rate ?? null,
         temperature_f: vitals?.temperature_f ?? null,
         spo2_percent: vitals?.spo2_percent ?? null,
+        pain_score_min: vitals?.pain_score_min ?? null,
+        pain_score_max: vitals?.pain_score_max ?? null,
       },
       earliest_procedure_date,
     },
@@ -452,7 +458,7 @@ export async function getPriorPrpProcedure(caseId: string) {
 
   const { data, error } = await supabase
     .from('procedures')
-    .select('id, procedure_date, pain_rating, procedure_number')
+    .select('id, procedure_date, procedure_number')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .order('procedure_date', { ascending: false })

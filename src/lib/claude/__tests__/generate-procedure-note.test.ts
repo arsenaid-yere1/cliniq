@@ -23,7 +23,6 @@ const emptyInput: ProcedureNoteInputData = {
     laterality: null,
     diagnoses: [],
     consent_obtained: null,
-    pain_rating: null,
     blood_draw_volume_ml: null,
     centrifuge_duration_min: null,
     prep_protocol: null,

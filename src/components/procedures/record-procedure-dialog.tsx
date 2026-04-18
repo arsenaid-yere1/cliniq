@@ -85,7 +85,6 @@ export interface ProcedureInitialData {
   laterality: string | null
   diagnoses: unknown
   consent_obtained: boolean | null
-  pain_rating: number | null
   blood_draw_volume_ml: number | null
   centrifuge_duration_min: number | null
   prep_protocol: string | null
@@ -108,6 +107,8 @@ export interface ProcedureInitialData {
     respiratory_rate: number | null
     temperature_f: number | null
     spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
   } | null
 }
 
@@ -201,7 +202,6 @@ export function RecordProcedureDialog({
         ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
         : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
       consent_obtained: initialData?.consent_obtained ?? (isEditing ? false : STATIC_PROCEDURE_DEFAULTS.consent_obtained),
-      pain_rating: initialData?.pain_rating ?? defaults?.pain_rating ?? null,
       vital_signs: {
         bp_systolic: initialData?._vitals?.bp_systolic ?? defaults?.vital_signs.bp_systolic ?? null,
         bp_diastolic: initialData?._vitals?.bp_diastolic ?? defaults?.vital_signs.bp_diastolic ?? null,
@@ -209,6 +209,8 @@ export function RecordProcedureDialog({
         respiratory_rate: initialData?._vitals?.respiratory_rate ?? defaults?.vital_signs.respiratory_rate ?? null,
         temperature_f: initialData?._vitals?.temperature_f ?? defaults?.vital_signs.temperature_f ?? null,
         spo2_percent: initialData?._vitals?.spo2_percent ?? defaults?.vital_signs.spo2_percent ?? null,
+        pain_score_min: initialData?._vitals?.pain_score_min ?? defaults?.vital_signs.pain_score_min ?? null,
+        pain_score_max: initialData?._vitals?.pain_score_max ?? defaults?.vital_signs.pain_score_max ?? null,
       },
       prp_preparation: {
         blood_draw_volume_ml: initialData?.blood_draw_volume_ml
@@ -374,52 +376,27 @@ export function RecordProcedureDialog({
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="pain_rating"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Pain Rating (0–10, optional)</FormLabel>
+              <FormField
+                control={form.control}
+                name="consent_obtained"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-2">
                       <FormControl>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={10}
-                          placeholder="—"
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value === '' ? null : Number(e.target.value))
-                          }
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          id="consent_obtained"
                         />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="consent_obtained"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col justify-end pb-1">
-                      <div className="flex items-center gap-2">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            id="consent_obtained"
-                          />
-                        </FormControl>
-                        <FormLabel htmlFor="consent_obtained" className="cursor-pointer font-normal">
-                          Consent Obtained
-                        </FormLabel>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                      <FormLabel htmlFor="consent_obtained" className="cursor-pointer font-normal">
+                        Consent Obtained
+                      </FormLabel>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div>
                 <Button
@@ -796,6 +773,53 @@ export function RecordProcedureDialog({
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 Vital Signs (optional)
               </h3>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="vital_signs.pain_score_min"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pain Min (0–10)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={10}
+                          placeholder="—"
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value === '' ? null : Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="vital_signs.pain_score_max"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pain Max (0–10)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={10}
+                          placeholder="—"
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value === '' ? null : Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField

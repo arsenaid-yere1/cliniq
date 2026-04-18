@@ -48,7 +48,7 @@ async function gatherProcedureNoteSourceData(
       .single(),
     supabase
       .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('procedure_id', procedureId)
       .is('deleted_at', null)
       .limit(1)
@@ -85,7 +85,7 @@ async function gatherProcedureNoteSourceData(
     // Prior procedure: most recent for this case excluding current
     supabase
       .from('procedures')
-      .select('procedure_date, pain_rating, procedure_number')
+      .select('id, procedure_date, procedure_number')
       .eq('case_id', caseId)
       .neq('id', procedureId)
       .is('deleted_at', null)
@@ -104,6 +104,22 @@ async function gatherProcedureNoteSourceData(
   }
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
+  }
+
+  // Fetch prior procedure's pain range from its vital_signs row
+  let priorProcedurePain: { pain_score_min: number | null; pain_score_max: number | null } = {
+    pain_score_min: null,
+    pain_score_max: null,
+  }
+  if (priorProcedureRes.data?.id) {
+    const { data: priorVitals } = await supabase
+      .from('vital_signs')
+      .select('pain_score_min, pain_score_max')
+      .eq('procedure_id', priorProcedureRes.data.id)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle()
+    if (priorVitals) priorProcedurePain = priorVitals
   }
 
   // Fetch provider profile from case's assigned provider
@@ -154,7 +170,6 @@ async function gatherProcedureNoteSourceData(
         laterality: proc.laterality,
         diagnoses,
         consent_obtained: proc.consent_obtained,
-        pain_rating: proc.pain_rating,
         blood_draw_volume_ml: proc.blood_draw_volume_ml,
         centrifuge_duration_min: proc.centrifuge_duration_min,
         prep_protocol: proc.prep_protocol,
@@ -175,7 +190,8 @@ async function gatherProcedureNoteSourceData(
       priorProcedure: priorProcedureRes.data
         ? {
             procedure_date: priorProcedureRes.data.procedure_date,
-            pain_rating: priorProcedureRes.data.pain_rating,
+            pain_score_min: priorProcedurePain.pain_score_min,
+            pain_score_max: priorProcedurePain.pain_score_max,
             procedure_number: priorProcedureRes.data.procedure_number ?? 1,
           }
         : null,

@@ -55,7 +55,6 @@ interface Procedure {
   activity_restriction_hrs: number | null
   diagnoses: unknown
   consent_obtained: boolean | null
-  pain_rating: number | null
 }
 
 function ordinal(n: number): string {
