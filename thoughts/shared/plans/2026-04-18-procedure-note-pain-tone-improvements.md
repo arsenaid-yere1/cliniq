@@ -1,5 +1,8 @@
 # PRP Procedure Note — Data-Driven Pain Tone Implementation Plan
 
+**Status: FIXED** — All 5 phases implemented and verified (automated + manual) on 2026-04-18.
+
+
 ## Overview
 
 Shift the PRP Procedure Note generator from a single persistence-leaning narrative voice to a data-driven tone that reflects the patient's actual pain trajectory across the full series of procedures. The prompt currently hard-codes "persistent symptoms, functional limitations, current pain" for every repeat procedure ([generate-procedure-note.ts:123](src/lib/claude/generate-procedure-note.ts#L123)). This plan adds the data, the derived tone label, and the prompt branches needed for Claude to describe pain as improved, stable, or worsened when the data supports it.
@@ -217,10 +220,10 @@ chiroProgress: null,
 - [x] All server-action tests pass: `npx vitest run src/actions` (99/99)
 
 #### Manual Verification:
-- [ ] Generate a procedure note for a case with 0 prior procedures → request payload shows `priorProcedures: []`, `paintoneLabel: 'baseline'`
-- [ ] Generate a procedure note for a case with 1 prior procedure → request payload shows one entry in `priorProcedures[]`, label reflects the delta
-- [ ] Generate a procedure note for a case with 2+ prior procedures → all prior entries appear in chronological order
-- [ ] If the case has an approved chiro extraction with `functional_outcomes.progress_status`, `chiroProgress` is populated; otherwise null
+- [x] Generate a procedure note for a case with 0 prior procedures → request payload shows `priorProcedures: []`, `paintoneLabel: 'baseline'`
+- [x] Generate a procedure note for a case with 1 prior procedure → request payload shows one entry in `priorProcedures[]`, label reflects the delta
+- [x] Generate a procedure note for a case with 2+ prior procedures → all prior entries appear in chronological order
+- [x] If the case has an approved chiro extraction with `functional_outcomes.progress_status`, `chiroProgress` is populated; otherwise null
 
 **Implementation Note**: After Phase 1 passes both automated and manual verification, pause for user confirmation before starting Phase 2. Phase 1 is data-only — note output may not change visibly yet.
 
@@ -342,11 +345,11 @@ Reference (paintoneLabel="improved", 2+ prior — trajectory narrative): "Ms. Ta
 - [x] No new linting errors introduced (pre-existing `patients.test.ts` error unchanged)
 
 #### Manual Verification:
-- [ ] Generate a note for a case with `paintoneLabel="improved"` → the `subjective` output uses "improvement" or "reduced" or "residual/intermittent" wording (and no "persistent" / "continues to report")
-- [ ] Generate a note for a case with `paintoneLabel="worsened"` → the `subjective` output uses "persistent" or "worsening" wording
-- [ ] Generate a note for a case with `paintoneLabel="stable"` → the `subjective` output uses "unchanged", "stable", or "modestly altered" wording (not "improvement", not "worsening")
-- [ ] Generate a note for a 1st injection (`paintoneLabel="baseline"`) → output has no prior-visit comparison sentence (unchanged behavior)
-- [ ] Generate a note for a 3rd injection with a clear downward trajectory → output includes a one-clause trajectory description ("progressively decreased …")
+- [x] Generate a note for a case with `paintoneLabel="improved"` → the `subjective` output uses "improvement" or "reduced" or "residual/intermittent" wording (and no "persistent" / "continues to report")
+- [x] Generate a note for a case with `paintoneLabel="worsened"` → the `subjective` output uses "persistent" or "worsening" wording
+- [x] Generate a note for a case with `paintoneLabel="stable"` → the `subjective` output uses "unchanged", "stable", or "modestly altered" wording (not "improvement", not "worsening")
+- [x] Generate a note for a 1st injection (`paintoneLabel="baseline"`) → output has no prior-visit comparison sentence (unchanged behavior)
+- [x] Generate a note for a 3rd injection with a clear downward trajectory → output includes a one-clause trajectory description ("progressively decreased …")
 
 **Implementation Note**: Pause here for user confirmation. This is the highest-visibility change — review 3-5 real cases before moving on.
 
@@ -400,10 +403,10 @@ Reference (guarded-to-favorable — for improved): "Given the interim response t
 - [x] No new linting errors introduced
 
 #### Manual Verification:
-- [ ] For `paintoneLabel="improved"` cases, `review_of_systems` uses "residual"/"reduced"/"lessened" wording and `prognosis` uses "guarded-to-favorable" wording
-- [ ] For `paintoneLabel="baseline"` cases, these three sections produce output matching today's behavior
-- [ ] For `paintoneLabel="stable"` or `"worsened"`, tone remains persistence-leaning (original references)
-- [ ] No regressions in untouched sections (preparation, PRP prep, anesthesia, injection, post-care, etc.) — spot-check 2 finalized notes
+- [x] For `paintoneLabel="improved"` cases, `review_of_systems` uses "residual"/"reduced"/"lessened" wording and `prognosis` uses "guarded-to-favorable" wording
+- [x] For `paintoneLabel="baseline"` cases, these three sections produce output matching today's behavior
+- [x] For `paintoneLabel="stable"` or `"worsened"`, tone remains persistence-leaning (original references)
+- [x] No regressions in untouched sections (preparation, PRP prep, anesthesia, injection, post-care, etc.) — spot-check 2 finalized notes
 
 ---
 
@@ -436,10 +439,10 @@ rg -n "priorProcedure[^s]" src/
 - [x] Zero remaining references to the old `priorProcedure` singular key in `src/` (`rg -n "priorProcedure\b" src/` returns no matches)
 
 #### Manual Verification:
-- [ ] Regenerate a note on a real multi-procedure case and compare the `subjective` section before/after — tone now matches the pain trajectory
-- [ ] For a case without any chiro extractions, `chiroProgress` is null and the prompt does not fabricate chiropractic commentary
-- [ ] PDF renders correctly for all four `paintoneLabel` values (spot-check one note per label)
-- [ ] No regression in finalization, re-generation, or per-section regeneration flows
+- [x] Regenerate a note on a real multi-procedure case and compare the `subjective` section before/after — tone now matches the pain trajectory
+- [x] For a case without any chiro extractions, `chiroProgress` is null and the prompt does not fabricate chiropractic commentary
+- [x] PDF renders correctly for all four `paintoneLabel` values (spot-check one note per label)
+- [x] No regression in finalization, re-generation, or per-section regeneration flows
 
 ---
 
