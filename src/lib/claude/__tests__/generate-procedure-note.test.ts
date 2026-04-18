@@ -108,8 +108,8 @@ describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
     // Use [\s\S]*? (non-greedy, matches across newlines) instead of .*/s so the
     // source stays compatible with the project's ES2017 TypeScript target.
     expect(system).toMatch(/"baseline"[\s\S]*?first injection or no prior pain recorded/)
-    expect(system).toMatch(/"improved"[\s\S]*?current pain ≥2 points lower than prior/)
-    expect(system).toMatch(/"stable"[\s\S]*?within ±1 point of prior/)
+    expect(system).toMatch(/"improved"[\s\S]*?current pain ≥3 points lower than prior/)
+    expect(system).toMatch(/"stable"[\s\S]*?delta in \[-2, \+1\]/)
     expect(system).toMatch(/"worsened"[\s\S]*?current pain ≥2 points higher than prior/)
   })
 
@@ -118,6 +118,17 @@ describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
     expect(system).toContain('Reference (paintoneLabel="baseline")')
     expect(system).toContain('Reference (paintoneLabel="improved")')
     expect(system).toContain('Reference (paintoneLabel="stable" or "worsened")')
+  })
+
+  it('includes the FORBIDDEN PHRASES list on the improved branch', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN PHRASES (MANDATORY) when paintoneLabel is "improved"')
+    // Spot-check the most load-bearing bans (the ones the model was reaching
+    // for in the 9→7 case that motivated this change).
+    expect(system).toContain('continues to demonstrate')
+    expect(system).toContain('without meaningful interval change')
+    expect(system).toContain('persistent tenderness')
+    expect(system).toContain('no meaningful interval improvement')
   })
 
   it('includes the chiroProgress secondary-signal rule with pain-data precedence', async () => {
