@@ -267,17 +267,15 @@ export async function getInvoiceFormData(caseId: string) {
     const typedProc = proc as {
       id: string
       procedure_date: string
-      injection_site?: string | null
     }
-    const quantity = countInjectionSites(typedProc.injection_site)
     return {
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
       cpt_code: '0232T\n86999\n76942',
       description: 'Medical site utilization',
-      quantity,
+      quantity: 1,
       unit_price: msuPrice,
-      total_price: msuPrice * quantity,
+      total_price: msuPrice,
     }
   })
 
