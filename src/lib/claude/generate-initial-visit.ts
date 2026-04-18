@@ -223,7 +223,7 @@ This patient has completed a course of conservative treatment and has imaging re
 
 If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings, vitals, or ROM values into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
 
-1. History of the Accident (Para 3): Reference the prior visit's documented findings and conservative care outcome. Example: "Since the initial evaluation on [priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
+1. History of the Accident (Para 3): Reference the prior visit's documented findings and conservative care outcome. For the initial evaluation date, use priorVisitData.visit_date if it is non-null; otherwise fall back to priorVisitData.finalized_at. Format the date as MM/DD/YYYY (e.g., "03/20/2026"). Example: "Since the initial evaluation on [priorVisitData.visit_date ?? priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
 
 2. Post-Accident History: Describe the continuum of care from initial presentation to today. Reference priorVisitData.treatment_plan for what was recommended and summarize adherence/outcome based on the CURRENT visit's providerIntake.
 
@@ -469,6 +469,7 @@ export interface InitialVisitInputData {
     prognosis: string | null
     provider_intake: unknown | null
     rom_data: unknown | null
+    visit_date: string | null
     finalized_at: string | null
   } | null
   /**

@@ -66,7 +66,7 @@ async function gatherSourceData(
     ? supabase
         .from('initial_visit_notes')
         .select(
-          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, rom_data, finalized_at',
+          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, rom_data, visit_date, finalized_at',
         )
         .eq('case_id', caseId)
         .eq('visit_type', 'initial_visit')
@@ -178,6 +178,7 @@ async function gatherSourceData(
         prognosis: (priorVisitRow.prognosis as string | null) ?? null,
         provider_intake: priorVisitRow.provider_intake ?? null,
         rom_data: priorVisitRow.rom_data ?? null,
+        visit_date: (priorVisitRow.visit_date as string | null) ?? null,
         finalized_at: (priorVisitRow.finalized_at as string | null) ?? null,
       }
     : null
