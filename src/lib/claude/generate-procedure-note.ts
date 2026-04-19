@@ -137,6 +137,8 @@ TRAJECTORY (when priorProcedures has 2 or more entries): In addition to the most
 
 SECONDARY SIGNAL (optional): If the top-level "chiroProgress" field is non-null, you may reference chiropractic functional progress in the narrative (e.g., "with concurrent improvement in mobility during chiropractic care") when it aligns with paintoneLabel. Do NOT cite chiroProgress when it conflicts with the pain data — the pain data takes precedence.
 
+SERIES-TOTAL RULE (MANDATORY) in subjective: Do NOT pre-commit this note to a planned injection series. Forbidden phrasings include "first PRP injection in the planned series", "first of a planned series", "initial injection of a planned series of 3", "planned series of PRP injections", "planned three-injection series", or any similar construction that implies a total number of future injections. The chart does not store a planned series total. Describe this visit as an ordinal standalone event — "his scheduled PRP injection", "today's PRP injection", "his second PRP injection" — without referencing a planned series. It is acceptable to note that additional injections may be considered depending on response; it is NOT acceptable to state that a series is planned.
+
 Reference (paintoneLabel="baseline", first injection): "Mr. Vardanyan is a 45-year-old male who returns today for his scheduled PRP injection to the lumbosacral region. He reports ongoing low back pain with functional limitations affecting daily activities. Pain is rated 6-7/10."
 Reference (paintoneLabel="improved", one prior): "Mr. Vardanyan is a 45-year-old male who returns for his scheduled follow-up PRP injection to the lumbosacral region. He reports mild improvement in his low back pain and function following the initial injection. Residual pain is intermittent and rated 3-4/10, compared to 6/10 at his last visit."
 Reference (paintoneLabel="stable", one prior): "Mr. Vardanyan is a 45-year-old male who returns for his scheduled follow-up PRP injection to the lumbosacral region. Symptoms remain largely unchanged since the prior injection, with modest day-to-day variability. Pain is rated 5-6/10, compared to 6/10 at his last visit."
@@ -271,6 +273,13 @@ Reference: "Mr. Vardanyan will return for a follow-up in 2 weeks to assess his r
 
 17. assessment_and_plan:
 Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — description format (no bullet prefix, just code space dash space description, one per line). Then "PLAN:" heading with bullet list of action items.
+
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): Only list diagnoses whose clinical elements are supported by the history, physical exam, and imaging in the current source data. In particular:
+• Do NOT list "myelopathy" (e.g., M50.00, M50.01, M50.02, M47.1X, M54.18) unless the objective_physical_exam actually documents upper motor neuron signs (hyperreflexia, clonus, Hoffmann sign, Babinski, spastic gait, bowel/bladder dysfunction). Isolated subjective paresthesia, intact sensation, symmetric 2+ reflexes, and 5/5 strength do NOT support myelopathy.
+• Do NOT list "radiculopathy" codes (e.g., M50.1X, M51.1X with radiculopathy) unless the exam documents at least one objective radicular finding (dermatomal sensory deficit, myotomal weakness, diminished reflex in a nerve-root distribution, or a positive provocative test such as Spurling or straight-leg raise reproducing radicular symptoms). Subjective paresthesia alone without an objective deficit supports cervicalgia/lumbago with a mention of paresthesia, not a radiculopathy code.
+• Do NOT include external-cause codes (V-codes, W-codes, X-codes, Y-codes) such as motor-vehicle-collision codes unless they are present in procedureRecord.diagnoses on the input payload. These are billing codes, not pain-management diagnoses, and adding them unsupported reads as aggressive billing.
+• Prefer the diagnoses listed on procedureRecord.diagnoses. You may supplement with tightly-supported codes from pmExtraction.diagnoses; do not import every code from the extraction. Err on the side of fewer, better-supported diagnoses over a long list.
+
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
 Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n• Rest and ice for 48 hours post-procedure...\\n• Reevaluate in 10-14 days..."
 

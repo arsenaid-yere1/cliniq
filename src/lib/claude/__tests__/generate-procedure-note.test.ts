@@ -262,6 +262,35 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     expect(system).toContain('Reference (adult, age >= 18 or null)')
     expect(system).toContain('Reference (minor, age < 18)')
   })
+
+  // Phase 7 — SERIES-TOTAL RULE extended to subjective
+  it('includes the SERIES-TOTAL RULE in subjective with forbidden "planned series" phrasings', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('SERIES-TOTAL RULE (MANDATORY) in subjective')
+    expect(system).toContain('first PRP injection in the planned series')
+    expect(system).toContain('planned three-injection series')
+    // Must appear before the Reference (paintoneLabel="baseline") block so the
+    // model reads the prohibition in the subjective instructions.
+    const ruleIdx = system.indexOf('SERIES-TOTAL RULE (MANDATORY) in subjective')
+    const refIdx = system.indexOf('Reference (paintoneLabel="baseline", first injection)')
+    expect(ruleIdx).toBeGreaterThan(0)
+    expect(refIdx).toBeGreaterThan(ruleIdx)
+  })
+
+  // Phase 8 — DIAGNOSTIC-SUPPORT RULE in assessment_and_plan
+  it('includes the DIAGNOSTIC-SUPPORT RULE in assessment_and_plan with myelopathy and radiculopathy guards', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
+    expect(system).toContain('myelopathy')
+    expect(system).toContain('upper motor neuron signs')
+    expect(system).toContain('radiculopathy')
+    expect(system).toContain('dermatomal sensory deficit')
+    expect(system).toContain('external-cause codes')
+  })
+  it('DIAGNOSTIC-SUPPORT RULE bans unsupported V/W/X/Y external-cause codes unless on procedureRecord.diagnoses', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/V-codes[\s\S]*?unless they are present in procedureRecord\.diagnoses/)
+  })
 })
 
 describe('generateProcedureNoteFromData — paintoneLabel and chiroProgress threading', () => {
