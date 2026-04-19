@@ -220,7 +220,7 @@ In the block at [L214-L216](src/lib/claude/generate-procedure-note.ts#L214-L216)
 DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null:
 • procedureRecord.guidance_method null → "[confirm guidance method]"
 • procedureRecord.needle_gauge null → "[confirm needle gauge]"
-• procedureRecord.injection_volume_ml null → "[confirm site-specific injectate distribution]"
+• procedureRecord.injection_volume_ml null → "[confirm injection volume in mL]"
 • procedureRecord.target_confirmed_imaging null → omit the imaging-confirmation sentence rather than fabricate one
 • procedureRecord.complications null → describe as "no complications were noted" (this is the documented default when the field is null on an otherwise-completed procedure)
 ```
@@ -239,7 +239,7 @@ DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null
 - [ ] Build an `emptyInput` procedure (all prep fields null) and generate → `procedure_prp_prep` output contains `[confirm exact PRP preparation system]` and `[confirm blood draw volume]`, not fabricated numeric volumes
 - [ ] Same `emptyInput` run → `procedure_prp_prep` output does NOT contain the words "kit", "lot", "batch", or "serial" anywhere, and does NOT contain the literal string `[confirm kit lot number]`
 - [ ] Generate a note with `kit_lot_number = 'LOT-2026-001'` and other prep fields populated → `procedure_prp_prep` output mentions the lot number naturally (e.g. "lot LOT-2026-001"), confirming the omission is conditional on null only
-- [ ] Generate a note with `guidance_method = 'ultrasound'` and `injection_volume_ml = null` → output mentions ultrasound guidance (real data) but uses `[confirm site-specific injectate distribution]` in place of a volume
+- [ ] Generate a note with `guidance_method = 'ultrasound'` and `injection_volume_ml = null` → output mentions ultrasound guidance (real data) but uses `[confirm injection volume in mL]` in place of a volume
 - [ ] Provider regenerates `procedure_anesthesia` section with `anesthetic_agent = null` → output emits `[confirm anesthetic agent]` bracket rather than defaulting to "1% lidocaine"
 - [ ] When all fields ARE populated, output contains zero `[confirm ...]` brackets (directive is purely conditional)
 
@@ -438,7 +438,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     '[confirm anesthetic dose in mL]',
     '[confirm guidance method]',
     '[confirm needle gauge]',
-    '[confirm site-specific injectate distribution]',
+    '[confirm injection volume in mL]',
   ])('includes the "%s" placeholder token in the system prompt', async (token) => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain(token)

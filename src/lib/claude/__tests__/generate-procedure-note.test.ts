@@ -223,7 +223,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     '[confirm anesthetic dose in mL]',
     '[confirm guidance method]',
     '[confirm needle gauge]',
-    '[confirm site-specific injectate distribution]',
+    '[confirm injection volume in mL]',
   ])('includes the "%s" placeholder token in the system prompt', async (token) => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain(token)

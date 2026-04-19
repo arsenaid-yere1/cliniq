@@ -269,7 +269,7 @@ Guidance method, needle gauge, target joint/site, injection volume, needle withd
 DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null:
 • procedureRecord.guidance_method null → "[confirm guidance method]"
 • procedureRecord.needle_gauge null → "[confirm needle gauge]"
-• procedureRecord.injection_volume_ml null → "[confirm site-specific injectate distribution]"
+• procedureRecord.injection_volume_ml null → "[confirm injection volume in mL]"
 • procedureRecord.target_confirmed_imaging null → omit the imaging-confirmation sentence rather than fabricate one
 • procedureRecord.complications null → describe as "no complications were noted" (this is the documented default when the field is null on an otherwise-completed procedure)
 
