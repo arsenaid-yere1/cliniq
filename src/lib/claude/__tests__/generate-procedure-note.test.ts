@@ -113,11 +113,15 @@ describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
     expect(system).toMatch(/"worsened"[\s\S]*?current pain ≥2 points higher than the first-injection baseline/)
   })
 
-  it('includes three parallel reference examples for baseline / improved / stable-or-worsened', async () => {
+  it('includes four parallel reference examples for baseline / improved / stable / worsened', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('Reference (paintoneLabel="baseline")')
     expect(system).toContain('Reference (paintoneLabel="improved")')
-    expect(system).toContain('Reference (paintoneLabel="stable" or "worsened")')
+    // Phase 10D split the combined "stable or worsened" reference into
+    // separate examples so the "stable" branch models interval-improvement
+    // wording rather than cloning the worsened exam.
+    expect(system).toContain('Reference (paintoneLabel="stable")')
+    expect(system).toContain('Reference (paintoneLabel="worsened")')
   })
 
   it('includes the FORBIDDEN PHRASES list on the improved branch', async () => {
@@ -331,6 +335,175 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     // And shows the downgrade path explicitly
     expect(system).toContain('The V-code is GONE')
     expect(system).toContain('DOWNGRADED')
+  })
+})
+
+describe('SYSTEM_PROMPT — medico-legal editor pass (phase 10)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  // Phase 10A — procedure_followup response-calibrated branching
+  it('procedure_followup includes RESPONSE-CALIBRATED FOLLOW-UP branching on all four paintoneLabel values', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('RESPONSE-CALIBRATED FOLLOW-UP (MANDATORY when at least one prior procedure exists)')
+    // Each of the four branches must be named and have distinct guidance
+    expect(system).toMatch(/"baseline"[\s\S]*?first-visit reference/)
+    expect(system).toMatch(/"stable"[\s\S]*?Avoid repeating "1-2 additional PRP injections/)
+    expect(system).toMatch(/"improved"[\s\S]*?AVOID pre-committing to further injections/)
+    expect(system).toMatch(/"worsened"[\s\S]*?shorter follow-up interval/)
+  })
+
+  it('procedure_followup includes four paintoneLabel-specific reference examples', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Each reference is scoped to the follow-up section — find the section
+    // boundaries so we don't accidentally match a physical-exam reference.
+    const fuStart = system.indexOf('16. procedure_followup')
+    const fuEnd = system.indexOf('17. assessment_and_plan')
+    expect(fuStart).toBeGreaterThan(0)
+    expect(fuEnd).toBeGreaterThan(fuStart)
+    const fu = system.slice(fuStart, fuEnd)
+    expect(fu).toContain('Reference (paintoneLabel="baseline")')
+    expect(fu).toContain('Reference (paintoneLabel="stable")')
+    expect(fu).toContain('Reference (paintoneLabel="improved")')
+    expect(fu).toContain('Reference (paintoneLabel="worsened")')
+  })
+
+  // Phase 10B — NO CLONE RULE
+  it('global NO CLONE RULE applies to procedure-mechanics sections when priorProcedures has entries', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('NO CLONE RULE (MANDATORY when priorProcedures has 1 or more entries)')
+    expect(system).toContain('procedure_preparation, procedure_prp_prep, procedure_anesthesia, procedure_injection, procedure_post_care')
+    // Explicit carve-out so template-shaped sections are not forced to vary
+    expect(system).toContain('allergies, social history, past medical history, current medications')
+    // The rule includes a continuity example for identical protocols
+    expect(system).toContain('followed the same protocol as the prior injection')
+  })
+
+  // Phase 10C — CURRENT-VISIT SUPPORT filter
+  it('DIAGNOSTIC-SUPPORT rule has a Filter (E) current-visit-support clause with specific code guards', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('(E) Current-visit support')
+    // Specific per-code guards
+    expect(system).toMatch(/M54\.6[\s\S]*?thoracic pain[\s\S]*?OMIT/)
+    expect(system).toMatch(/G47\.9[\s\S]*?sleep[\s\S]*?OMIT/)
+    expect(system).toMatch(/G44\.309[\s\S]*?headache[\s\S]*?OMIT/)
+    expect(system).toMatch(/M79\.1[\s\S]*?diffuse muscle pain beyond axial spine tenderness/)
+    // Anti-fabrication clause: a symptom still mentioned means the code stays
+    expect(system).toContain('Do not fabricate resolution')
+  })
+
+  // Phase 10D — physical-exam stable-branch interval-change floor
+  it('objective_physical_exam stable branch enforces a MINIMUM INTERVAL-CHANGE FLOOR when priors exist', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MINIMUM INTERVAL-CHANGE FLOOR (MANDATORY for "stable" when at least one prior procedure exists)')
+    expect(system).toContain('at least one interval-comparison phrase')
+    expect(system).toContain('mildly reduced from the prior injection visit')
+  })
+
+  it('objective_physical_exam stable reference example uses interval-improvement wording, not pure persistence', async () => {
+    const system = await capturePrompt(emptyInput)
+    const stableRefStart = system.indexOf('Reference (paintoneLabel="stable")')
+    const worsenedRefStart = system.indexOf('Reference (paintoneLabel="worsened")')
+    expect(stableRefStart).toBeGreaterThan(0)
+    expect(worsenedRefStart).toBeGreaterThan(stableRefStart)
+    const stableRef = system.slice(stableRefStart, worsenedRefStart)
+    // The stable reference must contain at least one interval-improvement phrase.
+    expect(stableRef).toMatch(/mildly reduced|modestly reduced|slightly improved|slightly less/)
+    // And must NOT contain the pure-persistence tag that the worsened branch uses.
+    expect(stableRef).not.toContain('without meaningful interval change. Palpation reveals persistent tenderness')
+  })
+})
+
+describe('SYSTEM_PROMPT — medico-legal editor pass (phase 11)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  // Phase 11A — interval-response narrative in subjective
+  it('subjective includes INTERVAL-RESPONSE NARRATIVE directive with all six components when priors exist', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('INTERVAL-RESPONSE NARRATIVE (MANDATORY when priorProcedures has 1 or more entries and paintoneLabel is not "baseline")')
+    // The six components (a)-(f) must all be named
+    expect(system).toContain('(a) Pain-burden change')
+    expect(system).toContain('(b) FUNCTIONAL-TOLERANCE')
+    expect(system).toContain('(c) HEADACHE trajectory')
+    expect(system).toContain('(d) SLEEP trajectory')
+    expect(system).toContain('(e) POST-PROCEDURE soreness-resolution window')
+    expect(system).toContain('(f) ADVERSE EVENTS')
+    // Cumulative-trajectory closer for 2+ priors
+    expect(system).toContain('cumulative trajectory of response to the PRP series remains favorable')
+  })
+
+  it('subjective INTERVAL-RESPONSE guards against fabricating specific activities not in the input', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT invent specific activities that are not referenced anywhere in the input data')
+  })
+
+  // Phase 11B — pre-procedure safety checklist
+  it('subjective includes PRE-PROCEDURE SAFETY CHECKLIST directive with standard boilerplate', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PRE-PROCEDURE SAFETY CHECKLIST (MANDATORY)')
+    expect(system).toContain('held NSAIDs for 5 days prior to the procedure per protocol')
+    expect(system).toContain('denies fever, bleeding diathesis, recent anticoagulant use, or new neurological complaints')
+    // Do NOT emit bracketed placeholders for these elements
+    expect(system).toContain('Do NOT emit bracketed placeholders for these safety elements')
+  })
+
+  it('subjective reference examples all include the pre-procedure safety clearance sentence', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Restrict the search to the subjective section so we don't pick up an
+    // identical sentence somewhere else.
+    const sStart = system.indexOf('1. subjective')
+    const sEnd = system.indexOf('2. past_medical_history')
+    expect(sStart).toBeGreaterThan(0)
+    expect(sEnd).toBeGreaterThan(sStart)
+    const sBlock = system.slice(sStart, sEnd)
+    // Count occurrences of the safety-clearance sentence stem — once per
+    // reference example (baseline, improved/1-prior, stable, worsened,
+    // improved/2+-prior) = 5 occurrences.
+    const matches = sBlock.match(/held NSAIDs for 5 days prior to the procedure per protocol/g) ?? []
+    expect(matches.length).toBeGreaterThanOrEqual(5)
+  })
+
+  // Phase 11C — ADL-specific functional descriptors
+  it('subjective interval-response lists concrete daily-activity anchors to use', async () => {
+    const system = await capturePrompt(emptyInput)
+    // The FUNCTIONAL-TOLERANCE clause names the kinds of activities the
+    // narrative should anchor to, when the input data supports them.
+    expect(system).toMatch(/school, work, sitting tolerance, driving, sports, sleep/)
+  })
+
+  // Phase 11D — post-procedure monitoring paragraph
+  it('procedure_post_care includes IMMEDIATE POST-PROCEDURE MONITORING directive as a required first paragraph', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('IMMEDIATE POST-PROCEDURE MONITORING (MANDATORY — 2-3 sentences)')
+    expect(system).toContain('monitored in the clinic for approximately 20 minutes')
+    expect(system).toContain('brief neurological recheck of the upper and lower extremities was unchanged from baseline')
+    expect(system).toContain('no active bleeding or hematoma at the injection sites')
+  })
+
+  it('procedure_post_care splits into two labeled paragraphs (monitoring + discharge instructions)', async () => {
+    const system = await capturePrompt(emptyInput)
+    const postStart = system.indexOf('15. procedure_post_care')
+    const followupStart = system.indexOf('16. procedure_followup')
+    expect(postStart).toBeGreaterThan(0)
+    expect(followupStart).toBeGreaterThan(postStart)
+    const postBlock = system.slice(postStart, followupStart)
+    expect(postBlock).toContain('IMMEDIATE POST-PROCEDURE MONITORING')
+    expect(postBlock).toContain('DISCHARGE INSTRUCTIONS')
+    // Length target acknowledges the new two-paragraph shape
+    expect(postBlock).toContain('(~1-2 paragraphs)')
   })
 })
 
