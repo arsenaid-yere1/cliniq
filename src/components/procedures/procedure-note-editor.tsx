@@ -595,14 +595,25 @@ function FinalizedView({
                   date: procedureInfo.procedure_date,
                 })
                 const result = await getDocumentDownloadUrl(documentFilePath, filename)
-                if (result.url) {
+                if (!result.url) {
+                  toast.error('Failed to get download URL')
+                  return
+                }
+                try {
+                  const res = await fetch(result.url)
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                  const blob = await res.blob()
+                  const objectUrl = URL.createObjectURL(blob)
                   const a = document.createElement('a')
-                  a.href = result.url
+                  a.href = objectUrl
                   a.download = filename
                   document.body.appendChild(a)
                   a.click()
                   a.remove()
-                } else toast.error('Failed to get download URL')
+                  URL.revokeObjectURL(objectUrl)
+                } catch {
+                  toast.error('Failed to download PDF')
+                }
               }}
             >
               <Download className="h-4 w-4 mr-2" />
