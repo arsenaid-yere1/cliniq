@@ -11,12 +11,24 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, FileText, Loader2, Pencil } from 'lucide-react'
+import { ArrowUpDown, FileText, Loader2, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import {
   Table,
   TableBody,
@@ -26,7 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { RecordProcedureDialog, type ProcedureInitialData } from './record-procedure-dialog'
-import { getProcedureById, type ProcedureDefaults } from '@/actions/procedures'
+import { deleteProcedure, getProcedureById, type ProcedureDefaults } from '@/actions/procedures'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
@@ -115,6 +127,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
   const [globalFilter, setGlobalFilter] = useState('')
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
@@ -222,6 +235,57 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
                           ? <Loader2 className="h-4 w-4 animate-spin" />
                           : <Pencil className="h-4 w-4" />}
                       </Button>
+                      <AlertDialog>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={isLocked || deletingId === row.original.id}
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                {deletingId === row.original.id
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <Trash2 className="h-4 w-4" />}
+                              </Button>
+                            </AlertDialogTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete procedure</TooltipContent>
+                        </Tooltip>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete procedure?</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div>
+                                This permanently removes the procedure record, its vital signs,
+                                and any associated procedure note from this case. The injection
+                                series will be renumbered so remaining procedures stay contiguous.
+                                {noteStatuses[row.original.id] === 'finalized' && (
+                                  <span className="mt-2 block font-medium text-destructive">
+                                    Warning: this procedure has a finalized note. The signed PDF
+                                    will also be removed from the case documents.
+                                  </span>
+                                )}
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={async () => {
+                                setDeletingId(row.original.id)
+                                const result = await deleteProcedure(row.original.id, caseId)
+                                setDeletingId(null)
+                                if (result.error) toast.error(result.error)
+                                else toast.success('Procedure deleted and series renumbered')
+                              }}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>

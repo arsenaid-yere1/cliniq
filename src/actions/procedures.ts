@@ -468,3 +468,86 @@ export async function getPriorPrpProcedure(caseId: string) {
   if (error || !data) return { data: null }
   return { data }
 }
+
+export async function deleteProcedure(procedureId: string, caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const now = new Date().toISOString()
+
+  const { data: note } = await supabase
+    .from('procedure_notes')
+    .select('id, document_id')
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (note?.document_id) {
+    const { data: doc } = await supabase
+      .from('documents')
+      .select('file_path')
+      .eq('id', note.document_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (doc?.file_path) {
+      await supabase.storage.from('case-documents').remove([doc.file_path])
+    }
+
+    await supabase
+      .from('documents')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('id', note.document_id)
+  }
+
+  if (note?.id) {
+    await supabase
+      .from('procedure_notes')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('id', note.id)
+  }
+
+  await supabase
+    .from('vital_signs')
+    .update({ deleted_at: now, updated_by_user_id: user.id })
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+
+  const { error: procErr } = await supabase
+    .from('procedures')
+    .update({ deleted_at: now, updated_by_user_id: user.id })
+    .eq('id', procedureId)
+    .eq('case_id', caseId)
+
+  if (procErr) return { error: procErr.message }
+
+  const { data: remaining, error: remErr } = await supabase
+    .from('procedures')
+    .select('id, procedure_number')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .order('procedure_date', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (remErr) return { error: remErr.message }
+
+  for (let i = 0; i < (remaining ?? []).length; i++) {
+    const target = i + 1
+    const row = remaining![i]
+    if (row.procedure_number !== target) {
+      const { error: renumErr } = await supabase
+        .from('procedures')
+        .update({ procedure_number: target, updated_by_user_id: user.id })
+        .eq('id', row.id)
+      if (renumErr) return { error: renumErr.message }
+    }
+  }
+
+  revalidatePath(`/patients/${caseId}/procedures`)
+  revalidatePath(`/patients/${caseId}/documents`)
+  return { data: { success: true, remainingCount: remaining?.length ?? 0 } }
+}
