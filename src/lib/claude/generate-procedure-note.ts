@@ -336,26 +336,31 @@ DOWNGRADE TABLE (MANDATORY when filters B or C omit a code):
 WORKED EXAMPLE — filter in action:
   Input candidate codes (from procedureRecord.diagnoses + pmExtraction.diagnoses):
     [M50.121, M50.00, M51.17, M51.16, M54.2, M54.5, M54.6, G44.309, G47.9, M79.1, V43.52XA, S13.4XXA, S33.5XXA]
-  Exam findings on this visit: 5/5 strength bilaterally, intact sensation, symmetric 2+ reflexes, no hyperreflexia/clonus/Hoffmann/Babinski, positive SLR on the right reproducing LOW BACK PAIN only (no leg radiation). Spurling not documented.
+  Exam/ROS findings THIS visit: 5/5 strength bilaterally, intact sensation, symmetric 2+ reflexes, no hyperreflexia/clonus/Hoffmann/Babinski, positive SLR on the right reproducing LOW BACK PAIN only (no leg radiation). Spurling not documented. Focal bilateral cervical-paraspinal and lumbar-paraspinal tenderness with muscle spasm; no thoracic exam findings documented this visit. ROS documents continued post-traumatic headaches and ongoing sleep disturbance due to pain.
   Apply filters:
-    • V43.52XA → Filter (A): OMIT (external-cause code).
+    • V43.52XA → Filter (A): OMIT (external-cause code). No substitute.
     • M50.00 → Filter (B): OMIT (no upper motor neuron signs). Downgrade: add M50.20 if not already present.
     • M50.121 → Filter (C): OMIT (no cervical Spurling, no dermatomal deficit, no UE reflex change). Downgrade: replace with M50.20; keep M54.2.
     • M51.17 → Filter (C): OMIT (SLR did not reproduce radicular LEG symptoms). Downgrade: replace with M51.37; keep M54.5.
     • M51.16 → Filter (C): OMIT (same reason). Downgrade: replace with M51.36; keep M54.5.
     • S13.4XXA / S33.5XXA → Filter (D): permitted on first procedure note if on procedureRecord.diagnoses; otherwise omit or downgrade to "D" suffix.
-    • M54.2, M54.5, M54.6, G44.309, G47.9, M79.1 → supported by documented symptoms; keep.
+    • M54.6 Pain in thoracic spine → Filter (E): OMIT this visit. The exam documents no thoracic findings and ROS does not mention thoracic pain this visit. Keep M54.6 only when thoracic pain is documented THIS visit.
+    • M79.1 Myalgia → Filter (E): OMIT. The exam documents focal cervical-paraspinal and lumbar-paraspinal tenderness only — this is already captured by M54.2 (Cervicalgia) and M54.5 (Low back pain). There is no documented diffuse muscle pain beyond axial spine tenderness, no generalized muscle soreness, and no independent myalgia beyond what the region-specific pain codes already describe. M79.1 is additive-billing when kept alongside M54.2/M54.5 without independent diffuse-myalgia findings. Do NOT keep M79.1 just because it was on the intake diagnosis list.
+    • M54.2, M54.5, G44.309, G47.9 → supported by documented symptoms this visit; keep.
   OUTPUT diagnosis list:
     M50.20 Other cervical disc displacement, unspecified level
     M51.36 Other intervertebral disc degeneration, lumbar region
     M51.37 Other intervertebral disc degeneration, lumbosacral region
     M54.2 Cervicalgia
     M54.5 Low back pain
-    M54.6 Pain in thoracic spine
     G44.309 Post-traumatic headache, unspecified, not intractable
     G47.9 Sleep disorder, unspecified
-    M79.1 Myalgia
-  The V-code is GONE, the myelopathy and radiculopathy codes are DOWNGRADED, and the disc pathology remains represented by non-radiculopathy codes.
+  The V-code is GONE, the myelopathy and radiculopathy codes are DOWNGRADED, M79.1 and the unsupported thoracic code are DROPPED, and the disc pathology remains represented by non-radiculopathy codes. The OUTPUT list is shorter than the INPUT list — that is the expected shape after filtering.
+
+COUNTER-EXAMPLE (when M79.1 IS supported):
+  If the exam THIS visit additionally documents "tenderness across the bilateral upper trapezius and rhomboids extending beyond the paraspinal regions, with diffuse interscapular muscle soreness on palpation" — i.e., documented diffuse muscle involvement BEYOND axial paraspinal tenderness — then M79.1 may be kept. The test for M79.1 is the presence of documented diffuse muscle pain, NOT the presence of M79.1 on the intake list.
+COUNTER-EXAMPLE (when M54.6 IS supported):
+  If the exam THIS visit documents "thoracic paraspinal tenderness at T4-T8 with pain on rotation" OR the ROS mentions thoracic/mid-back pain, M54.6 may be kept.
 
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
 Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n• Rest and ice for 48 hours post-procedure...\\n• Reevaluate in 10-14 days..."
@@ -371,7 +376,7 @@ SERIES-TOTAL RULE (MANDATORY) in patient_education: Do NOT commit the record to 
 19. prognosis (~2 sentences):
 Match the "paintoneLabel". Use the guarded reference when paintoneLabel is "baseline", "stable", or "worsened"; use the guarded-to-favorable reference when paintoneLabel is "improved".
 Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
-Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on completion of the injection series and adherence to the prescribed rehabilitation program."
+Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on ongoing response to PRP therapy and adherence to the prescribed rehabilitation program." Do NOT write "completion of the injection series" or any variant implying a defined series endpoint — the chart does not store a planned series total (see SERIES-TOTAL RULE). Use "ongoing response" / "continued response" / "sustained response" framing instead.
 
 FORBIDDEN PHRASES (MANDATORY) in prognosis — do NOT use any of the following: "full recovery is expected", "complete resolution of symptoms", "definitive healing", "cure", "guaranteed improvement". Prognosis language must remain measured — "guarded" or "guarded-to-favorable" as documented in the references above.
 

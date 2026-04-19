@@ -507,6 +507,83 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phase 11)', () => {
   })
 })
 
+describe('SYSTEM_PROMPT — medico-legal editor pass (phase 12)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  // Phase 12A — prognosis improved-branch no longer pre-commits to series completion
+  it('prognosis improved-branch uses "ongoing response" and explicitly bans "completion of the injection series"', async () => {
+    const system = await capturePrompt(emptyInput)
+    // New reference wording
+    expect(system).toContain('Continued recovery depends on ongoing response to PRP therapy and adherence to the prescribed rehabilitation program')
+    // Explicit ban on the series-completion phrasing
+    expect(system).toContain('Do NOT write "completion of the injection series"')
+    // And the explicit rationale ties back to SERIES-TOTAL RULE
+    expect(system).toContain('chart does not store a planned series total')
+  })
+
+  it('prognosis improved-branch reference no longer contains the old "completion of the injection series" phrasing', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Must not appear as the reference-example phrasing. It may still appear
+    // inside the prohibition sentence ("Do NOT write 'completion of the injection series'"),
+    // so we check for the specific prior reference sentence pattern.
+    expect(system).not.toContain('Continued recovery depends on completion of the injection series and adherence')
+  })
+
+  // Phase 12B — M79.1 decisive filtering in the worked example
+  it('DIAGNOSTIC-SUPPORT worked example explicitly omits M79.1 with Filter (E) and explains why', async () => {
+    const system = await capturePrompt(emptyInput)
+    // The worked example names M79.1 as a Filter-(E) OMIT
+    expect(system).toMatch(/M79\.1[\s\S]*?Filter \(E\)[\s\S]*?OMIT/)
+    // With the specific reasoning
+    expect(system).toContain('already captured by M54.2 (Cervicalgia) and M54.5 (Low back pain)')
+    expect(system).toContain('additive-billing')
+    expect(system).toContain('Do NOT keep M79.1 just because it was on the intake diagnosis list')
+  })
+
+  it('DIAGNOSTIC-SUPPORT worked example removes M79.1 from the OUTPUT list', async () => {
+    const system = await capturePrompt(emptyInput)
+    // Scope the check to the OUTPUT diagnosis list of the worked example.
+    // Find the "OUTPUT diagnosis list:" heading and the trailing summary sentence.
+    const outStart = system.indexOf('OUTPUT diagnosis list:')
+    expect(outStart).toBeGreaterThan(0)
+    const outEnd = system.indexOf('The V-code is GONE', outStart)
+    expect(outEnd).toBeGreaterThan(outStart)
+    const outBlock = system.slice(outStart, outEnd)
+    expect(outBlock).not.toContain('M79.1 Myalgia')
+    // Similarly, the unsupported thoracic code should be absent from the output
+    expect(outBlock).not.toContain('M54.6 Pain in thoracic spine')
+    // Sanity: the codes that survive the filter ARE present
+    expect(outBlock).toContain('M54.2 Cervicalgia')
+    expect(outBlock).toContain('M54.5 Low back pain')
+  })
+
+  it('DIAGNOSTIC-SUPPORT worked example filters M54.6 when no thoracic findings are documented this visit', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/M54\.6[\s\S]*?Filter \(E\)[\s\S]*?OMIT this visit/)
+    expect(system).toContain('Keep M54.6 only when thoracic pain is documented THIS visit')
+  })
+
+  it('DIAGNOSTIC-SUPPORT includes a counter-example for when M79.1 IS supported', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('COUNTER-EXAMPLE (when M79.1 IS supported)')
+    expect(system).toContain('extending beyond the paraspinal regions')
+    expect(system).toContain('The test for M79.1 is the presence of documented diffuse muscle pain, NOT the presence of M79.1 on the intake list')
+  })
+
+  it('DIAGNOSTIC-SUPPORT worked-example summary notes that the OUTPUT list is shorter than the INPUT list', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('The OUTPUT list is shorter than the INPUT list')
+    expect(system).toContain('M79.1 and the unsupported thoracic code are DROPPED')
+  })
+})
+
 describe('generateProcedureNoteFromData — paintoneLabel and chiroProgress threading', () => {
   beforeEach(() => vi.clearAllMocks())
 
