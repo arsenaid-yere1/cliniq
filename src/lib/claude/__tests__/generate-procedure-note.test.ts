@@ -277,7 +277,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     expect(refIdx).toBeGreaterThan(ruleIdx)
   })
 
-  // Phase 8 — DIAGNOSTIC-SUPPORT RULE in assessment_and_plan
+  // Phase 8/9 — DIAGNOSTIC-SUPPORT RULE in assessment_and_plan
   it('includes the DIAGNOSTIC-SUPPORT RULE in assessment_and_plan with myelopathy and radiculopathy guards', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
@@ -285,11 +285,52 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     expect(system).toContain('upper motor neuron signs')
     expect(system).toContain('radiculopathy')
     expect(system).toContain('dermatomal sensory deficit')
-    expect(system).toContain('external-cause codes')
   })
-  it('DIAGNOSTIC-SUPPORT RULE bans unsupported V/W/X/Y external-cause codes unless on procedureRecord.diagnoses', async () => {
+
+  // Phase 9 — filter is absolute, not gated by procedureRecord.diagnoses
+  it('DIAGNOSTIC-SUPPORT filter (A) absolutely omits V/W/X/Y external-cause codes — no escape hatch', async () => {
     const system = await capturePrompt(emptyInput)
-    expect(system).toMatch(/V-codes[\s\S]*?unless they are present in procedureRecord\.diagnoses/)
+    expect(system).toContain('ABSOLUTE OMISSION in procedure notes')
+    expect(system).toContain('EVEN IF the code appears in procedureRecord.diagnoses or pmExtraction.diagnoses')
+    // The old escape hatch phrasing must NOT be present — the Phase 9
+    // tightening removes "unless they are present in procedureRecord.diagnoses"
+    // from the V-code rule.
+    expect(system).not.toMatch(/V-codes[\s\S]*?unless they are present in procedureRecord\.diagnoses/)
+  })
+
+  it('DIAGNOSTIC-SUPPORT filter (C) requires region-matched findings for each radiculopathy region', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('REGION-MATCHED objective findings')
+    // Cervical radiculopathy branch names Spurling and upper-extremity roots
+    expect(system).toMatch(/M50\.1X[\s\S]*?Spurling[\s\S]*?C5\/C6\/C7\/C8\/T1/)
+    // Explicit rejection of SLR as cross-region validator
+    expect(system).toContain('A positive straight-leg raise is a LUMBAR test and does NOT support a cervical radiculopathy code')
+    // Lumbar radiculopathy branch requires radicular LEG symptoms, not axial low back pain
+    expect(system).toMatch(/M51\.1X[\s\S]*?reproducing radicular leg symptoms/)
+    expect(system).toContain('SLR reproducing "low back pain" alone does NOT qualify')
+  })
+
+  it('DIAGNOSTIC-SUPPORT rule contains the DOWNGRADE TABLE with concrete substitutions', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('DOWNGRADE TABLE (MANDATORY when filters B or C omit a code)')
+    expect(system).toContain('M50.12X')
+    expect(system).toContain('M50.20')
+    expect(system).toContain('M51.17')
+    expect(system).toContain('M51.37')
+    expect(system).toContain('M51.16')
+    expect(system).toContain('M51.36')
+  })
+
+  it('DIAGNOSTIC-SUPPORT rule contains a WORKED EXAMPLE that applies every filter', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('WORKED EXAMPLE')
+    // Worked example explicitly names each filter letter
+    expect(system).toMatch(/V43\.52XA[\s\S]*?Filter \(A\)[\s\S]*?OMIT/)
+    expect(system).toMatch(/M50\.00[\s\S]*?Filter \(B\)[\s\S]*?OMIT/)
+    expect(system).toMatch(/M50\.121[\s\S]*?Filter \(C\)[\s\S]*?OMIT/)
+    // And shows the downgrade path explicitly
+    expect(system).toContain('The V-code is GONE')
+    expect(system).toContain('DOWNGRADED')
   })
 })
 

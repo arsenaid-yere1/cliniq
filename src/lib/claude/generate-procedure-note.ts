@@ -274,11 +274,47 @@ Reference: "Mr. Vardanyan will return for a follow-up in 2 weeks to assess his r
 17. assessment_and_plan:
 Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — description format (no bullet prefix, just code space dash space description, one per line). Then "PLAN:" heading with bullet list of action items.
 
-DIAGNOSTIC-SUPPORT RULE (MANDATORY): Only list diagnoses whose clinical elements are supported by the history, physical exam, and imaging in the current source data. In particular:
-• Do NOT list "myelopathy" (e.g., M50.00, M50.01, M50.02, M47.1X, M54.18) unless the objective_physical_exam actually documents upper motor neuron signs (hyperreflexia, clonus, Hoffmann sign, Babinski, spastic gait, bowel/bladder dysfunction). Isolated subjective paresthesia, intact sensation, symmetric 2+ reflexes, and 5/5 strength do NOT support myelopathy.
-• Do NOT list "radiculopathy" codes (e.g., M50.1X, M51.1X with radiculopathy) unless the exam documents at least one objective radicular finding (dermatomal sensory deficit, myotomal weakness, diminished reflex in a nerve-root distribution, or a positive provocative test such as Spurling or straight-leg raise reproducing radicular symptoms). Subjective paresthesia alone without an objective deficit supports cervicalgia/lumbago with a mention of paresthesia, not a radiculopathy code.
-• Do NOT include external-cause codes (V-codes, W-codes, X-codes, Y-codes) such as motor-vehicle-collision codes unless they are present in procedureRecord.diagnoses on the input payload. These are billing codes, not pain-management diagnoses, and adding them unsupported reads as aggressive billing.
-• Prefer the diagnoses listed on procedureRecord.diagnoses. You may supplement with tightly-supported codes from pmExtraction.diagnoses; do not import every code from the extraction. Err on the side of fewer, better-supported diagnoses over a long list.
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list in this procedure note is a FILTERED output, not a copy of the input. Apply the filters below to every candidate code regardless of whether it came from procedureRecord.diagnoses or pmExtraction.diagnoses. Omit any code that fails its filter — if a code is unsupported, substitute the downgrade listed below rather than just dropping it. The procedure note is not the document that establishes mechanism of injury; that is the initial-visit note.
+
+(A) External-cause codes — ABSOLUTE OMISSION in procedure notes. Omit every V-code, W-code, X-code, and Y-code (e.g., V43.52XA motor-vehicle-collision codes) from the diagnosis list, EVEN IF the code appears in procedureRecord.diagnoses or pmExtraction.diagnoses. These codes establish causation and belong in the initial-visit note, not in a per-visit procedure note. Including them reads as aggressive billing and is a defensibility liability at deposition. No substitute — simply omit.
+
+(B) Myelopathy codes — require documented upper motor neuron signs. Omit "myelopathy" codes (e.g., M50.00, M50.01, M50.02, M47.1X, M54.18) unless the objective_physical_exam on this visit's input data documents at least one of: hyperreflexia, clonus, Hoffmann sign, Babinski sign, spastic gait, or bowel/bladder dysfunction. Isolated subjective paresthesia, intact sensation, symmetric 2+ reflexes, and 5/5 strength do NOT support myelopathy. When omitting a myelopathy code, do not substitute — the underlying disc pathology is already captured by non-myelopathy disc codes (see below).
+
+(C) Radiculopathy codes — require REGION-MATCHED objective findings. Each radiculopathy code must be supported by an objective finding in the SAME anatomic region as the code. Objective findings elsewhere do NOT cross-validate a different region.
+  • M50.1X (cervical radiculopathy, e.g., M50.120, M50.121, M50.122, M50.123) — requires one of, documented in the CERVICAL portion of objective_physical_exam: positive Spurling maneuver on the same laterality as the code, dermatomal sensory deficit in C5/C6/C7/C8/T1, myotomal weakness in an upper-extremity root distribution, OR diminished biceps/triceps/brachioradialis reflex. A positive straight-leg raise is a LUMBAR test and does NOT support a cervical radiculopathy code.
+  • M51.1X (lumbar / lumbosacral radiculopathy, e.g., M51.16, M51.17) — requires one of, documented in the LUMBAR portion of objective_physical_exam: straight-leg raise positive AND "reproducing radicular leg symptoms" (pain radiating down the leg, paresthesia below the knee, etc. — SLR reproducing "low back pain" alone does NOT qualify), dermatomal sensory deficit in L4/L5/S1, myotomal weakness in a lower-extremity root distribution, OR diminished patellar/Achilles reflex.
+
+(D) Sprain codes with "initial encounter" suffix (e.g., S13.4XXA, S33.5XXA, ending in "A") are initial-encounter codes. On a repeat visit that is not the intake encounter, prefer subsequent-encounter variants (ending in "D") or omit in favor of chronic-pain codes. You may keep them on the first procedure note if they are on procedureRecord.diagnoses.
+
+DOWNGRADE TABLE (MANDATORY when filters B or C omit a code):
+  • M50.12X (cervical radiculopathy) with no region-matched cervical objective finding → replace with M50.20 (Other cervical disc displacement, unspecified level / or specific level subcode) AND keep M54.2 (Cervicalgia). Do NOT leave the disc pathology completely unrepresented.
+  • M51.17 (lumbosacral disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.37 (Other intervertebral disc degeneration, lumbosacral region) AND keep M54.5 (Low back pain).
+  • M51.16 (lumbar disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.36 (Other intervertebral disc degeneration, lumbar region) AND keep M54.5.
+  • M50.00 (cervical disc with myelopathy) with no upper-motor-neuron signs → replace with M50.20 (Other cervical disc displacement) AND keep M54.2.
+
+WORKED EXAMPLE — filter in action:
+  Input candidate codes (from procedureRecord.diagnoses + pmExtraction.diagnoses):
+    [M50.121, M50.00, M51.17, M51.16, M54.2, M54.5, M54.6, G44.309, G47.9, M79.1, V43.52XA, S13.4XXA, S33.5XXA]
+  Exam findings on this visit: 5/5 strength bilaterally, intact sensation, symmetric 2+ reflexes, no hyperreflexia/clonus/Hoffmann/Babinski, positive SLR on the right reproducing LOW BACK PAIN only (no leg radiation). Spurling not documented.
+  Apply filters:
+    • V43.52XA → Filter (A): OMIT (external-cause code).
+    • M50.00 → Filter (B): OMIT (no upper motor neuron signs). Downgrade: add M50.20 if not already present.
+    • M50.121 → Filter (C): OMIT (no cervical Spurling, no dermatomal deficit, no UE reflex change). Downgrade: replace with M50.20; keep M54.2.
+    • M51.17 → Filter (C): OMIT (SLR did not reproduce radicular LEG symptoms). Downgrade: replace with M51.37; keep M54.5.
+    • M51.16 → Filter (C): OMIT (same reason). Downgrade: replace with M51.36; keep M54.5.
+    • S13.4XXA / S33.5XXA → Filter (D): permitted on first procedure note if on procedureRecord.diagnoses; otherwise omit or downgrade to "D" suffix.
+    • M54.2, M54.5, M54.6, G44.309, G47.9, M79.1 → supported by documented symptoms; keep.
+  OUTPUT diagnosis list:
+    M50.20 Other cervical disc displacement, unspecified level
+    M51.36 Other intervertebral disc degeneration, lumbar region
+    M51.37 Other intervertebral disc degeneration, lumbosacral region
+    M54.2 Cervicalgia
+    M54.5 Low back pain
+    M54.6 Pain in thoracic spine
+    G44.309 Post-traumatic headache, unspecified, not intractable
+    G47.9 Sleep disorder, unspecified
+    M79.1 Myalgia
+  The V-code is GONE, the myelopathy and radiculopathy codes are DOWNGRADED, and the disc pathology remains represented by non-radiculopathy codes.
 
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
 Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n• Rest and ice for 48 hours post-procedure...\\n• Reevaluate in 10-14 days..."
