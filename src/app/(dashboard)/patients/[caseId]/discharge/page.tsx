@@ -98,6 +98,21 @@ export default async function DischargePage({
     defaultVitals = latestVitalsRow ?? null
   }
 
+  // Fallback: if the latest procedure had no vitals recorded, try the
+  // case-level initial-visit vitals (stored with procedure_id = null).
+  if (!defaultVitals) {
+    const { data: ivVitalsRow } = await supabase
+      .from('vital_signs')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    defaultVitals = ivVitalsRow ?? null
+  }
+
   return (
     <DischargeNoteEditor
       caseId={caseId}
