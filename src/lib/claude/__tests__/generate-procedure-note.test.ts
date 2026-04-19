@@ -158,6 +158,112 @@ describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
   })
 })
 
+describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  // Phase 1 — anti-marketing
+  it('includes the anti-marketing FORBIDDEN PHRASES block in procedure_prp_prep', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN PHRASES (MANDATORY) in procedure_prp_prep')
+    expect(system).toContain('highly concentrated growth factors')
+    expect(system).toContain('tissue regeneration')
+  })
+  it('includes the anti-marketing FORBIDDEN PHRASES block in patient_education', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN PHRASES (MANDATORY) in patient_education')
+    expect(system).toContain('regenerative medicine')
+  })
+  it('includes the anti-absolute-claim FORBIDDEN PHRASES block in prognosis', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN PHRASES (MANDATORY) in prognosis')
+    expect(system).toContain('full recovery is expected')
+    expect(system).toContain('guaranteed improvement')
+  })
+  it('no longer contains the "highly concentrated amount of growth factors" marketing phrase in the prp_prep reference', async () => {
+    const system = await capturePrompt(emptyInput)
+    // The phrase may appear in the FORBIDDEN list (as the banned phrase) but
+    // must NOT appear in the reference example. Verify by checking the reference
+    // example substring specifically.
+    expect(system).not.toContain('containing a highly concentrated amount of growth factors')
+  })
+
+  // Phase 2 — series-total
+  it('includes the SERIES-TOTAL RULE in procedure_followup', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('SERIES-TOTAL RULE (MANDATORY)')
+    expect(system).toContain('Session 1 of 3')
+    expect(system).toContain('Session 3 of 3')
+    expect(system).toContain('additional PRP treatment may be considered')
+  })
+  it('includes the SERIES-TOTAL RULE in patient_education', async () => {
+    const system = await capturePrompt(emptyInput)
+    // The rule appears twice (once per section) — the patient_education copy
+    // references "3-injection series" as a forbidden phrasing.
+    expect(system).toContain('SERIES-TOTAL RULE (MANDATORY) in patient_education')
+    expect(system).toContain('3-injection series')
+  })
+
+  // Phase 3 — bracketed placeholders
+  it.each([
+    '[confirm blood draw volume]',
+    '[confirm centrifuge duration]',
+    '[confirm exact PRP preparation system]',
+    '[confirm kit lot number]',
+    '[confirm anesthetic agent]',
+    '[confirm anesthetic dose in mL]',
+    '[confirm guidance method]',
+    '[confirm needle gauge]',
+    '[confirm site-specific injectate distribution]',
+  ])('includes the "%s" placeholder token in the system prompt', async (token) => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain(token)
+  })
+  it('includes the DATA-NULL RULE header in procedure_prp_prep, procedure_anesthesia, and procedure_injection', async () => {
+    const system = await capturePrompt(emptyInput)
+    const occurrences = system.match(/DATA-NULL RULE \(MANDATORY\)/g) ?? []
+    expect(occurrences.length).toBeGreaterThanOrEqual(3)
+  })
+
+  // Phase 4 — diagnostic coherence
+  it('includes the TARGET-COHERENCE RULE in procedure_indication with all three guidance branches', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('TARGET-COHERENCE RULE (MANDATORY)')
+    expect(system).toMatch(/guidance_method = "ultrasound"[\s\S]*?periarticular/)
+    expect(system).toMatch(/guidance_method = "fluoroscopy"[\s\S]*?intradiscal/)
+    expect(system).toMatch(/guidance_method = "landmark"[\s\S]*?surface-landmark/)
+  })
+  it('replaces the disc-directed reference example in procedure_indication', async () => {
+    const system = await capturePrompt(emptyInput)
+    // The old reference read "promote joint healing and reduce inflammation due to
+    // the 3.2 mm disc protrusion at L5-S1" — we replaced it with a
+    // periarticular/facet-capsular reference.
+    expect(system).not.toContain('PRP injection to promote joint healing and reduce inflammation due to the 3.2 mm disc protrusion')
+    expect(system).toContain('periarticular and facet-capsular structures at L5-S1')
+  })
+
+  // Phase 5 — minor-patient consent
+  it('includes the MINOR-PATIENT CONSENT BRANCH with both age conditions', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MINOR-PATIENT CONSENT BRANCH (MANDATORY)')
+    expect(system).toContain('When age is null or age >= 18')
+    expect(system).toContain('When age < 18')
+    expect(system).toContain('parent/legal guardian')
+    expect(system).toContain('verbal assent')
+  })
+  it('includes both adult and minor reference examples for procedure_preparation', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Reference (adult, age >= 18 or null)')
+    expect(system).toContain('Reference (minor, age < 18)')
+  })
+})
+
 describe('generateProcedureNoteFromData — paintoneLabel and chiroProgress threading', () => {
   beforeEach(() => vi.clearAllMocks())
 

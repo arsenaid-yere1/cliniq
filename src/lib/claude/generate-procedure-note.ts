@@ -197,22 +197,65 @@ Reference (improvement-leaning — for improved): "Findings indicate cervical, t
 
 10. procedure_indication (~1-3 bullets):
 Bullet per injection site referencing specific imaging finding with measurements.
-Reference: "• PRP injection to promote joint healing and reduce inflammation due to the 3.2 mm disc protrusion at L5-S1, with increased T2 signal extending to the right lateral recess..."
+
+TARGET-COHERENCE RULE (MANDATORY): The language describing what this injection treats must match the documented technique on procedureRecord.guidance_method. Do NOT describe the procedure as disc-directed or intradiscal unless guidance_method = "fluoroscopy" AND the injection_site explicitly names an intradiscal target.
+• When guidance_method = "ultrasound" OR guidance_method = "landmark" — describe targets as periarticular, facet-capsular, paraspinal musculoligamentous, or sacroiliac/sacroiliac-adjacent as appropriate to injection_site. Reference imaging findings as the clinical rationale, NOT as the structure being directly injected. Example: "PRP injection to periarticular and facet-capsular structures adjacent to the L5-S1 level, where imaging demonstrates a 3.2 mm disc protrusion with associated facet arthropathy."
+• When guidance_method = "fluoroscopy" — intradiscal / epidural / transforaminal language may be used only when supported by injection_site and documented in the chart.
+• When guidance_method is null — use neutral periarticular / paraspinal language and emit "[confirm guidance method]" inline rather than fabricating a technique.
+
+AVOID in this section: "injection to promote disc healing", "disc-directed regeneration", "intradiscal PRP" (unless fluoroscopy-documented).
+
+Reference: "• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with increased T2 signal extending to the right lateral recess and associated facet arthropathy, as the clinical rationale for intervention."
 
 11. procedure_preparation (~1 paragraph):
 Standard boilerplate — consent obtained, risks/benefits explained, positioning, sterile prep with chlorhexidine/betadine, time-out.
-Reference: "Informed consent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
+
+MINOR-PATIENT CONSENT BRANCH (MANDATORY): Branch consent language on the top-level "age" field.
+• When age is null or age >= 18 — use adult consent phrasing: "Informed consent was obtained from the patient."
+• When age < 18 — phrase consent as guardian written informed consent plus patient verbal assent: "Written informed consent was obtained from the patient's parent/legal guardian, and verbal assent was obtained from the patient. The procedure, risks, benefits, and alternatives were discussed in age-appropriate terms." Do NOT invent a specific signer name or relationship (e.g., "mother", "father", "John Doe, legal guardian") — the chart does not capture that identity today. Keep the phrasing general.
+
+Reference (adult, age >= 18 or null): "Informed consent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
+Reference (minor, age < 18): "Written informed consent was obtained from the patient's parent/legal guardian, and verbal assent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained in age-appropriate terms, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
 
 12. procedure_prp_prep (~1 paragraph):
 Blood draw volume from left arm, centrifuge duration, description of PRP product.
-Reference: "Approximately 30 mL of venous blood was drawn from the patient's left arm using a sterile technique. The blood sample was processed using a centrifuge for 15 minutes to separate the platelets from the plasma. The platelet-rich plasma (PRP) was then prepared in a syringe, containing a highly concentrated amount of growth factors intended to promote tissue repair."
+
+DATA-NULL RULE (MANDATORY): When a prep field is null on the input payload, emit a named bracket placeholder rather than fabricating a value. Use these exact tokens:
+• procedureRecord.blood_draw_volume_ml null → "[confirm blood draw volume]"
+• procedureRecord.centrifuge_duration_min null → "[confirm centrifuge duration]"
+• procedureRecord.prep_protocol null → "[confirm exact PRP preparation system]"
+• procedureRecord.kit_lot_number null → "[confirm kit lot number]"
+Write the sentence normally using the non-null values; only substitute the bracket token where the underlying field is null. Do NOT invent a numeric volume, a duration in minutes, or a kit lot number.
+
+Reference: "Approximately 30 mL of venous blood was drawn from the patient's left arm using sterile technique. The sample was processed with a [confirm exact PRP preparation system] centrifuge for 15 minutes to separate platelet-rich plasma. The PRP was drawn into a sterile syringe for injection."
+
+FORBIDDEN PHRASES (MANDATORY) in procedure_prp_prep — do NOT use any of the following, anywhere in this section: "highly concentrated growth factors", "high concentration of growth factors", "concentrated healing factors", "regenerative capacity", "tissue regeneration". These are marketing phrases. Describe the PRP neutrally as "platelet-rich plasma" drawn into a sterile syringe. Do not make promotional claims about growth-factor concentration or tissue repair.
 
 13. procedure_anesthesia (~2 sentences):
 Agent, dose in mL, patient tolerance.
+
+DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null:
+• procedureRecord.anesthetic_agent null → "[confirm anesthetic agent]"
+• procedureRecord.anesthetic_dose_ml null → "[confirm anesthetic dose in mL]"
+• procedureRecord.patient_tolerance null → omit the tolerance sentence entirely rather than fabricate one
+
 Reference: "5 mL of 1% lidocaine was injected locally to numb the injection site. The patient tolerated the anesthesia well with no adverse reactions."
 
 14. procedure_injection (~1 paragraph):
 Guidance method, needle gauge, target joint/site, injection volume, needle withdrawal, gauze application, complications.
+
+DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null:
+• procedureRecord.guidance_method null → "[confirm guidance method]"
+• procedureRecord.needle_gauge null → "[confirm needle gauge]"
+• procedureRecord.injection_volume_ml null → "[confirm site-specific injectate distribution]"
+• procedureRecord.target_confirmed_imaging null → omit the imaging-confirmation sentence rather than fabricate one
+• procedureRecord.complications null → describe as "no complications were noted" (this is the documented default when the field is null on an otherwise-completed procedure)
+
+TARGET-COHERENCE RULE (MANDATORY): The described target must be consistent with guidance_method:
+• guidance_method = "ultrasound" → describe needle placement as periarticular / facet-capsular / paraspinal / sacroiliac; do NOT describe the needle as entering a disc unless explicitly documented
+• guidance_method = "landmark" → describe surface-landmark placement; avoid intradiscal or epidural claims
+• guidance_method = "fluoroscopy" → intradiscal / epidural / transforaminal language permitted only when injection_site documents that level
+
 Reference: "Under ultrasound guidance, a 25-gauge spinal needle was inserted into the facet joint, targeting the most affected area as visualized on prior imaging. The PRP solution (5 mL) was injected slowly into the joint to maximize distribution and tissue saturation. The needle was withdrawn, and sterile gauze was applied to the injection site. No complications, such as bleeding or infection, were noted."
 
 15. procedure_post_care (~1 paragraph):
@@ -221,6 +264,9 @@ Reference: "A compression bandage was applied to the injection site, and the pat
 
 16. procedure_followup (~2-3 sentences):
 Return timeline, potential additional injections based on procedure_number in series.
+
+SERIES-TOTAL RULE (MANDATORY): Do NOT state that this is "Session 1 of 3", "Session 2 of 3", "Session 3 of 3", or any specific X-of-N series position. The procedures schema does not store a planned series total, so any such number would be fabricated. Phrase additional injections conditionally: "additional PRP treatment may be considered depending on clinical response", "follow-up will determine whether further interventional treatment is indicated", or "the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement" — all neutral and non-committal. You MAY reference the procedure_number as an ordinal when describing the visit itself (e.g., "second PRP injection") because procedure_number counts completed procedures, not a planned total.
+
 Reference: "Mr. Vardanyan will return for a follow-up in 2 weeks to assess his response to the injection. Additional PRP injections may be considered based on his progress. Patient was reminded of the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement."
 
 17. assessment_and_plan:
@@ -232,10 +278,16 @@ Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n
 Covers PRP role, post-injection instructions, follow-up. End with time documentation sentence: "I personally spent a cumulative total of greater than 60 minutes with and examining the patient... Of that, greater than 50% of the time was spent counseling and/or providing education."
 Reference: "Mr. Vardanyan was educated on the PRP procedure, including its role in promoting tissue regeneration, reducing inflammation, and improving function in the injured site..."
 
+FORBIDDEN PHRASES (MANDATORY) in patient_education — do NOT use any of the following: "promotes tissue regeneration", "stimulates tissue regeneration", "enhances healing capacity", "accelerated healing", "regenerative medicine". Describe PRP neutrally (e.g., "PRP is intended to support the body's natural healing response at the injection site"). Avoid absolute claims about regeneration or definite healing outcomes.
+
+SERIES-TOTAL RULE (MANDATORY) in patient_education: Do NOT commit the record to a specific future injection count ("3-injection series", "remaining 2 injections", "complete the series of 3"). Use conditional phrasing: "additional PRP treatment may be considered", "follow-up visits will determine next steps".
+
 19. prognosis (~2 sentences):
 Match the "paintoneLabel". Use the guarded reference when paintoneLabel is "baseline", "stable", or "worsened"; use the guarded-to-favorable reference when paintoneLabel is "improved".
 Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
 Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on completion of the injection series and adherence to the prescribed rehabilitation program."
+
+FORBIDDEN PHRASES (MANDATORY) in prognosis — do NOT use any of the following: "full recovery is expected", "complete resolution of symptoms", "definitive healing", "cure", "guaranteed improvement". Prognosis language must remain measured — "guarded" or "guarded-to-favorable" as documented in the references above.
 
 20. clinician_disclaimer (~2-3 sentences):
 Standard procedure report disclaimer.
