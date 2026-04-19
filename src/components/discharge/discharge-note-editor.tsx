@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, RotateCcw } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, RotateCcw, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -51,6 +51,7 @@ import {
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
+import { VitalsEditDialog } from '@/components/discharge/vitals-edit-dialog'
 
 interface NoteRow {
   id: string
@@ -336,6 +337,8 @@ function DraftEditor({
     },
   })
 
+  const [vitalsDialogOpen, setVitalsDialogOpen] = useState(false)
+
   function handleSave() {
     startTransition(async () => {
       const values = form.getValues()
@@ -467,6 +470,19 @@ function DraftEditor({
                     <FormLabel className="text-base font-semibold">
                       {dischargeNoteSectionLabels[section]}
                     </FormLabel>
+                    <div className="flex items-center gap-1">
+                    {section === 'objective_vitals' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isLocked || isPending}
+                        onClick={() => setVitalsDialogOpen(true)}
+                      >
+                        <Activity className="h-3 w-3 mr-1" />
+                        Edit Vitals
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
@@ -498,6 +514,7 @@ function DraftEditor({
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+                    </div>
                   </div>
                   <FormControl>
                     <Textarea
@@ -513,6 +530,15 @@ function DraftEditor({
           ))}
         </form>
       </Form>
+
+      <VitalsEditDialog
+        open={vitalsDialogOpen}
+        onOpenChange={setVitalsDialogOpen}
+        currentValue={form.getValues('objective_vitals') ?? ''}
+        onSave={(formatted) =>
+          form.setValue('objective_vitals', formatted, { shouldDirty: true })
+        }
+      />
     </div>
   )
 }
