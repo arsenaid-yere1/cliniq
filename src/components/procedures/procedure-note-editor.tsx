@@ -591,7 +591,7 @@ function FinalizedView({
               onClick={async () => {
                 const filename = buildDownloadFilename({
                   lastName: caseData?.patient.last_name,
-                  docType: 'ProcedureNote',
+                  docType: `ProcedureNote${procedureInfo.procedure_number}`,
                   date: procedureInfo.procedure_date,
                 })
                 const result = await getDocumentDownloadUrl(documentFilePath, filename)

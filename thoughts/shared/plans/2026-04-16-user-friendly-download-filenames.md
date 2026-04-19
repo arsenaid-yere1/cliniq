@@ -52,7 +52,7 @@ Mapped from the internal document shape (action source, `document_type` enum val
 | Discharge note (`discharge-notes.ts`) | `DischargeSummary` |
 | Initial visit note, `visit_type = 'initial_visit'` | `InitialVisitNote` |
 | Initial visit note, `visit_type = 'pain_evaluation_visit'` | `PainEvaluationVisitNote` |
-| Procedure note (`procedure-notes.ts`) | `ProcedureNote` |
+| Procedure note (`procedure-notes.ts`) | `ProcedureNote<N>` — `N` = `procedures.procedure_number` (1-based sequence within the case). E.g., `Israyelyan_ProcedureNote1_2026-02-17.pdf`. Fallback `1` when null (matches existing fallbacks at `src/actions/procedure-notes.ts:184` and the page loader). |
 | Procedure consent (`procedure-consents.ts`) | `ProcedureConsent` |
 | Lien agreement (`lien.ts`) | `LienAgreement` |
 | Clinical order, `orderType = 'imaging'` | `ImagingOrders` |
@@ -159,7 +159,7 @@ For each component, compute `filename = buildDownloadFilename({ lastName, docTyp
 
 **3a. `discharge-note-editor.tsx`** (line ~567) — `caseData.patient.last_name`, `note.visit_date ?? note.discharge_date`, docType `'DischargeSummary'`.
 
-**3b. `procedure-note-editor.tsx`** (line ~586) — `caseData.patient.last_name`, `procedureInfo.procedure_date`, docType `'ProcedureNote'`.
+**3b. `procedure-note-editor.tsx`** (line ~586) — `caseData.patient.last_name`, `procedureInfo.procedure_date`, docType `` `ProcedureNote${procedureInfo.procedure_number}` `` (the sequence number is suffixed onto the DocType token itself so underscore separators stay intact; `procedureInfo.procedure_number` is already typed as `number` with a `?? 1` fallback at the page loader — see `src/components/procedures/procedure-note-editor.tsx:116` and `src/app/(dashboard)/patients/[caseId]/procedures/[procedureId]/note/page.tsx:84`).
 
 **3c. `initial-visit-editor.tsx`** — three sites:
 - Main note button (~line 1859): `caseData.patient.last_name`, `note.visit_date`, docType depends on `visitType` (`'InitialVisitNote'` vs `'PainEvaluationVisitNote'`).
