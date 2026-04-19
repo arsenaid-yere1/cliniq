@@ -5,7 +5,7 @@ git_commit: ab981f5b89d528b6e157e4d2f31e35b100c312f1
 branch: main
 repository: cliniq
 status: validated
-validated_on: 2026-04-16
+validated_on: 2026-04-19
 validated_by: arsenaid
 related_research: thoughts/shared/research/2026-04-16-user-friendly-download-filenames.md
 ---
