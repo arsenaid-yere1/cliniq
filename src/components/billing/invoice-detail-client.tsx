@@ -292,8 +292,7 @@ export function InvoiceDetailClient({
                 a.href = url
                 a.download = buildDownloadFilename({
                   lastName: invoice.case.patient?.last_name,
-                  docType: 'Invoice',
-                  extra: invoice.invoice_number,
+                  docType: invoice.invoice_type === 'facility' ? 'MedicalFacilityInvoice' : 'MedicalInvoice',
                   date: invoice.invoice_date,
                 })
                 a.click()

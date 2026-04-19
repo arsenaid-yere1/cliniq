@@ -57,7 +57,7 @@ Mapped from the internal document shape (action source, `document_type` enum val
 | Lien agreement (`lien.ts`) | `LienAgreement` |
 | Clinical order, `orderType = 'imaging'` | `ImagingOrders` |
 | Clinical order, `orderType = 'chiropractic'` | `ChiropracticOrder` |
-| Invoice (`billing.ts`) | `Invoice` — filename becomes `<LastName>_Invoice_<invoice_number>_<invoice_date>.pdf` (invoice number is more identifying than date alone here; keep both) |
+| Invoice (`billing.ts`) | `MedicalInvoice` when `invoice_type = 'visit'`, `MedicalFacilityInvoice` when `invoice_type = 'facility'` — filename becomes `<LastName>_<MedicalInvoice\|MedicalFacilityInvoice>_<invoice_date>.pdf`. Labels mirror the on-PDF title at `src/components/billing/invoice-detail-client.tsx:403`. Same-day collisions are handled by the browser's `(1)`, `(2)` suffixing. |
 | Manually uploaded document, by `document_type` | `mri_report` → `MRIReport`, `chiro_report` → `ChiroReport`, `pain_management` → `PainManagement`, `pt_report` → `PTReport`, `orthopedic_report` → `OrthopedicReport`, `ct_scan` → `CTScan`, `lien_agreement` → `LienAgreement`, `procedure_consent` → `ProcedureConsent`, `generated` → `Generated`, `other` → sanitized original filename (no prefix) |
 
 ## Critical files
@@ -129,7 +129,7 @@ Unit tests in `src/lib/filenames/__tests__/build-download-filename.test.ts` foll
 - `null` → `Unknown`
 - date `'2026-04-10'` passes through
 - date `'2026-04-10T12:34:56Z'` → `'2026-04-10'`
-- invoice variant: `Smith_Invoice_INV-2026-0042_2026-04-10.pdf`
+- invoice variants: `Smith_MedicalInvoice_2026-04-10.pdf` (visit) and `Smith_MedicalFacilityInvoice_2026-04-10.pdf` (facility)
 
 ### Step 2 — Extend `getDocumentDownloadUrl`
 
@@ -178,13 +178,12 @@ Replace the hardcoded `a.download` string in each:
 ```ts
 a.download = buildDownloadFilename({
   lastName: invoice.case.patient.last_name,
-  docType: 'Invoice',
-  extra: invoice.invoice_number,
+  docType: invoice.invoice_type === 'facility' ? 'MedicalFacilityInvoice' : 'MedicalInvoice',
   date: invoice.invoice_date,
 })
 ```
 
-Requires that `invoice.case.patient.last_name` + `invoice.invoice_date` reach the client component. `getInvoiceWithContext` already joins `case.patient(*)` — just widen the prop type in `InvoiceDetailClient`.
+Requires that `invoice.case.patient.last_name`, `invoice.invoice_type`, and `invoice.invoice_date` reach the client component. `getInvoiceWithContext` already joins `case.patient(*)` and `invoice_type` is part of the base invoice row — just widen the prop type in `InvoiceDetailClient` as needed. The DocType label mirrors the on-PDF title rendered at `src/components/billing/invoice-detail-client.tsx:403` so filename and document header stay in sync.
 
 **4b. `case-overview.tsx:100`** (lien)
 
