@@ -46,6 +46,20 @@ export interface DischargeNoteInputData {
     pain_score_min: number | null
     pain_score_max: number | null
   } | null
+  // Provider-entered vitals captured AT the discharge follow-up visit.
+  // When non-null, override the default `-2 from latestVitals.pain_score_max`
+  // rule and use these values verbatim for the objective_vitals bullets and
+  // as the pain-trajectory endpoint.
+  dischargeVitals: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null
   baselinePain: {
     procedure_date: string
     pain_score_min: number | null
@@ -140,9 +154,15 @@ A discharge note MUST demonstrate that pain decreased over the treatment course 
 • "initialVisitBaseline.chief_complaint" — intake narrative, often referencing the original pain rating before any PRP.
 • "procedures[]" — every procedure in chronological order, each with its own pain_score_min/max. The LAST element is the final injection (NOT the discharge visit).
 • "latestVitals.pain_score_min/max" — vitals from the LAST procedure (final injection), not from today's discharge visit. These are your reference ceiling for the discharge reading.
+• "dischargeVitals" — provider-entered vitals recorded AT the discharge follow-up visit. When non-null, these REPLACE all default vitals rendering and override the pain-delta defaults below.
 • "overallPainTrend" — the computed label comparing last procedure pain to first procedure pain.
 
-RULES:
+PROVIDER-ENTERED DISCHARGE VITALS (highest priority):
+• If \`dischargeVitals\` is non-null, render \`objective_vitals\` bullets DIRECTLY from \`dischargeVitals\` (skip the -2 default). Omit any bullet whose field is null. The Pain bullet uses \`dischargeVitals.pain_score_min/max\` verbatim.
+• If \`dischargeVitals\` is non-null, the numeric endpoint cited in \`subjective\`, \`assessment\`, and \`prognosis\` MUST be \`dischargeVitals.pain_score_max\` (or the range when min/max differ). Do NOT apply the -2 rule.
+• If \`dischargeVitals\` is null, fall back to the -2 default rules below.
+
+RULES (apply when \`dischargeVitals\` is null):
 • The discharge follow-up visit is a separate encounter occurring AFTER the final injection. Patients reliably report continued improvement between the final PRP injection and this follow-up. You MUST render a discharge-visit pain reading that is **2 points BELOW** \`latestVitals.pain_score_max\` by default, floored at 0. A 1-point drop is ONLY permitted when a 2-point drop would go below 0 (i.e., when \`latestVitals.pain_score_max\` is 1, the discharge reading is 0; when it is 2, the discharge reading is 0; when min/max differ, apply -2 to both endpoints and floor). Examples: last procedure pain 3-4/10 → discharge visit 1-2/10. Last procedure pain 3/10 → discharge visit 1/10. Last procedure pain 2/10 → discharge visit 0/10. Last procedure pain 0-1/10 → discharge visit 0/10. This is the ONE exception to the "don't invent numbers" rule — it reflects expected post-injection healing and is scoped strictly to the discharge-visit pain endpoint.
 • In \`subjective\`, you MUST explicitly narrate the downward trajectory ending at today's discharge reading (not at the last procedure). Format: "pain has decreased from X/10 at the initial evaluation to Z/10 at today's discharge visit", where Z is 2 points below the last procedure's pain_score_max (floored at 0; 1-point drop only when a 2-point drop would floor below 0). When more than 2 procedures exist, render the full series and terminate at the discharge reading (e.g., "8/10 → 6/10 → 4/10 → 3/10 across the injection series, and has further improved to 1/10 at today's discharge evaluation").
 • Render pain ranges when min/max differ (e.g., "6-7/10"); single value when they match or only one is present.
@@ -163,7 +183,9 @@ Para 3: Additional improvements — sleep quality, ADL function, denial of red-f
 Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025. She reports sustained and progressive improvement, with pain decreasing from 7/10 at her initial evaluation to 1/10 at today's discharge visit, reflecting continued healing since her final injection..."
 
 2. objective_vitals (~6 bullets):
-BP, HR, RR, Temp, SpO2, Pain. Use \`latestVitals\` (the most recent procedure's vitals) for BP/HR/RR/Temp/SpO2. Pain bullet is the DISCHARGE-VISIT reading: 2 points below \`latestVitals.pain_score_max\` by default, floored at 0 (1-point drop ONLY when a 2-point drop would floor below 0). Render as "• Pain: X-Y/10" when rendering a range (e.g., last procedure 3-4/10 → "• Pain: 1-2/10"), "• Pain: X/10" when single value (e.g., last procedure 3/10 → "• Pain: 1/10"; last procedure 2/10 → "• Pain: 0/10"), and omit the Pain bullet entirely when both pain scores are null. If \`overallPainTrend\` is "stable" or "worsened", render \`latestVitals\` pain directly without the -2 delta. Use brackets for any other missing vital.
+BP, HR, RR, Temp, SpO2, Pain.
+PRIORITY 1 — If \`dischargeVitals\` is non-null: render EVERY bullet from \`dischargeVitals\` verbatim (omit each bullet whose field is null). Do NOT mix with \`latestVitals\`; do NOT apply the -2 rule.
+PRIORITY 2 — If \`dischargeVitals\` is null: use \`latestVitals\` (the most recent procedure's vitals) for BP/HR/RR/Temp/SpO2; the Pain bullet is the discharge-visit estimate (2 points below \`latestVitals.pain_score_max\`, floored at 0). Render as "• Pain: X-Y/10" when rendering a range (e.g., last procedure 3-4/10 → "• Pain: 1-2/10"), "• Pain: X/10" when single value (e.g., last procedure 3/10 → "• Pain: 1/10"; last procedure 2/10 → "• Pain: 0/10"), and omit the Pain bullet entirely when both pain scores are null. If \`overallPainTrend\` is "stable" or "worsened", render \`latestVitals\` pain directly without the -2 delta. Use brackets for any other missing vital.
 Reference: "• BP: 122/78 mmHg\\n• HR: 74 bpm\\n• RR: 15 breaths/min\\n• Temp: 98.1°F\\n• SpO₂: 98% on room air\\n• Pain: 1/10"
 
 3. objective_general (~2-3 sentences):

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -829,6 +804,8 @@ export type Database = {
         Row: {
           ai_model: string | null
           assessment: string | null
+          bp_diastolic: number | null
+          bp_systolic: number | null
           case_id: string
           clinician_disclaimer: string | null
           created_at: string
@@ -840,19 +817,25 @@ export type Database = {
           finalized_by_user_id: string | null
           generation_attempts: number
           generation_error: string | null
+          heart_rate: number | null
           id: string
           objective_cervical: string | null
           objective_general: string | null
           objective_lumbar: string | null
           objective_neurological: string | null
           objective_vitals: string | null
+          pain_score_max: number | null
+          pain_score_min: number | null
           patient_education: string | null
           plan_and_recommendations: string | null
           prognosis: string | null
           raw_ai_response: Json | null
+          respiratory_rate: number | null
           source_data_hash: string | null
+          spo2_percent: number | null
           status: string
           subjective: string | null
+          temperature_f: number | null
           updated_at: string
           updated_by_user_id: string | null
           visit_date: string | null
@@ -860,6 +843,8 @@ export type Database = {
         Insert: {
           ai_model?: string | null
           assessment?: string | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
           case_id: string
           clinician_disclaimer?: string | null
           created_at?: string
@@ -871,19 +856,25 @@ export type Database = {
           finalized_by_user_id?: string | null
           generation_attempts?: number
           generation_error?: string | null
+          heart_rate?: number | null
           id?: string
           objective_cervical?: string | null
           objective_general?: string | null
           objective_lumbar?: string | null
           objective_neurological?: string | null
           objective_vitals?: string | null
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           patient_education?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
+          respiratory_rate?: number | null
           source_data_hash?: string | null
+          spo2_percent?: number | null
           status?: string
           subjective?: string | null
+          temperature_f?: number | null
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
@@ -891,6 +882,8 @@ export type Database = {
         Update: {
           ai_model?: string | null
           assessment?: string | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
           case_id?: string
           clinician_disclaimer?: string | null
           created_at?: string
@@ -902,19 +895,25 @@ export type Database = {
           finalized_by_user_id?: string | null
           generation_attempts?: number
           generation_error?: string | null
+          heart_rate?: number | null
           id?: string
           objective_cervical?: string | null
           objective_general?: string | null
           objective_lumbar?: string | null
           objective_neurological?: string | null
           objective_vitals?: string | null
+          pain_score_max?: number | null
+          pain_score_min?: number | null
           patient_education?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null
           raw_ai_response?: Json | null
+          respiratory_rate?: number | null
           source_data_hash?: string | null
+          spo2_percent?: number | null
           status?: string
           subjective?: string | null
+          temperature_f?: number | null
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
@@ -2871,9 +2870,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

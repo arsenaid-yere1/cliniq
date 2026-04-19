@@ -10,8 +10,10 @@ import {
 } from '@/lib/claude/generate-discharge-note'
 import {
   dischargeNoteEditSchema,
+  dischargeNoteVitalsSchema,
   type DischargeNoteEditValues,
   type DischargeNoteSection,
+  type DischargeNoteVitalsValues,
 } from '@/lib/validations/discharge-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
@@ -30,6 +32,7 @@ async function gatherDischargeNoteSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   visitDate: string,
+  dischargeVitals: DischargeNoteInputData['dischargeVitals'] = null,
 ): Promise<{ data: DischargeNoteInputData | null; error: string | null }> {
   const [
     caseRes,
@@ -236,6 +239,7 @@ async function gatherDischargeNoteSourceData(
       visitDate,
       procedures,
       latestVitals,
+      dischargeVitals,
       baselinePain,
       initialVisitBaseline,
       overallPainTrend,
@@ -349,19 +353,37 @@ export async function generateDischargeNote(caseId: string) {
     return { error: prereq.data.reason }
   }
 
-  // Look up existing active discharge note to preserve visit_date on regeneration
+  // Look up existing active discharge note to preserve visit_date and
+  // provider-entered vitals across regeneration.
   const { data: existingNote } = await supabase
     .from('discharge_notes')
-    .select('id, visit_date')
+    .select('id, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
 
   const today = new Date().toISOString().slice(0, 10)
   const visitDate = existingNote?.visit_date ?? today
+  const preservedVitals: DischargeNoteInputData['dischargeVitals'] = existingNote
+    ? {
+        bp_systolic: existingNote.bp_systolic,
+        bp_diastolic: existingNote.bp_diastolic,
+        heart_rate: existingNote.heart_rate,
+        respiratory_rate: existingNote.respiratory_rate,
+        temperature_f: existingNote.temperature_f,
+        spo2_percent: existingNote.spo2_percent,
+        pain_score_min: existingNote.pain_score_min,
+        pain_score_max: existingNote.pain_score_max,
+      }
+    : null
 
   // Gather source data
-  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId, visitDate)
+  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(
+    supabase,
+    caseId,
+    visitDate,
+    preservedVitals,
+  )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   // Soft-delete existing discharge note for this case
@@ -371,7 +393,8 @@ export async function generateDischargeNote(caseId: string) {
     .eq('case_id', caseId)
     .is('deleted_at', null)
 
-  // Insert generating record
+  // Insert generating record — carry forward preserved vitals so the provider's
+  // entries survive regeneration.
   const sourceHash = computeSourceHash(inputData)
   const { data: record, error: insertError } = await supabase
     .from('discharge_notes')
@@ -381,6 +404,14 @@ export async function generateDischargeNote(caseId: string) {
       generation_attempts: 1,
       source_data_hash: sourceHash,
       visit_date: visitDate,
+      bp_systolic: preservedVitals?.bp_systolic ?? null,
+      bp_diastolic: preservedVitals?.bp_diastolic ?? null,
+      heart_rate: preservedVitals?.heart_rate ?? null,
+      respiratory_rate: preservedVitals?.respiratory_rate ?? null,
+      temperature_f: preservedVitals?.temperature_f ?? null,
+      spo2_percent: preservedVitals?.spo2_percent ?? null,
+      pain_score_min: preservedVitals?.pain_score_min ?? null,
+      pain_score_max: preservedVitals?.pain_score_max ?? null,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -718,6 +749,76 @@ export async function resetDischargeNote(caseId: string) {
     .eq('id', note.id)
 
   if (error) return { error: 'Failed to reset note' }
+
+  revalidatePath(`/patients/${caseId}/discharge`)
+  return { data: { success: true } }
+}
+
+// --- Discharge-visit vital signs ---
+
+export async function getDischargeVitals(caseId: string): Promise<{
+  data?: DischargeNoteVitalsValues | null
+  error?: string
+}> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data, error } = await supabase
+    .from('discharge_notes')
+    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (error) return { error: 'Failed to fetch vitals' }
+  return { data: data ?? null }
+}
+
+export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteVitalsValues) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const validated = dischargeNoteVitalsSchema.safeParse(vitals)
+  if (!validated.success) return { error: 'Invalid vitals data' }
+
+  // Upsert pattern: update the active discharge_notes row if one exists,
+  // otherwise create a pre-generation draft row holding only these vitals.
+  const { data: existing } = await supabase
+    .from('discharge_notes')
+    .select('id, status')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    if (existing.status === 'finalized') {
+      return { error: 'Cannot edit vitals on a finalized note' }
+    }
+    const { error } = await supabase
+      .from('discharge_notes')
+      .update({
+        ...validated.data,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existing.id)
+    if (error) return { error: 'Failed to save vitals' }
+  } else {
+    const { error } = await supabase
+      .from('discharge_notes')
+      .insert({
+        case_id: caseId,
+        status: 'draft',
+        ...validated.data,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+    if (error) return { error: 'Failed to save vitals' }
+  }
 
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { success: true } }

@@ -71,3 +71,21 @@ export const dischargeNoteEditSchema = z.object({
 })
 
 export type DischargeNoteEditValues = z.infer<typeof dischargeNoteEditSchema>
+
+// Discharge-visit vital signs — provider-entered at the discharge follow-up
+// encounter (a separate visit after the final PRP injection). When non-null,
+// these are used verbatim by the generator for the objective_vitals bullets
+// and as the endpoint of the pain trajectory, overriding the default
+// "last procedure pain_score_max - 2" rule.
+export const dischargeNoteVitalsSchema = z.object({
+  bp_systolic: z.number().int().min(1).max(300).nullable(),
+  bp_diastolic: z.number().int().min(1).max(200).nullable(),
+  heart_rate: z.number().int().min(1).max(300).nullable(),
+  respiratory_rate: z.number().int().min(1).max(60).nullable(),
+  temperature_f: z.number().min(90).max(110).nullable(),
+  spo2_percent: z.number().int().min(0).max(100).nullable(),
+  pain_score_min: z.number().int().min(0).max(10).nullable(),
+  pain_score_max: z.number().int().min(0).max(10).nullable(),
+})
+
+export type DischargeNoteVitalsValues = z.infer<typeof dischargeNoteVitalsSchema>
