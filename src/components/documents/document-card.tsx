@@ -80,6 +80,7 @@ function buildDocumentCardFilename(doc: {
   mime_type: string | null
   created_at: string
   content_date: string | null
+  procedure_number: number | null
 }, lastName: string | null): string {
   const extension = (() => {
     const match = doc.file_name.match(/\.([a-zA-Z0-9]+)$/)
@@ -92,7 +93,10 @@ function buildDocumentCardFilename(doc: {
 
   if (doc.document_type === 'generated') {
     const mapped = generatedFileNameLabels[doc.file_name] ?? 'Generated'
-    return buildDownloadFilename({ lastName, docType: mapped, date, extension })
+    const docType = mapped === 'ProcedureNote' && doc.procedure_number != null
+      ? `ProcedureNote${doc.procedure_number}`
+      : mapped
+    return buildDownloadFilename({ lastName, docType, date, extension })
   }
 
   const mappedDocType = docTypeFilenameLabels[doc.document_type]
@@ -117,6 +121,7 @@ interface DocumentCardProps {
     status: string
     created_at: string
     content_date: string | null
+    procedure_number: number | null
     notes: string | null
     uploaded_by: { full_name: string } | null
   }

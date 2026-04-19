@@ -41,6 +41,7 @@ interface Document {
   status: string
   created_at: string
   content_date: string | null
+  procedure_number: number | null
   notes: string | null
   uploaded_by: { full_name: string } | null
 }

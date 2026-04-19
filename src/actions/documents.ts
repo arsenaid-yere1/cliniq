@@ -41,17 +41,18 @@ export async function listDocuments(caseId: string, filters?: {
     .map((r) => r.id)
 
   if (generatedIds.length === 0) {
-    return { data: rows.map((r) => ({ ...r, content_date: null })) }
+    return { data: rows.map((r) => ({ ...r, content_date: null, procedure_number: null })) }
   }
 
   const [dischargeRes, initialVisitRes, procedureNoteRes, clinicalOrderRes] = await Promise.all([
     supabase.from('discharge_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('initial_visit_notes').select('document_id, visit_date').in('document_id', generatedIds),
-    supabase.from('procedure_notes').select('document_id, procedure:procedures(procedure_date)').in('document_id', generatedIds),
+    supabase.from('procedure_notes').select('document_id, procedure:procedures(procedure_date, procedure_number)').in('document_id', generatedIds),
     supabase.from('clinical_orders').select('document_id').in('document_id', generatedIds),
   ])
 
   const contentDateByDocId = new Map<string, string>()
+  const procedureNumberByDocId = new Map<string, number>()
   for (const r of dischargeRes.data ?? []) {
     if (r.document_id && r.visit_date) contentDateByDocId.set(r.document_id, r.visit_date)
   }
@@ -59,9 +60,13 @@ export async function listDocuments(caseId: string, filters?: {
     if (r.document_id && r.visit_date) contentDateByDocId.set(r.document_id, r.visit_date)
   }
   for (const r of procedureNoteRes.data ?? []) {
-    const procRaw = r.procedure as unknown as { procedure_date: string | null } | { procedure_date: string | null }[] | null
+    const procRaw = r.procedure as unknown as
+      | { procedure_date: string | null; procedure_number: number | null }
+      | { procedure_date: string | null; procedure_number: number | null }[]
+      | null
     const proc = Array.isArray(procRaw) ? procRaw[0] ?? null : procRaw
     if (r.document_id && proc?.procedure_date) contentDateByDocId.set(r.document_id, proc.procedure_date)
+    if (r.document_id && proc?.procedure_number != null) procedureNumberByDocId.set(r.document_id, proc.procedure_number)
   }
   // clinical_orders has no content-date column; leave to fall back to created_at in the UI
   void clinicalOrderRes
@@ -70,6 +75,7 @@ export async function listDocuments(caseId: string, filters?: {
     data: rows.map((r) => ({
       ...r,
       content_date: contentDateByDocId.get(r.id) ?? null,
+      procedure_number: procedureNumberByDocId.get(r.id) ?? null,
     })),
   }
 }
