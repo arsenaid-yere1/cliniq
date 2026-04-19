@@ -263,13 +263,13 @@ Note the shift from `expect.objectContaining(...)` to an exact-match object — 
 - [x] The updated client tests pass in isolation: `npm test -- src/lib/claude/__tests__/client.test.ts` — 23/23 passed
 
 #### Manual Verification:
-- [ ] Start the dev server (`npm run dev`), open a test case, and generate a discharge note end-to-end. Confirm the note saves and the UI shows the draft.
-- [ ] Regenerate one section of that discharge note twice in a row. Compare the two outputs — confirm the "copy-paste effect" has diminished (i.e. the second regeneration produces visibly different phrasing, not a near-verbatim repeat of the first).
-- [ ] Trigger an initial-visit note generation on a different case; confirm it works and the wording is not copy-paste-similar to a prior generation on the same patient data.
-- [ ] Trigger a case-summary generation (still uses `thinking: adaptive`); confirm it completes and the output is coherent.
-- [ ] Trigger one PDF extraction (e.g. MRI upload) and confirm it still extracts correctly.
-- [ ] Inspect Vercel logs (or local terminal if running `npm run dev`): confirm the `[claude]` log line shows **only** `{ model, input_tokens, output_tokens }` — no `cache_creation_input_tokens` or `cache_read_input_tokens` keys.
-- [ ] Spot-check: the second generation of the same note type on the same case shows an `input_tokens` count that is **not materially lower** than the first (within ~5%). If it is dramatically lower, caching is still in effect somewhere — investigate.
+- [x] Start the dev server (`npm run dev`), open a test case, and generate a discharge note end-to-end. Confirm the note saves and the UI shows the draft.
+- [x] Regenerate one section of that discharge note twice in a row. Compare the two outputs — confirm the "copy-paste effect" has diminished (i.e. the second regeneration produces visibly different phrasing, not a near-verbatim repeat of the first).
+- [x] Trigger an initial-visit note generation on a different case; confirm it works and the wording is not copy-paste-similar to a prior generation on the same patient data.
+- [x] Trigger a case-summary generation (still uses `thinking: adaptive`); confirm it completes and the output is coherent.
+- [x] Trigger one PDF extraction (e.g. MRI upload) and confirm it still extracts correctly.
+- [x] Inspect Vercel logs (or local terminal if running `npm run dev`): confirm the `[claude]` log line shows **only** `{ model, input_tokens, output_tokens }` — no `cache_creation_input_tokens` or `cache_read_input_tokens` keys.
+- [x] Spot-check: the second generation of the same note type on the same case shows an `input_tokens` count that is **not materially lower** than the first (within ~5%). If it is dramatically lower, caching is still in effect somewhere — investigate.
 
 ---
 
