@@ -143,7 +143,11 @@ export async function getInvoiceFormData(caseId: string) {
 
   const providerProfile = providerProfileResult.data
 
-  // Derive diagnoses: prefer structured from procedures, fall back to initial visit text
+  // Derive diagnoses: prefer structured from procedures. If no procedure has structured
+  // diagnoses AND the case has no discharge note yet (treatment in progress), fall back
+  // to parsing ICD-10 codes from the Initial Visit Note's free-text `diagnoses` field.
+  // Once a discharge note exists, skip the IVN fallback so stale pre-treatment codes
+  // don't silently reappear on post-discharge invoices.
   let diagnoses: Array<{ icd10_code: string | null; description: string }> = []
   const procedures = proceduresResult.data ?? []
   const procedureWithDiagnoses = procedures.find(
@@ -151,6 +155,25 @@ export async function getInvoiceFormData(caseId: string) {
   )
   if (procedureWithDiagnoses) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
+  } else if (!dischargeNoteResult.data) {
+    // Same parsing approach as getCaseDiagnoses() in src/actions/procedures.ts.
+    // Prefer pain_evaluation_visit (imaging-confirmed codes) over initial_visit (clinical impression).
+    const visitNotesForDx = (initialVisitNotesResult.data ?? []) as Array<{
+      visit_type: string
+      diagnoses: string | null
+    }>
+    const preferredIvn =
+      visitNotesForDx.find((r) => r.visit_type === 'pain_evaluation_visit' && r.diagnoses)
+      ?? visitNotesForDx.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
+      ?? null
+    if (preferredIvn?.diagnoses) {
+      for (const line of preferredIvn.diagnoses.split('\n')) {
+        const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
+        if (match) {
+          diagnoses.push({ icd10_code: match[1].trim(), description: match[2].trim() })
+        }
+      }
+    }
   }
 
   // Derive indication: use formatReasonForVisit() — same medical-legal etiology phrase
