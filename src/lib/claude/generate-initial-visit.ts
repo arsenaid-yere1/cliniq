@@ -141,10 +141,9 @@ const INITIAL_VISIT_SECTIONS = `
 === VISIT TYPE: INITIAL VISIT ===
 This patient is presenting for their INITIAL clinical evaluation following a personal injury event. There are NO prior medical records, NO prior imaging results, and NO prior treatment history (other than self-treatment with OTC medications). Generate the note accordingly — do NOT assume any prior clinical encounters exist.
 
-2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
+2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences. Use providerIntake.accident_details if available.
-Para 2: "The patient sought medical attention following the collision." (one sentence only)
-Para 3: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in daily activities, including self-care."
+Para 2: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in daily activities, including self-care."
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
 3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
@@ -235,10 +234,9 @@ If priorVisitData is provided in the source data, it contains the finalized Init
 
 If priorVisitData is null (no prior Initial Visit exists on this case), generate the Pain Evaluation Visit note without any interval-comparison language — it is a standalone evaluation.
 
-2. HISTORY OF THE ACCIDENT (~3 short paragraphs):
+2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
-Para 2: "The patient sought medical attention following the collision." (one sentence only — treatment details belong in Post-Accident History)
-Para 3: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
+Para 2: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
 3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
