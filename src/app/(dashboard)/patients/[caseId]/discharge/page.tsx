@@ -64,6 +64,40 @@ export default async function DischargePage({
     documentFilePath = docRow?.file_path ?? null
   }
 
+  // Default discharge vitals = latest procedure's vital_signs row.
+  // Used to pre-fill the pre-generation vitals card the first time the
+  // provider visits, so the discharge reading carries forward from the
+  // final injection instead of starting blank.
+  const { data: latestProcedure } = await supabase
+    .from('procedures')
+    .select('id')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .order('procedure_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let defaultVitals: {
+    bp_systolic: number | null
+    bp_diastolic: number | null
+    heart_rate: number | null
+    respiratory_rate: number | null
+    temperature_f: number | null
+    spo2_percent: number | null
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null = null
+
+  if (latestProcedure) {
+    const { data: latestVitalsRow } = await supabase
+      .from('vital_signs')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+      .eq('procedure_id', latestProcedure.id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    defaultVitals = latestVitalsRow ?? null
+  }
+
   return (
     <DischargeNoteEditor
       caseId={caseId}
@@ -76,6 +110,7 @@ export default async function DischargePage({
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
       documentFilePath={documentFilePath}
+      defaultVitals={defaultVitals}
     />
   )
 }

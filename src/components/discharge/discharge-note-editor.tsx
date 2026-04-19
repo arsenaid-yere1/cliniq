@@ -116,6 +116,17 @@ interface CaseData {
   }
 }
 
+interface DefaultVitals {
+  bp_systolic: number | null
+  bp_diastolic: number | null
+  heart_rate: number | null
+  respiratory_rate: number | null
+  temperature_f: number | null
+  spo2_percent: number | null
+  pain_score_min: number | null
+  pain_score_max: number | null
+}
+
 interface DischargeNoteEditorProps {
   caseId: string
   note: NoteRow | null
@@ -127,6 +138,7 @@ interface DischargeNoteEditorProps {
   providerSignatureUrl: string | null
   caseData: CaseData | null
   documentFilePath: string | null
+  defaultVitals: DefaultVitals | null
 }
 
 // Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
@@ -166,6 +178,7 @@ export function DischargeNoteEditor({
   providerSignatureUrl,
   caseData,
   documentFilePath,
+  defaultVitals,
 }: DischargeNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
@@ -181,7 +194,7 @@ export function DischargeNoteEditor({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Discharge Summary</h1>
 
-        <DischargeVitalsCard caseId={caseId} note={note} isLocked={isLocked} />
+        <DischargeVitalsCard caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
 
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -723,23 +736,27 @@ function DischargeVitalsCard({
   caseId,
   note,
   isLocked,
+  defaultVitals,
 }: {
   caseId: string
   note: NoteRow | null
   isLocked: boolean
+  defaultVitals: DefaultVitals | null
 }) {
   const [isSaving, startSaving] = useTransition()
+  // Seed precedence: note row (provider-entered) > defaultVitals (last
+  // procedure's reading, carried forward) > null.
   const vitalsForm = useForm<DischargeNoteVitalsValues>({
     resolver: zodResolver(dischargeNoteVitalsSchema),
     defaultValues: {
-      bp_systolic: note?.bp_systolic ?? null,
-      bp_diastolic: note?.bp_diastolic ?? null,
-      heart_rate: note?.heart_rate ?? null,
-      respiratory_rate: note?.respiratory_rate ?? null,
-      temperature_f: note?.temperature_f ?? null,
-      spo2_percent: note?.spo2_percent ?? null,
-      pain_score_min: note?.pain_score_min ?? null,
-      pain_score_max: note?.pain_score_max ?? null,
+      bp_systolic: note?.bp_systolic ?? defaultVitals?.bp_systolic ?? null,
+      bp_diastolic: note?.bp_diastolic ?? defaultVitals?.bp_diastolic ?? null,
+      heart_rate: note?.heart_rate ?? defaultVitals?.heart_rate ?? null,
+      respiratory_rate: note?.respiratory_rate ?? defaultVitals?.respiratory_rate ?? null,
+      temperature_f: note?.temperature_f ?? defaultVitals?.temperature_f ?? null,
+      spo2_percent: note?.spo2_percent ?? defaultVitals?.spo2_percent ?? null,
+      pain_score_min: note?.pain_score_min ?? defaultVitals?.pain_score_min ?? null,
+      pain_score_max: note?.pain_score_max ?? defaultVitals?.pain_score_max ?? null,
     },
   })
 
