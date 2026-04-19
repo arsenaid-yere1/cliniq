@@ -595,8 +595,14 @@ function FinalizedView({
                   date: procedureInfo.procedure_date,
                 })
                 const result = await getDocumentDownloadUrl(documentFilePath, filename)
-                if (result.url) window.open(result.url, '_blank')
-                else toast.error('Failed to get download URL')
+                if (result.url) {
+                  const a = document.createElement('a')
+                  a.href = result.url
+                  a.download = filename
+                  document.body.appendChild(a)
+                  a.click()
+                  a.remove()
+                } else toast.error('Failed to get download URL')
               }}
             >
               <Download className="h-4 w-4 mr-2" />
