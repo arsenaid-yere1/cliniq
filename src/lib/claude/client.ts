@@ -47,17 +47,6 @@ export async function callClaudeTool<TOutput>(
 ): Promise<CallClaudeToolResult<TOutput>> {
   const client = opts._client ?? anthropic
 
-  // Render order is tools → system → messages. Two breakpoints (last tool +
-  // system text block) cache the entire stable prefix.
-  const cachedTools: Anthropic.Tool[] = opts.tools.map((t, i) =>
-    i === opts.tools.length - 1
-      ? { ...t, cache_control: { type: 'ephemeral' } }
-      : t,
-  )
-  const cachedSystem: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } },
-  ]
-
   let zodAttempt = 0
   let lastRaw: unknown
 
@@ -72,8 +61,8 @@ export async function callClaudeTool<TOutput>(
           model: opts.model,
           max_tokens: opts.maxTokens,
           ...(opts.thinking ? { thinking: opts.thinking } : {}),
-          system: cachedSystem,
-          tools: cachedTools,
+          system: opts.system,
+          tools: opts.tools,
           tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
           messages: opts.messages,
         })
@@ -148,17 +137,14 @@ function sleep(ms: number) {
 }
 
 // LOGGING: emits one `[claude]` line per API call with token usage.
-// Format: `{ model, input_tokens, output_tokens, cache_creation_input_tokens,
-// cache_read_input_tokens }`. Consumed by Vercel logs during the caching
-// warm-up period. Replacement with structured Sentry/pino logging is tracked
-// in the architecture-improvements plan §3 (observability).
+// Format: `{ model, input_tokens, output_tokens }`. Consumed by Vercel
+// logs. Replacement with structured Sentry/pino logging is tracked in the
+// architecture-improvements plan §3 (observability).
 function logUsage(model: string, usage: Anthropic.Messages.Usage) {
   // eslint-disable-next-line no-console
   console.info('[claude]', {
     model,
     input_tokens: usage.input_tokens,
     output_tokens: usage.output_tokens,
-    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
   })
 }

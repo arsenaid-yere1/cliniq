@@ -41,7 +41,7 @@ describe('callClaudeTool', () => {
     vi.useRealTimers()
   })
 
-  it('applies cache_control to the last tool and to the system text block', async () => {
+  it('does not apply cache_control and passes system as a plain string', async () => {
     const stub = createMockAnthropic()
     stub._create.mockResolvedValue(mockToolUseResponse({ toolName: 't2', input: { value: 'ok' } }))
 
@@ -49,13 +49,8 @@ describe('callClaudeTool', () => {
 
     const call = stub._create.mock.calls[0][0]
     expect(call.tools[0].cache_control).toBeUndefined()
-    expect(call.tools[1].cache_control).toEqual({ type: 'ephemeral' })
-    expect(Array.isArray(call.system)).toBe(true)
-    expect(call.system[0]).toMatchObject({
-      type: 'text',
-      text: 'You are a test system prompt.',
-      cache_control: { type: 'ephemeral' },
-    })
+    expect(call.tools[1].cache_control).toBeUndefined()
+    expect(call.system).toBe('You are a test system prompt.')
   })
 
   it('returns {data} on success when parse succeeds first try', async () => {
@@ -170,17 +165,16 @@ describe('callClaudeTool', () => {
     stub._create.mockResolvedValue(mockToolUseResponse({
       toolName: 't2',
       input: { value: 'ok' },
-      usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 100 },
+      usage: { input_tokens: 10, output_tokens: 20 },
     }))
 
     await callClaudeTool({ ...baseOpts(), _client: stub })
 
-    expect(consoleInfoSpy).toHaveBeenCalledWith('[claude]', expect.objectContaining({
+    expect(consoleInfoSpy).toHaveBeenCalledWith('[claude]', {
       model: 'claude-sonnet-4-6',
       input_tokens: 10,
       output_tokens: 20,
-      cache_read_input_tokens: 100,
-    }))
+    })
   })
 
   it('returns error when response has no tool_use block', async () => {
