@@ -219,7 +219,6 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     '[confirm blood draw volume]',
     '[confirm centrifuge duration]',
     '[confirm exact PRP preparation system]',
-    '[confirm kit lot number]',
     '[confirm anesthetic agent]',
     '[confirm anesthetic dose in mL]',
     '[confirm guidance method]',
@@ -228,6 +227,14 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
   ])('includes the "%s" placeholder token in the system prompt', async (token) => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain(token)
+  })
+  it('does NOT emit a "[confirm kit lot number]" placeholder (kit/lot must be omitted, not bracketed, when null)', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).not.toContain('[confirm kit lot number]')
+  })
+  it('instructs the model to omit kit/lot references entirely when kit_lot_number is null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/kit_lot_number null\s*→\s*omit any kit \/ lot number reference entirely/)
   })
   it('includes the DATA-NULL RULE header in procedure_prp_prep, procedure_anesthesia, and procedure_injection', async () => {
     const system = await capturePrompt(emptyInput)

@@ -246,7 +246,7 @@ DATA-NULL RULE (MANDATORY): When a prep field is null on the input payload, emit
 • procedureRecord.blood_draw_volume_ml null → "[confirm blood draw volume]"
 • procedureRecord.centrifuge_duration_min null → "[confirm centrifuge duration]"
 • procedureRecord.prep_protocol null → "[confirm exact PRP preparation system]"
-• procedureRecord.kit_lot_number null → "[confirm kit lot number]"
+• procedureRecord.kit_lot_number null → omit any kit / lot number reference entirely. Do NOT emit a bracket placeholder for the kit lot number, and do NOT mention a kit, lot, batch, or serial number at all. Only describe a kit / lot when the field is non-null.
 Write the sentence normally using the non-null values; only substitute the bracket token where the underlying field is null. Do NOT invent a numeric volume, a duration in minutes, or a kit lot number.
 
 Reference: "Approximately 30 mL of venous blood was drawn from the patient's left arm using sterile technique. The sample was processed with a [confirm exact PRP preparation system] centrifuge for 15 minutes to separate platelet-rich plasma. The PRP was drawn into a sterile syringe for injection."

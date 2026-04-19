@@ -197,7 +197,7 @@ DATA-NULL RULE (MANDATORY): When a prep field is null on the input payload, emit
 • procedureRecord.blood_draw_volume_ml null → "[confirm blood draw volume]"
 • procedureRecord.centrifuge_duration_min null → "[confirm centrifuge duration]"
 • procedureRecord.prep_protocol null → "[confirm exact PRP preparation system]"
-• procedureRecord.kit_lot_number null → "[confirm kit lot number]"
+• procedureRecord.kit_lot_number null → omit any kit / lot number reference entirely. Do NOT emit a bracket placeholder for the kit lot number, and do NOT mention a kit, lot, batch, or serial number at all. Only describe a kit / lot when the field is non-null.
 Write the sentence normally using the non-null values; only substitute the bracket token where the underlying field is null. Do NOT invent a numeric volume, a duration in minutes, or a kit lot number.
 ```
 
@@ -230,12 +230,15 @@ DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null
 #### Automated Verification
 
 - [ ] Type checking passes: `npx tsc --noEmit`
-- [ ] Prompt-regression tests (added in Phase 6) assert each of the 10 bracket tokens appears literally in the captured system prompt
+- [ ] Prompt-regression tests (added in Phase 6) assert each of the 9 bracket tokens appears literally in the captured system prompt (kit lot number is intentionally omitted, not bracketed)
+- [ ] Prompt-regression test asserts the system prompt does NOT contain the literal string `[confirm kit lot number]`
 - [ ] Existing procedure-note tests pass
 
 #### Manual Verification
 
 - [ ] Build an `emptyInput` procedure (all prep fields null) and generate → `procedure_prp_prep` output contains `[confirm exact PRP preparation system]` and `[confirm blood draw volume]`, not fabricated numeric volumes
+- [ ] Same `emptyInput` run → `procedure_prp_prep` output does NOT contain the words "kit", "lot", "batch", or "serial" anywhere, and does NOT contain the literal string `[confirm kit lot number]`
+- [ ] Generate a note with `kit_lot_number = 'LOT-2026-001'` and other prep fields populated → `procedure_prp_prep` output mentions the lot number naturally (e.g. "lot LOT-2026-001"), confirming the omission is conditional on null only
 - [ ] Generate a note with `guidance_method = 'ultrasound'` and `injection_volume_ml = null` → output mentions ultrasound guidance (real data) but uses `[confirm site-specific injectate distribution]` in place of a volume
 - [ ] Provider regenerates `procedure_anesthesia` section with `anesthetic_agent = null` → output emits `[confirm anesthetic agent]` bracket rather than defaulting to "1% lidocaine"
 - [ ] When all fields ARE populated, output contains zero `[confirm ...]` brackets (directive is purely conditional)
@@ -431,7 +434,6 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     '[confirm blood draw volume]',
     '[confirm centrifuge duration]',
     '[confirm exact PRP preparation system]',
-    '[confirm kit lot number]',
     '[confirm anesthetic agent]',
     '[confirm anesthetic dose in mL]',
     '[confirm guidance method]',
@@ -440,6 +442,14 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
   ])('includes the "%s" placeholder token in the system prompt', async (token) => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain(token)
+  })
+  it('does NOT emit a "[confirm kit lot number]" placeholder (kit/lot must be omitted, not bracketed, when null)', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).not.toContain('[confirm kit lot number]')
+  })
+  it('instructs the model to omit kit/lot references entirely when kit_lot_number is null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/kit_lot_number null\s*→\s*omit any kit \/ lot number reference entirely/)
   })
   it('includes the DATA-NULL RULE header in procedure_prp_prep, procedure_anesthesia, and procedure_injection', async () => {
     const system = await capturePrompt(emptyInput)
