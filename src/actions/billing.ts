@@ -294,6 +294,18 @@ export async function getInvoiceFormData(caseId: string) {
     })
   }
 
+  // Default invoice date: discharge visit → initial visit → null (dialog falls back to today).
+  // Picks the earliest initial_visit_notes row (ordered ascending above) so we land on the
+  // initial_visit rather than a later pain_evaluation_visit.
+  const dischargeData = dischargeNoteResult.data as { visit_date?: string | null; created_at?: string | null } | null
+  const firstVisitNote = (initialVisitNotesResult.data ?? [])[0] as { visit_date?: string | null; created_at?: string | null } | undefined
+  const dischargeDate =
+    dischargeData?.visit_date
+    ?? dischargeData?.created_at?.split('T')[0]
+    ?? firstVisitNote?.visit_date
+    ?? firstVisitNote?.created_at?.split('T')[0]
+    ?? null
+
   return {
     data: {
       caseData: caseResult.data,
@@ -302,6 +314,7 @@ export async function getInvoiceFormData(caseId: string) {
       providerProfile,
       diagnoses,
       indication,
+      dischargeDate,
       prePopulatedLineItems,
       facilityLineItems,
       catalogItems: catalogItems ?? [],

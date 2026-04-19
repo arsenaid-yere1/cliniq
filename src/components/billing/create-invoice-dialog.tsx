@@ -64,6 +64,7 @@ interface InvoiceFormData {
   } | null
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
+  dischargeDate: string | null
   prePopulatedLineItems: InvoiceLineItemFormValues[]
   facilityLineItems: InvoiceLineItemFormValues[]
   catalogItems: Array<{
@@ -148,7 +149,7 @@ export function CreateInvoiceDialog({
       }
     : {
         invoice_type: 'visit',
-        invoice_date: format(new Date(), 'yyyy-MM-dd'),
+        invoice_date: formData.dischargeDate ?? format(new Date(), 'yyyy-MM-dd'),
         claim_type: 'Personal Injury',
         indication: formData.indication,
         diagnoses_snapshot: formData.diagnoses,

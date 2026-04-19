@@ -58,6 +58,7 @@ interface InvoiceFormData {
   } | null
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
+  dischargeDate: string | null
   prePopulatedLineItems: InvoiceLineItemFormValues[]
   facilityLineItems: InvoiceLineItemFormValues[]
   catalogItems: Array<{

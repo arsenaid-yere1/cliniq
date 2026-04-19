@@ -122,6 +122,7 @@ interface InvoiceFormData {
   providerProfile: ProviderProfileData | null
   diagnoses: Array<{ icd10_code: string | null; description: string }>
   indication: string
+  dischargeDate: string | null
   prePopulatedLineItems: InvoiceLineItemFormValues[]
   facilityLineItems: InvoiceLineItemFormValues[]
   catalogItems: Array<{
@@ -250,6 +251,7 @@ export function InvoiceDetailClient({
     providerProfile,
     diagnoses: invoice.diagnoses_snapshot ?? [],
     indication: invoice.indication ?? '',
+    dischargeDate: null,
     prePopulatedLineItems: [],
     facilityLineItems: [],
     catalogItems,
