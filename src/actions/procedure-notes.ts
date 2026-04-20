@@ -214,57 +214,66 @@ async function gatherProcedureNoteSourceData(
   // the true pre-treatment anchor; using it lets the first procedure's note
   // narrate "intake 8/10 → today 6/10" instead of defaulting to baseline
   // framing.
-  const baselineProcedure = priorProcedureRows.length > 0 ? priorProcedureRows[0] : null
-  const baselineVitals = baselineProcedure ? priorVitalsByProcedureId.get(baselineProcedure.id) : undefined
+  // Anchor selection skips priors with null pain_score_max and uses the next
+  // valid candidate in the correct direction. Without this, a single missing
+  // vitals row on the oldest or newest prior procedure forces the entire
+  // baseline or per-session comparison into 'missing_vitals' even when other
+  // priors have valid pain. 'missing_vitals' only fires when ALL priors lack
+  // pain AND there's no intake-pain fallback.
+  //
+  // vsBaseline picks the earliest prior with non-null pain_score_max; falls
+  // back to intakePain when no prior has pain; falls back to 'no_prior' when
+  // nothing is recorded anywhere.
+  // vsPrevious picks the most recent prior with non-null pain_score_max.
   const intakePainMax = intakeVitalsRes.data?.pain_score_max ?? null
-  const baselineContext: PainToneContext =
-    baselineProcedure != null
-      ? baselineVitals?.pain_score_max == null
-        ? 'prior_missing_vitals'
-        : 'prior_with_vitals'
-      : intakePainMax != null
-        ? 'prior_with_vitals'
-        : 'no_prior'
-  if (baselineContext === 'prior_missing_vitals') {
-    console.warn('[pain-tone] baseline anchor missing vitals', {
+
+  const firstValidPriorForBaseline = priorProcedureRows.find(
+    (p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max != null,
+  ) ?? null
+  let baselinePainMax: number | null = null
+  let baselineContext: PainToneContext
+  if (firstValidPriorForBaseline) {
+    baselinePainMax = priorVitalsByProcedureId.get(firstValidPriorForBaseline.id)?.pain_score_max ?? null
+    baselineContext = 'prior_with_vitals'
+  } else if (priorProcedureRows.length > 0) {
+    baselineContext = 'prior_missing_vitals'
+    console.warn('[pain-tone] all prior procedures missing pain_score_max (baseline)', {
       caseId,
       procedureId,
-      baselineProcedureId: baselineProcedure!.id,
+      priorProcedureCount: priorProcedureRows.length,
     })
+  } else if (intakePainMax != null) {
+    baselinePainMax = intakePainMax
+    baselineContext = 'prior_with_vitals'
+  } else {
+    baselineContext = 'no_prior'
   }
-  const baselinePainMax = baselineProcedure
-    ? (baselineVitals?.pain_score_max ?? null)
-    : intakePainMax
   const paintoneVsBaseline = computePainToneLabel(
     vitalsRes.data?.pain_score_max ?? null,
     baselinePainMax,
     baselineContext,
   )
 
-  const previousProcedure = priorProcedureRows.length > 0
-    ? priorProcedureRows[priorProcedureRows.length - 1]
-    : null
-  const previousVitals = previousProcedure ? priorVitalsByProcedureId.get(previousProcedure.id) : undefined
-  const previousContext: PainToneContext =
-    previousProcedure == null
-      ? 'no_prior'
-      : previousVitals?.pain_score_max == null
-        ? 'prior_missing_vitals'
-        : 'prior_with_vitals'
-  if (previousContext === 'prior_missing_vitals') {
-    console.warn('[pain-tone] previous anchor missing vitals', {
+  const mostRecentValidPriorForPrevious = [...priorProcedureRows].reverse().find(
+    (p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max != null,
+  ) ?? null
+  let paintoneVsPrevious: ReturnType<typeof computePainToneLabel> | null
+  if (priorProcedureRows.length === 0) {
+    paintoneVsPrevious = null
+  } else if (mostRecentValidPriorForPrevious) {
+    paintoneVsPrevious = computePainToneLabel(
+      vitalsRes.data?.pain_score_max ?? null,
+      priorVitalsByProcedureId.get(mostRecentValidPriorForPrevious.id)?.pain_score_max ?? null,
+      'prior_with_vitals',
+    )
+  } else {
+    console.warn('[pain-tone] all prior procedures missing pain_score_max (previous)', {
       caseId,
       procedureId,
-      previousProcedureId: previousProcedure!.id,
+      priorProcedureCount: priorProcedureRows.length,
     })
+    paintoneVsPrevious = computePainToneLabel(null, null, 'prior_missing_vitals')
   }
-  const paintoneVsPrevious = previousProcedure
-    ? computePainToneLabel(
-        vitalsRes.data?.pain_score_max ?? null,
-        previousVitals?.pain_score_max ?? null,
-        previousContext,
-      )
-    : null
 
   return {
     data: {

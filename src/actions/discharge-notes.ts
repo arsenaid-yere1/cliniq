@@ -235,19 +235,35 @@ async function gatherDischargeNoteSourceData(
     })
   }
 
-  const secondToLastProcedure = procRows.length >= 2 ? procRows[procRows.length - 2] : null
-  const secondToLastVitals = secondToLastProcedure ? vitalsByProcedureId.get(secondToLastProcedure.id) : null
-  const previousContext: PainToneContext =
-    secondToLastProcedure == null
-      ? 'no_prior'
-      : secondToLastVitals?.pain_score_max == null
-        ? 'prior_missing_vitals'
-        : 'prior_with_vitals'
-  if (previousContext === 'prior_missing_vitals') {
-    console.warn('[pain-tone] discharge previous anchor missing vitals', {
-      caseId,
-      previousProcedureId: secondToLastProcedure!.id,
-    })
+  // vsPrevious anchor: walk backward from the second-to-last procedure looking
+  // for the most recent prior with non-null pain_score_max. Without this walk,
+  // a single missing vitals row on procedure (N-1) collapses vsPrevious into
+  // 'missing_vitals' even when procedure (N-2), (N-3), etc. have valid pain.
+  // The semantic meaning softens from "penultimate-to-final interval" toward
+  // "most-recent-valid-prior to final interval" — acceptable because no
+  // valid pain ⇒ no meaningful interval either way.
+  let previousProcedureForSignal = null as (typeof procRows)[number] | null
+  let previousPainMax: number | null = null
+  let previousContext: PainToneContext = 'no_prior'
+  if (procRows.length >= 2) {
+    for (let i = procRows.length - 2; i >= 0; i--) {
+      const candidate = procRows[i]
+      const v = vitalsByProcedureId.get(candidate.id)
+      if (v?.pain_score_max != null) {
+        previousProcedureForSignal = candidate
+        previousPainMax = v.pain_score_max
+        previousContext = 'prior_with_vitals'
+        break
+      }
+    }
+    if (previousContext === 'no_prior') {
+      // At least one prior exists but none has pain_score_max.
+      previousContext = 'prior_missing_vitals'
+      console.warn('[pain-tone] discharge previous anchor walk found no valid pain', {
+        caseId,
+        priorCount: procRows.length - 1,
+      })
+    }
   }
 
   const painTrendSignals: DischargeNoteInputData['painTrendSignals'] = {
@@ -256,14 +272,17 @@ async function gatherDischargeNoteSourceData(
       baselinePain?.pain_score_max ?? null,
       baselineContext,
     ),
-    vsPrevious: secondToLastProcedure
+    vsPrevious: procRows.length >= 2
       ? computePainToneLabel(
           latestVitals?.pain_score_max ?? null,
-          secondToLastVitals?.pain_score_max ?? null,
+          previousPainMax,
           previousContext,
         )
       : null,
   }
+  // Mark previousProcedureForSignal as intentionally retained for future
+  // logging/diagnostics; currently unused beyond the walk.
+  void previousProcedureForSignal
 
   // Full-series volatility: detects mid-series regressions that endpoints-only
   // signals miss. procedures[] is in chronological order (ascending) from the
