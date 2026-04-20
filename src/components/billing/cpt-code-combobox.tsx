@@ -30,18 +30,27 @@ export function CptCodeCombobox({
 }: CptCodeComboboxProps) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  // When the modal popover closes, Radix's RemoveScroll layer can leave
-  // `pointer-events: none` on the body, which locks the parent Dialog.
-  // Clear it on close to restore interactivity.
-  // See https://github.com/radix-ui/primitives/issues/2122
+  // Radix Dialog's RemoveScroll intercepts wheel events at the document level
+  // (non-passive), which prevents scrolling inside a nested non-modal Popover.
+  // Using `modal={true}` on the Popover fixes scrolling but leaves the parent
+  // Dialog in a pointer-events-locked state after selection.
+  // Workaround: keep the Popover non-modal (so Dialog stays interactive), and
+  // attach our own non-passive wheel listener that manually scrolls the list
+  // before Radix's document listener can swallow the event.
+  // See: https://github.com/radix-ui/primitives/issues/1159
   useEffect(() => {
-    if (!open) {
-      const t = setTimeout(() => {
-        document.body.style.pointerEvents = ''
-      }, 0)
-      return () => clearTimeout(t)
+    if (!open) return
+    const node = scrollRef.current
+    if (!node) return
+    const handler = (e: WheelEvent) => {
+      e.stopPropagation()
+      node.scrollTop += e.deltaY
+      e.preventDefault()
     }
+    node.addEventListener('wheel', handler, { passive: false })
+    return () => node.removeEventListener('wheel', handler)
   }, [open])
 
   const filtered = catalogItems.filter((item) => {
@@ -54,7 +63,7 @@ export function CptCodeCombobox({
   })
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={true}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
           ref={inputRef}
@@ -74,7 +83,7 @@ export function CptCodeCombobox({
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <div className="max-h-[320px] overflow-y-auto py-1">
+        <div ref={scrollRef} className="max-h-[320px] overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">No matching services</div>
           ) : (
