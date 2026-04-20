@@ -23,8 +23,10 @@ import {
   FormItem,
   FormLabel,
   FormControl,
+  FormDescription,
   FormMessage,
 } from '@/components/ui/form'
+import { VITALS_NORMAL_RANGES } from '@/lib/clinical/vitals-ranges'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -793,6 +795,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.pain_score_min}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -815,6 +818,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.pain_score_max}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -838,6 +842,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.bp_systolic}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -858,6 +863,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.bp_diastolic}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -881,6 +887,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.heart_rate}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -901,6 +908,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.respiratory_rate}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -925,6 +933,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.temperature_f}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -947,6 +956,7 @@ export function RecordProcedureDialog({
                           }
                         />
                       </FormControl>
+                      <FormDescription>{VITALS_NORMAL_RANGES.spo2_percent}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

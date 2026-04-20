@@ -26,11 +26,13 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { VITALS_NORMAL_RANGES } from '@/lib/clinical/vitals-ranges'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1199,6 +1201,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.bp_systolic}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1217,6 +1220,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.bp_diastolic}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1235,6 +1239,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.heart_rate}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1253,6 +1258,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.respiratory_rate}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1272,6 +1278,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.temperature_f}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1292,6 +1299,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.spo2_percent}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1312,6 +1320,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.pain_score_min}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1332,6 +1341,7 @@ function VitalSignsCard({
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
                   </FormControl>
+                  <FormDescription>{VITALS_NORMAL_RANGES.pain_score_max}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
