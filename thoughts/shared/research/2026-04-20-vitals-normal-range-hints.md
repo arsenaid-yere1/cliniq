@@ -6,9 +6,13 @@ branch: main
 repository: cliniq
 topic: "Add Vitals hints to show normal ranges for each parameter"
 tags: [research, codebase, vitals, forms, shadcn-ui, clinical]
-status: complete
+status: verified
 last_updated: 2026-04-20
 last_updated_by: arsenaid
+last_updated_note: "Implemented: label normalization (commit abf77ea) + FormDescription normal-range hints (commit edbe7e3). Verified in browser."
+implementation_commits:
+  - abf77ea  # refactor: Vitals labeling update
+  - edbe7e3  # feat: Vitals normal-range hints under each field
 ---
 
 # Research: Add Vitals hints to show normal ranges for each parameter
