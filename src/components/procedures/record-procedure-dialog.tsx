@@ -934,7 +934,7 @@ export function RecordProcedureDialog({
                   name="vital_signs.spo2_percent"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>SpO2 (%)</FormLabel>
+                      <FormLabel>SpO₂ (%)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"

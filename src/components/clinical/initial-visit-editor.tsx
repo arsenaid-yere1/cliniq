@@ -1262,7 +1262,7 @@ function VitalSignsCard({
               name="temperature_f"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Temperature</FormLabel>
+                  <FormLabel>Temperature (°F)</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
@@ -1281,7 +1281,7 @@ function VitalSignsCard({
               name="spo2_percent"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>SpO2</FormLabel>
+                  <FormLabel>SpO₂ (%)</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
@@ -1301,13 +1301,13 @@ function VitalSignsCard({
               name="pain_score_min"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Pain Score Min</FormLabel>
+                  <FormLabel>Pain Min (0–10)</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
                       min={0}
                       max={10}
-                      placeholder="0-10"
+                      placeholder="—"
                       value={field.value ?? ''}
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
@@ -1321,13 +1321,13 @@ function VitalSignsCard({
               name="pain_score_max"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Pain Score Max</FormLabel>
+                  <FormLabel>Pain Max (0–10)</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
                       min={0}
                       max={10}
-                      placeholder="0-10"
+                      placeholder="—"
                       value={field.value ?? ''}
                       onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
                     />
