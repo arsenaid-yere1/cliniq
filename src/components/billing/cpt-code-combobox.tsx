@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
 
@@ -30,6 +30,19 @@ export function CptCodeCombobox({
 }: CptCodeComboboxProps) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // When the modal popover closes, Radix's RemoveScroll layer can leave
+  // `pointer-events: none` on the body, which locks the parent Dialog.
+  // Clear it on close to restore interactivity.
+  // See https://github.com/radix-ui/primitives/issues/2122
+  useEffect(() => {
+    if (!open) {
+      const t = setTimeout(() => {
+        document.body.style.pointerEvents = ''
+      }, 0)
+      return () => clearTimeout(t)
+    }
+  }, [open])
 
   const filtered = catalogItems.filter((item) => {
     if (!value) return true
