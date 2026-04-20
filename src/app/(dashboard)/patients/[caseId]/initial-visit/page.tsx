@@ -90,6 +90,28 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     resolveDocPath(painEvaluationNote),
   ])
 
+  // Pain-eval follow-up relies on priorVisitData.vitalSigns (the intake vitals
+  // row that predates the prior initial-visit's finalization) for the
+  // NUMERIC-ANCHOR prompt clause. When a prior finalized initial visit exists
+  // but no intake vitals row predates it, the AI cannot cite a numeric pain
+  // delta. Surface this to the editor as a data-gap badge.
+  let painEvalMissingPriorVitals = false
+  const priorIvFinalizedAt = (initialVisitNote?.finalized_at as string | null) ?? null
+  const priorIvStatus = (initialVisitNote?.status as string | null) ?? null
+  if (priorIvStatus === 'finalized' && priorIvFinalizedAt) {
+    const { data: priorVitalsRow } = await supabase
+      .from('vital_signs')
+      .select('pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .lte('recorded_at', priorIvFinalizedAt)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    painEvalMissingPriorVitals = priorVitalsRow?.pain_score_max == null
+  }
+
   const notesByVisitType: Record<NoteVisitType, unknown> = {
     initial_visit: initialVisitNote,
     pain_evaluation_visit: painEvaluationNote,
@@ -126,6 +148,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       clinicLogoUrl={logoResult.url ?? null}
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
+      painEvalMissingPriorVitals={painEvalMissingPriorVitals}
     />
   )
 }

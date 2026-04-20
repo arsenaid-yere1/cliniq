@@ -113,6 +113,31 @@ export default async function DischargePage({
     defaultVitals = ivVitalsRow ?? null
   }
 
+  // Cross-note staleness: when a draft exists, compare note.updated_at to
+  // max(updated_at) of the approved/edited upstream inputs the generator
+  // reads (case_summaries, pt/pm/mri/chiro extractions, initial_visit_notes,
+  // procedures, vital_signs). If any input changed after the note's last
+  // generation, the draft reflects stale context.
+  let isStale = false
+  if (note && note.status === 'draft' && note.updated_at) {
+    const noteUpdatedAt = new Date(note.updated_at as string)
+    const [csRes, ptRes, pmRes, mriRes, chiroRes, ivRes, procRes, vsRes] = await Promise.all([
+      supabase.from('case_summaries').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('pt_extractions').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('pain_management_extractions').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('mri_extractions').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('chiro_extractions').select('updated_at').eq('case_id', caseId).eq('report_type', 'discharge_summary').in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('initial_visit_notes').select('updated_at').eq('case_id', caseId).eq('status', 'finalized').is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('procedures').select('updated_at').eq('case_id', caseId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('vital_signs').select('updated_at').eq('case_id', caseId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const latestInputUpdates = [csRes, ptRes, pmRes, mriRes, chiroRes, ivRes, procRes, vsRes]
+      .map((r) => (r.data as { updated_at: string | null } | null)?.updated_at)
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => new Date(s))
+    isStale = latestInputUpdates.some((d) => d > noteUpdatedAt)
+  }
+
   return (
     <DischargeNoteEditor
       caseId={caseId}
@@ -126,6 +151,7 @@ export default async function DischargePage({
       caseData={caseData}
       documentFilePath={documentFilePath}
       defaultVitals={defaultVitals}
+      isStale={isStale}
     />
   )
 }

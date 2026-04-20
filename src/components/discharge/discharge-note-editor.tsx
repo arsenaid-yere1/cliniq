@@ -142,6 +142,12 @@ interface DischargeNoteEditorProps {
   caseData: CaseData | null
   documentFilePath: string | null
   defaultVitals: DefaultVitals | null
+  // True when at least one upstream input (case_summaries, PT/PM/MRI/chiro
+  // extractions, initial_visit_notes, procedures, vital_signs) was updated
+  // after the draft note's last generation. The draft reflects stale context.
+  // Regenerating is safe — the underlying generator is always fresh. Only
+  // computed for draft state; finalized notes don't show staleness.
+  isStale: boolean
 }
 
 // Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
@@ -182,6 +188,7 @@ export function DischargeNoteEditor({
   caseData,
   documentFilePath,
   defaultVitals,
+  isStale,
 }: DischargeNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
@@ -341,6 +348,7 @@ export function DischargeNoteEditor({
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
       isLocked={isLocked}
+      isStale={isStale}
     />
   )
 }
@@ -355,6 +363,7 @@ function DraftEditor({
   regeneratingSection,
   setRegeneratingSection,
   isLocked,
+  isStale,
 }: {
   caseId: string
   note: NoteRow
@@ -363,6 +372,7 @@ function DraftEditor({
   regeneratingSection: DischargeNoteSection | null
   setRegeneratingSection: (s: DischargeNoteSection | null) => void
   isLocked: boolean
+  isStale: boolean
 }) {
   const form = useForm<DischargeNoteEditValues>({
     resolver: zodResolver(dischargeNoteEditSchema),
@@ -410,6 +420,15 @@ function DraftEditor({
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
           <Badge variant="outline">Draft</Badge>
+          {isStale && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+              title="Upstream inputs have changed since this draft was generated. Regenerate to pick up the latest data."
+            >
+              Stale
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">

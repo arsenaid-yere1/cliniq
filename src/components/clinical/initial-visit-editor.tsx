@@ -157,6 +157,11 @@ interface InitialVisitEditorOuterProps {
   clinicLogoUrl: string | null
   providerSignatureUrl: string | null
   caseData: CaseData | null
+  // Signals that the pain-eval follow-up visit has a prior finalized initial
+  // visit on the chart but no intake vitals row predating it. AI cannot cite
+  // a numeric pain delta for the NUMERIC-ANCHOR clause; badge surfaces the
+  // data gap. Applies to the pain_evaluation_visit tab only.
+  painEvalMissingPriorVitals: boolean
 }
 
 interface InitialVisitEditorInnerProps {
@@ -195,6 +200,7 @@ export function InitialVisitEditor({
   clinicLogoUrl,
   providerSignatureUrl,
   caseData,
+  painEvalMissingPriorVitals,
 }: InitialVisitEditorOuterProps) {
   const [activeVisitType, setActiveVisitType] = useState<NoteVisitType>(defaultVisitType)
 
@@ -216,8 +222,20 @@ export function InitialVisitEditor({
         </TabsList>
         {visitTypes.map((vt) => {
           const note = (notesByVisitType[vt.value] ?? null) as NoteRow | null
+          const showPainEvalBadge = vt.value === 'pain_evaluation_visit' && painEvalMissingPriorVitals
           return (
             <TabsContent key={vt.value} value={vt.value} className="mt-4">
+              {showPainEvalBadge && (
+                <div className="mb-4 flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-200">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Prior initial-visit pain measurement is missing</p>
+                    <p className="text-muted-foreground mt-1">
+                      A prior Initial Visit note is finalized for this case but its intake vital signs (pain rating) were not recorded. The generated Pain Evaluation Visit note cannot cite a numeric pain delta against the initial evaluation — the narrative will describe the change qualitatively instead. To restore the numeric anchor, add the intake vital signs to the prior encounter.
+                    </p>
+                  </div>
+                </div>
+              )}
               <InitialVisitEditorInner
                 caseId={caseId}
                 visitType={vt.value}
