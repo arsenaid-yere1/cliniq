@@ -261,3 +261,114 @@ Same pattern.
 - Initial visit action: [src/actions/initial-visit-notes.ts:244](src/actions/initial-visit-notes.ts#L244)
 - Research: [thoughts/shared/research/2026-04-20-ai-chat-isolation-per-notes-session.md](../research/2026-04-20-ai-chat-isolation-per-notes-session.md)
 - Migration convention + `npx supabase db push` (memory).
+
+---
+
+## Phase 5: Client-Side Optimistic Progress Mount
+
+### Overview
+
+Lock + `GeneratingProgress` component (commits `c88d7db`, `1cdcc3c`) ship the server-side + polling pieces. Outstanding gap: on a single-tab Generate click, `GeneratingProgress` never mounts because the editor's `note.status` prop is frozen at page-render time. Server action runs synchronously inside client `startTransition`, blocks 30–90s in Claude, then returns — client only sees `status = 'draft'` → `status = 'draft'` (final), skipping the `'generating'` render state. Provider sees a disabled button and a spinner but no elapsed-time counter and no skeletons.
+
+Fix: optimistic local flag in each editor. Flip it to `true` before `startTransition`, clear it in `finally`. Render `GeneratingProgress` + skeleton grid when flag is true AND `note?.status !== 'generating'` (let the real status-driven branch take over once it catches up via `router.refresh()`).
+
+Scope: three editors (initial-visit, procedure, discharge). Case-summary has no dedicated editor surface, skip.
+
+### Context
+
+- `GeneratingProgress` poll loop: [src/components/clinical/generating-progress.tsx:47-65](src/components/clinical/generating-progress.tsx#L47-L65) — mounts, polls `router.refresh()` every 3s, unmounts when parent stops rendering it.
+- Server action is synchronous: Claude call at [src/actions/initial-visit-notes.ts:385](src/actions/initial-visit-notes.ts#L385) (and peers) awaits inline; no `waitUntil` / no detachment. Client's `startTransition` stays pending for full duration.
+- `revalidatePath` is issued only after `status = 'draft'` is written ([initial-visit-notes.ts:431](src/actions/initial-visit-notes.ts#L431) and peers). Between lock acquisition and Claude return, client has no signal that the DB row is now `'generating'`.
+- Supabase SSR client bypasses Next.js fetch cache ([src/lib/supabase/server.ts:4-28](src/lib/supabase/server.ts#L4-L28)) — every server render refetches, so `router.refresh()` always sees fresh status.
+
+Polling already covers the secondary cases where `GeneratingProgress` DOES mount: second tab loads page mid-generation, hard browser refresh mid-flight, navigation back during generation. Optimistic flag closes the primary case (same-tab click-and-wait).
+
+### Changes Required
+
+#### 1. `src/components/clinical/initial-visit-editor.tsx`
+
+Add two state pieces:
+```ts
+const [optimisticGenerating, setOptimisticGenerating] = useState(false)
+const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
+```
+
+Add helper:
+```ts
+const runGenerate = (toneHintArg: string | null) => {
+  setOptimisticStartedAt(new Date().toISOString())
+  setOptimisticGenerating(true)
+  startTransition(async () => {
+    try {
+      const result = await generateInitialVisitNote(caseId, visitType, toneHintArg)
+      if (result.error) toast.error(result.error)
+      else toast.success('Note generated successfully')
+    } finally {
+      setOptimisticGenerating(false)
+    }
+  })
+}
+```
+
+Insert a new early-return branch BEFORE the empty/draft branch at line 335 and BEFORE the `note.status === 'generating'` branch at line 437:
+```ts
+if (optimisticGenerating && note?.status !== 'generating') {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
+        <Badge variant="outline">Generating...</Badge>
+      </div>
+      <GeneratingProgress startedAt={optimisticStartedAt} />
+      <div className="space-y-6">
+        {initialVisitSections.map((section) => (
+          <div key={section} className="space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+Replace both click handlers (empty-state Generate button + failed-state Retry button) with `onClick={() => runGenerate(toneHint || null)}` and `onClick={() => runGenerate(null)}` respectively.
+
+#### 2. `src/components/procedures/procedure-note-editor.tsx`
+
+Same three changes: state, `runGenerate` helper (calls `generateProcedureNote(procedureId, caseId, toneHintArg)`), optimistic branch inserted before the `!note` empty branch at line 219. Both call sites (Generate + Retry) route through `runGenerate`.
+
+#### 3. `src/components/discharge/discharge-note-editor.tsx`
+
+Same pattern. Helper calls `generateDischargeNote(caseId, toneHintArg)`. Optimistic branch before the `!note` empty branch.
+
+### Ordering Constraint
+
+In all three editors, the optimistic branch MUST precede the `!note || (note.status === 'draft' && !hasGeneratedContent)` branch. Otherwise a freshly-clicked generate on a case with no existing note row falls through to the empty-state (button + prompt) because `note` is still `null` until the server action returns and `router.refresh()` fetches the new row.
+
+Guard `note?.status !== 'generating'` prevents double-rendering: once the DB-backed `'generating'` state lands client-side, that branch takes over with the real `note.updated_at` as `startedAt` (more accurate than the click-time optimistic value). Optimistic branch yields; on completion, `status = 'draft'` renders the finished note.
+
+### Success Criteria
+
+#### Automated Verification
+- [x] `npx tsc --noEmit` passes.
+
+#### Manual Verification
+- [ ] Click Generate on an initial-visit page. Skeleton + elapsed counter appears within ~100ms.
+- [ ] Counter increments every second while Claude is running.
+- [ ] On completion, finished note replaces skeleton without a visible reload.
+- [ ] Error path: force a generation failure (e.g. disconnect network mid-action). Verify UI returns to pre-click state (empty or failed branch), not stuck on optimistic skeleton.
+- [ ] Second tab open to same page mid-generation: existing `note.status === 'generating'` branch still renders via server fetch; no double UI.
+- [ ] Retry button on a failed note also shows optimistic progress.
+- [ ] Repeat for procedure note page and discharge note page.
+
+### Why Not `useOptimistic`
+
+React 19's `useOptimistic` would also work but requires passing a state-update reducer and ties the optimistic value to the transition result. Plain `useState` + `startTransition` + `finally` is clearer for the "show progress → show result" shape and mirrors what the existing server-mounted branch does.
+
+### Non-Goals
+
+- Not introducing Supabase realtime. Polling + optimistic flag covers both single-tab and cross-tab cases.
+- Not moving generation to a background job. Sync server action still returns the authoritative result; optimistic state is strictly a UI-level bridge.
+- Not touching `GeneratingProgress` internals — it already supports `startedAt` as an arbitrary ISO timestamp.
