@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GeneratingProgress } from '@/components/clinical/generating-progress'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -96,6 +97,7 @@ interface NoteRow {
   status: string
   generation_error: string | null
   visit_date: string | null
+  updated_at: string | null
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
@@ -439,6 +441,7 @@ function InitialVisitEditorInner({
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
+        <GeneratingProgress startedAt={note.updated_at ?? null} />
         <div className="space-y-6">
           {initialVisitSections.map((section) => (
             <div key={section} className="space-y-2">

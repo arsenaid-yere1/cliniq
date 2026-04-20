@@ -9,6 +9,7 @@ import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Downlo
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GeneratingProgress } from '@/components/clinical/generating-progress'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -82,6 +83,7 @@ interface NoteRow {
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
+  updated_at: string | null
 }
 
 interface ClinicSettings {
@@ -240,6 +242,7 @@ export function ProcedureNoteEditor({
           <h1 className="text-2xl font-bold">Procedure Note</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
+        <GeneratingProgress startedAt={note.updated_at ?? null} />
         <div className="space-y-6">
           {procedureNoteSections.map((section) => (
             <div key={section} className="space-y-2">
