@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
 
@@ -30,28 +30,6 @@ export function CptCodeCombobox({
 }: CptCodeComboboxProps) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Radix Dialog's RemoveScroll intercepts wheel events at the document level
-  // (non-passive), which prevents scrolling inside a nested non-modal Popover.
-  // Using `modal={true}` on the Popover fixes scrolling but leaves the parent
-  // Dialog in a pointer-events-locked state after selection.
-  // Workaround: keep the Popover non-modal (so Dialog stays interactive), and
-  // attach our own non-passive wheel listener that manually scrolls the list
-  // before Radix's document listener can swallow the event.
-  // See: https://github.com/radix-ui/primitives/issues/1159
-  useEffect(() => {
-    if (!open) return
-    const node = scrollRef.current
-    if (!node) return
-    const handler = (e: WheelEvent) => {
-      e.stopPropagation()
-      node.scrollTop += e.deltaY
-      e.preventDefault()
-    }
-    node.addEventListener('wheel', handler, { passive: false })
-    return () => node.removeEventListener('wheel', handler)
-  }, [open])
 
   const filtered = catalogItems.filter((item) => {
     if (!value) return true
@@ -63,7 +41,7 @@ export function CptCodeCombobox({
   })
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={true}>
       <PopoverTrigger asChild>
         <Input
           ref={inputRef}
@@ -82,8 +60,18 @@ export function CptCodeCombobox({
         className="w-[280px] p-0"
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => {
+          // Prevent Radix from refocusing body (which can re-trigger the lockout)
+          // and clear the pointer-events lock the parent Dialog's layer leaves
+          // behind when a nested modal Popover closes.
+          // https://github.com/radix-ui/primitives/issues/3445
+          e.preventDefault()
+          setTimeout(() => {
+            document.body.style.pointerEvents = ''
+          }, 0)
+        }}
       >
-        <div ref={scrollRef} className="max-h-[320px] overflow-y-auto py-1">
+        <div className="max-h-[320px] overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">No matching services</div>
           ) : (
