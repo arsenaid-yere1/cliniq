@@ -195,11 +195,50 @@ export function DischargeNoteEditor({
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
   const [toneHint, setToneHint] = useState<string>(note?.tone_hint ?? '')
+  const [optimisticGenerating, setOptimisticGenerating] = useState(false)
+  const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
+  const runGenerate = (toneHintArg: string | null) => {
+    setOptimisticStartedAt(new Date().toISOString())
+    setOptimisticGenerating(true)
+    startTransition(async () => {
+      try {
+        const result = await generateDischargeNote(caseId, toneHintArg)
+        if (result.error) toast.error(result.error)
+        else toast.success('Discharge summary generated successfully')
+      } finally {
+        setOptimisticGenerating(false)
+      }
+    })
+  }
+
   // A note is considered "empty" after a reset — row exists but all AI content is cleared.
   const hasGeneratedContent = !!(note?.subjective || note?.assessment)
+
+  // Optimistic generating state — covers the 30–90s window after click where
+  // note.status has not yet transitioned to 'generating' client-side. Must
+  // come BEFORE the empty/draft branches so a null note row still shows progress.
+  if (optimisticGenerating && note?.status !== 'generating') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Discharge Summary</h1>
+          <Badge variant="outline">Generating...</Badge>
+        </div>
+        <GeneratingProgress startedAt={optimisticStartedAt} />
+        <div className="space-y-6">
+          {dischargeNoteSections.map((section) => (
+            <div key={section} className="space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // No note (or reset draft with no generated content) — show generate button
   if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
@@ -222,13 +261,7 @@ export function DischargeNoteEditor({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => {
-              startTransition(async () => {
-                const result = await generateDischargeNote(caseId, toneHint || null)
-                if (result.error) toast.error(result.error)
-                else toast.success('Discharge summary generated successfully')
-              })
-            }}
+            onClick={() => runGenerate(toneHint || null)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -275,13 +308,7 @@ export function DischargeNoteEditor({
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => {
-              startTransition(async () => {
-                const result = await generateDischargeNote(caseId, note.tone_hint ?? null)
-                if (result.error) toast.error(result.error)
-                else toast.success('Discharge summary generated successfully')
-              })
-            }}
+            onClick={() => runGenerate(note.tone_hint ?? null)}
             disabled={isLocked || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}

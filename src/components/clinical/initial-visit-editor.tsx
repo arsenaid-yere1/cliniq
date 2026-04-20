@@ -312,9 +312,25 @@ function InitialVisitEditorInner({
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
   const [toneHint, setToneHint] = useState('')
+  const [optimisticGenerating, setOptimisticGenerating] = useState(false)
+  const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
+
+  const runGenerate = (toneHintArg: string | null) => {
+    setOptimisticStartedAt(new Date().toISOString())
+    setOptimisticGenerating(true)
+    startTransition(async () => {
+      try {
+        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg)
+        if (result.error) toast.error(result.error)
+        else toast.success('Note generated successfully')
+      } finally {
+        setOptimisticGenerating(false)
+      }
+    })
+  }
 
   // A note row may exist with only rom_data/vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
@@ -330,6 +346,29 @@ function InitialVisitEditorInner({
     }
     return null
   })()
+
+  // Optimistic generating state — entered on Generate click before the server
+  // action has persisted status = 'generating'. Masks the 30–90s blocking gap
+  // where note.status is still the pre-click value.
+  if (optimisticGenerating && note?.status !== 'generating') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
+          <Badge variant="outline">Generating...</Badge>
+        </div>
+        <GeneratingProgress startedAt={optimisticStartedAt} />
+        <div className="space-y-6">
+          {initialVisitSections.map((section) => (
+            <div key={section} className="space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // No note or pre-generation note — show tabs + generate button
   if (!note || (note.status === 'draft' && !hasGeneratedContent)) {
@@ -416,13 +455,7 @@ function InitialVisitEditorInner({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => {
-              startTransition(async () => {
-                const result = await generateInitialVisitNote(caseId, visitType, toneHint || null)
-                if (result.error) toast.error(result.error)
-                else toast.success('Note generated successfully')
-              })
-            }}
+            onClick={() => runGenerate(toneHint || null)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -469,13 +502,7 @@ function InitialVisitEditorInner({
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => {
-              startTransition(async () => {
-                const result = await generateInitialVisitNote(caseId, visitType)
-                if (result.error) toast.error(result.error)
-                else toast.success('Note generated successfully')
-              })
-            }}
+            onClick={() => runGenerate(null)}
             disabled={isLocked || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
