@@ -7,7 +7,7 @@ import {
   type ProcedureNoteSection,
   procedureNoteSectionLabels,
 } from '@/lib/validations/procedure-note'
-import type { PainToneLabel, PainToneSignals, ChiroProgress } from '@/lib/claude/pain-tone'
+import type { PainToneLabel, PainToneSignals, SeriesVolatility, ChiroProgress } from '@/lib/claude/pain-tone'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -86,6 +86,14 @@ export interface ProcedureNoteInputData {
   // previous procedure). Referenced by the PAIN TONE MATRIX block in the system
   // prompt for interval-regression detection.
   paintoneSignals: PainToneSignals
+  // seriesVolatility: classification of the full prior-procedure pain series
+  // (chronological). 'mixed_with_regression' means the patient had at least
+  // one intra-series rise ≥ +2 between consecutive procedures. Endpoints-only
+  // signals (paintoneLabel / paintoneSignals) cannot surface mid-series
+  // regression that has already recovered by the current visit — this signal
+  // makes that history visible to the AI. Computed over priorProcedures only;
+  // the current-in-progress procedure is not part of the series yet.
+  seriesVolatility: SeriesVolatility
   chiroProgress: ChiroProgress
   pmExtraction: {
     chief_complaints: unknown
@@ -200,6 +208,23 @@ FORBIDDEN when vsPrevious is "worsened": the narrative MUST NOT read as unambigu
 FORBIDDEN when vsPrevious is "improved" AND vsBaseline is "worsened": do NOT describe the cumulative arc as improving. The series is still net-negative; the current session simply reclaimed some ground. Phrase as partial recovery from setback.
 
 Section-scope application: apply the matrix to subjective, INTERVAL-RESPONSE NARRATIVE, review_of_systems tone words, assessment_summary closing clause, and procedure_followup RESPONSE-CALIBRATED FOLLOW-UP. Procedure-mechanics sections remain governed by the NO CLONE RULE and are not affected by vsPrevious.
+
+=== SERIES VOLATILITY (MANDATORY when priorProcedures has 2 or more entries) ===
+
+Top-level "seriesVolatility" classifies the full prior-procedure pain_score_max trajectory:
+• "monotone_improved" — every consecutive prior pain was ≤ the previous, with at least one real drop. Standard favorable framing applies to the TRAJECTORY and INTERVAL-RESPONSE sentences.
+• "monotone_stable" — flat series (all consecutive deltas 0). Plateau framing.
+• "monotone_worsened" — every consecutive prior pain was ≥ the previous. Worsening framing.
+• "mixed_with_regression" — at least one consecutive prior delta was ≥ +2. The patient had an intra-series regression that may have since recovered.
+• "insufficient_data" — fewer than 2 priors, or any prior pain_score_max is null. Do NOT cite volatility.
+
+MANDATORY when seriesVolatility == "mixed_with_regression": the subjective TRAJECTORY sentence MUST acknowledge the mid-series fluctuation — do not assert a monotone arc. Example framing: "pain fluctuated across the injection series (e.g., 8/10 → 5/10 → 7/10 → 3/10) before reaching today's reading." Do NOT render a linear arrow chain ("8/10 → 5/10 → 3/10") that hides an intermediate rise. Do NOT describe the trajectory as "progressive decline in pain" or "steady improvement" — those phrasings imply monotonicity that the data contradicts.
+
+When seriesVolatility == "monotone_improved" AND paintoneLabel == "improved", the standard TRAJECTORY arrow-chain is permitted.
+
+When seriesVolatility == "insufficient_data" (procedure #1 or #2 with any null priors), do NOT cite volatility. Fall back to the existing paintoneLabel / paintoneSignals branching.
+
+This rule operates on priorProcedures only — the current procedure is not part of the computed series. It takes precedence over TRAJECTORY when the two conflict: never describe a volatile series as monotone just because the endpoints are favorable.
 
 === PRIOR PROCEDURE NOTES CONTEXT (CONDITIONAL) ===
 

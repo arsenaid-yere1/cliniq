@@ -135,6 +135,12 @@ interface ProcedureNoteEditorProps {
   caseData: CaseData | null
   procedureInfo: ProcedureInfo
   documentFilePath: string | null
+  // True when at least one prior procedure on this case has no vital_signs row
+  // OR its pain_score_max is null. Surfaces the same data-gap signal the AI
+  // generator uses (paintoneLabel = 'missing_vitals'). Drives a warning badge
+  // in the header so the provider knows the AI cannot cite a numeric pain
+  // delta and will flag the gap in the narrative.
+  hasMissingPriorVitals: boolean
 }
 
 function ordinal(n: number): string {
@@ -179,6 +185,7 @@ export function ProcedureNoteEditor({
   caseData,
   procedureInfo,
   documentFilePath,
+  hasMissingPriorVitals,
 }: ProcedureNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<ProcedureNoteSection | null>(null)
@@ -195,6 +202,7 @@ export function ProcedureNoteEditor({
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Procedure Note</h1>
+        {hasMissingPriorVitals && <MissingPriorVitalsBadge />}
         <ToneDirectionCard
           value={toneHint}
           onChange={setToneHint}
@@ -252,6 +260,7 @@ export function ProcedureNoteEditor({
           <h1 className="text-2xl font-bold">Procedure Note</h1>
           <Badge variant="destructive">Failed</Badge>
         </div>
+        {hasMissingPriorVitals && <MissingPriorVitalsBadge />}
         <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {note.generation_error || 'Note generation failed.'}
@@ -338,6 +347,7 @@ export function ProcedureNoteEditor({
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
       isLocked={isLocked}
+      hasMissingPriorVitals={hasMissingPriorVitals}
     />
   )
 }
@@ -353,6 +363,7 @@ function DraftEditor({
   regeneratingSection,
   setRegeneratingSection,
   isLocked,
+  hasMissingPriorVitals,
 }: {
   caseId: string
   procedureId: string
@@ -362,6 +373,7 @@ function DraftEditor({
   regeneratingSection: ProcedureNoteSection | null
   setRegeneratingSection: (s: ProcedureNoteSection | null) => void
   isLocked: boolean
+  hasMissingPriorVitals: boolean
 }) {
   const form = useForm<ProcedureNoteEditValues>({
     resolver: zodResolver(procedureNoteEditSchema),
@@ -412,6 +424,7 @@ function DraftEditor({
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
           </Button>
+          {/* MissingPriorVitalsBadge surfaces separately below the header row */}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={isLocked || isPending}>
@@ -480,6 +493,8 @@ function DraftEditor({
           </AlertDialog>
         </div>
       </div>
+
+      {hasMissingPriorVitals && <MissingPriorVitalsBadge />}
 
       <Form {...form}>
         <form className="space-y-6">
@@ -757,6 +772,25 @@ function FinalizedView({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Missing Prior Vitals Badge ---
+
+function MissingPriorVitalsBadge() {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-200"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+      <div>
+        <p className="font-medium">Prior-procedure pain measurement is incomplete</p>
+        <p className="text-muted-foreground mt-1">
+          At least one prior procedure on this case has no recorded pain score. The generated note cannot cite a numeric pain delta for the missing anchor — the narrative will flag the data gap instead. To restore full trajectory, open the prior procedure and enter its vital signs.
+        </p>
       </div>
     </div>
   )

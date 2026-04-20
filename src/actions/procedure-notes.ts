@@ -16,7 +16,7 @@ import {
 } from '@/lib/validations/procedure-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
-import { computePainToneLabel, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
+import { computePainToneLabel, computeSeriesVolatility, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 
 // --- Helper: compute source data hash ---
@@ -335,6 +335,12 @@ async function gatherProcedureNoteSourceData(
         vsBaseline: paintoneVsBaseline,
         vsPrevious: paintoneVsPrevious,
       },
+      // Volatility over the completed prior procedures (chronological).
+      // Current procedure is not in the series yet. When fewer than 2 priors
+      // exist or any pain_score_max is null, label is 'insufficient_data'.
+      seriesVolatility: computeSeriesVolatility(
+        priorProcedureRows.map((p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null),
+      ),
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
       pmExtraction: pmRes.data
         ? {

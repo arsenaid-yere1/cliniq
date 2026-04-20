@@ -44,6 +44,7 @@ const emptyInput: ProcedureNoteInputData = {
   intakePain: null,
   paintoneLabel: 'baseline',
   paintoneSignals: { vsBaseline: 'baseline', vsPrevious: null },
+  seriesVolatility: 'insufficient_data',
   chiroProgress: null,
   pmExtraction: null,
   initialVisitNote: null,
@@ -916,5 +917,59 @@ describe('INTAKE ANCHOR (procedure #1 pre-treatment baseline)', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     const payload = opts.messages[0].content as string
     expect(payload).toContain('"intakePain": null')
+  })
+})
+
+describe('SERIES VOLATILITY (procedure)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains SERIES VOLATILITY block gated on priorProcedures ≥ 2', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('=== SERIES VOLATILITY (MANDATORY when priorProcedures has 2 or more entries) ===')
+    expect(system).toContain('"monotone_improved"')
+    expect(system).toContain('"mixed_with_regression"')
+    expect(system).toContain('"insufficient_data"')
+  })
+
+  it('forbids linear arrow chains and monotone framing on mixed_with_regression', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT render a linear arrow chain')
+    expect(system).toContain('progressive decline in pain')
+    expect(system).toContain('steady improvement')
+    expect(system).toContain('fluctuated across the injection series')
+  })
+
+  it('allows arrow-chain TRAJECTORY only when monotone_improved + paintoneLabel improved', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('When seriesVolatility == "monotone_improved" AND paintoneLabel == "improved", the standard TRAJECTORY arrow-chain is permitted')
+  })
+
+  it('falls back to existing branching on insufficient_data', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('When seriesVolatility == "insufficient_data"')
+    expect(system).toContain('Fall back to the existing paintoneLabel / paintoneSignals branching')
+  })
+
+  it('threads seriesVolatility into user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({ ...emptyInput, seriesVolatility: 'mixed_with_regression' })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"seriesVolatility": "mixed_with_regression"')
+  })
+
+  it('threads seriesVolatility = insufficient_data by default', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"seriesVolatility": "insufficient_data"')
   })
 })

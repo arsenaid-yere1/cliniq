@@ -634,6 +634,18 @@ export async function finalizeDischargeNote(caseId: string) {
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
+  // Defensibility guard: finalizing a discharge note requires provider-entered
+  // discharge-visit vitals, at minimum pain_score_max. Without them, the note's
+  // numeric pain endpoint is synthesized via the -2 default rule — defensible
+  // clinically for drafting but unacceptable on a finalized medico-legal PDF.
+  // Provider must either enter discharge vitals or explicitly acknowledge the
+  // absence via a separate flow (not supported yet — force vitals for now).
+  if (note.pain_score_max == null) {
+    return {
+      error: 'Discharge-visit pain score is required before finalization. Enter the patient\'s current pain rating in the Discharge Vitals section, then re-finalize.',
+    }
+  }
+
   // Clean up previous document if re-finalizing
   if (note.document_id) {
     const { data: oldDoc } = await supabase

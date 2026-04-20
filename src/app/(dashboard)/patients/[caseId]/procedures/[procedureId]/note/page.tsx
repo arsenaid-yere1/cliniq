@@ -61,6 +61,34 @@ export default async function ProcedureNotePage({
       }
     : null
 
+  // Detect missing prior-procedure vitals. Surface to the editor so the
+  // provider sees a badge when a prior procedure is on the chart but its
+  // pain_score_max row is absent — distinct from "first in series". The AI
+  // generator already emits paintoneLabel = 'missing_vitals' in this case;
+  // this exposes the same signal to the UI without re-running the gatherer.
+  const { data: priorProcIds } = await supabase
+    .from('procedures')
+    .select('id')
+    .eq('case_id', caseId)
+    .neq('id', procedureId)
+    .is('deleted_at', null)
+
+  let hasMissingPriorVitals = false
+  if (priorProcIds && priorProcIds.length > 0) {
+    const ids = priorProcIds.map((p) => p.id)
+    const { data: priorVitals } = await supabase
+      .from('vital_signs')
+      .select('procedure_id, pain_score_max')
+      .in('procedure_id', ids)
+      .is('deleted_at', null)
+    const idsWithPain = new Set(
+      (priorVitals ?? [])
+        .filter((v) => v.pain_score_max != null)
+        .map((v) => v.procedure_id),
+    )
+    hasMissingPriorVitals = ids.some((id) => !idsWithPain.has(id))
+  }
+
   // Fetch document file_path if note is finalized
   let documentFilePath: string | null = null
   const note = noteResult.data
@@ -101,6 +129,7 @@ export default async function ProcedureNotePage({
       caseData={caseData}
       procedureInfo={procedureInfo}
       documentFilePath={documentFilePath}
+      hasMissingPriorVitals={hasMissingPriorVitals}
     />
   )
 }

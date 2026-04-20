@@ -462,7 +462,7 @@ function DraftEditor({
           </AlertDialog>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isLocked || isPending}>
+              <Button disabled={isLocked || isPending || note.pain_score_max == null} title={note.pain_score_max == null ? 'Enter the discharge-visit pain score before finalizing.' : undefined}>
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize
               </Button>
