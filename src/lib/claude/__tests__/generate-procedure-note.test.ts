@@ -822,3 +822,49 @@ describe('PAIN TONE MATRIX — two-signal interpretation', () => {
     expect(payload).toContain('"vsPrevious": null')
   })
 })
+
+describe('MISSING-VITALS BRANCH', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains MISSING-VITALS BRANCH block', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MISSING-VITALS BRANCH (MANDATORY)')
+    expect(system).toContain('A prior procedure is on the chart but its pain measurement is unavailable')
+    expect(system).toContain('"paintoneLabel" == "missing_vitals"')
+  })
+
+  it('system prompt instructs not to fabricate numeric delta and not to describe as first-in-series', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT cite a numeric pain delta against the affected anchor')
+    expect(system).toContain('Do NOT describe the visit as "first in the series"')
+    expect(system).toContain('pain measurement at the prior injection was not recorded')
+  })
+
+  it('system prompt states missing-vitals branch overrides the four-way paintoneLabel branching', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('overrides the four-way paintoneLabel branching')
+    // Asymmetric missing-vitals combinations handled explicitly.
+    expect(system).toContain('vsBaseline is "missing_vitals" but vsPrevious is a concrete label')
+  })
+
+  it('threads missing_vitals label through user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      paintoneLabel: 'missing_vitals',
+      paintoneSignals: { vsBaseline: 'missing_vitals', vsPrevious: 'missing_vitals' },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"paintoneLabel": "missing_vitals"')
+    expect(payload).toContain('"vsBaseline": "missing_vitals"')
+    expect(payload).toContain('"vsPrevious": "missing_vitals"')
+  })
+})

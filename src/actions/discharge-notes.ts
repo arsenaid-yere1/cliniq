@@ -18,7 +18,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
-import { computePainToneLabel } from '@/lib/claude/pain-tone'
+import { computePainToneLabel, type PainToneContext } from '@/lib/claude/pain-tone'
 
 // --- Helper: compute source data hash ---
 
@@ -219,17 +219,50 @@ async function gatherDischargeNoteSourceData(
   // - vsBaseline: last procedure pain vs first procedure pain (series-long arc).
   // - vsPrevious: last procedure pain vs second-to-last procedure pain (final-interval change).
   //   Null when only one procedure exists.
+  // Context classification distinguishes "no prior" from "prior present but
+  // vitals missing" so the prompt can flag data gaps instead of silently
+  // falling back to baseline framing.
+  const baselineContext: PainToneContext =
+    firstProcedure == null
+      ? 'no_prior'
+      : firstVitals?.pain_score_max == null
+        ? 'prior_missing_vitals'
+        : 'prior_with_vitals'
+  if (baselineContext === 'prior_missing_vitals') {
+    // eslint-disable-next-line no-console
+    console.warn('[pain-tone] discharge baseline anchor missing vitals', {
+      caseId,
+      baselineProcedureId: firstProcedure!.id,
+    })
+  }
+
   const secondToLastProcedure = procRows.length >= 2 ? procRows[procRows.length - 2] : null
   const secondToLastVitals = secondToLastProcedure ? vitalsByProcedureId.get(secondToLastProcedure.id) : null
+  const previousContext: PainToneContext =
+    secondToLastProcedure == null
+      ? 'no_prior'
+      : secondToLastVitals?.pain_score_max == null
+        ? 'prior_missing_vitals'
+        : 'prior_with_vitals'
+  if (previousContext === 'prior_missing_vitals') {
+    // eslint-disable-next-line no-console
+    console.warn('[pain-tone] discharge previous anchor missing vitals', {
+      caseId,
+      previousProcedureId: secondToLastProcedure!.id,
+    })
+  }
+
   const painTrendSignals: DischargeNoteInputData['painTrendSignals'] = {
     vsBaseline: computePainToneLabel(
       latestVitals?.pain_score_max ?? null,
       baselinePain?.pain_score_max ?? null,
+      baselineContext,
     ),
-    vsPrevious: secondToLastVitals
+    vsPrevious: secondToLastProcedure
       ? computePainToneLabel(
           latestVitals?.pain_score_max ?? null,
-          secondToLastVitals.pain_score_max ?? null,
+          secondToLastVitals?.pain_score_max ?? null,
+          previousContext,
         )
       : null,
   }
@@ -256,7 +289,14 @@ async function gatherDischargeNoteSourceData(
       dischargeVitals,
       baselinePain,
       initialVisitBaseline,
-      overallPainTrend: painTrendSignals.vsBaseline,
+      // overallPainTrend is kept as narrow 4-way label for PAIN TRAJECTORY
+      // rules. When vsBaseline is 'missing_vitals', fold to 'baseline' so
+      // existing suppression rules fire correctly. BASELINE DATA-GAP OVERRIDE
+      // in the prompt reads painTrendSignals.vsBaseline directly for the
+      // missing-vitals branch.
+      overallPainTrend: painTrendSignals.vsBaseline === 'missing_vitals'
+        ? 'baseline'
+        : painTrendSignals.vsBaseline,
       painTrendSignals,
       caseSummary: caseSummaryRes.data
         ? {

@@ -183,6 +183,21 @@ RULES (apply when \`dischargeVitals\` is null):
 • If "overallPainTrend" is "baseline" (only one procedure, or pain data missing), fall back to narrative comparison using "initialVisitBaseline.chief_complaint" if it contains a pre-treatment pain descriptor; otherwise describe current status without fabricating a delta.
 • Outside of the scoped post-procedure improvement described above, never invent pain numbers that are not in the source data.
 
+=== BASELINE DATA-GAP OVERRIDE (MANDATORY) ===
+
+Either pain-trend signal may equal "missing_vitals" — a prior procedure is on the chart but its vitals row is missing or pain_score_max is null. This is NOT the same as "baseline" (which would mean the series has only one procedure) — the patient completed the treatment course; the chart is incomplete.
+
+When painTrendSignals.vsBaseline == "missing_vitals":
+• The baseline→discharge numeric delta CANNOT be cited. Do NOT fabricate a baseline number. Do NOT use sentences like "pain decreased from X/10 at the initial evaluation to Y/10 at today's discharge visit" against the missing anchor.
+• Describe the treatment course qualitatively. Use initialVisitBaseline.chief_complaint, caseSummary fields, and ptExtraction.outcome_measures as qualitative anchors. Example framing: "baseline pain measurement at the first procedure was not recorded; qualitative improvement is described based on the initial chief complaint and outcome measures reported during care."
+• In subjective, replace the series-arc sentence with a qualitative summary of the treatment course. In assessment, cite the qualitative improvement without fabricating numbers. In prognosis, use measured "favorable-but-qualitative" framing.
+• The -2 default rule for discharge-visit pain (rendered from latestVitals.pain_score_max) is UNCHANGED by this override — the -2 rule is independent of the missing baseline. The discharge-visit pain reading may still be cited; what cannot be cited is the baseline comparison.
+
+When painTrendSignals.vsPrevious == "missing_vitals":
+• The penultimate-to-final interval CANNOT be characterized. Remove any "final-interval" framing ("between the penultimate and final injections") from the narrative. The overall trajectory may still be cited via vsBaseline when that is concrete.
+
+This override takes precedence over the PAIN TONE MATRIX rows below. When both signals are "missing_vitals", the discharge narrative relies entirely on qualitative anchors — no numeric pain deltas at any level.
+
 === PAIN TONE MATRIX — FINAL-INTERVAL SIGNAL (MANDATORY) ===
 
 You are given two tone signals:

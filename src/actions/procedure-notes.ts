@@ -16,7 +16,7 @@ import {
 } from '@/lib/validations/procedure-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
-import { computePainToneLabel, deriveChiroProgress } from '@/lib/claude/pain-tone'
+import { computePainToneLabel, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
 
 // --- Helper: compute source data hash ---
 
@@ -191,12 +191,56 @@ async function gatherProcedureNoteSourceData(
 
   const age = computeAgeAtDate(patient.date_of_birth, proc.procedure_date)
 
+  // Classify the baseline reference. "prior_missing_vitals" signals the AI
+  // that a prior procedure is on the chart but its vitals are absent — distinct
+  // from "no prior" (genuine first-in-series).
+  const baselineProcedure = priorProcedureRows.length > 0 ? priorProcedureRows[0] : null
+  const baselineVitals = baselineProcedure ? priorVitalsByProcedureId.get(baselineProcedure.id) : undefined
+  const baselineContext: PainToneContext =
+    baselineProcedure == null
+      ? 'no_prior'
+      : baselineVitals?.pain_score_max == null
+        ? 'prior_missing_vitals'
+        : 'prior_with_vitals'
+  if (baselineContext === 'prior_missing_vitals') {
+    // eslint-disable-next-line no-console
+    console.warn('[pain-tone] baseline anchor missing vitals', {
+      caseId,
+      procedureId,
+      baselineProcedureId: baselineProcedure!.id,
+    })
+  }
   const paintoneVsBaseline = computePainToneLabel(
     vitalsRes.data?.pain_score_max ?? null,
-    priorProcedureRows.length > 0
-      ? priorVitalsByProcedureId.get(priorProcedureRows[0].id)?.pain_score_max ?? null
-      : null,
+    baselineVitals?.pain_score_max ?? null,
+    baselineContext,
   )
+
+  const previousProcedure = priorProcedureRows.length > 0
+    ? priorProcedureRows[priorProcedureRows.length - 1]
+    : null
+  const previousVitals = previousProcedure ? priorVitalsByProcedureId.get(previousProcedure.id) : undefined
+  const previousContext: PainToneContext =
+    previousProcedure == null
+      ? 'no_prior'
+      : previousVitals?.pain_score_max == null
+        ? 'prior_missing_vitals'
+        : 'prior_with_vitals'
+  if (previousContext === 'prior_missing_vitals') {
+    // eslint-disable-next-line no-console
+    console.warn('[pain-tone] previous anchor missing vitals', {
+      caseId,
+      procedureId,
+      previousProcedureId: previousProcedure!.id,
+    })
+  }
+  const paintoneVsPrevious = previousProcedure
+    ? computePainToneLabel(
+        vitalsRes.data?.pain_score_max ?? null,
+        previousVitals?.pain_score_max ?? null,
+        previousContext,
+      )
+    : null
 
   return {
     data: {
@@ -247,7 +291,9 @@ async function gatherProcedureNoteSourceData(
       // procedure). All section-specific branching in the prompt reads this
       // field. priorProcedureRows is ascending (oldest first), so index 0 is
       // the series baseline and index length-1 is the immediately previous
-      // procedure.
+      // procedure. When vsBaseline is 'missing_vitals', expose the full
+      // label here too — the MISSING-VITALS BRANCH in the system prompt
+      // handles it; existing 4-way branches are not triggered.
       paintoneLabel: paintoneVsBaseline,
       // paintoneSignals exposes both the baseline comparison and a per-session
       // comparison (current vs the immediately previous procedure). The PAIN
@@ -256,12 +302,7 @@ async function gatherProcedureNoteSourceData(
       // vsBaseline but "worsened" on vsPrevious.
       paintoneSignals: {
         vsBaseline: paintoneVsBaseline,
-        vsPrevious: priorProcedureRows.length > 0
-          ? computePainToneLabel(
-              vitalsRes.data?.pain_score_max ?? null,
-              priorVitalsByProcedureId.get(priorProcedureRows[priorProcedureRows.length - 1].id)?.pain_score_max ?? null,
-            )
-          : null,
+        vsPrevious: paintoneVsPrevious,
       },
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
       pmExtraction: pmRes.data

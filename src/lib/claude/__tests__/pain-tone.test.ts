@@ -40,6 +40,30 @@ describe('computePainToneLabel', () => {
     expect(computePainToneLabel(9, 7)).toBe('worsened')
     expect(computePainToneLabel(8, 6)).toBe('worsened')
   })
+
+  describe('context-aware behavior', () => {
+    it('returns baseline when context is default/no_prior and reference is null', () => {
+      expect(computePainToneLabel(5, null)).toBe('baseline')
+      expect(computePainToneLabel(5, null, 'no_prior')).toBe('baseline')
+    })
+
+    it('returns missing_vitals when context is prior_missing_vitals regardless of numeric inputs', () => {
+      expect(computePainToneLabel(5, null, 'prior_missing_vitals')).toBe('missing_vitals')
+      expect(computePainToneLabel(null, null, 'prior_missing_vitals')).toBe('missing_vitals')
+      expect(computePainToneLabel(5, 8, 'prior_missing_vitals')).toBe('missing_vitals')
+    })
+
+    it('applies delta math when context is prior_with_vitals', () => {
+      expect(computePainToneLabel(5, 9, 'prior_with_vitals')).toBe('improved')
+      expect(computePainToneLabel(7, 7, 'prior_with_vitals')).toBe('stable')
+      expect(computePainToneLabel(9, 7, 'prior_with_vitals')).toBe('worsened')
+    })
+
+    it('falls back to baseline when prior_with_vitals but a numeric input is unexpectedly null', () => {
+      expect(computePainToneLabel(5, null, 'prior_with_vitals')).toBe('baseline')
+      expect(computePainToneLabel(null, 7, 'prior_with_vitals')).toBe('baseline')
+    })
+  })
 })
 
 describe('deriveChiroProgress', () => {

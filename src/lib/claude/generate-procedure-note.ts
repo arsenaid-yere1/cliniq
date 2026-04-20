@@ -146,6 +146,22 @@ This note is one document in a series. A reviewer reading notes #1, #2, and #3 s
 • Do NOT fabricate procedural variation that did not happen. If the guidance method, needle gauge, injection volume, anesthetic, and prep protocol are all identical on the input payload, the output language may be similar — but must not be literally identical. Sentence-level variation (word choice, clause ordering, active vs. passive voice) is sufficient.
 • Sections that are inherently template-shaped (allergies, social history, past medical history, current medications) may remain identical across sessions when the source data is identical — do NOT force variation there; the NO CLONE RULE applies only to the procedure-mechanics sections (11-15) and to the physical exam (section 8, which has its own interval-change rule).
 
+=== MISSING-VITALS BRANCH (MANDATORY) ===
+
+A prior procedure is on the chart but its pain measurement is unavailable when "paintoneLabel" == "missing_vitals", "paintoneSignals.vsBaseline" == "missing_vitals", or "paintoneSignals.vsPrevious" == "missing_vitals". This is NOT the same as first-in-series ("baseline") — the patient has been treated previously; the chart is simply incomplete.
+
+When ANY of those signals equals "missing_vitals":
+• Do NOT cite a numeric pain delta against the affected anchor. Do NOT fabricate a baseline or previous-session pain number.
+• Do NOT describe the visit as "first in the series" or "no prior comparison available" — the prior procedure is on the chart. Instead, flag the data gap plainly: "pain measurement at the prior injection was not recorded". Keep the flag neutral — no alarmism, no speculation.
+• In subjective, replace the trajectory sentence with: "The patient returns for [ordinal] PRP injection; pain at the prior injection visit was not recorded. Current pain is rated X/10." Omit the pain sentence entirely when current pain is also null.
+• In review_of_systems, use neutral persistence-leaning wording (as on the "stable" branch) — do not infer improvement or worsening.
+• In objective_physical_exam, omit interval-change commentary against the missing anchor. Use the "baseline" reference example (no interval wording) rather than the "improved"/"stable"/"worsened" examples.
+• In assessment_summary, use persistence-leaning closing clause (as on "stable"/"worsened") — no "favorable interim response" language.
+• In procedure_followup, use the "baseline" reference for follow-up cadence. Do NOT use "improved" branch language.
+• In prognosis, use the guarded reference (not guarded-to-favorable).
+
+This branch overrides the four-way paintoneLabel branching and the PAIN TONE MATRIX for the affected signal(s). If vsBaseline is "missing_vitals" but vsPrevious is a concrete label ("improved" / "stable" / "worsened"), use vsPrevious for per-session framing only; the cumulative arc cannot be asserted. Symmetric when vsPrevious is "missing_vitals" and vsBaseline is concrete.
+
 === PAIN TONE MATRIX — TWO-SIGNAL INTERPRETATION (MANDATORY) ===
 
 You are given two independent pain-tone signals:

@@ -202,3 +202,52 @@ describe('PAIN TONE MATRIX — final-interval signal', () => {
     expect(payload).toContain('"vsPrevious": null')
   })
 })
+
+describe('BASELINE DATA-GAP OVERRIDE', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: DischargeNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains BASELINE DATA-GAP OVERRIDE block', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('BASELINE DATA-GAP OVERRIDE (MANDATORY)')
+  })
+
+  it('override forbids fabricating baseline numbers and cites qualitative anchors', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('baseline→discharge numeric delta CANNOT be cited')
+    expect(system).toContain('Do NOT fabricate a baseline number')
+    expect(system).toContain('initialVisitBaseline.chief_complaint')
+    expect(system).toContain('caseSummary')
+    expect(system).toContain('ptExtraction.outcome_measures')
+  })
+
+  it('override preserves -2 default rule independent of missing baseline', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('-2 default rule for discharge-visit pain')
+    expect(system).toContain('UNCHANGED by this override')
+  })
+
+  it('override covers vsPrevious missing-vitals separately', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('painTrendSignals.vsPrevious == "missing_vitals"')
+    expect(system).toContain('penultimate-to-final interval CANNOT be characterized')
+  })
+
+  it('threads missing_vitals label through user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({
+      ...emptyInput,
+      painTrendSignals: { vsBaseline: 'missing_vitals', vsPrevious: 'missing_vitals' },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"vsBaseline": "missing_vitals"')
+    expect(payload).toContain('"vsPrevious": "missing_vitals"')
+  })
+})
