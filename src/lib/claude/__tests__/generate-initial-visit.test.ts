@@ -87,6 +87,74 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).toContain('qualitative comparative language tied to priorVisitData.chief_complaint narrative')
   })
 
+  async function captureFirstVisitPrompt(input: InitialVisitInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateInitialVisitFromData(input, 'initial_visit')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('first-visit prompt contains DIAGNOSTIC-SUPPORT RULE (M54.5 + M79.1 + no-radiculopathy)', async () => {
+    const system = await captureFirstVisitPrompt(emptyInput)
+    expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
+    expect(system).toContain('M54.5 specificity — NEVER emit the parent M54.5')
+    expect(system).toContain('Default → M54.50 (Low back pain, unspecified)')
+    expect(system).toContain('M79.1 Myalgia — redundancy guard')
+    expect(system).toContain('do NOT emit M54.12, M54.17, M50.1X, or M51.1X at the first visit')
+  })
+
+  it('first-visit lumbar catalog lists M54.50/M54.51/M54.59 not the parent M54.5', async () => {
+    const system = await captureFirstVisitPrompt(emptyInput)
+    expect(system).toContain('M54.50 (Low back pain, unspecified) / M54.51 (Vertebrogenic low back pain) / M54.59 (Other low back pain)')
+  })
+
+  it('first-visit reference example uses M54.50 and omits M79.1', async () => {
+    const system = await captureFirstVisitPrompt(emptyInput)
+    expect(system).toContain('M54.50 – Low back pain, unspecified')
+    const referenceLine = system.split('\n').find((l) => l.startsWith('Reference:') && l.includes('S13.4XXA'))
+    expect(referenceLine).toBeDefined()
+    expect(referenceLine).not.toContain('M79.1')
+  })
+
+  it('pain-eval prompt contains DIAGNOSTIC-SUPPORT RULE with radiculopathy gate', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
+    expect(system).toContain('Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X)')
+    expect(system).toContain('MRI signal of nerve-root contact alone is NOT sufficient')
+    expect(system).toContain('subjective radiation alone is NOT sufficient')
+    expect(system).toContain('positive Spurling maneuver')
+    expect(system).toContain('SLR positive AND reproducing radicular leg symptoms')
+    expect(system).toContain('A positive SLR is a LUMBAR test and does NOT support a cervical radiculopathy code')
+  })
+
+  it('pain-eval prompt contains radiculopathy downgrade table', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('replace M54.12/M50.1X with M50.20 + keep M54.2')
+    expect(system).toContain('replace M54.17/M51.17 with M51.37')
+    expect(system).toContain('replace M51.16 with M51.36')
+  })
+
+  it('pain-eval prompt contains M79.1 redundancy guard', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M79.1 Myalgia — redundancy guard')
+    expect(system).toContain('OMIT M79.1 whenever a region pain/strain code already covers')
+    expect(system).toContain('diffuse muscle pain beyond axial spine tenderness')
+  })
+
+  it('pain-eval prompt contains M54.5 specificity rule with subcodes', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M54.5 specificity — NEVER emit the parent M54.5')
+    expect(system).toContain('M54.50 (Low back pain, unspecified)')
+    expect(system).toContain('M54.51 (Vertebrogenic low back pain)')
+    expect(system).toContain('M54.59 (Other low back pain)')
+  })
+
+  it('pain-eval prompt contains suggested_diagnoses confidence handling', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('suggested_diagnoses confidence handling')
+    expect(system).toContain('OMIT "low"-confidence entries unless independent imaging + exam evidence')
+  })
+
   it('threads priorVisitData.vitalSigns into user payload when present', async () => {
     ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
     await generateInitialVisitFromData(

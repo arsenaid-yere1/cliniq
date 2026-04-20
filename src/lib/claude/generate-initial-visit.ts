@@ -162,15 +162,27 @@ Do NOT fabricate imaging findings. Do NOT use "[Pending]" brackets. Write it as 
 Use clinical impression codes based on physical examination findings and mechanism of injury. These are NOT imaging-confirmed diagnoses. Use strain/sprain codes appropriate to the affected regions:
 • Cervical: S13.4XXA (Sprain of ligaments of cervical spine, initial encounter), M54.2 (Cervicalgia)
 • Thoracic: S23.3XXA (Sprain of ligaments of thoracic spine, initial encounter), M54.6 (Pain in thoracic spine)
-• Lumbar: S39.012A (Strain of muscle, fascia and tendon of lower back, initial encounter), M54.5 (Low back pain)
+• Lumbar: S39.012A (Strain of muscle, fascia and tendon of lower back, initial encounter), M54.50 (Low back pain, unspecified) / M54.51 (Vertebrogenic low back pain) / M54.59 (Other low back pain) — see specificity rule below
 • Headache: G44.309 (Post-traumatic headache, unspecified, not intractable) — use when headache onset follows the accident mechanism; R51.9 (Headache, unspecified) if no clear post-traumatic link
 • Shoulder: S43.402A (Sprain of unspecified shoulder joint, initial encounter), M25.511/M25.512 (Pain in right/left shoulder)
 • Knee: S83.509A (Sprain of unspecified cruciate ligament of unspecified knee, initial encounter), M25.561/M25.562 (Pain in right/left knee)
 • Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain following the accident
-• General: M79.1 (Myalgia), M79.3 (Panniculitis, unspecified — if applicable)
+• General: M79.1 (Myalgia), M79.3 (Panniculitis, unspecified — if applicable) — see redundancy rule below
 Select codes based on the actual regions of complaint from the source data (providerIntake.chief_complaints body regions). If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9. For body regions not listed above, select the most appropriate ICD-10 strain/sprain or pain code for that anatomical region.
 Do NOT use disc displacement codes (M50.20, M51.16, etc.) — those require imaging confirmation.
-Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S23.3XXA – Sprain of ligaments of thoracic spine, initial encounter\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.5 – Low back pain\n• G44.309 – Post-traumatic headache, unspecified, not intractable\n• G47.9 – Sleep disorder, unspecified\n• M79.1 – Myalgia\n• V43.52XA – Car occupant injured in collision"
+
+DIAGNOSTIC-SUPPORT RULE (MANDATORY):
+
+(A) M54.5 specificity — NEVER emit the parent M54.5; always pick a 5th-character subcode:
+  • Default → M54.50 (Low back pain, unspecified) for generic/axial low back pain at initial presentation.
+  • M54.51 (Vertebrogenic low back pain) only when vertebral endplate pathology is clinically suspected AND documented in examination findings/history.
+  • M54.59 (Other low back pain) when a documented low-back-pain type does not fit .50 or .51.
+
+(B) M79.1 Myalgia — redundancy guard. OMIT M79.1 whenever a region pain/strain code already covers the exam findings (M54.2, M54.50/M54.51/M54.59, M54.6, or S13.4XXA/S23.3XXA/S39.012A). Focal paraspinal tenderness is already captured by the region code and does NOT support a separate M79.1 entry. Keep M79.1 ONLY if the exam documents diffuse muscle pain beyond axial spine tenderness (e.g., upper-trapezius involvement plus non-axial regions, generalized muscle soreness in multiple non-contiguous areas).
+
+(C) Radiculopathy — do NOT emit M54.12, M54.17, M50.1X, or M51.1X at the first visit. These codes require imaging confirmation and region-matched objective findings, which are not available at initial presentation. Use the strain/sprain codes and region pain codes above instead.
+
+Reference: "• S13.4XXA – Sprain of ligaments of cervical spine, initial encounter\n• M54.2 – Cervicalgia\n• S23.3XXA – Sprain of ligaments of thoracic spine, initial encounter\n• S39.012A – Strain of muscle, fascia and tendon of lower back, initial encounter\n• M54.50 – Low back pain, unspecified\n• G44.309 – Post-traumatic headache, unspecified, not intractable\n• G47.9 – Sleep disorder, unspecified\n• V43.52XA – Car occupant injured in collision"
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) summarizes clinical examination findings by region, (b) names the injury pattern consistent with the mechanism of injury, (c) justifies ordering diagnostic imaging to evaluate the extent of injury, (d) recommends structured follow-up and conservative treatment initiation.
@@ -264,11 +276,28 @@ Common codes by pathology:
 • Lumbar disc displacement: M51.26 (Other intervertebral disc displacement, lumbar region), M51.27 (Other intervertebral disc displacement, lumbosacral region)
 • Annular tear / other disc disorder: M51.86 (Other intervertebral disc disorders, lumbar region), M50.80 (Other cervical disc disorders)
 • Radiculopathy: M54.12 (Radiculopathy, cervical region), M54.17 (Radiculopathy, lumbosacral region)
-• Pain codes: M54.2 (Cervicalgia), M54.5 (Low back pain), M54.6 (Pain in thoracic spine)
+• Pain codes: M54.2 (Cervicalgia), M54.50 (Low back pain, unspecified) / M54.51 (Vertebrogenic low back pain) / M54.59 (Other low back pain), M54.6 (Pain in thoracic spine)
 • Headache: G44.309 (Post-traumatic headache, unspecified, not intractable)
 • Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain
 • Myalgia: M79.1 (Myalgia)
-Select codes that correspond to actual MRI findings in the source data. If caseSummary.suggested_diagnoses contains codes with "high" confidence that match imaging findings, prefer those. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
+
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list is a FILTERED output, not a copy of suggested_diagnoses. Apply these filters before emitting any code:
+
+(A) Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X) — require REGION-MATCHED objective findings documented in THIS visit's providerIntake.exam_findings. MRI signal of nerve-root contact alone is NOT sufficient; subjective radiation alone is NOT sufficient.
+  • M54.12 / M50.1X (cervical) — requires one of: positive Spurling maneuver, dermatomal sensory deficit in C5/C6/C7/C8/T1, myotomal weakness in an upper-extremity root distribution, OR diminished biceps/triceps/brachioradialis reflex. A positive SLR is a LUMBAR test and does NOT support a cervical radiculopathy code.
+  • M54.17 / M51.1X (lumbar/lumbosacral) — requires one of: SLR positive AND reproducing radicular leg symptoms (pain radiating down the leg, paresthesia below the knee — SLR reproducing "low back pain" alone does NOT qualify), dermatomal sensory deficit in L4/L5/S1, myotomal weakness in a lower-extremity root distribution, OR diminished patellar/Achilles reflex.
+  • If the radiculopathy filter fails, DOWNGRADE: replace M54.12/M50.1X with M50.20 + keep M54.2; replace M54.17/M51.17 with M51.37 + keep the lumbar pain code; replace M51.16 with M51.36 + keep the lumbar pain code. Do NOT leave disc pathology unrepresented.
+
+(B) M79.1 Myalgia — redundancy guard. OMIT M79.1 whenever a region pain/strain code already covers the documented exam findings (e.g., M54.2, M54.50/M54.51/M54.59, M54.6, or S13.4XXA/S23.3XXA/S39.012A). Focal paraspinal tenderness is already captured by the region code and does NOT additionally support M79.1. Keep M79.1 ONLY if the exam documents diffuse muscle pain beyond axial spine tenderness (upper-trapezius involvement, generalized muscle soreness in multiple non-contiguous regions).
+
+(C) M54.5 specificity — NEVER emit the parent M54.5; always pick a 5th-character subcode:
+  • Default → M54.50 (Low back pain, unspecified) when the pain pattern is generic/axial low back pain.
+  • Use M54.51 (Vertebrogenic low back pain) only when imaging documents vertebral endplate pathology (Modic changes) and the clinical pattern matches vertebrogenic pain.
+  • Use M54.59 (Other low back pain) when a documented low-back-pain type does not fit .50 or .51.
+
+(D) suggested_diagnoses confidence handling — prefer "high"-confidence entries that match imaging + exam. For "medium"-confidence entries, require the same imaging + objective-finding support the filters above demand. OMIT "low"-confidence entries unless independent imaging + exam evidence supports them.
+
+Select codes that correspond to actual MRI findings in the source data. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.

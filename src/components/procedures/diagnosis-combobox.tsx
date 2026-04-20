@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { PrpDiagnosis } from '@/lib/validations/prp-procedure'
+import { validateIcd10Code } from '@/lib/icd10/validation'
 
 interface DiagnosisComboboxProps {
   value: PrpDiagnosis[]
@@ -16,6 +17,7 @@ interface DiagnosisComboboxProps {
 export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisComboboxProps) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const selectedCodes = new Set(value.map((d) => d.icd10_code))
@@ -31,6 +33,21 @@ export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisCom
 
   function selectSuggestion(s: { icd10_code: string | null; description: string }) {
     if (!s.icd10_code || selectedCodes.has(s.icd10_code)) return
+    const v = validateIcd10Code(s.icd10_code)
+    if (!v.ok && v.reason === 'non_billable_parent' && v.suggestion) {
+      setValidationError(
+        `${v.code} is a non-billable parent; using ${v.suggestion}. Edit the description if a different subcode applies.`,
+      )
+      if (selectedCodes.has(v.suggestion)) {
+        setQuery('')
+        return
+      }
+      onChange([...value, { icd10_code: v.suggestion, description: s.description }])
+      setQuery('')
+      inputRef.current?.focus()
+      return
+    }
+    setValidationError(null)
     onChange([...value, { icd10_code: s.icd10_code, description: s.description }])
     setQuery('')
     inputRef.current?.focus()
@@ -50,6 +67,20 @@ export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisCom
     } else {
       icd10_code = trimmed.toUpperCase()
       description = trimmed
+    }
+
+    const v = validateIcd10Code(icd10_code)
+    if (!v.ok && v.reason === 'structure') {
+      setValidationError(`"${icd10_code}" is not a valid ICD-10 code format`)
+      return
+    }
+    if (!v.ok && v.reason === 'non_billable_parent' && v.suggestion) {
+      setValidationError(
+        `${icd10_code} is a non-billable parent; using ${v.suggestion}. Edit the description if a different subcode applies.`,
+      )
+      icd10_code = v.suggestion
+    } else {
+      setValidationError(null)
     }
 
     if (selectedCodes.has(icd10_code)) {
@@ -114,6 +145,11 @@ export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisCom
           placeholder="Search ICD-10 codes or type to add..."
           autoComplete="off"
         />
+        {validationError && (
+          <p className="mt-1 text-xs text-destructive" role="alert">
+            {validationError}
+          </p>
+        )}
 
         {open && (filtered.length > 0 || showAddOption) && (
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">

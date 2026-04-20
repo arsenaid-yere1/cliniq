@@ -10,9 +10,17 @@ Rules:
 3. For imaging findings, group by body region and highlight clinically significant findings
 4. For prior treatment, summarize the treatment course including modalities, frequency, and any gaps
 5. For symptoms timeline, create a chronological progression from onset to current status
-6. For suggested diagnoses, provide ICD-10 codes when available and rate confidence based on supporting evidence strength
+6. For suggested diagnoses, provide ICD-10 codes when available and rate confidence based on supporting evidence strength. Populate supporting_evidence with the specific source citation(s) that back the code (e.g., "MRI lumbar 03/12/2026 — L5-S1 disc protrusion contacting right S1 nerve root; PT note 04/02/2026 — positive right SLR at 45°"). Vague or empty supporting_evidence is not acceptable for any code tagged "high" or "medium".
 7. Use "null" for any field where data is insufficient to make a determination
-8. Set confidence to "low" if source data is sparse or contradictory
+8. Set confidence to "low" if source data is sparse or contradictory. Additionally, apply the objective-support rubric in rule 8a below when assigning confidence to radiculopathy, myelopathy, and myalgia codes.
+
+8a. OBJECTIVE-SUPPORT RUBRIC for ICD-10 confidence:
+  • Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X): "high" requires BOTH (i) imaging showing nerve-root compromise in the matching region AND (ii) at least one region-matched objective finding in source docs — positive Spurling (cervical) or SLR reproducing radicular LEG symptoms (lumbar), dermatomal sensory deficit in the matching roots, myotomal weakness in the matching root distribution, or a diminished reflex in the matching root. "medium" requires imaging evidence plus subjective radiation in the matching dermatome WITHOUT documented objective finding. "low" when only subjective radiation is present (no imaging correlate or no objective finding in the same region).
+  • Myelopathy codes (M50.00/.01/.02, M47.1X, M54.18): "high" requires imaging of cord compression AND at least one upper-motor-neuron sign in source docs (hyperreflexia, clonus, Hoffmann, Babinski, spastic gait, or bowel/bladder dysfunction). "medium" when imaging shows cord contact but no UMN sign is documented. "low" when neither is documented.
+  • M79.1 Myalgia: "high" requires documented diffuse muscle pain beyond axial spine tenderness in source docs (e.g., upper-trapezius involvement plus non-axial regions, generalized muscle soreness in multiple non-contiguous areas). "low" when findings are limited to focal paraspinal tenderness already captured by a region pain code (M54.2, M54.50/.51/.59, M54.6) — M79.1 is redundant and should be tagged "low".
+  • M54.5 lumbar pain: NEVER emit the parent M54.5 in suggested_diagnoses — always pick a 5th-character subcode (M54.50 default, M54.51 if vertebrogenic pattern is documented on imaging, M54.59 if another documented low-back-pain type applies).
+
+Do not drop diagnoses based on this rubric — tag them with the correct confidence and populate supporting_evidence accordingly. Downstream note generators rely on confidence + evidence to decide whether to emit each code.
 9. Be precise with medical terminology — this summary may be used in legal proceedings
 10. When pain management data is present, incorporate diagnoses, treatment plans (including injection/surgery recommendations), and physical exam findings into the appropriate summary sections
 11. When physical therapy data is present, incorporate functional outcome measures (NDI, ODI, PSFS, LEFS), treatment goals with baselines and targets, and plan of care details. PT data establishes the functional recovery timeline — critical for damages calculations

@@ -37,3 +37,56 @@ describe('generateCaseSummaryFromData', () => {
     expect(result.error).toBe('boom')
   })
 })
+
+describe('OBJECTIVE-SUPPORT RUBRIC (rule 8a)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: SummaryInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateCaseSummaryFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains rule 8a OBJECTIVE-SUPPORT RUBRIC', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('8a. OBJECTIVE-SUPPORT RUBRIC for ICD-10 confidence')
+  })
+
+  it('rubric defines radiculopathy high/medium/low tiers', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X)')
+    expect(system).toContain('"high" requires BOTH (i) imaging showing nerve-root compromise')
+    expect(system).toContain('at least one region-matched objective finding')
+    expect(system).toContain('"medium" requires imaging evidence plus subjective radiation')
+    expect(system).toContain('"low" when only subjective radiation is present')
+  })
+
+  it('rubric defines myelopathy gate with UMN signs', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Myelopathy codes (M50.00/.01/.02, M47.1X, M54.18)')
+    expect(system).toContain('hyperreflexia, clonus, Hoffmann, Babinski, spastic gait, or bowel/bladder dysfunction')
+  })
+
+  it('rubric flags M79.1 redundancy', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M79.1 Myalgia')
+    expect(system).toContain('M79.1 is redundant and should be tagged "low"')
+  })
+
+  it('rubric forbids parent M54.5 in suggested_diagnoses', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('NEVER emit the parent M54.5 in suggested_diagnoses')
+    expect(system).toContain('M54.50 default')
+  })
+
+  it('rubric tightens supporting_evidence requirement', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Vague or empty supporting_evidence is not acceptable for any code tagged "high" or "medium"')
+  })
+
+  it('rubric does NOT instruct dropping diagnoses — tagging only', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do not drop diagnoses based on this rubric — tag them with the correct confidence')
+  })
+})

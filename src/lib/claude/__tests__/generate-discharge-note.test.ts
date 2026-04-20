@@ -253,6 +253,53 @@ describe('BASELINE DATA-GAP OVERRIDE', () => {
   })
 })
 
+describe('DIAGNOSTIC-SUPPORT RULE (discharge diagnoses)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: DischargeNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('discharge prompt contains DIAGNOSTIC-SUPPORT RULE with all filters (A–G)', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
+    expect(system).toContain('External-cause codes — ABSOLUTE OMISSION')
+    expect(system).toContain('Myelopathy codes')
+    expect(system).toContain('Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X) — require REGION-MATCHED objective findings')
+    expect(system).toContain('"Initial encounter" sprain codes')
+    expect(system).toContain('M79.1 Myalgia — redundancy guard')
+    expect(system).toContain('M54.5 specificity — NEVER emit the parent M54.5 at discharge')
+    expect(system).toContain('Symptom-resolution at discharge')
+  })
+
+  it('discharge radiculopathy filter excludes MRI-only / subjective-only support', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Imaging signal alone does NOT qualify')
+    expect(system).toContain('subjective radiation alone does NOT qualify')
+  })
+
+  it('discharge radiculopathy downgrade table present', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M54.12/M50.1X → M50.20 + keep M54.2')
+    expect(system).toContain('M54.17/M51.17 → M51.37')
+    expect(system).toContain('M51.16 → M51.36')
+  })
+
+  it('discharge A-suffix rule prefers D/S over A', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT emit "A"-suffix codes at discharge')
+  })
+
+  it('discharge reference line uses M50.20 + M54.50, not M54.5', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M54.50 – Low back pain, unspecified')
+    expect(system).toContain('M50.20 – Other cervical disc displacement')
+  })
+})
+
 describe('FINAL-INTERVAL REGRESSION OVERRIDE + SERIES VOLATILITY', () => {
   beforeEach(() => vi.clearAllMocks())
 

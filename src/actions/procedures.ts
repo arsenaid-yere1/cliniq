@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
 import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
+import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -190,8 +191,17 @@ export async function getCaseDiagnoses(caseId: string) {
       .not('diagnoses', 'is', null),
   ])
 
-  const pmDiagnoses: Array<{ icd10_code: string | null; description: string }> =
+  const pmDiagnosesRaw: Array<{ icd10_code: string | null; description: string }> =
     Array.isArray(pmRes.data?.diagnoses) ? pmRes.data.diagnoses : []
+
+  const pmDiagnoses = pmDiagnosesRaw
+    .map((d) => {
+      if (!d.icd10_code) return d
+      const v = validateIcd10Code(d.icd10_code)
+      if (!v.ok && v.reason === 'structure') return null
+      return { ...d, icd10_code: normalizeIcd10Code(d.icd10_code) }
+    })
+    .filter((d): d is { icd10_code: string | null; description: string } => d !== null)
 
   // Pick the best IVN row: prefer pain_evaluation_visit (imaging-confirmed codes)
   // over initial_visit (clinical impression codes). Draft is acceptable so the
@@ -211,7 +221,12 @@ export async function getCaseDiagnoses(caseId: string) {
       // Match patterns like "• M54.5 — Description" or "M54.5 — Description" or "M54.5 - Description"
       const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
       if (match) {
-        ivnDiagnoses.push({ icd10_code: match[1].trim(), description: match[2].trim() })
+        const v = validateIcd10Code(match[1])
+        if (!v.ok && v.reason === 'structure') continue
+        ivnDiagnoses.push({
+          icd10_code: normalizeIcd10Code(match[1]),
+          description: match[2].trim(),
+        })
       }
     }
   }

@@ -298,8 +298,28 @@ Motor strength, sensation, reflexes, gait. All should be normal/intact at discha
 Reference: "Motor strength is 5/5 throughout the upper and lower extremities. Sensation is intact to light touch and pinprick in all dermatomes. Deep tendon reflexes are 2+ and symmetric. Gait is steady and non-antalgic."
 
 7. diagnoses (ICD-10 list):
-List all diagnoses with ICD-10 codes. One per line, format: "• CODE – Description". Pull from procedure diagnoses, case summary, and PM extraction. Include all relevant codes from the treatment course.
-Reference: "• G44.309 – Post-traumatic headaches\\n• M62.83 – Muscle spasm\\n• M54.22 – Cervicalgia\\n• S13.4XXA – Cervical sprain..."
+List all diagnoses with ICD-10 codes. One per line, format: "• CODE – Description". Pull from procedure diagnoses, case summary, and PM extraction.
+
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): The discharge diagnosis list is a FILTERED output, not a copy of every code that appeared during the treatment course. Apply the filters below to every candidate code from procedure.diagnoses, case_summary.suggested_diagnoses, and pmExtraction.diagnoses. Omit any code that fails its filter. When a filter downgrades a code, substitute the downgrade below rather than leaving pathology unrepresented.
+
+(A) External-cause codes — ABSOLUTE OMISSION. Omit every V-code, W-code, X-code, and Y-code (e.g., V43.52XA, W01.0XXA, W18.49XA). These codes establish causation and belong in the initial-visit note, not in a discharge note. Including them reads as aggressive billing and is a defensibility liability at deposition. No substitute — simply omit.
+
+(B) Myelopathy codes (M50.00/.01/.02, M47.1X, M54.18) — require documented upper motor neuron signs in the final-procedure or discharge-visit objective findings. If no UMN sign is documented (hyperreflexia, clonus, Hoffmann, Babinski, spastic gait, bowel/bladder dysfunction), OMIT. Downgrade: replace with M50.20 or matching non-myelopathy disc code.
+
+(C) Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X) — require REGION-MATCHED objective findings documented during the treatment course (in any finalized procedure note or in case_summary source docs). Imaging signal alone does NOT qualify; subjective radiation alone does NOT qualify. Required support:
+  • Cervical (M54.12, M50.1X): positive Spurling, dermatomal sensory deficit in C5/C6/C7/C8/T1, myotomal UE weakness, OR diminished biceps/triceps/brachioradialis reflex.
+  • Lumbar (M54.17, M51.1X): SLR positive AND reproducing radicular leg symptoms (NOT just low back pain), dermatomal sensory deficit in L4/L5/S1, myotomal LE weakness, OR diminished patellar/Achilles reflex.
+  • If the filter fails, DOWNGRADE: M54.12/M50.1X → M50.20 + keep M54.2; M54.17/M51.17 → M51.37 + keep the lumbar pain code; M51.16 → M51.36 + keep the lumbar pain code.
+
+(D) "Initial encounter" sprain codes (A-suffix: S13.4XXA, S23.3XXA, S33.5XXA, S39.012A, S43.402A, S83.509A) — on a discharge note, prefer the subsequent-encounter "D" suffix or the sequela "S" suffix. Do NOT emit "A"-suffix codes at discharge.
+
+(E) M79.1 Myalgia — redundancy guard. OMIT M79.1 when the retained list already includes a region pain code (M54.2, M54.50/M54.51/M54.59, M54.6) covering the exam findings. Focal paraspinal tenderness is captured by the region code. Keep M79.1 ONLY if discharge findings document diffuse muscle pain beyond axial spine tenderness. M79.1 alongside M54.2/M54.50 without independent diffuse-myalgia findings reads as additive billing.
+
+(F) M54.5 specificity — NEVER emit the parent M54.5 at discharge; always pick a 5th-character subcode (M54.50 default; M54.51 if vertebrogenic pattern documented; M54.59 if another documented low-back-pain type applies).
+
+(G) Symptom-resolution at discharge — codes whose symptoms have fully resolved by the discharge visit should be omitted or shifted to the sequela "S"-suffix variant. Retain a code only when it reflects ongoing pathology, residual symptoms, or is clinically essential for continuity of care.
+
+Reference (after filtering): "• G44.309 – Post-traumatic headache, unspecified, not intractable\\n• M50.20 – Other cervical disc displacement, unspecified level\\n• M54.2 – Cervicalgia\\n• M51.36 – Other intervertebral disc degeneration, lumbar region\\n• M54.50 – Low back pain, unspecified"
 
 8. assessment (~1 paragraph):
 Clinical improvement summary. State sustained improvement following PRP treatment. Link pain reduction, functional restoration, and resolution of radicular features to favorable response to biologic regenerative therapy. REQUIRED: cite the numeric pain delta from baselinePain to the DISCHARGE-VISIT reading (2 points below \`latestVitals.pain_score_max\` by default, floored at 0), e.g., "a reduction from 7/10 at baseline to 1/10 at today's discharge evaluation". Note no treatment-related complications. Support stabilization and healing.
