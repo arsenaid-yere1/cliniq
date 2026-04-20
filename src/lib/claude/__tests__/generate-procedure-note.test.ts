@@ -41,6 +41,7 @@ const emptyInput: ProcedureNoteInputData = {
   },
   vitalSigns: null,
   priorProcedures: [],
+  intakePain: null,
   paintoneLabel: 'baseline',
   paintoneSignals: { vsBaseline: 'baseline', vsPrevious: null },
   chiroProgress: null,
@@ -866,5 +867,54 @@ describe('MISSING-VITALS BRANCH', () => {
     expect(payload).toContain('"paintoneLabel": "missing_vitals"')
     expect(payload).toContain('"vsBaseline": "missing_vitals"')
     expect(payload).toContain('"vsPrevious": "missing_vitals"')
+  })
+})
+
+describe('INTAKE ANCHOR (procedure #1 pre-treatment baseline)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains INTAKE ANCHOR block conditioned on priorProcedures empty and intakePain non-null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('INTAKE ANCHOR (MANDATORY when priorProcedures is empty AND intakePain.pain_score_max is non-null)')
+    expect(system).toContain('Pre-treatment pain at the initial evaluation was X/10')
+  })
+
+  it('INTAKE ANCHOR forbids describing patient as having prior injections', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('the patient has had zero prior PRP')
+    expect(system).toContain('presents for his first PRP injection')
+  })
+
+  it('INTAKE ANCHOR defers to baseline branch when intakePain is null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('When intakePain.pain_score_max is null AND priorProcedures is empty, the "baseline" branch applies as before')
+  })
+
+  it('threads intakePain into user payload when present', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      intakePain: { recorded_at: '2026-03-01T10:00:00Z', pain_score_min: 7, pain_score_max: 8 },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"intakePain"')
+    expect(payload).toContain('"pain_score_max": 8')
+    expect(payload).toContain('"pain_score_min": 7')
+  })
+
+  it('threads intakePain as null when absent', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"intakePain": null')
   })
 })

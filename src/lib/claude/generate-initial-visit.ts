@@ -232,6 +232,12 @@ If priorVisitData is provided in the source data, it contains the finalized Init
 
 5. Prognosis: May reference the evolution from guarded-but-favorable (initial) to the current imaging-informed prognosis.
 
+NUMERIC-ANCHOR (MANDATORY when priorVisitData.vitalSigns.pain_score_max is non-null): The prior visit's intake vitals are carried on priorVisitData.vitalSigns. Use them to anchor a numeric pain-trajectory sentence in the current visit's Chief Complaint / History paragraphs and in the Prognosis paragraph. Required framing:
+• "Pain has [decreased / remained similar / increased] from X/10 at the initial evaluation to Y/10 today." Render ranges when priorVisitData.vitalSigns.pain_score_min/max differ (e.g. "from 7-8/10 at initial evaluation to 5-6/10 today"); single value when they match or only one is present.
+• Current pain values come from the CURRENT visit's providerIntake — never from priorVisitData. priorVisitData.vitalSigns supplies the prior endpoint only.
+• The delta direction must match what the numbers support. A ≥3 point drop is "pain has meaningfully decreased"; a ≤2 point drop is "pain is similar but modestly reduced"; a ≥2 point rise is "pain has increased". Thresholds match the procedure-note paintoneLabel semantics.
+• When priorVisitData.vitalSigns is null or pain_score_max is null, do NOT invent a numeric prior pain value. Fall back to qualitative comparative language tied to priorVisitData.chief_complaint narrative.
+
 If priorVisitData is null (no prior Initial Visit exists on this case), generate the Pain Evaluation Visit note without any interval-comparison language — it is a standalone evaluation.
 
 2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
@@ -469,6 +475,16 @@ export interface InitialVisitInputData {
     rom_data: unknown | null
     visit_date: string | null
     finalized_at: string | null
+    // Pain vitals captured at or before the prior initial visit's finalization.
+    // Used to anchor numeric pain trajectory sentences in the Pain Evaluation
+    // Visit narrative (e.g. "pain has decreased from 8/10 at initial
+    // evaluation to 6/10 today"). Null when no intake vitals row predates the
+    // prior visit's finalized_at.
+    vitalSigns: {
+      recorded_at: string | null
+      pain_score_min: number | null
+      pain_score_max: number | null
+    } | null
   } | null
   /**
    * Whether the case has any approved/edited MRI or CT extractions. Used by

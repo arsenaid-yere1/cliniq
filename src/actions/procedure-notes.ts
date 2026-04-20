@@ -42,6 +42,7 @@ async function gatherProcedureNoteSourceData(
     priorProceduresRes,
     clinicRes,
     chiroRes,
+    intakeVitalsRes,
   ] = await Promise.all([
     supabase
       .from('procedures')
@@ -105,6 +106,18 @@ async function gatherProcedureNoteSourceData(
       .eq('review_status', 'approved')
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // Intake vitals = most recent non-procedure vital_signs row for this case.
+    // Used as the baseline anchor for procedure #1 when no prior procedure
+    // exists, so the AI can narrate intake → current pain reduction.
+    supabase
+      .from('vital_signs')
+      .select('recorded_at, pain_score_min, pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
   ])
@@ -194,14 +207,23 @@ async function gatherProcedureNoteSourceData(
   // Classify the baseline reference. "prior_missing_vitals" signals the AI
   // that a prior procedure is on the chart but its vitals are absent — distinct
   // from "no prior" (genuine first-in-series).
+  //
+  // Anchor precedence when no prior procedure exists (procedure #1): fall back
+  // to intakeVitalsRes (most recent non-procedure vitals row). Intake pain is
+  // the true pre-treatment anchor; using it lets the first procedure's note
+  // narrate "intake 8/10 → today 6/10" instead of defaulting to baseline
+  // framing.
   const baselineProcedure = priorProcedureRows.length > 0 ? priorProcedureRows[0] : null
   const baselineVitals = baselineProcedure ? priorVitalsByProcedureId.get(baselineProcedure.id) : undefined
+  const intakePainMax = intakeVitalsRes.data?.pain_score_max ?? null
   const baselineContext: PainToneContext =
-    baselineProcedure == null
-      ? 'no_prior'
-      : baselineVitals?.pain_score_max == null
+    baselineProcedure != null
+      ? baselineVitals?.pain_score_max == null
         ? 'prior_missing_vitals'
         : 'prior_with_vitals'
+      : intakePainMax != null
+        ? 'prior_with_vitals'
+        : 'no_prior'
   if (baselineContext === 'prior_missing_vitals') {
     // eslint-disable-next-line no-console
     console.warn('[pain-tone] baseline anchor missing vitals', {
@@ -210,9 +232,12 @@ async function gatherProcedureNoteSourceData(
       baselineProcedureId: baselineProcedure!.id,
     })
   }
+  const baselinePainMax = baselineProcedure
+    ? (baselineVitals?.pain_score_max ?? null)
+    : intakePainMax
   const paintoneVsBaseline = computePainToneLabel(
     vitalsRes.data?.pain_score_max ?? null,
-    baselineVitals?.pain_score_max ?? null,
+    baselinePainMax,
     baselineContext,
   )
 
@@ -287,6 +312,13 @@ async function gatherProcedureNoteSourceData(
         pain_score_min: priorVitalsByProcedureId.get(p.id)?.pain_score_min ?? null,
         pain_score_max: priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null,
       })),
+      intakePain: intakeVitalsRes.data
+        ? {
+            recorded_at: intakeVitalsRes.data.recorded_at,
+            pain_score_min: intakeVitalsRes.data.pain_score_min,
+            pain_score_max: intakeVitalsRes.data.pain_score_max,
+          }
+        : null,
       // paintoneLabel is the series-baseline comparison (current vs first
       // procedure). All section-specific branching in the prompt reads this
       // field. priorProcedureRows is ascending (oldest first), so index 0 is

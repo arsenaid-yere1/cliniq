@@ -167,6 +167,33 @@ async function gatherSourceData(
   const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0)) > 0
 
   const priorVisitRow = (priorVisitRes as { data: Record<string, unknown> | null }).data
+
+  // When pain-evaluation visit has a prior finalized initial visit, fetch the
+  // intake vitals row that predates the prior visit's finalization. Gives the
+  // follow-up note a numeric anchor for "pain decreased from X/10 to Y/10"
+  // narrative — text-only prior data can't support that sentence.
+  const priorVisitFinalizedAt = (priorVisitRow?.finalized_at as string | null) ?? null
+  let priorVisitVitalSigns: NonNullable<InitialVisitInputData['priorVisitData']>['vitalSigns'] = null
+  if (priorVisitRow && priorVisitFinalizedAt) {
+    const { data: vitalsRow } = await supabase
+      .from('vital_signs')
+      .select('recorded_at, pain_score_min, pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .lte('recorded_at', priorVisitFinalizedAt)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (vitalsRow) {
+      priorVisitVitalSigns = {
+        recorded_at: vitalsRow.recorded_at,
+        pain_score_min: vitalsRow.pain_score_min,
+        pain_score_max: vitalsRow.pain_score_max,
+      }
+    }
+  }
+
   const priorVisitData: InitialVisitInputData['priorVisitData'] = priorVisitRow
     ? {
         chief_complaint: (priorVisitRow.chief_complaint as string | null) ?? null,
@@ -179,7 +206,8 @@ async function gatherSourceData(
         provider_intake: priorVisitRow.provider_intake ?? null,
         rom_data: priorVisitRow.rom_data ?? null,
         visit_date: (priorVisitRow.visit_date as string | null) ?? null,
-        finalized_at: (priorVisitRow.finalized_at as string | null) ?? null,
+        finalized_at: priorVisitFinalizedAt,
+        vitalSigns: priorVisitVitalSigns,
       }
     : null
 

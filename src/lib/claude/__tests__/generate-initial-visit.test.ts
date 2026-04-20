@@ -63,3 +63,56 @@ describe('regenerateSection', () => {
     expect(result.data).toBe('fresh')
   })
 })
+
+describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: InitialVisitInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateInitialVisitFromData(input, 'pain_evaluation_visit')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt contains NUMERIC-ANCHOR clause referencing priorVisitData.vitalSigns', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('NUMERIC-ANCHOR (MANDATORY when priorVisitData.vitalSigns.pain_score_max is non-null)')
+    expect(system).toContain('Pain has [decreased / remained similar / increased]')
+    expect(system).toContain('priorVisitData.vitalSigns supplies the prior endpoint only')
+  })
+
+  it('NUMERIC-ANCHOR falls back to qualitative when vitalSigns is null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('When priorVisitData.vitalSigns is null or pain_score_max is null, do NOT invent a numeric prior pain value')
+    expect(system).toContain('qualitative comparative language tied to priorVisitData.chief_complaint narrative')
+  })
+
+  it('threads priorVisitData.vitalSigns into user payload when present', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateInitialVisitFromData(
+      {
+        ...emptyInput,
+        priorVisitData: {
+          chief_complaint: 'neck pain',
+          physical_exam: null,
+          imaging_findings: null,
+          medical_necessity: null,
+          diagnoses: null,
+          treatment_plan: null,
+          prognosis: null,
+          provider_intake: null,
+          rom_data: null,
+          visit_date: '2026-03-01',
+          finalized_at: '2026-03-01T12:00:00Z',
+          vitalSigns: { recorded_at: '2026-03-01T10:00:00Z', pain_score_min: 7, pain_score_max: 8 },
+        },
+      },
+      'pain_evaluation_visit',
+    )
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"vitalSigns"')
+    expect(payload).toContain('"pain_score_max": 8')
+    expect(payload).toContain('"pain_score_min": 7')
+  })
+})

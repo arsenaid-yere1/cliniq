@@ -66,6 +66,17 @@ export interface ProcedureNoteInputData {
     pain_score_max: number | null
     procedure_number: number
   }>
+  // intakePain: most-recent non-procedure vitals row for this case (i.e.
+  // intake / initial-visit encounter vitals). Used as the baseline anchor
+  // for procedure #1 when no prior procedure exists, so the first procedure
+  // note can narrate the intake → current reduction instead of defaulting
+  // to "baseline / first injection, no prior comparison". Null when no
+  // intake vitals were recorded.
+  intakePain: {
+    recorded_at: string | null
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null
   // paintoneLabel: series-baseline comparison. Kept as a top-level field for
   // prompt-rule backward compatibility (all existing section-specific branching
   // reads this field). Equals paintoneSignals.vsBaseline.
@@ -236,6 +247,14 @@ NARRATIVE TONE — choose framing based on the top-level "paintoneLabel" field. 
 PAIN RATING: Pain is captured as a MIN/MAX range on vitalSigns.pain_score_min / pain_score_max. Render as a range when both are present and differ (e.g. "rated 3-6/10"); render as a single value when they match or only one is present (e.g. "rated 5/10"); omit the pain sentence entirely if both are null.
 
 TRAJECTORY (when priorProcedures has 2 or more entries): In addition to the most-recent comparison, briefly describe the progression across the series using each prior procedure's pain_score_max in chronological order (e.g., "pain has progressively decreased from 8/10 → 5/10 → 3/10 across the injection series"). Keep this to one short clause — do not list every procedure date.
+
+INTAKE ANCHOR (MANDATORY when priorProcedures is empty AND intakePain.pain_score_max is non-null):
+For procedure #1 (the first injection in this case), use intakePain as the pre-treatment baseline instead of treating the visit as a standalone "first injection, no prior comparison" event. intakePain is the most-recent intake / initial-visit vitals row for this case — it captures pain BEFORE any PRP. Required framing:
+• Cite the intake pain anchor as the pre-treatment measurement: "Pre-treatment pain at the initial evaluation was X/10 (range A-B/10 when min and max differ); today, prior to the procedure, pain is rated Y/10."
+• paintoneLabel / paintoneSignals.vsBaseline already reflect this comparison when priorProcedures is empty — apply the "improved" / "stable" / "worsened" branching exactly as documented in the four-way branch. If vsBaseline = "improved", use improvement framing for the intake-to-current delta.
+• Do NOT describe the patient as "returning for his scheduled PRP injection" in a way that implies prior injections; the patient has had zero prior PRP. Use "presents for his first PRP injection" or "scheduled PRP injection" neutrally.
+• Do NOT render a TRAJECTORY clause — the TRAJECTORY rule requires 2+ prior procedures. With only the intake anchor and the current measurement, stick to the pain-delta sentence above.
+When intakePain.pain_score_max is null AND priorProcedures is empty, the "baseline" branch applies as before — no intake-vs-current comparison possible.
 
 SECONDARY SIGNAL (optional): If the top-level "chiroProgress" field is non-null, you may reference chiropractic functional progress in the narrative (e.g., "with concurrent improvement in mobility during chiropractic care") when it aligns with paintoneLabel. Do NOT cite chiroProgress when it conflicts with the pain data — the pain data takes precedence.
 
