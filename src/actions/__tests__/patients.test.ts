@@ -74,7 +74,6 @@ describe('createPatientCase', () => {
     const caseRecord = { id: TEST_CASE_ID, patient_id: TEST_PATIENT_ID, case_number: 'PI-2026-0001' }
 
     // patients insert, then cases insert, then case_status_history insert
-    let callIndex = 0
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'patients') {
         return createMockQueryBuilder({ data: patient, error: null })

@@ -12,8 +12,8 @@ for (const key of dischargeNoteSections) {
 }
 
 describe('dischargeNoteSections', () => {
-  it('has 13 entries', () => {
-    expect(dischargeNoteSections).toHaveLength(13)
+  it('has 12 entries', () => {
+    expect(dischargeNoteSections).toHaveLength(12)
   })
 })
 
@@ -41,13 +41,15 @@ describe('dischargeNoteResultSchema', () => {
 })
 
 describe('dischargeNoteEditSchema', () => {
+  const validEditData = { ...validData, visit_date: '2026-04-20' }
+
   it('accepts valid data with all sections populated', () => {
-    expect(dischargeNoteEditSchema.safeParse(validData).success).toBe(true)
+    expect(dischargeNoteEditSchema.safeParse(validEditData).success).toBe(true)
   })
 
-  it('rejects empty strings on all 13 section keys', () => {
+  it('rejects empty strings on all 12 section keys', () => {
     for (const key of dischargeNoteSections) {
-      const data = { ...validData, [key]: '' }
+      const data = { ...validEditData, [key]: '' }
       expect(dischargeNoteEditSchema.safeParse(data).success).toBe(false)
     }
   })

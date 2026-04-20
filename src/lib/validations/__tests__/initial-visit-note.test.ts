@@ -17,8 +17,8 @@ for (const key of initialVisitSections) {
 }
 
 describe('initialVisitSections', () => {
-  it('has 15 entries', () => {
-    expect(initialVisitSections).toHaveLength(15)
+  it('has 16 entries', () => {
+    expect(initialVisitSections).toHaveLength(16)
   })
 })
 
@@ -46,13 +46,15 @@ describe('initialVisitNoteResultSchema', () => {
 })
 
 describe('initialVisitNoteEditSchema', () => {
+  const validEditData = { ...validNoteData, visit_date: '2026-04-20' }
+
   it('accepts valid data', () => {
-    expect(initialVisitNoteEditSchema.safeParse(validNoteData).success).toBe(true)
+    expect(initialVisitNoteEditSchema.safeParse(validEditData).success).toBe(true)
   })
 
   it('rejects empty strings on all section keys', () => {
     for (const key of initialVisitSections) {
-      const data = { ...validNoteData, [key]: '' }
+      const data = { ...validEditData, [key]: '' }
       expect(initialVisitNoteEditSchema.safeParse(data).success).toBe(false)
     }
   })
@@ -66,6 +68,8 @@ describe('initialVisitVitalsSchema', () => {
     respiratory_rate: 16,
     temperature_f: 98.6,
     spo2_percent: 98,
+    pain_score_min: 3,
+    pain_score_max: 6,
   }
 
   it('accepts valid vitals', () => {
@@ -80,6 +84,8 @@ describe('initialVisitVitalsSchema', () => {
       respiratory_rate: null,
       temperature_f: null,
       spo2_percent: null,
+      pain_score_min: null,
+      pain_score_max: null,
     })
     expect(result.success).toBe(true)
   })
@@ -92,6 +98,8 @@ describe('initialVisitVitalsSchema', () => {
       respiratory_rate: 1,
       temperature_f: 90,
       spo2_percent: 0,
+      pain_score_min: 0,
+      pain_score_max: 0,
     })
     expect(result.success).toBe(true)
   })
@@ -104,6 +112,8 @@ describe('initialVisitVitalsSchema', () => {
       respiratory_rate: 60,
       temperature_f: 110,
       spo2_percent: 100,
+      pain_score_min: 10,
+      pain_score_max: 10,
     })
     expect(result.success).toBe(true)
   })

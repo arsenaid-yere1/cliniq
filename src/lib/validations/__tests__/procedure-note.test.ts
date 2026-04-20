@@ -12,8 +12,8 @@ for (const key of procedureNoteSections) {
 }
 
 describe('procedureNoteSections', () => {
-  it('has 21 entries', () => {
-    expect(procedureNoteSections).toHaveLength(21)
+  it('has 20 entries', () => {
+    expect(procedureNoteSections).toHaveLength(20)
   })
 
   it('includes clinician_disclaimer', () => {
