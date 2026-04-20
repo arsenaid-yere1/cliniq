@@ -17,6 +17,7 @@ import {
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
+import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 
 // --- Helper: compute source data hash ---
 
@@ -225,7 +226,6 @@ async function gatherProcedureNoteSourceData(
         ? 'prior_with_vitals'
         : 'no_prior'
   if (baselineContext === 'prior_missing_vitals') {
-    // eslint-disable-next-line no-console
     console.warn('[pain-tone] baseline anchor missing vitals', {
       caseId,
       procedureId,
@@ -252,7 +252,6 @@ async function gatherProcedureNoteSourceData(
         ? 'prior_missing_vitals'
         : 'prior_with_vitals'
   if (previousContext === 'prior_missing_vitals') {
-    // eslint-disable-next-line no-console
     console.warn('[pain-tone] previous anchor missing vitals', {
       caseId,
       procedureId,
@@ -465,11 +464,20 @@ export async function generateProcedureNote(
   let recordId: string
 
   if (existingNote) {
-    // Update existing row in-place to generating state, clearing any stale content
+    // Acquire the row-level generation lock BEFORE clearing narrative content.
+    // Prevents a second concurrent invocation from re-entering a generation
+    // that is already in flight. Stale rows (updated_at > 5 min ago in
+    // 'generating' state) are auto-recovered per acquireGenerationLock.
+    const lock = await acquireGenerationLock(supabase, 'procedure_notes', existingNote.id, user.id)
+    if (!lock.acquired) {
+      return { error: lock.reason }
+    }
+
+    // Clear stale narrative + reset metadata. Status already transitioned to
+    // 'generating' by the lock acquisition — we must not clobber it here.
     const { error: updateError } = await supabase
       .from('procedure_notes')
       .update({
-        status: 'generating',
         generation_attempts: 1,
         generation_error: null,
         source_data_hash: sourceHash,
@@ -507,7 +515,10 @@ export async function generateProcedureNote(
 
     recordId = existingNote.id
   } else {
-    // No existing row — create one
+    // No existing row — create one. The unique partial index on procedure_id
+    // (idx_procedure_notes_procedure_active) protects against concurrent
+    // inserts: a second racer gets a unique-violation error, which we report
+    // as "generation already in progress".
     const { data: record, error: insertError } = await supabase
       .from('procedure_notes')
       .insert({
@@ -525,7 +536,12 @@ export async function generateProcedureNote(
 
     if (insertError || !record) {
       revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-      return { error: 'Failed to create note record' }
+      const isUniqueViolation = insertError?.code === '23505'
+      return {
+        error: isUniqueViolation
+          ? 'Generation already in progress — please wait a moment and try again.'
+          : 'Failed to create note record',
+      }
     }
 
     recordId = record.id

@@ -229,7 +229,6 @@ async function gatherDischargeNoteSourceData(
         ? 'prior_missing_vitals'
         : 'prior_with_vitals'
   if (baselineContext === 'prior_missing_vitals') {
-    // eslint-disable-next-line no-console
     console.warn('[pain-tone] discharge baseline anchor missing vitals', {
       caseId,
       baselineProcedureId: firstProcedure!.id,
@@ -245,7 +244,6 @@ async function gatherDischargeNoteSourceData(
         ? 'prior_missing_vitals'
         : 'prior_with_vitals'
   if (previousContext === 'prior_missing_vitals') {
-    // eslint-disable-next-line no-console
     console.warn('[pain-tone] discharge previous anchor missing vitals', {
       caseId,
       previousProcedureId: secondToLastProcedure!.id,
@@ -420,13 +418,34 @@ export async function generateDischargeNote(
   }
 
   // Look up existing active discharge note to preserve visit_date, provider-entered
-  // vitals, and the tone hint across regeneration.
+  // vitals, and the tone hint across regeneration. Also read status + updated_at
+  // to guard against concurrent generations.
   const { data: existingNote } = await supabase
     .from('discharge_notes')
-    .select('id, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
+    .select('id, status, updated_at, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
+
+  // Concurrent-generation guard. Discharge uses a soft-delete + re-insert
+  // pattern (not update-in-place), so the row-level lock helper does not
+  // apply directly. Instead, reject when the existing row is already in
+  // 'generating' state and was updated within the stale-recovery window.
+  if (existingNote && existingNote.status === 'generating') {
+    const updatedAt = existingNote.updated_at ? new Date(existingNote.updated_at) : null
+    const staleBoundary = new Date(Date.now() - 5 * 60_000)
+    if (updatedAt && updatedAt > staleBoundary) {
+      console.warn('[generation-lock] discharge generation rejected — in flight', {
+        caseId,
+        recordId: existingNote.id,
+      })
+      return { error: 'Generation already in progress — please wait a moment and try again.' }
+    }
+    console.warn('[generation-lock] discharge stale generation recovered', {
+      caseId,
+      recordId: existingNote.id,
+    })
+  }
 
   const today = new Date().toISOString().slice(0, 10)
   const visitDate = existingNote?.visit_date ?? today
@@ -490,6 +509,9 @@ export async function generateDischargeNote(
 
   if (insertError || !record) {
     revalidatePath(`/patients/${caseId}/discharge`)
+    if (insertError?.code === '23505') {
+      return { error: 'Generation already in progress — please wait a moment and try again.' }
+    }
     return { error: 'Failed to create note record' }
   }
 

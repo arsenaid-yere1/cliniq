@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -306,11 +307,18 @@ export async function generateInitialVisitNote(
   let recordId: string
 
   if (existingNote) {
-    // Update existing row to generating state (preserves provider_intake, rom_data, visit_date)
+    // Acquire the generation lock first. Prevents concurrent invocations from
+    // re-entering an in-flight generation; recovers stale locks after 5 min.
+    const lock = await acquireGenerationLock(supabase, 'initial_visit_notes', existingNote.id, user.id)
+    if (!lock.acquired) {
+      return { error: lock.reason }
+    }
+
+    // Clear stale narrative. Status already in 'generating' from the lock —
+    // do not include it in this update.
     const { error: updateError } = await supabase
       .from('initial_visit_notes')
       .update({
-        status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
         visit_date: existingNote.visit_date ?? today,
@@ -344,8 +352,9 @@ export async function generateInitialVisitNote(
 
     recordId = existingNote.id
   } else {
-    // No existing row for this visit type — create one. Does NOT touch the
-    // other visit type's row if it exists.
+    // No existing row for this visit type — create one. The unique partial
+    // index on (case_id, visit_type) protects against concurrent inserts:
+    // a second racer gets a unique-violation error (code 23505).
     const { data: record, error: insertError } = await supabase
       .from('initial_visit_notes')
       .insert({
@@ -363,6 +372,9 @@ export async function generateInitialVisitNote(
 
     if (insertError || !record) {
       revalidatePath(`/patients/${caseId}`)
+      if (insertError?.code === '23505') {
+        return { error: 'Generation already in progress — please wait a moment and try again.' }
+      }
       return { error: mapVisitDateOrderError(insertError) ?? 'Failed to create note record' }
     }
 
