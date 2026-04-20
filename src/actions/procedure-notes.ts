@@ -10,6 +10,7 @@ import {
 } from '@/lib/claude/generate-procedure-note'
 import {
   procedureNoteEditSchema,
+  procedureNoteSections,
   type ProcedureNoteEditValues,
   type ProcedureNoteSection,
 } from '@/lib/validations/procedure-note'
@@ -289,7 +290,11 @@ export async function checkProcedureNotePrerequisites(caseId: string) {
 
 // --- Generate procedure note ---
 
-export async function generateProcedureNote(procedureId: string, caseId: string) {
+export async function generateProcedureNote(
+  procedureId: string,
+  caseId: string,
+  toneHint?: string | null,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -311,10 +316,10 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
 
   const sourceHash = computeSourceHash(inputData)
 
-  // Look up existing active note for this procedure
+  // Look up existing active note for this procedure (also reads tone_hint for preservation on Retry)
   const { data: existingNote } = await supabase
     .from('procedure_notes')
-    .select('id, status')
+    .select('id, status, tone_hint')
     .eq('procedure_id', procedureId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -322,6 +327,11 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   if (existingNote && existingNote.status === 'finalized') {
     return { error: 'Note is finalized — unfinalize before regenerating' }
   }
+
+  // Normalize tone hint; fall back to persisted value (e.g., Retry from failed state)
+  const normalizedToneHint = toneHint?.trim() ? toneHint.trim() : null
+  const effectiveToneHint =
+    normalizedToneHint !== null ? normalizedToneHint : (existingNote?.tone_hint ?? null)
 
   let recordId: string
 
@@ -356,6 +366,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
         clinician_disclaimer: null,
         ai_model: null,
         raw_ai_response: null,
+        tone_hint: effectiveToneHint,
         updated_by_user_id: user.id,
       })
       .eq('id', existingNote.id)
@@ -376,6 +387,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
+        tone_hint: effectiveToneHint,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
@@ -391,7 +403,7 @@ export async function generateProcedureNote(procedureId: string, caseId: string)
   }
 
   // Call Claude
-  const result = await generateProcedureNoteFromData(inputData)
+  const result = await generateProcedureNoteFromData(inputData, effectiveToneHint)
 
   if (result.error || !result.data) {
     await supabase
@@ -718,8 +730,14 @@ export async function regenerateProcedureNoteSectionAction(
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
+  const toneHint = (note.tone_hint as string | null) ?? null
+  const otherSections = Object.fromEntries(
+    procedureNoteSections
+      .filter((s) => s !== section)
+      .map((s) => [s, (note[s] as string | null) ?? '']),
+  ) as Partial<Record<ProcedureNoteSection, string>>
 
-  const result = await regenerateSectionAI(inputData, section, currentContent)
+  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
@@ -737,4 +755,32 @@ export async function regenerateProcedureNoteSectionAction(
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
   return { data: { content: result.data } }
+}
+
+// --- Save tone hint (auto-save from draft editor) ---
+
+export async function saveProcedureNoteToneHint(
+  procedureId: string,
+  caseId: string,
+  toneHint: string | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const normalized = toneHint?.trim() ? toneHint.trim() : null
+
+  const { error } = await supabase
+    .from('procedure_notes')
+    .update({ tone_hint: normalized, updated_by_user_id: user.id })
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .in('status', ['draft', 'generating', 'failed'])
+
+  if (error) return { error: 'Failed to save tone hint' }
+
+  return {}
 }

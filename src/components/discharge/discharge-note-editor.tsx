@@ -40,7 +40,9 @@ import {
   regenerateDischargeNoteSectionAction,
   resetDischargeNote,
   saveDischargeVitals,
+  saveDischargeNoteToneHint,
 } from '@/actions/discharge-notes'
+import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
@@ -71,6 +73,7 @@ interface NoteRow {
   patient_education: string | null
   prognosis: string | null
   clinician_disclaimer: string | null
+  tone_hint: string | null
   status: string
   generation_error: string | null
   visit_date: string | null
@@ -182,6 +185,7 @@ export function DischargeNoteEditor({
 }: DischargeNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
+  const [toneHint, setToneHint] = useState<string>(note?.tone_hint ?? '')
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
@@ -196,6 +200,12 @@ export function DischargeNoteEditor({
 
         <DischargeVitalsCard caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
 
+        <ToneDirectionCard
+          value={toneHint}
+          onChange={setToneHint}
+          disabled={isLocked || isPending}
+        />
+
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
             {canGenerate
@@ -205,7 +215,7 @@ export function DischargeNoteEditor({
           <Button
             onClick={() => {
               startTransition(async () => {
-                const result = await generateDischargeNote(caseId)
+                const result = await generateDischargeNote(caseId, toneHint || null)
                 if (result.error) toast.error(result.error)
                 else toast.success('Discharge summary generated successfully')
               })
@@ -257,7 +267,7 @@ export function DischargeNoteEditor({
             variant="outline"
             onClick={() => {
               startTransition(async () => {
-                const result = await generateDischargeNote(caseId)
+                const result = await generateDischargeNote(caseId, note.tone_hint ?? null)
                 if (result.error) toast.error(result.error)
                 else toast.success('Discharge summary generated successfully')
               })
@@ -363,6 +373,7 @@ function DraftEditor({
       ) as Omit<DischargeNoteEditValues, 'visit_date'>),
     },
   })
+  const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
 
   function handleSave() {
     startTransition(async () => {
@@ -370,6 +381,12 @@ function DraftEditor({
       const result = await saveDischargeNote(caseId, values)
       if (result.error) toast.error(result.error)
       else toast.success('Draft saved')
+    })
+  }
+
+  function handleToneHintBlur() {
+    void saveDischargeNoteToneHint(caseId, toneHint || null).then((result) => {
+      if (result.error) toast.error(result.error)
     })
   }
 
@@ -484,6 +501,13 @@ function DraftEditor({
 
       <Form {...form}>
         <form className="space-y-6">
+          <ToneDirectionCard
+            value={toneHint}
+            onChange={setToneHint}
+            onBlur={handleToneHintBlur}
+            disabled={isLocked || isPending}
+            description="Edits apply to subsequent section regenerations. Saved automatically on blur."
+          />
           {dischargeNoteSections.map((section) => (
             <FormField
               key={section}

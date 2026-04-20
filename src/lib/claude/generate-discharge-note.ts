@@ -173,6 +173,21 @@ RULES (apply when \`dischargeVitals\` is null):
 • If "overallPainTrend" is "baseline" (only one procedure, or pain data missing), fall back to narrative comparison using "initialVisitBaseline.chief_complaint" if it contains a pre-treatment pain descriptor; otherwise describe current status without fabricating a delta.
 • Outside of the scoped post-procedure improvement described above, never invent pain numbers that are not in the source data.
 
+=== PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
+
+If the user message contains a section labeled "ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:", treat its content as the provider's preference for phrasing, emphasis, and voice. Apply it to:
+• Word choice and tone, including modulating the default "completion, improvement, and forward-looking" framing when the provider explicitly directs otherwise (e.g., if the provider hint says "emphasize incomplete recovery" or "keep prognosis guarded", shift accordingly).
+• Which data points to emphasize or de-emphasize in prose.
+• Rhetorical framing of forward-looking statements.
+
+The provider hint does NOT override:
+• Clinical facts, numeric values, or structured data in the input payload.
+• The MANDATORY rules in === PAIN TRAJECTORY === above (including the dischargeVitals priority, the -2 default rule, the "stable"/"worsened" override, and the "never invent pain numbers" rule).
+• The NO REPETITION rule.
+• PDF-SAFE FORMATTING rules.
+
+If the provider hint conflicts with any of the above, follow the rules and render the hint's intent in whatever latitude the rules permit. Do NOT silently ignore the hint — apply it everywhere the rules allow.
+
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~3 paragraphs):
@@ -270,23 +285,24 @@ const DISCHARGE_NOTE_TOOL: Anthropic.Tool = {
 
 export async function generateDischargeNoteFromData(
   inputData: DischargeNoteInputData,
+  toneHint?: string | null,
 ): Promise<{
   data?: DischargeNoteResult
   rawResponse?: unknown
   error?: string
 }> {
+  let userMessage = `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+  }
+
   return callClaudeTool<DischargeNoteResult>({
     model: 'claude-opus-4-7',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [DISCHARGE_NOTE_TOOL],
     toolName: 'generate_discharge_note',
-    messages: [
-      {
-        role: 'user',
-        content: `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(inputData, null, 2)}`,
-      },
-    ],
+    messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = dischargeNoteResultSchema.safeParse(raw)
       return validated.success
@@ -317,21 +333,35 @@ export async function regenerateDischargeNoteSection(
   inputData: DischargeNoteInputData,
   section: DischargeNoteSection,
   currentContent: string,
+  toneHint?: string | null,
+  otherSections?: Partial<Record<DischargeNoteSection, string>>,
 ): Promise<{ data?: string; error?: string }> {
   const sectionLabel = dischargeNoteSectionLabels[section]
+
+  let otherSectionsBlock = ''
+  let systemSuffix = `You are regenerating ONLY the "${sectionLabel}" section of an existing Discharge Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`
+  if (otherSections) {
+    const entries = Object.entries(otherSections)
+      .filter(([k, v]) => k !== section && typeof v === 'string' && v.trim().length > 0)
+      .map(([k, v]) => `--- ${dischargeNoteSectionLabels[k as DischargeNoteSection]} ---\n${v}`)
+    if (entries.length > 0) {
+      otherSectionsBlock = `\n\nOTHER SECTIONS CURRENTLY PRESENT IN THIS NOTE (for context — do NOT duplicate their content):\n${entries.join('\n\n')}`
+      systemSuffix += ' Avoid duplicating content that already appears in the OTHER SECTIONS listed in the user message — each section must contribute NEW information.'
+    }
+  }
+
+  let userMessage = `Regenerate the "${sectionLabel}" section of the Discharge Note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull aggregated case data:\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+  }
 
   const result = await callClaudeTool<{ content: string }>({
     model: 'claude-opus-4-7',
     maxTokens: 4096,
-    system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Discharge Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+    system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
-    messages: [
-      {
-        role: 'user',
-        content: `Regenerate the "${sectionLabel}" section of the Discharge Note.\n\nCurrent content of this section:\n${currentContent}\n\nFull aggregated case data:\n${JSON.stringify(inputData, null, 2)}`,
-      },
-    ],
+    messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
       return validated.success

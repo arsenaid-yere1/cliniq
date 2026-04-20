@@ -10,6 +10,7 @@ import {
 } from '@/lib/claude/generate-discharge-note'
 import {
   dischargeNoteEditSchema,
+  dischargeNoteSections,
   dischargeNoteVitalsSchema,
   type DischargeNoteEditValues,
   type DischargeNoteSection,
@@ -337,7 +338,10 @@ export async function checkDischargeNotePrerequisites(caseId: string) {
 
 // --- Generate discharge note ---
 
-export async function generateDischargeNote(caseId: string) {
+export async function generateDischargeNote(
+  caseId: string,
+  toneHint?: string | null,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -353,17 +357,20 @@ export async function generateDischargeNote(caseId: string) {
     return { error: prereq.data.reason }
   }
 
-  // Look up existing active discharge note to preserve visit_date and
-  // provider-entered vitals across regeneration.
+  // Look up existing active discharge note to preserve visit_date, provider-entered
+  // vitals, and the tone hint across regeneration.
   const { data: existingNote } = await supabase
     .from('discharge_notes')
-    .select('id, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+    .select('id, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
 
   const today = new Date().toISOString().slice(0, 10)
   const visitDate = existingNote?.visit_date ?? today
+  const normalizedToneHint = toneHint?.trim() ? toneHint.trim() : null
+  const effectiveToneHint =
+    normalizedToneHint !== null ? normalizedToneHint : (existingNote?.tone_hint ?? null)
   const preservedVitals: DischargeNoteInputData['dischargeVitals'] = existingNote
     ? {
         bp_systolic: existingNote.bp_systolic,
@@ -412,6 +419,7 @@ export async function generateDischargeNote(caseId: string) {
       spo2_percent: preservedVitals?.spo2_percent ?? null,
       pain_score_min: preservedVitals?.pain_score_min ?? null,
       pain_score_max: preservedVitals?.pain_score_max ?? null,
+      tone_hint: effectiveToneHint,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -424,7 +432,7 @@ export async function generateDischargeNote(caseId: string) {
   }
 
   // Call Claude
-  const result = await generateDischargeNoteFromData(inputData)
+  const result = await generateDischargeNoteFromData(inputData, effectiveToneHint)
 
   if (result.error || !result.data) {
     await supabase
@@ -680,8 +688,14 @@ export async function regenerateDischargeNoteSectionAction(
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
+  const toneHint = (note.tone_hint as string | null) ?? null
+  const otherSections = Object.fromEntries(
+    dischargeNoteSections
+      .filter((s) => s !== section)
+      .map((s) => [s, (note[s] as string | null) ?? '']),
+  ) as Partial<Record<DischargeNoteSection, string>>
 
-  const result = await regenerateSectionAI(inputData, section, currentContent)
+  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
@@ -822,4 +836,53 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
 
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { success: true } }
+}
+
+// --- Save tone hint (auto-save from draft editor) ---
+
+export async function saveDischargeNoteToneHint(
+  caseId: string,
+  toneHint: string | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const normalized = toneHint?.trim() ? toneHint.trim() : null
+
+  // Upsert pattern: update active row if present, otherwise create a pre-generation
+  // draft row holding only the tone hint.
+  const { data: existing } = await supabase
+    .from('discharge_notes')
+    .select('id, status')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    if (existing.status === 'finalized') {
+      return { error: 'Cannot edit tone hint on a finalized note' }
+    }
+    const { error } = await supabase
+      .from('discharge_notes')
+      .update({ tone_hint: normalized, updated_by_user_id: user.id })
+      .eq('id', existing.id)
+    if (error) return { error: 'Failed to save tone hint' }
+  } else {
+    const { error } = await supabase
+      .from('discharge_notes')
+      .insert({
+        case_id: caseId,
+        status: 'draft',
+        tone_hint: normalized,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+    if (error) return { error: 'Failed to save tone hint' }
+  }
+
+  return {}
 }

@@ -78,6 +78,81 @@ describe('regenerateProcedureNoteSection', () => {
   })
 })
 
+describe('tone hint', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('includes toneHint in user message when provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput, 'use assertive language')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:')
+    expect(opts.messages[0].content).toContain('use assertive language')
+  })
+
+  it('omits toneHint when whitespace-only', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput, '   ')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('ADDITIONAL TONE/DIRECTION')
+  })
+
+  it('omits toneHint when null or undefined', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput, null)
+    await generateProcedureNoteFromData(emptyInput)
+    const callA = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const callB = (callClaudeTool as unknown as Mock).mock.calls[1][0]
+    expect(callA.messages[0].content).not.toContain('ADDITIONAL TONE/DIRECTION')
+    expect(callB.messages[0].content).not.toContain('ADDITIONAL TONE/DIRECTION')
+  })
+
+  it('includes toneHint in section regeneration user message', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'subjective', 'prior', 'keep tone guarded')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('keep tone guarded')
+  })
+})
+
+describe('cross-section awareness', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('includes other-sections block when provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'subjective', 'current', null, {
+      assessment_and_plan: 'existing assessment text',
+      prognosis: 'existing prognosis',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('OTHER SECTIONS CURRENTLY PRESENT')
+    expect(opts.messages[0].content).toContain('existing assessment text')
+    expect(opts.messages[0].content).toContain('existing prognosis')
+    expect(opts.system).toContain('Avoid duplicating content that already appears')
+  })
+
+  it('excludes the target section from the other-sections block', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'subjective', 'current', null, {
+      subjective: 'SHOULD NOT APPEAR',
+      prognosis: 'existing prognosis',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('SHOULD NOT APPEAR')
+    expect(opts.messages[0].content).toContain('existing prognosis')
+  })
+
+  it('omits the other-sections block when all other sections are empty', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'subjective', 'current', null, {
+      assessment_and_plan: '',
+      prognosis: '   ',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('OTHER SECTIONS CURRENTLY PRESENT')
+    expect(opts.system).not.toContain('Avoid duplicating content that already appears')
+  })
+})
+
 describe('SYSTEM_PROMPT — objective_physical_exam branching', () => {
   beforeEach(() => vi.clearAllMocks())
 

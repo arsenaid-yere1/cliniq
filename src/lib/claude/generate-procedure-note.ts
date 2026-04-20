@@ -127,6 +127,21 @@ This note is one document in a series. A reviewer reading notes #1, #2, and #3 s
 • Do NOT fabricate procedural variation that did not happen. If the guidance method, needle gauge, injection volume, anesthetic, and prep protocol are all identical on the input payload, the output language may be similar — but must not be literally identical. Sentence-level variation (word choice, clause ordering, active vs. passive voice) is sufficient.
 • Sections that are inherently template-shaped (allergies, social history, past medical history, current medications) may remain identical across sessions when the source data is identical — do NOT force variation there; the NO CLONE RULE applies only to the procedure-mechanics sections (11-15) and to the physical exam (section 8, which has its own interval-change rule).
 
+=== PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
+
+If the user message contains a section labeled "ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:", treat its content as the provider's preference for phrasing, emphasis, and voice. Apply it to:
+• Word choice and tone (e.g., assertive vs. conservative medical-necessity language).
+• Which data points to emphasize or de-emphasize in prose.
+• Rhetorical framing of forward-looking statements.
+
+The provider hint does NOT override:
+• Clinical facts, numeric values, or structured data in the input payload.
+• The MANDATORY rules above (NO REPETITION, NO CLONE RULE) and below (INTERVAL-CHANGE RULE, MINIMUM INTERVAL-CHANGE FLOOR, SERIES-TOTAL RULE, INTERVAL-RESPONSE NARRATIVE, PRE-PROCEDURE SAFETY CHECKLIST, RESPONSE-CALIBRATED FOLLOW-UP, DIAGNOSTIC-SUPPORT RULE, TARGET-COHERENCE RULE, DATA-NULL RULE).
+• The paintoneLabel-based and chiroProgress-based branching logic in the section-specific instructions.
+• PDF-SAFE FORMATTING rules.
+
+If the provider hint conflicts with any of the above, follow the rules and render the hint's intent in whatever latitude the rules permit. Do NOT silently ignore the hint — apply it everywhere the rules allow.
+
 === SECTION-SPECIFIC INSTRUCTIONS ===
 
 1. subjective (~1-2 paragraphs):
@@ -441,23 +456,24 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
 
 export async function generateProcedureNoteFromData(
   inputData: ProcedureNoteInputData,
+  toneHint?: string | null,
 ): Promise<{
   data?: ProcedureNoteResult
   rawResponse?: unknown
   error?: string
 }> {
+  let userMessage = `Generate a comprehensive PRP Procedure Note from the following case and procedure data.\n\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+  }
+
   return callClaudeTool<ProcedureNoteResult>({
     model: 'claude-opus-4-7',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [PROCEDURE_NOTE_TOOL],
     toolName: 'generate_procedure_note',
-    messages: [
-      {
-        role: 'user',
-        content: `Generate a comprehensive PRP Procedure Note from the following case and procedure data.\n\n${JSON.stringify(inputData, null, 2)}`,
-      },
-    ],
+    messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = procedureNoteResultSchema.safeParse(raw)
       return validated.success
@@ -488,21 +504,35 @@ export async function regenerateProcedureNoteSection(
   inputData: ProcedureNoteInputData,
   section: ProcedureNoteSection,
   currentContent: string,
+  toneHint?: string | null,
+  otherSections?: Partial<Record<ProcedureNoteSection, string>>,
 ): Promise<{ data?: string; error?: string }> {
   const sectionLabel = procedureNoteSectionLabels[section]
+
+  let otherSectionsBlock = ''
+  let systemSuffix = `You are regenerating ONLY the "${sectionLabel}" section of an existing PRP Procedure Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`
+  if (otherSections) {
+    const entries = Object.entries(otherSections)
+      .filter(([k, v]) => k !== section && typeof v === 'string' && v.trim().length > 0)
+      .map(([k, v]) => `--- ${procedureNoteSectionLabels[k as ProcedureNoteSection]} ---\n${v}`)
+    if (entries.length > 0) {
+      otherSectionsBlock = `\n\nOTHER SECTIONS CURRENTLY PRESENT IN THIS NOTE (for context — do NOT duplicate their content):\n${entries.join('\n\n')}`
+      systemSuffix += ' Avoid duplicating content that already appears in the OTHER SECTIONS listed in the user message — each section must contribute NEW information.'
+    }
+  }
+
+  let userMessage = `Regenerate the "${sectionLabel}" section of the PRP Procedure Note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+  }
 
   const result = await callClaudeTool<{ content: string }>({
     model: 'claude-opus-4-7',
     maxTokens: 4096,
-    system: `${SYSTEM_PROMPT}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing PRP Procedure Note. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+    system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
-    messages: [
-      {
-        role: 'user',
-        content: `Regenerate the "${sectionLabel}" section of the PRP Procedure Note.\n\nCurrent content of this section:\n${currentContent}\n\nFull case and procedure data:\n${JSON.stringify(inputData, null, 2)}`,
-      },
-    ],
+    messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
       return validated.success
