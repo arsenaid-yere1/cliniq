@@ -4,7 +4,6 @@ import {
   checkNotePrerequisites,
   getInitialVisitVitals,
   getProviderIntake,
-  detectDefaultVisitTypeForCase,
 } from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
@@ -40,7 +39,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     signatureResult,
     initialIntakeResult,
     painEvalIntakeResult,
-    defaultVisitType,
   ] = await Promise.all([
     getInitialVisitNotes(caseId),
     checkNotePrerequisites(caseId),
@@ -51,7 +49,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
     getProviderIntake(caseId, 'initial_visit'),
     getProviderIntake(caseId, 'pain_evaluation_visit'),
-    detectDefaultVisitTypeForCase(caseId),
   ])
 
   const caseData = caseRes.data
@@ -139,7 +136,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       intakesByVisitType={intakesByVisitType}
       romByVisitType={romByVisitType}
       documentFilePathByVisitType={documentFilePathByVisitType}
-      defaultVisitType={defaultVisitType}
+      defaultVisitType="initial_visit"
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
       initialVitals={vitalsResult.data ?? null}
