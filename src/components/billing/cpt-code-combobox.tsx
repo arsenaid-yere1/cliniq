@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Input } from '@/components/ui/input'
 
@@ -32,7 +31,6 @@ export function CptCodeCombobox({
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Filter catalog items by CPT code or description
   const filtered = catalogItems.filter((item) => {
     if (!value) return true
     const search = value.toLowerCase()
@@ -43,7 +41,7 @@ export function CptCodeCombobox({
   })
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={true}>
       <PopoverTrigger asChild>
         <Input
           ref={inputRef}
@@ -63,31 +61,29 @@ export function CptCodeCombobox({
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <Command shouldFilter={false}>
-          <CommandList className="max-h-[320px] overflow-y-auto overscroll-contain">
-            <CommandEmpty>No matching services</CommandEmpty>
-            <CommandGroup>
-              {filtered.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  value={item.cpt_code}
-                  onSelect={() => {
-                    onSelect(item)
-                    setOpen(false)
-                    inputRef.current?.focus()
-                  }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium">{item.cpt_code}</span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {item.description} — ${Number(item.default_price).toFixed(2)}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+        <div className="max-h-[320px] overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No matching services</div>
+          ) : (
+            filtered.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
+                onClick={() => {
+                  onSelect(item)
+                  setOpen(false)
+                  inputRef.current?.focus()
+                }}
+              >
+                <span className="text-xs font-medium">{item.cpt_code}</span>
+                <span className="text-xs text-muted-foreground truncate w-full">
+                  {item.description} — ${Number(item.default_price).toFixed(2)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   )
