@@ -137,6 +137,52 @@ describe('painManagementExtractionResultSchema', () => {
       }).success,
     ).toBe(false)
   })
+
+  it('accepts diagnosis support tags (imaging_support, exam_support, source_quote)', () => {
+    const result = painManagementExtractionResultSchema.safeParse({
+      ...validExtraction,
+      diagnoses: [
+        {
+          icd10_code: 'M50.00',
+          description: 'Cervical disc disorder with myelopathy',
+          imaging_support: 'confirmed',
+          exam_support: 'objective',
+          source_quote: 'MRI demonstrates C5-C6 disc herniation with cord contact.',
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts diagnosis when support tags are null', () => {
+    const result = painManagementExtractionResultSchema.safeParse({
+      ...validExtraction,
+      diagnoses: [
+        {
+          icd10_code: 'M54.5',
+          description: 'Low back pain',
+          imaging_support: null,
+          exam_support: null,
+          source_quote: null,
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects unknown enum values for imaging_support and exam_support', () => {
+    const badImaging = painManagementExtractionResultSchema.safeParse({
+      ...validExtraction,
+      diagnoses: [{ icd10_code: 'M54.5', description: 'Low back pain', imaging_support: 'maybe' }],
+    })
+    expect(badImaging.success).toBe(false)
+
+    const badExam = painManagementExtractionResultSchema.safeParse({
+      ...validExtraction,
+      diagnoses: [{ icd10_code: 'M54.5', description: 'Low back pain', exam_support: 'partial' }],
+    })
+    expect(badExam.success).toBe(false)
+  })
 })
 
 describe('painManagementReviewFormSchema', () => {

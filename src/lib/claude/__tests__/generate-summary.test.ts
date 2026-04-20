@@ -89,4 +89,22 @@ describe('OBJECTIVE-SUPPORT RUBRIC (rule 8a)', () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('Do not drop diagnoses based on this rubric — tag them with the correct confidence')
   })
+
+  it('rule 8b pre-computes downgrade_to for failed myelopathy/radiculopathy codes', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('8b. DOWNGRADE PRECOMPUTE for myelopathy/radiculopathy')
+    expect(system).toContain('downgrade_to="M50.20"')
+    expect(system).toContain('downgrade_to="M51.37"')
+    expect(system).toContain('downgrade_to="M51.36"')
+    expect(system).toContain('downgrade_to=null')
+  })
+
+  it('tool schema requires downgrade_to on each suggested diagnosis', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateCaseSummaryFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const dxSchema = opts.tools[0].input_schema.properties.suggested_diagnoses.items
+    expect(dxSchema.required).toContain('downgrade_to')
+    expect(dxSchema.properties.downgrade_to).toBeDefined()
+  })
 })

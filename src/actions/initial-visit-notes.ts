@@ -86,6 +86,7 @@ async function gatherSourceData(
     priorVisitRes,
     mriCountRes,
     ctCountRes,
+    pmRes,
   ] = await Promise.all([
     supabase
       .from('cases')
@@ -138,6 +139,15 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('pain_management_extractions')
+      .select('diagnoses, physical_exam, diagnostic_studies_summary, provider_overrides, review_status')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -166,6 +176,24 @@ async function gatherSourceData(
   }
 
   const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0)) > 0
+
+  // Build pmExtraction with overrides-first precedence on diagnoses so provider
+  // edits (review_status='edited') reach the note generator instead of the raw
+  // AI-extracted diagnoses column.
+  const pmRow = pmRes.data as {
+    diagnoses: unknown
+    physical_exam: unknown
+    diagnostic_studies_summary: string | null
+    provider_overrides: Record<string, unknown> | null
+  } | null
+  const pmOverrides = pmRow?.provider_overrides as { diagnoses?: unknown; physical_exam?: unknown } | null
+  const pmExtraction: InitialVisitInputData['pmExtraction'] = pmRow
+    ? {
+        diagnoses: pmOverrides?.diagnoses ?? pmRow.diagnoses,
+        physical_exam: pmOverrides?.physical_exam ?? pmRow.physical_exam,
+        diagnostic_studies_summary: pmRow.diagnostic_studies_summary,
+      }
+    : null
 
   const priorVisitRow = (priorVisitRes as { data: Record<string, unknown> | null }).data
 
@@ -263,6 +291,7 @@ async function gatherSourceData(
       providerIntake: (intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake']) ?? null,
       priorVisitData,
       hasApprovedDiagnosticExtractions,
+      pmExtraction,
     },
     error: null,
   }

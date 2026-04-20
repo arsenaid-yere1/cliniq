@@ -281,21 +281,27 @@ Common codes by pathology:
 • Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain
 • Myalgia: M79.1 (Myalgia)
 
-DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list is a FILTERED output, not a copy of suggested_diagnoses. Apply these filters before emitting any code:
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list is a FILTERED output, not a copy of suggested_diagnoses or pmExtraction.diagnoses. Apply these filters before emitting any code. Candidate code sources: caseSummary.suggested_diagnoses, pmExtraction.diagnoses. For each pmExtraction diagnosis, inspect its imaging_support, exam_support, and source_quote tags (populated at extraction time) — a pmExtraction code with imaging_support="none" AND exam_support!="objective" has NO correlative support and must be dropped or downgraded.
 
-(A) Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X) — require REGION-MATCHED objective findings documented in THIS visit's providerIntake.exam_findings. MRI signal of nerve-root contact alone is NOT sufficient; subjective radiation alone is NOT sufficient.
+DOWNGRADE-TO HONOR RULE: if a caseSummary.suggested_diagnoses entry carries a non-null downgrade_to value, prefer that pre-computed target over re-deriving the substitution. downgrade_to is populated by the case summary generator per Rule 8b and reflects cross-source evidence. Filters (A)-(F) still apply to the downgraded code.
+
+(A) Myelopathy codes (M50.00/.01/.02, M47.1X, M48.0X with neurogenic claudication qualifier, M47.2X with myelopathy qualifier, M54.18) — require documented upper-motor-neuron signs in THIS visit's providerIntake.exam_findings OR an explicit UMN finding in pmExtraction.physical_exam. Acceptable UMN signs: hyperreflexia, clonus, Hoffmann sign, Babinski sign, spastic gait, bowel/bladder dysfunction. Isolated paresthesia, intact sensation, symmetric 2+ reflexes, and 5/5 strength do NOT support myelopathy. If the filter fails, DOWNGRADE: replace M50.00/.01/.02 with M50.20 (Other cervical disc displacement) + keep M54.2 (Cervicalgia); replace M48.0X with the matching non-myelopathy stenosis or disc-degeneration code.
+
+(B) Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X, M47.2X with radiculopathy qualifier) — require REGION-MATCHED objective findings documented in THIS visit's providerIntake.exam_findings OR a pmExtraction diagnosis with exam_support="objective" for the same region. MRI signal of nerve-root contact alone is NOT sufficient; subjective radiation alone is NOT sufficient.
   • M54.12 / M50.1X (cervical) — requires one of: positive Spurling maneuver, dermatomal sensory deficit in C5/C6/C7/C8/T1, myotomal weakness in an upper-extremity root distribution, OR diminished biceps/triceps/brachioradialis reflex. A positive SLR is a LUMBAR test and does NOT support a cervical radiculopathy code.
   • M54.17 / M51.1X (lumbar/lumbosacral) — requires one of: SLR positive AND reproducing radicular leg symptoms (pain radiating down the leg, paresthesia below the knee — SLR reproducing "low back pain" alone does NOT qualify), dermatomal sensory deficit in L4/L5/S1, myotomal weakness in a lower-extremity root distribution, OR diminished patellar/Achilles reflex.
-  • If the radiculopathy filter fails, DOWNGRADE: replace M54.12/M50.1X with M50.20 + keep M54.2; replace M54.17/M51.17 with M51.37 + keep the lumbar pain code; replace M51.16 with M51.36 + keep the lumbar pain code. Do NOT leave disc pathology unrepresented.
+  • If the radiculopathy filter fails, DOWNGRADE: replace M54.12/M50.1X with M50.20 + keep M54.2; replace M54.17/M51.17 with M51.37 + keep the lumbar pain code; replace M51.16 with M51.36 + keep the lumbar pain code. Do NOT leave disc pathology unrepresented. In imaging_findings prose for downgraded radiculopathy codes, describe the clinical picture as "radicular symptoms" or "possible nerve root irritation" — NEVER as "radiculopathy" or "nerve root compression". Reserve "radiculopathy" prose for codes that pass the region-match filter.
 
-(B) M79.1 Myalgia — redundancy guard. OMIT M79.1 whenever a region pain/strain code already covers the documented exam findings (e.g., M54.2, M54.50/M54.51/M54.59, M54.6, or S13.4XXA/S23.3XXA/S39.012A). Focal paraspinal tenderness is already captured by the region code and does NOT additionally support M79.1. Keep M79.1 ONLY if the exam documents diffuse muscle pain beyond axial spine tenderness (upper-trapezius involvement, generalized muscle soreness in multiple non-contiguous regions).
+(C) M79.1 Myalgia — redundancy guard. OMIT M79.1 whenever a region pain/strain code already covers the documented exam findings (e.g., M54.2, M54.50/M54.51/M54.59, M54.6, or S13.4XXA/S23.3XXA/S39.012A). Focal paraspinal tenderness is already captured by the region code and does NOT additionally support M79.1. Keep M79.1 ONLY if the exam documents diffuse muscle pain beyond axial spine tenderness (upper-trapezius involvement, generalized muscle soreness in multiple non-contiguous regions).
 
-(C) M54.5 specificity — NEVER emit the parent M54.5; always pick a 5th-character subcode:
+(D) M54.5 specificity — NEVER emit the parent M54.5; always pick a 5th-character subcode:
   • Default → M54.50 (Low back pain, unspecified) when the pain pattern is generic/axial low back pain.
   • Use M54.51 (Vertebrogenic low back pain) only when imaging documents vertebral endplate pathology (Modic changes) and the clinical pattern matches vertebrogenic pain.
   • Use M54.59 (Other low back pain) when a documented low-back-pain type does not fit .50 or .51.
 
-(D) suggested_diagnoses confidence handling — prefer "high"-confidence entries that match imaging + exam. For "medium"-confidence entries, require the same imaging + objective-finding support the filters above demand. OMIT "low"-confidence entries unless independent imaging + exam evidence supports them.
+(E) suggested_diagnoses confidence handling — prefer "high"-confidence entries that match imaging + exam. For "medium"-confidence entries, require the same imaging + objective-finding support the filters above demand. OMIT "low"-confidence entries unless independent imaging + exam evidence supports them.
+
+(F) pmExtraction provenance — A pmExtraction diagnosis with imaging_support="confirmed" AND exam_support="objective" is strong evidence; emit as-is if it passes the filters above. A pmExtraction diagnosis with exam_support="subjective_only" or "none" for a myelopathy/radiculopathy code fails Filters A/B automatically and must be downgraded. Cite source_quote verbatim in the imaging_findings or medical_necessity narrative when it establishes correlation, to make the clinical basis transparent.
 
 Select codes that correspond to actual MRI findings in the source data. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
 
@@ -521,6 +527,17 @@ export interface InitialVisitInputData {
    * even when no case summary has been generated yet.
    */
   hasApprovedDiagnosticExtractions: boolean
+  /**
+   * Most recent approved/edited Pain Management extraction. Provides direct
+   * access to PM-sourced diagnoses with their imaging/exam support tags so the
+   * Pain Evaluation Visit prompt can apply the DIAGNOSTIC-SUPPORT RULE against
+   * fresh provenance data without relying on a stale case summary regeneration.
+   */
+  pmExtraction: {
+    diagnoses: unknown
+    physical_exam: unknown
+    diagnostic_studies_summary: string | null
+  } | null
 }
 
 export async function generateInitialVisitFromData(

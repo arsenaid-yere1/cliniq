@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { validateIcd10Code, normalizeIcd10Code, NON_BILLABLE_PARENT_CODES } from '@/lib/icd10/validation'
+import {
+  validateIcd10Code,
+  normalizeIcd10Code,
+  NON_BILLABLE_PARENT_CODES,
+  classifyIcd10Code,
+  MYELOPATHY_CODE_PATTERN,
+  RADICULOPATHY_CODE_PATTERN,
+} from '@/lib/icd10/validation'
 
 describe('validateIcd10Code', () => {
   it.each([
@@ -82,5 +89,43 @@ describe('normalizeIcd10Code', () => {
 describe('NON_BILLABLE_PARENT_CODES map', () => {
   it('maps M54.5 → M54.50', () => {
     expect(NON_BILLABLE_PARENT_CODES['M54.5']).toBe('M54.50')
+  })
+})
+
+describe('classifyIcd10Code', () => {
+  it.each(['M50.00', 'M50.01', 'M50.02', 'M47.1', 'M47.11', 'M48.0', 'M48.06', 'M54.18'])(
+    'classifies %s as myelopathy',
+    (code) => {
+      expect(classifyIcd10Code(code)).toBe('myelopathy')
+    },
+  )
+
+  it.each(['M50.12', 'M50.121', 'M51.16', 'M51.17', 'M54.12', 'M54.17'])(
+    'classifies %s as radiculopathy',
+    (code) => {
+      expect(classifyIcd10Code(code)).toBe('radiculopathy')
+    },
+  )
+
+  it.each(['M54.2', 'M54.50', 'M50.20', 'M51.36', 'M51.37', 'G47.9', 'G44.309'])(
+    'classifies %s as other',
+    (code) => {
+      expect(classifyIcd10Code(code)).toBe('other')
+    },
+  )
+
+  it('is case-insensitive and trims whitespace', () => {
+    expect(classifyIcd10Code('  m50.00  ')).toBe('myelopathy')
+  })
+
+  it('returns other for null/undefined/empty', () => {
+    expect(classifyIcd10Code(null)).toBe('other')
+    expect(classifyIcd10Code(undefined)).toBe('other')
+    expect(classifyIcd10Code('')).toBe('other')
+  })
+
+  it('exported patterns match expected families', () => {
+    expect(MYELOPATHY_CODE_PATTERN.test('M50.00')).toBe(true)
+    expect(RADICULOPATHY_CODE_PATTERN.test('M51.17')).toBe(true)
   })
 })

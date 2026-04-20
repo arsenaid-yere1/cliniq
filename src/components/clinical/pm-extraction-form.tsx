@@ -471,7 +471,13 @@ export function PmExtractionForm({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => diagnosesArray.append({ icd10_code: null, description: '' })}
+                  onClick={() => diagnosesArray.append({
+                    icd10_code: null,
+                    description: '',
+                    imaging_support: null,
+                    exam_support: null,
+                    source_quote: null,
+                  })}
                 >
                   <Plus className="h-3 w-3 mr-1" />
                   Add Diagnosis
@@ -524,6 +530,78 @@ export function PmExtractionForm({
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name={`diagnoses.${index}.imaging_support`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Imaging Support</FormLabel>
+                          <Select
+                            value={field.value ?? 'unknown'}
+                            onValueChange={(v) => field.onChange(v === 'unknown' ? null : v)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="unknown">—</SelectItem>
+                              <SelectItem value="confirmed">Confirmed</SelectItem>
+                              <SelectItem value="referenced">Referenced</SelectItem>
+                              <SelectItem value="none">None</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`diagnoses.${index}.exam_support`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Exam Support</FormLabel>
+                          <Select
+                            value={field.value ?? 'unknown'}
+                            onValueChange={(v) => field.onChange(v === 'unknown' ? null : v)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="unknown">—</SelectItem>
+                              <SelectItem value="objective">Objective</SelectItem>
+                              <SelectItem value="subjective_only">Subjective Only</SelectItem>
+                              <SelectItem value="none">None</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name={`diagnoses.${index}.source_quote`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Source Quote (verbatim from PM report)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            rows={2}
+                            placeholder="Quoted sentence from the report"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(e.target.value || null)}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </div>
               ))}
             </TabsContent>

@@ -39,3 +39,30 @@ export function normalizeIcd10Code(raw: string): string {
   if (v.reason === 'non_billable_parent' && v.suggestion) return v.suggestion
   return v.code
 }
+
+// Semantic code families the note-generation prompts govern with the
+// DIAGNOSTIC-SUPPORT RULE. The combobox uses these to warn a reviewer when
+// they are about to commit a code that requires additional imaging/exam
+// correlation beyond what the PM extraction captured.
+//
+// M50.0X — Cervical disc disorder WITH myelopathy
+// M47.1X — Other spondylosis with myelopathy
+// M48.0X — Spinal stenosis (flagged when paired with a neurogenic-claudication qualifier)
+// M54.18 — Radiculopathy, sacral and sacrococcygeal region  -- treated as myelopathy-adjacent
+export const MYELOPATHY_CODE_PATTERN = /^(M50\.0[0-2][0-9]?|M47\.1[0-9]?|M48\.0[0-9]?|M54\.18)$/
+
+// M50.1X — Cervical disc with radiculopathy
+// M51.1X — Thoracic/Lumbar/Lumbosacral disc with radiculopathy
+// M54.12 — Radiculopathy, cervical region
+// M54.17 — Radiculopathy, lumbosacral region
+export const RADICULOPATHY_CODE_PATTERN = /^(M50\.1[0-9]{0,2}|M51\.1[0-9]?|M54\.12|M54\.17)$/
+
+export type Icd10Semantic = 'myelopathy' | 'radiculopathy' | 'other'
+
+export function classifyIcd10Code(code: string | null | undefined): Icd10Semantic {
+  if (!code) return 'other'
+  const c = code.trim().toUpperCase()
+  if (MYELOPATHY_CODE_PATTERN.test(c)) return 'myelopathy'
+  if (RADICULOPATHY_CODE_PATTERN.test(c)) return 'radiculopathy'
+  return 'other'
+}

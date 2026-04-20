@@ -42,6 +42,9 @@ const physicalExamRegionSchema = z.object({
 const diagnosisSchema = z.object({
   icd10_code: z.string().nullable(),
   description: z.string(),
+  imaging_support: z.enum(['confirmed', 'referenced', 'none']).nullable().optional(),
+  exam_support: z.enum(['objective', 'subjective_only', 'none']).nullable().optional(),
+  source_quote: z.string().nullable().optional(),
 })
 
 // --- Treatment plan item ---

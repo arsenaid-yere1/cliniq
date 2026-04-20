@@ -1,17 +1,43 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { X } from 'lucide-react'
+import { X, AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { PrpDiagnosis } from '@/lib/validations/prp-procedure'
-import { validateIcd10Code } from '@/lib/icd10/validation'
+import { validateIcd10Code, classifyIcd10Code } from '@/lib/icd10/validation'
+
+type DiagnosisSuggestion = {
+  icd10_code: string | null
+  description: string
+  imaging_support?: 'confirmed' | 'referenced' | 'none' | null
+  exam_support?: 'objective' | 'subjective_only' | 'none' | null
+  source_quote?: string | null
+}
 
 interface DiagnosisComboboxProps {
   value: PrpDiagnosis[]
   onChange: (v: PrpDiagnosis[]) => void
-  suggestions: Array<{ icd10_code: string | null; description: string }>
+  suggestions: DiagnosisSuggestion[]
+}
+
+// A myelopathy/radiculopathy suggestion with imaging_support="none" OR
+// exam_support lacking "objective" has no correlative support from the PM
+// extraction and will get filtered/downgraded at note-generation time. Warn
+// the reviewer before committing it.
+function unsupportedReason(s: DiagnosisSuggestion): string | null {
+  const family = classifyIcd10Code(s.icd10_code)
+  if (family === 'other') return null
+  const noImaging = s.imaging_support === 'none'
+  const noObjective = s.exam_support !== 'objective'
+  if (family === 'myelopathy' && noObjective) {
+    return 'Myelopathy code lacks objective UMN-sign support — note generation will downgrade to M50.20.'
+  }
+  if (family === 'radiculopathy' && (noImaging || noObjective)) {
+    return 'Radiculopathy code lacks region-matched objective support — note generation will downgrade to M50.20 / M51.36 / M51.37.'
+  }
+  return null
 }
 
 export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisComboboxProps) {
@@ -156,6 +182,7 @@ export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisCom
             <ul className="max-h-48 overflow-auto py-1 text-sm">
               {filtered.map((s) => {
                 const isSelected = selectedCodes.has(s.icd10_code ?? '')
+                const warn = unsupportedReason(s)
                 return (
                   <li key={s.icd10_code ?? s.description}>
                     <button
@@ -166,9 +193,16 @@ export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisCom
                         selectSuggestion(s)
                       }}
                       className="flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-accent disabled:opacity-50"
+                      title={warn ?? undefined}
                     >
                       <span className="font-mono text-xs text-muted-foreground">{s.icd10_code}</span>
                       <span className="text-xs">{s.description}</span>
+                      {warn && (
+                        <AlertTriangle
+                          className="h-3 w-3 shrink-0 text-amber-600"
+                          aria-label="Support evidence weak"
+                        />
+                      )}
                       {isSelected && <span className="ml-auto text-xs text-muted-foreground">Added</span>}
                     </button>
                   </li>

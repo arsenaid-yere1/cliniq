@@ -85,7 +85,7 @@ async function gatherDischargeNoteSourceData(
       .maybeSingle(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan')
+      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, provider_overrides')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -350,12 +350,20 @@ async function gatherDischargeNoteSourceData(
           }
         : null,
       pmExtraction: pmRes.data
-        ? {
-            chief_complaints: pmRes.data.chief_complaints,
-            physical_exam: pmRes.data.physical_exam,
-            diagnoses: pmRes.data.diagnoses,
-            treatment_plan: pmRes.data.treatment_plan,
-          }
+        ? (() => {
+            const overrides = pmRes.data.provider_overrides as {
+              chief_complaints?: unknown
+              physical_exam?: unknown
+              diagnoses?: unknown
+              treatment_plan?: unknown
+            } | null
+            return {
+              chief_complaints: overrides?.chief_complaints ?? pmRes.data.chief_complaints,
+              physical_exam: overrides?.physical_exam ?? pmRes.data.physical_exam,
+              diagnoses: overrides?.diagnoses ?? pmRes.data.diagnoses,
+              treatment_plan: overrides?.treatment_plan ?? pmRes.data.treatment_plan,
+            }
+          })()
         : null,
       mriExtractions: (mriRes.data ?? []).map((m) => ({
         body_region: m.body_region,

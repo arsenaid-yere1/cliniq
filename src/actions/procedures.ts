@@ -171,13 +171,16 @@ export async function createPrpProcedure(
 export async function getCaseDiagnoses(caseId: string) {
   const supabase = await createClient()
 
-  // Fetch PM extraction diagnoses and Initial Visit Note diagnoses in parallel
+  // Fetch PM extraction diagnoses and Initial Visit Note diagnoses in parallel.
+  // Accept both 'approved' and 'edited' PM extractions. Prefer provider_overrides.diagnoses
+  // when present so provider edits (review_status='edited') reach the combobox
+  // instead of the raw AI-extracted diagnoses column.
   const [pmRes, ivnRes] = await Promise.all([
     supabase
       .from('pain_management_extractions')
-      .select('diagnoses')
+      .select('diagnoses, provider_overrides')
       .eq('case_id', caseId)
-      .eq('review_status', 'approved')
+      .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -191,8 +194,17 @@ export async function getCaseDiagnoses(caseId: string) {
       .not('diagnoses', 'is', null),
   ])
 
-  const pmDiagnosesRaw: Array<{ icd10_code: string | null; description: string }> =
-    Array.isArray(pmRes.data?.diagnoses) ? pmRes.data.diagnoses : []
+  const pmOverrides = pmRes.data?.provider_overrides as { diagnoses?: unknown } | null
+  const pmSourceDiagnoses = pmOverrides?.diagnoses ?? pmRes.data?.diagnoses
+  type RawPmDiagnosis = {
+    icd10_code: string | null
+    description: string
+    imaging_support?: 'confirmed' | 'referenced' | 'none' | null
+    exam_support?: 'objective' | 'subjective_only' | 'none' | null
+    source_quote?: string | null
+  }
+  const pmDiagnosesRaw: RawPmDiagnosis[] =
+    Array.isArray(pmSourceDiagnoses) ? pmSourceDiagnoses as RawPmDiagnosis[] : []
 
   const pmDiagnoses = pmDiagnosesRaw
     .map((d) => {
@@ -201,7 +213,7 @@ export async function getCaseDiagnoses(caseId: string) {
       if (!v.ok && v.reason === 'structure') return null
       return { ...d, icd10_code: normalizeIcd10Code(d.icd10_code) }
     })
-    .filter((d): d is { icd10_code: string | null; description: string } => d !== null)
+    .filter((d): d is RawPmDiagnosis => d !== null)
 
   // Pick the best IVN row: prefer pain_evaluation_visit (imaging-confirmed codes)
   // over initial_visit (clinical impression codes). Draft is acceptable so the
@@ -214,7 +226,14 @@ export async function getCaseDiagnoses(caseId: string) {
 
   // Parse ICD-10 codes from the chosen IVN diagnoses text.
   // Format: "• M54.5 — Low back pain" or "M54.5 — Low back pain" per line
-  const ivnDiagnoses: Array<{ icd10_code: string; description: string }> = []
+  type SuggestedDiagnosis = {
+    icd10_code: string | null
+    description: string
+    imaging_support?: 'confirmed' | 'referenced' | 'none' | null
+    exam_support?: 'objective' | 'subjective_only' | 'none' | null
+    source_quote?: string | null
+  }
+  const ivnDiagnoses: SuggestedDiagnosis[] = []
   if (preferredIvn?.diagnoses) {
     const lines = preferredIvn.diagnoses.split('\n')
     for (const line of lines) {
@@ -233,9 +252,9 @@ export async function getCaseDiagnoses(caseId: string) {
 
   // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code)
   const seen = new Set(pmDiagnoses.map((d) => d.icd10_code?.toUpperCase()))
-  const merged = [
+  const merged: SuggestedDiagnosis[] = [
     ...pmDiagnoses,
-    ...ivnDiagnoses.filter((d) => !seen.has(d.icd10_code.toUpperCase())),
+    ...ivnDiagnoses.filter((d) => d.icd10_code && !seen.has(d.icd10_code.toUpperCase())),
   ]
 
   return { data: merged }

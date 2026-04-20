@@ -135,6 +135,44 @@ describe('caseSummaryResultSchema', () => {
       expect(result.success).toBe(true)
     }
   })
+
+  it('accepts suggested diagnoses with downgrade_to populated', () => {
+    const result = caseSummaryResultSchema.safeParse({
+      ...validCaseSummary,
+      suggested_diagnoses: [{
+        diagnosis: 'Cervical disc with myelopathy',
+        icd10_code: 'M50.00',
+        confidence: 'low' as const,
+        supporting_evidence: 'No UMN signs documented',
+        downgrade_to: 'M50.20',
+      }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts suggested diagnoses with downgrade_to null', () => {
+    const result = caseSummaryResultSchema.safeParse({
+      ...validCaseSummary,
+      suggested_diagnoses: [{
+        ...validCaseSummary.suggested_diagnoses[0],
+        downgrade_to: null,
+      }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts suggested diagnoses with downgrade_to omitted (backwards compat)', () => {
+    const result = caseSummaryResultSchema.safeParse({
+      ...validCaseSummary,
+      suggested_diagnoses: [{
+        diagnosis: 'Low back pain',
+        icd10_code: 'M54.50',
+        confidence: 'high' as const,
+        supporting_evidence: 'Exam + history',
+      }],
+    })
+    expect(result.success).toBe(true)
+  })
 })
 
 describe('caseSummaryEditSchema', () => {

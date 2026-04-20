@@ -66,9 +66,9 @@ async function gatherProcedureNoteSourceData(
       .single(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary')
+      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides')
       .eq('case_id', caseId)
-      .eq('review_status', 'approved')
+      .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -352,13 +352,21 @@ async function gatherProcedureNoteSourceData(
       ),
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
       pmExtraction: pmRes.data
-        ? {
-            chief_complaints: pmRes.data.chief_complaints,
-            physical_exam: pmRes.data.physical_exam,
-            diagnoses: pmRes.data.diagnoses,
-            treatment_plan: pmRes.data.treatment_plan,
-            diagnostic_studies_summary: pmRes.data.diagnostic_studies_summary,
-          }
+        ? (() => {
+            const overrides = pmRes.data.provider_overrides as {
+              chief_complaints?: unknown
+              physical_exam?: unknown
+              diagnoses?: unknown
+              treatment_plan?: unknown
+            } | null
+            return {
+              chief_complaints: overrides?.chief_complaints ?? pmRes.data.chief_complaints,
+              physical_exam: overrides?.physical_exam ?? pmRes.data.physical_exam,
+              diagnoses: overrides?.diagnoses ?? pmRes.data.diagnoses,
+              treatment_plan: overrides?.treatment_plan ?? pmRes.data.treatment_plan,
+              diagnostic_studies_summary: pmRes.data.diagnostic_studies_summary,
+            }
+          })()
         : null,
       initialVisitNote: ivNoteRes.data
         ? {

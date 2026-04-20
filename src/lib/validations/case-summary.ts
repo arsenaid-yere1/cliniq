@@ -39,6 +39,11 @@ const suggestedDiagnosisSchema = z.object({
   icd10_code: z.string().nullable(),
   confidence: z.enum(['high', 'medium', 'low']),
   supporting_evidence: z.string().nullable(),
+  // Pre-computed downgrade target for myelopathy/radiculopathy codes that
+  // fail the OBJECTIVE-SUPPORT RUBRIC. Populated by the case summary AI at
+  // Rule 8b so downstream note generators do not re-derive the substitution.
+  // Null when the code passes or no downgrade applies.
+  downgrade_to: z.string().nullable().optional(),
 })
 
 // --- AI result schema (validates Claude's tool output) ---

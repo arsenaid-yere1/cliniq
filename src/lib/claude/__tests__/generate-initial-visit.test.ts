@@ -30,6 +30,7 @@ const emptyInput: InitialVisitInputData = {
   providerIntake: null,
   priorVisitData: null,
   hasApprovedDiagnosticExtractions: false,
+  pmExtraction: null,
 }
 
 describe('generateInitialVisitFromData', () => {
@@ -119,12 +120,35 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
   it('pain-eval prompt contains DIAGNOSTIC-SUPPORT RULE with radiculopathy gate', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
-    expect(system).toContain('Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X)')
+    expect(system).toMatch(/Radiculopathy codes \(M54\.12, M54\.17, M50\.1X, M51\.1X/)
     expect(system).toContain('MRI signal of nerve-root contact alone is NOT sufficient')
     expect(system).toContain('subjective radiation alone is NOT sufficient')
     expect(system).toContain('positive Spurling maneuver')
     expect(system).toContain('SLR positive AND reproducing radicular leg symptoms')
     expect(system).toContain('A positive SLR is a LUMBAR test and does NOT support a cervical radiculopathy code')
+  })
+
+  it('pain-eval prompt includes myelopathy guard with UMN signs + M50.20 downgrade', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Myelopathy codes (M50.00/.01/.02')
+    expect(system).toContain('upper-motor-neuron signs')
+    expect(system).toContain('hyperreflexia, clonus, Hoffmann sign, Babinski sign, spastic gait, bowel/bladder dysfunction')
+    expect(system).toContain('replace M50.00/.01/.02 with M50.20')
+  })
+
+  it('pain-eval prompt references pmExtraction provenance tags', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('pmExtraction.diagnoses')
+    expect(system).toContain('imaging_support')
+    expect(system).toContain('exam_support')
+    expect(system).toContain('source_quote')
+  })
+
+  it('pain-eval prompt instructs radicular-symptoms prose for downgraded radic codes', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"radicular symptoms"')
+    expect(system).toContain('"possible nerve root irritation"')
+    expect(system).toContain('NEVER as "radiculopathy" or "nerve root compression"')
   })
 
   it('pain-eval prompt contains radiculopathy downgrade table', async () => {

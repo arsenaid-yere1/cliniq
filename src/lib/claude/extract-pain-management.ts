@@ -16,7 +16,16 @@ RULES:
 8. For diagnostic studies, summarize referenced imaging findings — do not re-extract MRI data in detail (that's handled by MRI extraction).
 9. Return null for any field that cannot be determined from the document.
 10. Set confidence to "low" for poor quality scans, partial documents, or ambiguous content.
-11. Add extraction_notes for anything ambiguous or noteworthy.`
+11. Add extraction_notes for anything ambiguous or noteworthy.
+12. For each diagnosis, tag imaging_support based on the PM report's own text:
+    - "confirmed" if the report explicitly cites an MRI/CT finding that supports this specific code (e.g., "MRI shows C5-C6 disc herniation with cord contact" supporting a cervical disc code).
+    - "referenced" if the report mentions imaging but does not tie a finding to this code.
+    - "none" if no imaging is cited for this code.
+13. For each diagnosis, tag exam_support based on the PM report's documented physical exam:
+    - "objective" if the report documents an objective finding matching the code. For myelopathy codes (M50.00/.01/.02, M47.1X, M54.18), require an upper-motor-neuron sign (hyperreflexia, clonus, Hoffmann, Babinski, spastic gait, bowel/bladder dysfunction). For radiculopathy codes (M50.1X, M51.1X, M54.12, M54.17), require a region-matched finding: positive Spurling (cervical), SLR reproducing leg radiation (lumbar), dermatomal sensory deficit in matching roots, myotomal weakness in matching roots, or diminished matching reflex.
+    - "subjective_only" if only patient-reported symptoms (pain, numbness described by patient) support the code.
+    - "none" if no exam finding is cited.
+14. Populate source_quote with the verbatim sentence from the PM report that establishes the strongest support for the code. Use "null" only when the report has no quotable sentence tied to the code.`
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
   name: 'extract_pain_management_data',
@@ -94,8 +103,22 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
           properties: {
             icd10_code: { type: 'string', description: 'ICD-10 code or "null"' },
             description: { type: 'string' },
+            imaging_support: {
+              type: 'string',
+              enum: ['confirmed', 'referenced', 'none'],
+              description: 'Imaging support tag per Rule 12, or "null" if unclassifiable.',
+            },
+            exam_support: {
+              type: 'string',
+              enum: ['objective', 'subjective_only', 'none'],
+              description: 'Exam support tag per Rule 13, or "null" if unclassifiable.',
+            },
+            source_quote: {
+              type: 'string',
+              description: 'Verbatim quoted sentence from the PM report supporting this code, or "null".',
+            },
           },
-          required: ['icd10_code', 'description'],
+          required: ['icd10_code', 'description', 'imaging_support', 'exam_support', 'source_quote'],
         },
       },
       treatment_plan: {
@@ -191,7 +214,7 @@ export async function extractPainManagementFromPdf(pdfBase64: string): Promise<{
             orthopedic_tests: Array.isArray(region.orthopedic_tests) ? region.orthopedic_tests : [],
           }),
         ),
-        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code']),
+        diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code', 'imaging_support', 'exam_support', 'source_quote']),
         treatment_plan: normalizeNullStringsInArray(raw.treatment_plan, ['type', 'body_region']),
         diagnostic_studies_summary: normalizeNullString(raw.diagnostic_studies_summary),
         confidence: raw.confidence,

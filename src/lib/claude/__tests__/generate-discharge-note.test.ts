@@ -267,12 +267,19 @@ describe('DIAGNOSTIC-SUPPORT RULE (discharge diagnoses)', () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('DIAGNOSTIC-SUPPORT RULE (MANDATORY)')
     expect(system).toContain('External-cause codes — ABSOLUTE OMISSION')
-    expect(system).toContain('Myelopathy codes')
+    expect(system).toMatch(/Myelopathy (and cord-compromise )?codes/)
     expect(system).toContain('Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X) — require REGION-MATCHED objective findings')
     expect(system).toContain('"Initial encounter" sprain codes')
     expect(system).toContain('M79.1 Myalgia — redundancy guard')
     expect(system).toContain('M54.5 specificity — NEVER emit the parent M54.5 at discharge')
     expect(system).toContain('Symptom-resolution at discharge')
+  })
+
+  it('discharge myelopathy filter covers M48.0X neurogenic-claudication stenosis', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M48.0X')
+    expect(system).toContain('neurogenic-claudication')
+    expect(system).toContain('replace M48.0X with the matching non-myelopathy disc-degeneration code')
   })
 
   it('discharge radiculopathy filter excludes MRI-only / subjective-only support', async () => {

@@ -28,4 +28,31 @@ describe('extractPainManagementFromPdf', () => {
     const result = await extractPainManagementFromPdf('x')
     expect(result.error).toBe('boom')
   })
+
+  it('system prompt instructs correlation tagging for diagnoses', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await extractPainManagementFromPdf('base64-pdf')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const system: string = opts.system
+    expect(system).toContain('imaging_support')
+    expect(system).toContain('exam_support')
+    expect(system).toContain('source_quote')
+    expect(system).toContain('upper-motor-neuron sign')
+    expect(system).toContain('positive Spurling')
+    expect(system).toContain('SLR reproducing leg radiation')
+    expect(system).toContain('verbatim sentence')
+  })
+
+  it('tool schema exposes support tag enums on diagnoses', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await extractPainManagementFromPdf('base64-pdf')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const dxSchema = opts.tools[0].input_schema.properties.diagnoses.items
+    expect(dxSchema.properties.imaging_support.enum).toEqual(['confirmed', 'referenced', 'none'])
+    expect(dxSchema.properties.exam_support.enum).toEqual(['objective', 'subjective_only', 'none'])
+    expect(dxSchema.properties.source_quote).toBeDefined()
+    expect(dxSchema.required).toEqual(
+      expect.arrayContaining(['icd10_code', 'description', 'imaging_support', 'exam_support', 'source_quote']),
+    )
+  })
 })

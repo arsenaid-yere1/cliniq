@@ -422,6 +422,67 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
     expect(system).toContain('The V-code is GONE')
     expect(system).toContain('DOWNGRADED')
   })
+
+  it('Filter (C) carries a PROSE-FALLBACK using "radicular symptoms" / "possible nerve root irritation"', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PROSE-FALLBACK (MANDATORY when a radiculopathy code is filtered out and downgraded)')
+    expect(system).toContain('"radicular symptoms"')
+    expect(system).toContain('"possible nerve root irritation"')
+    expect(system).toContain('NEVER as "radiculopathy" or "nerve root compression"')
+  })
+
+  it('assessment_summary section carries a RADICULAR-PROSE CONSTRAINT referencing downgraded codes', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('RADICULAR-PROSE CONSTRAINT (MANDATORY)')
+    expect(system).toContain('downgraded to M50.20 / M51.36 / M51.37')
+  })
+
+  it('Filter (B) names M48.0X and M47.2X cord-compromise extensions', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('M48.0X')
+    expect(system).toContain('neurogenic claudication')
+    expect(system).toContain('M47.2X variants carrying a myelopathy qualifier')
+  })
+
+  it('Filter (E) drops G47.9 when subjective documents sleep has improved/resolved', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"G47.9 Sleep disorder, unspecified"')
+    expect(system).toContain('If subjective/ROS documents that sleep has improved or that sleep disturbance has resolved')
+    expect(system).toContain('OMIT G47.9 from this visit\'s list')
+  })
+
+  it('Filter (E) drops G44.309 when ROS documents headache resolution', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"G44.309 Post-traumatic headache"')
+    expect(system).toContain('"headaches have lessened in frequency"')
+    expect(system).toContain('"no headaches"')
+  })
+
+  it('Filter (E) drops M54.6 when no thoracic findings/complaint THIS visit', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"M54.6 Pain in thoracic spine"')
+    expect(system).toContain('requires thoracic pain in subjective/review_of_systems OR thoracic-region findings in objective_physical_exam THIS visit')
+  })
+
+  it('Filter (E) M79.1 redundancy guard requires diffuse muscle pain beyond axial spine tenderness', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"M79.1 Myalgia"')
+    expect(system).toContain('diffuse muscle pain beyond axial spine tenderness at THIS visit')
+    expect(system).toContain('Focal paraspinal tenderness alone is already captured by M54.2/M54.5')
+  })
+
+  it('Filter (E) retains regional pain codes only when pain documented THIS visit', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('"M54.2 Cervicalgia" / "M54.5 Low back pain" / "M54.6 Pain in thoracic spine"')
+    expect(system).toContain('retain only when the corresponding region still has documented pain or exam findings THIS visit')
+  })
+
+  it('Filter (E) does not fabricate resolution when residual/intermittent symptoms remain', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do not fabricate resolution')
+    expect(system).toContain('even as "residual" or "intermittent"')
+    expect(system).toContain('the code stays')
+  })
 })
 
 describe('SYSTEM_PROMPT — medico-legal editor pass (phase 10)', () => {

@@ -21,6 +21,14 @@ Rules:
   • M54.5 lumbar pain: NEVER emit the parent M54.5 in suggested_diagnoses — always pick a 5th-character subcode (M54.50 default, M54.51 if vertebrogenic pattern is documented on imaging, M54.59 if another documented low-back-pain type applies).
 
 Do not drop diagnoses based on this rubric — tag them with the correct confidence and populate supporting_evidence accordingly. Downstream note generators rely on confidence + evidence to decide whether to emit each code.
+
+8b. DOWNGRADE PRECOMPUTE for myelopathy/radiculopathy: when a myelopathy or radiculopathy code would be tagged "low" or "medium" (i.e., it lacks the objective support Filter B/C requires at note-generation), populate downgrade_to with the substitution target so downstream note generators do not re-derive the substitution. Rules:
+  • M50.00 / M50.01 / M50.02 / M47.1X / M54.18 without UMN signs → downgrade_to="M50.20"
+  • M50.12X / M54.12 (cervical radiculopathy) without region-matched cervical objective finding → downgrade_to="M50.20"
+  • M51.17 / M54.17 (lumbosacral radiculopathy) without region-matched lumbar radicular finding → downgrade_to="M51.37"
+  • M51.16 (lumbar disc with radiculopathy) without region-matched lumbar radicular finding → downgrade_to="M51.36"
+  • M48.0X with neurogenic-claudication qualifier but no UMN/neurogenic-claudication evidence → downgrade_to="M51.37" (lumbar) or "M50.20" (cervical), matching the affected level
+  • All other cases (code passes, or no applicable downgrade) → downgrade_to=null
 9. Be precise with medical terminology — this summary may be used in legal proceedings
 10. When pain management data is present, incorporate diagnoses, treatment plans (including injection/surgery recommendations), and physical exam findings into the appropriate summary sections
 11. When physical therapy data is present, incorporate functional outcome measures (NDI, ODI, PSFS, LEFS), treatment goals with baselines and targets, and plan of care details. PT data establishes the functional recovery timeline — critical for damages calculations
@@ -145,12 +153,16 @@ const SUMMARY_TOOL: Anthropic.Tool = {
         description: 'Suggested diagnoses with ICD-10 codes and confidence levels',
         items: {
           type: 'object',
-          required: ['diagnosis', 'icd10_code', 'confidence', 'supporting_evidence'],
+          required: ['diagnosis', 'icd10_code', 'confidence', 'supporting_evidence', 'downgrade_to'],
           properties: {
             diagnosis: { type: 'string' },
             icd10_code: { type: 'string', description: 'ICD-10 code. Use "null" if not determinable.' },
             confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
             supporting_evidence: { type: 'string', description: 'Brief explanation of supporting evidence. Use "null" if none.' },
+            downgrade_to: {
+              type: 'string',
+              description: 'Pre-computed downgrade target ICD-10 code per Rule 8b (e.g., "M50.20" for a myelopathy code lacking UMN support). Use "null" when the code passes the rubric or no downgrade applies.',
+            },
           },
         },
       },
@@ -321,7 +333,7 @@ export async function generateCaseSummaryFromData(
         },
         suggested_diagnoses: normalizeNullStringsInArray(
           toArray(raw.suggested_diagnoses),
-          ['icd10_code', 'supporting_evidence'],
+          ['icd10_code', 'supporting_evidence', 'downgrade_to'],
         ),
       }
 
