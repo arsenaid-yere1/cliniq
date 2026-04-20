@@ -9,6 +9,7 @@ export const invoiceLineItemSchema = z.object({
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
   unit_price: z.coerce.number().min(0, 'Unit price must be non-negative'),
   total_price: z.coerce.number().min(0),
+  display_order: z.coerce.number().int().min(0).optional(),
 })
 
 export const createInvoiceSchema = z.object({

@@ -65,6 +65,7 @@ export async function getInvoice(invoiceId: string) {
     `)
     .eq('id', invoiceId)
     .is('deleted_at', null)
+    .order('display_order', { foreignTable: 'invoice_line_items', ascending: true })
     .single()
 
   if (error) return { error: error.message, data: null }
@@ -382,7 +383,7 @@ export async function createInvoice(caseId: string, values: CreateInvoiceFormVal
 
   if (invoiceError || !invoice) return { error: invoiceError?.message ?? 'Failed to create invoice' }
 
-  const lineItemRows = line_items.map((item) => ({
+  const lineItemRows = line_items.map((item, idx) => ({
     invoice_id: invoice.id,
     procedure_id: item.procedure_id || null,
     service_date: item.service_date,
@@ -391,6 +392,7 @@ export async function createInvoice(caseId: string, values: CreateInvoiceFormVal
     quantity: item.quantity,
     unit_price: item.unit_price,
     total_price: item.total_price,
+    display_order: idx,
   }))
 
   const { error: lineItemsError } = await supabase
@@ -455,7 +457,7 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
     .delete()
     .eq('invoice_id', invoiceId)
 
-  const lineItemRows = line_items.map((item) => ({
+  const lineItemRows = line_items.map((item, idx) => ({
     invoice_id: invoiceId,
     procedure_id: item.procedure_id || null,
     service_date: item.service_date,
@@ -464,6 +466,7 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
     quantity: item.quantity,
     unit_price: item.unit_price,
     total_price: item.total_price,
+    display_order: idx,
   }))
 
   const { error: lineItemsError } = await supabase
@@ -540,6 +543,7 @@ export async function getInvoiceWithContext(invoiceId: string) {
       `)
       .eq('id', invoiceId)
       .is('deleted_at', null)
+      .order('display_order', { foreignTable: 'invoice_line_items', ascending: true })
       .single(),
     supabase
       .from('clinic_settings')
