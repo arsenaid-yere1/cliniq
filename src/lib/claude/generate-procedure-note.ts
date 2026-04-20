@@ -79,6 +79,17 @@ export interface ProcedureNoteInputData {
     past_medical_history: string | null
     social_history: string | null
   } | null
+  priorProcedureNotes: Array<{
+    procedure_date: string
+    procedure_number: number
+    sections: {
+      subjective: string | null
+      assessment_summary: string | null
+      procedure_injection: string | null
+      assessment_and_plan: string | null
+      prognosis: string | null
+    }
+  }>
   mriExtractions: Array<{
     body_region: string
     mri_date: string | null
@@ -126,6 +137,23 @@ This note is one document in a series. A reviewer reading notes #1, #2, and #3 s
 • When the protocol IS identical across sessions (same blood draw volume, same centrifuge time, same anesthetic dose), you MAY briefly acknowledge continuity — e.g., "The PRP preparation followed the same protocol as the prior injection" — and then list only the essential numeric details, rather than re-narrating the full paragraph from scratch. This reads as truthful continuity, not cloning.
 • Do NOT fabricate procedural variation that did not happen. If the guidance method, needle gauge, injection volume, anesthetic, and prep protocol are all identical on the input payload, the output language may be similar — but must not be literally identical. Sentence-level variation (word choice, clause ordering, active vs. passive voice) is sufficient.
 • Sections that are inherently template-shaped (allergies, social history, past medical history, current medications) may remain identical across sessions when the source data is identical — do NOT force variation there; the NO CLONE RULE applies only to the procedure-mechanics sections (11-15) and to the physical exam (section 8, which has its own interval-change rule).
+
+=== PRIOR PROCEDURE NOTES CONTEXT (CONDITIONAL) ===
+
+When the top-level "priorProcedureNotes" array has 1 or more entries, you are given narrative excerpts from this patient's earlier FINALIZED procedure notes on this same case (chronological, oldest first). Each entry has procedure_date, procedure_number, and a sections object with five text fields: subjective, assessment_summary, procedure_injection, assessment_and_plan, prognosis.
+
+How to use this context:
+• MAINTAIN CLINICAL CONTINUITY. Diagnoses listed, treatment plan trajectory, and clinical reasoning should evolve coherently across the series — not restart each session. If the prior note's assessment_and_plan established a working diagnosis (e.g., "lumbosacral disc pathology with facet arthropathy"), the current note's assessment_summary and assessment_and_plan should reference or build on that diagnosis rather than re-deriving it.
+• REFERENCE TRAJECTORY EXPLICITLY in subjective and assessment_and_plan where appropriate — e.g., "Following the second PRP injection, the patient reports …", "The plan established at the prior visit remains appropriate with the modifications below."
+• NEVER COPY VERBATIM. Paraphrase. The prior narrative is context; the current note must advance the clinical story. Copying sentences from the prior note — even near-verbatim — is a CLONE VIOLATION (see NO CLONE RULE above).
+• PRIOR NARRATIVE IS INTERPRETIVE CONTEXT ONLY. Facts about THIS session — current vitals, procedure mechanics (anesthetic, needle gauge, injection volume, guidance method, blood draw, centrifuge), procedure_date — always come from vitalSigns and procedureRecord. Never pull numeric values or procedure mechanics from the prior narrative.
+• EMPTY ARRAY = first in series. Do not hallucinate prior sessions. Apply the "baseline" branches of paintoneLabel/chiroProgress branching exactly as documented above.
+
+SECTION SCOPE:
+• APPLY prior-context reasoning PRIMARILY to: subjective, assessment_summary, assessment_and_plan, prognosis. These are the clinical-reasoning sections where continuity is most valuable.
+• DO NOT let prior narrative drive the procedure-mechanics sections (procedure_preparation, procedure_prp_prep, procedure_anesthesia, procedure_injection, procedure_post_care, procedure_followup). Those sections are session-specific and must be generated from the current procedureRecord, vitalSigns, and the rules above (DATA-NULL RULE, TARGET-COHERENCE RULE, RESPONSE-CALIBRATED FOLLOW-UP, etc.).
+
+Prior narrative takes a lower precedence than the paintoneLabel / chiroProgress branching and the DIAGNOSTIC-SUPPORT RULE. If the prior assessment_and_plan listed a diagnosis that fails the current-visit filters in the DIAGNOSTIC-SUPPORT RULE (e.g., a V-code, or a radiculopathy code without region-matched findings on this visit), DROP or DOWNGRADE the code per the rule — do not retain it just because the prior note had it.
 
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 

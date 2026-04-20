@@ -123,17 +123,43 @@ async function gatherProcedureNoteSourceData(
     pain_score_min: number | null
     pain_score_max: number | null
   }>()
+  const priorNotesByProcedureId = new Map<string, {
+    subjective: string | null
+    assessment_summary: string | null
+    procedure_injection: string | null
+    assessment_and_plan: string | null
+    prognosis: string | null
+  }>()
   if (priorProcedureIds.length > 0) {
-    const { data: priorVitalsRows } = await supabase
-      .from('vital_signs')
-      .select('procedure_id, pain_score_min, pain_score_max')
-      .in('procedure_id', priorProcedureIds)
-      .is('deleted_at', null)
-    for (const row of priorVitalsRows ?? []) {
+    const [priorVitals, priorNotes] = await Promise.all([
+      supabase
+        .from('vital_signs')
+        .select('procedure_id, pain_score_min, pain_score_max')
+        .in('procedure_id', priorProcedureIds)
+        .is('deleted_at', null),
+      supabase
+        .from('procedure_notes')
+        .select('procedure_id, subjective, assessment_summary, procedure_injection, assessment_and_plan, prognosis')
+        .in('procedure_id', priorProcedureIds)
+        .eq('status', 'finalized')
+        .is('deleted_at', null),
+    ])
+    for (const row of priorVitals.data ?? []) {
       if (row.procedure_id) {
         priorVitalsByProcedureId.set(row.procedure_id, {
           pain_score_min: row.pain_score_min,
           pain_score_max: row.pain_score_max,
+        })
+      }
+    }
+    for (const row of priorNotes.data ?? []) {
+      if (row.procedure_id) {
+        priorNotesByProcedureId.set(row.procedure_id, {
+          subjective: row.subjective,
+          assessment_summary: row.assessment_summary,
+          procedure_injection: row.procedure_injection,
+          assessment_and_plan: row.assessment_and_plan,
+          prognosis: row.prognosis,
         })
       }
     }
@@ -239,6 +265,22 @@ async function gatherProcedureNoteSourceData(
             social_history: ivNoteRes.data.social_history,
           }
         : null,
+      priorProcedureNotes: priorProcedureRows
+        .filter((p) => priorNotesByProcedureId.has(p.id))
+        .map((p) => {
+          const sections = priorNotesByProcedureId.get(p.id)!
+          return {
+            procedure_date: p.procedure_date,
+            procedure_number: p.procedure_number ?? 1,
+            sections: {
+              subjective: sections.subjective,
+              assessment_summary: sections.assessment_summary,
+              procedure_injection: sections.procedure_injection,
+              assessment_and_plan: sections.assessment_and_plan,
+              prognosis: sections.prognosis,
+            },
+          }
+        }),
       mriExtractions: (mriRes.data ?? []).map((m) => ({
         body_region: m.body_region,
         mri_date: m.mri_date,

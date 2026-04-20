@@ -45,6 +45,7 @@ const emptyInput: ProcedureNoteInputData = {
   chiroProgress: null,
   pmExtraction: null,
   initialVisitNote: null,
+  priorProcedureNotes: [],
   mriExtractions: [],
   clinicInfo: {
     clinic_name: null, address_line1: null, address_line2: null, city: null,
@@ -695,5 +696,65 @@ describe('generateProcedureNoteFromData — paintoneLabel and chiroProgress thre
   it('threads chiroProgress=null into the user payload as JSON null', async () => {
     const payload = await captureUserPayload({ ...emptyInput, chiroProgress: null })
     expect(payload).toContain('"chiroProgress": null')
+  })
+})
+
+describe('priorProcedureNotes threading', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('threads empty priorProcedureNotes array into user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('"priorProcedureNotes": []')
+  })
+
+  it('threads populated priorProcedureNotes entries with all five sections', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      priorProcedureNotes: [
+        {
+          procedure_date: '2026-03-01',
+          procedure_number: 1,
+          sections: {
+            subjective: 'Prior subjective text',
+            assessment_summary: 'Prior assessment',
+            procedure_injection: 'Prior injection narrative',
+            assessment_and_plan: 'Prior plan',
+            prognosis: 'Prior prognosis',
+          },
+        },
+      ],
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('Prior subjective text')
+    expect(payload).toContain('Prior assessment')
+    expect(payload).toContain('Prior injection narrative')
+    expect(payload).toContain('Prior plan')
+    expect(payload).toContain('Prior prognosis')
+    expect(payload).toContain('"procedure_number": 1')
+  })
+
+  it('system prompt contains PRIOR PROCEDURE NOTES CONTEXT block with continuity and scope rules', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const system = opts.system as string
+    expect(system).toContain('PRIOR PROCEDURE NOTES CONTEXT')
+    expect(system).toContain('MAINTAIN CLINICAL CONTINUITY')
+    expect(system).toContain('NEVER COPY VERBATIM')
+    expect(system).toContain('PRIOR NARRATIVE IS INTERPRETIVE CONTEXT ONLY')
+    expect(system).toContain('EMPTY ARRAY = first in series')
+    expect(system).toContain('DO NOT let prior narrative drive the procedure-mechanics sections')
+  })
+
+  it('prior-context rules yield to DIAGNOSTIC-SUPPORT RULE when codes fail current-visit filters', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const system = opts.system as string
+    expect(system).toContain('DROP or DOWNGRADE the code per the rule — do not retain it just because the prior note had it')
   })
 })
