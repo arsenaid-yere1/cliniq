@@ -64,7 +64,7 @@ export function CptCodeCombobox({
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <Command shouldFilter={false}>
-          <CommandList>
+          <CommandList className="max-h-[320px] overflow-y-auto overscroll-contain">
             <CommandEmpty>No matching services</CommandEmpty>
             <CommandGroup>
               {filtered.map((item) => (
