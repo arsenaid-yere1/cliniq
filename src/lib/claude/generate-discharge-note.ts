@@ -7,7 +7,7 @@ import {
   type DischargeNoteSection,
   dischargeNoteSectionLabels,
 } from '@/lib/validations/discharge-note'
-import type { PainToneSignals } from '@/lib/claude/pain-tone'
+import type { PainToneSignals, SeriesVolatility } from '@/lib/claude/pain-tone'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -80,6 +80,13 @@ export interface DischargeNoteInputData {
   // block in the system prompt for detecting final-session regression within
   // a cumulatively-improved series.
   painTrendSignals: PainToneSignals
+  // seriesVolatility: classification of the full procedure pain series.
+  // Endpoints-only signals (overallPainTrend, painTrendSignals) miss mid-series
+  // regressions. 'mixed_with_regression' means at least one intermediate
+  // consecutive delta was ≥ +2 — e.g., 9 → 5 → 7 → 3 has vsBaseline='improved'
+  // and vsPrevious='improved' but seriesVolatility='mixed_with_regression'.
+  // Prompt branch requires acknowledging the variability.
+  seriesVolatility: SeriesVolatility
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -180,6 +187,7 @@ RULES (apply when \`dischargeVitals\` is null):
 • In \`assessment\`, reinforce the measurable pain reduction citing baseline → discharge-visit numeric delta (e.g., "a reduction from 7/10 at baseline to 1/10 at today's discharge evaluation").
 • In \`prognosis\`, tie the favorable outlook to the demonstrated numeric improvement, ending at the discharge-visit reading.
 • If "overallPainTrend" is "stable" or "worsened", DO NOT fabricate improvement — the post-procedure -2 delta rule does NOT apply. Describe the actual course honestly. This should be rare for a discharge note; if source data shows no improvement, write the narrative truthfully rather than forcing an optimistic framing.
+• FINAL-INTERVAL REGRESSION OVERRIDE (MANDATORY): When painTrendSignals.vsPrevious = "worsened" AND dischargeVitals is null, the -2 default rule is SUPPRESSED even if overallPainTrend is "improved". Render the discharge-visit pain reading as latestVitals.pain_score_max directly — no further 2-point drop. The patient regressed between the penultimate and final injections; fabricating continued improvement after that regression is not defensible. Narrative framing: "pain at today's discharge evaluation is held at the final-injection level of X/10, following an interval rise from the penultimate injection." The subjective, assessment, and prognosis must acknowledge the interval rise; the series-wide reduction may still be cited via overallPainTrend. This override does NOT apply when dischargeVitals is non-null (provider-entered values always take precedence).
 • If "overallPainTrend" is "baseline" (only one procedure, or pain data missing), fall back to narrative comparison using "initialVisitBaseline.chief_complaint" if it contains a pre-treatment pain descriptor; otherwise describe current status without fabricating a delta.
 • Outside of the scoped post-procedure improvement described above, never invent pain numbers that are not in the source data.
 
@@ -223,6 +231,25 @@ Discharge narrative is inherently retrospective. The matrix below applies to the
 FORBIDDEN when vsPrevious is "worsened": do NOT describe the final interval as further improvement. "Progressive reduction through the final injection" is inaccurate and must not appear.
 
 The matrix does NOT override the -2 default rule, the dischargeVitals priority, or the "stable/worsened → no fabricated improvement" override in === PAIN TRAJECTORY ===. If vsBaseline is "improved" but vsPrevious is "worsened", the -2 default rule still applies to render the discharge-visit pain reading (because the patient is still expected to have continued improvement between the final injection and the discharge follow-up visit), but the subjective narrative MUST acknowledge the penultimate-to-final regression using the MIXED framing in the matrix.
+
+=== SERIES VOLATILITY (MANDATORY) ===
+
+You are given a top-level "seriesVolatility" label summarizing the full procedure-series pain_score_max trajectory. This signal catches mid-series regressions that endpoints-only signals (overallPainTrend, painTrendSignals) miss.
+
+Values:
+• "monotone_improved" — every consecutive procedure pain was ≤ the previous, with at least one real drop. Standard favorable narrative applies.
+• "monotone_stable" — series is flat (all consecutive deltas are 0). Plateau narrative.
+• "monotone_worsened" — every consecutive procedure pain was ≥ the previous, with at least one rise. Worsening narrative.
+• "mixed_with_regression" — at least one intermediate consecutive delta was ≥ +2. Even if overallPainTrend reads "improved", the course was NOT monotone. E.g., 9 → 5 → 7 → 3 has overallPainTrend="improved" and vsPrevious="improved" (3 vs 7) but seriesVolatility="mixed_with_regression".
+• "insufficient_data" — fewer than 2 procedures, or any procedure's pain_score_max is null. Do NOT cite volatility.
+
+MANDATORY when seriesVolatility == "mixed_with_regression": the subjective, assessment, and prognosis MUST acknowledge mid-course variability. Use language such as "the treatment course included an interval fluctuation between the Nth and Mth procedures before subsequent stabilization" or "pain regressed transiently mid-series before recovering at the final injection." Do NOT assert monotone improvement. Do NOT describe the trajectory as "sustained progressive improvement" or "steady reduction" — those phrases imply monotonicity that did not occur.
+
+When seriesVolatility == "monotone_improved", the standard favorable framing applies and no mid-course caveat is needed.
+
+When seriesVolatility == "insufficient_data", fall back to the PAIN TRAJECTORY rules without citing volatility.
+
+This rule takes precedence over monotone-framing elsewhere in the prompt. The rule does NOT override the -2 default rule, the FINAL-INTERVAL REGRESSION OVERRIDE, or the BASELINE DATA-GAP OVERRIDE — those govern the numeric pain endpoint and qualitative anchors separately.
 
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 

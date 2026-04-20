@@ -18,7 +18,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
-import { computePainToneLabel, type PainToneContext } from '@/lib/claude/pain-tone'
+import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
 
 // --- Helper: compute source data hash ---
 
@@ -267,6 +267,13 @@ async function gatherDischargeNoteSourceData(
       : null,
   }
 
+  // Full-series volatility: detects mid-series regressions that endpoints-only
+  // signals miss. procedures[] is in chronological order (ascending) from the
+  // initial query, so this maps directly to a chronological pain_score_max array.
+  const seriesVolatility = computeSeriesVolatility(
+    procedures.map((p) => p.pain_score_max),
+  )
+
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
   return {
@@ -298,6 +305,7 @@ async function gatherDischargeNoteSourceData(
         ? 'baseline'
         : painTrendSignals.vsBaseline,
       painTrendSignals,
+      seriesVolatility,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,

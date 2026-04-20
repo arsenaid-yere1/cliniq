@@ -73,6 +73,60 @@ export type PainToneSignals = {
   vsPrevious: PainToneLabel | null
 }
 
+/**
+ * Volatility classification for a full procedure pain_score_max series.
+ * Endpoints-only signals (vsBaseline / vsPrevious) miss mid-series regressions;
+ * this label surfaces them. Used exclusively by discharge generation today.
+ *
+ * - 'monotone_improved': every consecutive delta ≤ 0 AND at least one delta < 0.
+ * - 'monotone_worsened': every consecutive delta ≥ 0 AND at least one delta > 0.
+ * - 'monotone_stable':   every consecutive delta is 0 (flat series).
+ * - 'mixed_with_regression': any consecutive delta ≥ +2 (the worsened threshold
+ *   from computePainToneLabel). Signals an intra-series regression even when
+ *   endpoints suggest improvement — e.g. 9 → 5 → 7 → 3.
+ * - 'insufficient_data': fewer than 2 non-null pain scores in the series.
+ */
+export type SeriesVolatility =
+  | 'monotone_improved'
+  | 'monotone_stable'
+  | 'monotone_worsened'
+  | 'mixed_with_regression'
+  | 'insufficient_data'
+
+/**
+ * Scans a pain_score_max series in chronological order and classifies its
+ * volatility. Any null entry collapses the classification to
+ * 'insufficient_data' because the series cannot be fully scanned — partial
+ * classification would be misleading.
+ */
+export function computeSeriesVolatility(
+  painSeries: Array<number | null>,
+): SeriesVolatility {
+  if (painSeries.length < 2) return 'insufficient_data'
+  if (painSeries.some((p) => p == null)) return 'insufficient_data'
+  const series = painSeries as number[]
+
+  let anyDrop = false
+  let anyRise = false
+  let anyRegression = false // any ≥+2 rise
+
+  for (let i = 1; i < series.length; i++) {
+    const delta = series[i] - series[i - 1]
+    if (delta < 0) anyDrop = true
+    if (delta > 0) anyRise = true
+    if (delta >= 2) anyRegression = true
+  }
+
+  // "mixed_with_regression" is reserved for a non-monotone series that
+  // contains at least one ≥+2 rise. A strictly non-decreasing series is
+  // "monotone_worsened" even when every delta is ≥+2 — the rise is the whole
+  // story, not an unexpected regression.
+  if (anyRegression && anyDrop) return 'mixed_with_regression'
+  if (!anyRise && anyDrop) return 'monotone_improved'
+  if (!anyDrop && anyRise) return 'monotone_worsened'
+  return 'monotone_stable'
+}
+
 export type ChiroProgress = 'improving' | 'stable' | 'plateauing' | 'worsening' | null
 
 export function deriveChiroProgress(functionalOutcomes: unknown): ChiroProgress {

@@ -23,6 +23,7 @@ const emptyInput: DischargeNoteInputData = {
   initialVisitBaseline: null,
   overallPainTrend: 'baseline',
   painTrendSignals: { vsBaseline: 'baseline', vsPrevious: null },
+  seriesVolatility: 'insufficient_data',
   caseSummary: null,
   initialVisitNote: null,
   ptExtraction: null,
@@ -249,5 +250,67 @@ describe('BASELINE DATA-GAP OVERRIDE', () => {
     const payload = opts.messages[0].content as string
     expect(payload).toContain('"vsBaseline": "missing_vitals"')
     expect(payload).toContain('"vsPrevious": "missing_vitals"')
+  })
+})
+
+describe('FINAL-INTERVAL REGRESSION OVERRIDE + SERIES VOLATILITY', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: DischargeNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('PAIN TRAJECTORY contains FINAL-INTERVAL REGRESSION OVERRIDE with -2 suppression', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FINAL-INTERVAL REGRESSION OVERRIDE (MANDATORY)')
+    expect(system).toContain('painTrendSignals.vsPrevious = "worsened" AND dischargeVitals is null')
+    expect(system).toContain('-2 default rule is SUPPRESSED')
+    expect(system).toContain('held at the final-injection level')
+  })
+
+  it('FINAL-INTERVAL REGRESSION OVERRIDE defers to dischargeVitals when provider-entered', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('This override does NOT apply when dischargeVitals is non-null')
+  })
+
+  it('system prompt contains SERIES VOLATILITY block with all five labels', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('=== SERIES VOLATILITY (MANDATORY) ===')
+    expect(system).toContain('"monotone_improved"')
+    expect(system).toContain('"monotone_stable"')
+    expect(system).toContain('"monotone_worsened"')
+    expect(system).toContain('"mixed_with_regression"')
+    expect(system).toContain('"insufficient_data"')
+  })
+
+  it('SERIES VOLATILITY forbids monotone framing when mixed_with_regression', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT assert monotone improvement')
+    expect(system).toContain('sustained progressive improvement')
+    expect(system).toContain('interval fluctuation between the Nth and Mth procedures')
+  })
+
+  it('SERIES VOLATILITY preserves existing -2 and data-gap overrides', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('does NOT override the -2 default rule, the FINAL-INTERVAL REGRESSION OVERRIDE, or the BASELINE DATA-GAP OVERRIDE')
+  })
+
+  it('threads seriesVolatility into user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({ ...emptyInput, seriesVolatility: 'mixed_with_regression' })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"seriesVolatility": "mixed_with_regression"')
+  })
+
+  it('threads seriesVolatility = insufficient_data by default', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"seriesVolatility": "insufficient_data"')
   })
 })
