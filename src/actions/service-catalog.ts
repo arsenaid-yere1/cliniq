@@ -91,7 +91,8 @@ export async function deleteServiceCatalogItem(id: string) {
   return { success: true }
 }
 
-// Used by getInvoiceFormData to look up default prices by CPT code
+// Used by getInvoiceFormData to look up default prices by CPT code.
+// Keys are normalized (trim + upper) so lookups survive pre-normalization rows.
 export async function getServiceCatalogPriceMap(): Promise<Record<string, number>> {
   const supabase = await createClient()
   const { data } = await supabase
@@ -101,7 +102,9 @@ export async function getServiceCatalogPriceMap(): Promise<Record<string, number
 
   const priceMap: Record<string, number> = {}
   for (const item of data ?? []) {
-    priceMap[item.cpt_code] = Number(item.default_price)
+    const normalized = (item.cpt_code ?? '').trim().toUpperCase()
+    if (!normalized) continue
+    priceMap[normalized] = Number(item.default_price)
   }
   return priceMap
 }

@@ -188,6 +188,16 @@ export async function getInvoiceFormData(caseId: string) {
     listServiceCatalog(),
   ])
 
+  // Diagnostic: surface silent $0 fallbacks caused by mis-entered CPT codes in Settings.
+  // Leave as a warn (not a thrown error) — a clinic may legitimately leave some codes at 0.
+  const expectedCodes = ['99204', '76140', '0232T', '86999', '76942', '99213']
+  const missingCodes = expectedCodes.filter((code) => (priceMap[code] ?? 0) === 0)
+  if (missingCodes.length > 0) {
+    console.warn(
+      `[billing] Missing or zero-priced CPT codes in service_catalog: ${missingCodes.join(', ')} — check Settings → Pricing Catalog`,
+    )
+  }
+
   // Build pre-populated line items matching reference invoice format
   const prePopulatedLineItems: Array<{
     procedure_id?: string
