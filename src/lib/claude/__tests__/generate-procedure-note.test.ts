@@ -42,6 +42,7 @@ const emptyInput: ProcedureNoteInputData = {
   vitalSigns: null,
   priorProcedures: [],
   paintoneLabel: 'baseline',
+  paintoneSignals: { vsBaseline: 'baseline', vsPrevious: null },
   chiroProgress: null,
   pmExtraction: null,
   initialVisitNote: null,
@@ -756,5 +757,68 @@ describe('priorProcedureNotes threading', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     const system = opts.system as string
     expect(system).toContain('DROP or DOWNGRADE the code per the rule — do not retain it just because the prior note had it')
+  })
+})
+
+describe('PAIN TONE MATRIX — two-signal interpretation', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt includes PAIN TONE MATRIX block', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PAIN TONE MATRIX — TWO-SIGNAL INTERPRETATION')
+    expect(system).toContain('paintoneSignals.vsBaseline')
+    expect(system).toContain('paintoneSignals.vsPrevious')
+  })
+
+  it('matrix covers the critical improved-baseline + worsened-previous row', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/improved[\s\S]*?worsened[\s\S]*?MIXED — MANDATORY acknowledgement/)
+    expect(system).toContain('interval worsening of pain since the prior injection')
+  })
+
+  it('matrix forbids unambiguous-improvement phrasing when vsPrevious is worsened', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN when vsPrevious is "worsened"')
+    expect(system).toContain('continued improvement since the prior injection')
+  })
+
+  it('matrix states vsPrevious is null on first procedure', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/any[\s\S]*?null[\s\S]*?First procedure in the series/)
+  })
+
+  it('paintoneSignals is threaded into user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      paintoneLabel: 'improved',
+      paintoneSignals: { vsBaseline: 'improved', vsPrevious: 'worsened' },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"paintoneSignals"')
+    expect(payload).toContain('"vsBaseline": "improved"')
+    expect(payload).toContain('"vsPrevious": "worsened"')
+    // paintoneLabel alias still present for backward compatibility with existing prompt rules
+    expect(payload).toContain('"paintoneLabel": "improved"')
+  })
+
+  it('paintoneSignals.vsPrevious is null on first procedure', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      paintoneLabel: 'baseline',
+      paintoneSignals: { vsBaseline: 'baseline', vsPrevious: null },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"vsPrevious": null')
   })
 })

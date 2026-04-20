@@ -215,11 +215,24 @@ async function gatherDischargeNoteSourceData(
       }
     : null
 
-  // Overall trajectory label: compare last procedure pain_max to first procedure pain_max
-  const overallPainTrend = computePainToneLabel(
-    latestVitals?.pain_score_max ?? null,
-    baselinePain?.pain_score_max ?? null,
-  )
+  // Two-signal pain trajectory:
+  // - vsBaseline: last procedure pain vs first procedure pain (series-long arc).
+  // - vsPrevious: last procedure pain vs second-to-last procedure pain (final-interval change).
+  //   Null when only one procedure exists.
+  const secondToLastProcedure = procRows.length >= 2 ? procRows[procRows.length - 2] : null
+  const secondToLastVitals = secondToLastProcedure ? vitalsByProcedureId.get(secondToLastProcedure.id) : null
+  const painTrendSignals: DischargeNoteInputData['painTrendSignals'] = {
+    vsBaseline: computePainToneLabel(
+      latestVitals?.pain_score_max ?? null,
+      baselinePain?.pain_score_max ?? null,
+    ),
+    vsPrevious: secondToLastVitals
+      ? computePainToneLabel(
+          latestVitals?.pain_score_max ?? null,
+          secondToLastVitals.pain_score_max ?? null,
+        )
+      : null,
+  }
 
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
@@ -243,7 +256,8 @@ async function gatherDischargeNoteSourceData(
       dischargeVitals,
       baselinePain,
       initialVisitBaseline,
-      overallPainTrend,
+      overallPainTrend: painTrendSignals.vsBaseline,
+      painTrendSignals,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,

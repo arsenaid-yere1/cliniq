@@ -22,6 +22,7 @@ const emptyInput: DischargeNoteInputData = {
   baselinePain: null,
   initialVisitBaseline: null,
   overallPainTrend: 'baseline',
+  painTrendSignals: { vsBaseline: 'baseline', vsPrevious: null },
   caseSummary: null,
   initialVisitNote: null,
   ptExtraction: null,
@@ -138,5 +139,66 @@ describe('cross-section awareness', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.messages[0].content).not.toContain('OTHER SECTIONS CURRENTLY PRESENT')
     expect(opts.system).not.toContain('Avoid duplicating content that already appears')
+  })
+})
+
+describe('PAIN TONE MATRIX — final-interval signal', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: DischargeNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('system prompt includes PAIN TONE MATRIX block referencing both signals', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PAIN TONE MATRIX — FINAL-INTERVAL SIGNAL')
+    expect(system).toContain('painTrendSignals.vsBaseline')
+    expect(system).toContain('painTrendSignals.vsPrevious')
+  })
+
+  it('matrix covers the mixed improved-baseline + worsened-previous row', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MIXED — MANDATORY acknowledgement')
+    expect(system).toContain('modest uptick between the penultimate and final injections')
+  })
+
+  it('matrix forbids "further improvement" phrasing when vsPrevious is worsened', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('FORBIDDEN when vsPrevious is "worsened"')
+    expect(system).toContain('Progressive reduction through the final injection')
+  })
+
+  it('matrix preserves -2 default rule even when vsPrevious signals regression', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('matrix does NOT override the -2 default rule')
+  })
+
+  it('painTrendSignals is threaded into user payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({
+      ...emptyInput,
+      overallPainTrend: 'improved',
+      painTrendSignals: { vsBaseline: 'improved', vsPrevious: 'worsened' },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"painTrendSignals"')
+    expect(payload).toContain('"vsBaseline": "improved"')
+    expect(payload).toContain('"vsPrevious": "worsened"')
+    expect(payload).toContain('"overallPainTrend": "improved"')
+  })
+
+  it('painTrendSignals.vsPrevious is null when only one procedure exists', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({
+      ...emptyInput,
+      painTrendSignals: { vsBaseline: 'baseline', vsPrevious: null },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    const payload = opts.messages[0].content as string
+    expect(payload).toContain('"vsPrevious": null')
   })
 })

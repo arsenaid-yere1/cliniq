@@ -7,6 +7,7 @@ import {
   type DischargeNoteSection,
   dischargeNoteSectionLabels,
 } from '@/lib/validations/discharge-note'
+import type { PainToneSignals } from '@/lib/claude/pain-tone'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -69,7 +70,16 @@ export interface DischargeNoteInputData {
     chief_complaint: string | null
     physical_exam: string | null
   } | null
+  // overallPainTrend: last-procedure-vs-first-procedure comparison. Kept as a
+  // top-level field for prompt-rule backward compatibility (PAIN TRAJECTORY
+  // block reads this). Equals painTrendSignals.vsBaseline.
   overallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened'
+  // painTrendSignals: full two-signal payload. vsBaseline mirrors
+  // overallPainTrend; vsPrevious compares last procedure vs second-to-last
+  // procedure (final-interval change). Referenced by the PAIN TONE MATRIX
+  // block in the system prompt for detecting final-session regression within
+  // a cumulatively-improved series.
+  painTrendSignals: PainToneSignals
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -172,6 +182,32 @@ RULES (apply when \`dischargeVitals\` is null):
 • If "overallPainTrend" is "stable" or "worsened", DO NOT fabricate improvement — the post-procedure -2 delta rule does NOT apply. Describe the actual course honestly. This should be rare for a discharge note; if source data shows no improvement, write the narrative truthfully rather than forcing an optimistic framing.
 • If "overallPainTrend" is "baseline" (only one procedure, or pain data missing), fall back to narrative comparison using "initialVisitBaseline.chief_complaint" if it contains a pre-treatment pain descriptor; otherwise describe current status without fabricating a delta.
 • Outside of the scoped post-procedure improvement described above, never invent pain numbers that are not in the source data.
+
+=== PAIN TONE MATRIX — FINAL-INTERVAL SIGNAL (MANDATORY) ===
+
+You are given two tone signals:
+• "overallPainTrend" (top-level) — mirrors painTrendSignals.vsBaseline. Every rule in === PAIN TRAJECTORY === above reads this field. Do NOT change that behavior.
+• "painTrendSignals.vsBaseline" — last procedure pain vs first procedure pain. Full-series arc.
+• "painTrendSignals.vsPrevious" — last procedure pain vs second-to-last procedure pain. Captures the FINAL-INTERVAL change between the penultimate and final injections. Is null when only one procedure exists.
+
+Discharge narrative is inherently retrospective. The matrix below applies to the subjective, assessment, and prognosis framing of the FINAL interval before discharge:
+
+| vsBaseline | vsPrevious | Required framing                                                                                                                                    |
+|------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| improved   | improved   | Strong favorable — cumulative + continuing gains all the way into the final injection.                                                              |
+| improved   | stable     | Favorable with plateau in the final interval. Gains are durable through the series and held at discharge.                                           |
+| improved   | worsened   | MIXED — MANDATORY acknowledgement. Overall treatment course was favorable, BUT pain regressed between the penultimate and final injections. Phrase as: "cumulative reduction across the PRP series from X/10 to Y/10, with a modest uptick between the penultimate and final injections."                                                                 |
+| stable     | improved   | Weak favorable — partial gain in the final interval from an otherwise-static series.                                                                 |
+| stable     | stable     | Plateau throughout. Honest discharge narrative — no forced optimism.                                                                                 |
+| stable     | worsened   | Concerning final interval. Acknowledge. Discharge under this pattern is unusual.                                                                     |
+| worsened   | improved   | Partial recovery from a net-negative course. Acknowledge overall elevation above baseline alongside the final-interval improvement.                  |
+| worsened   | stable     | Persistent elevation above baseline with a flat final interval.                                                                                      |
+| worsened   | worsened   | Net decline across and into discharge. Do NOT force favorable prognosis. See === PAIN TRAJECTORY === "stable or worsened" override above.           |
+| any        | null       | Only one procedure in the series. vsPrevious does not apply. Use overallPainTrend as the sole signal.                                                |
+
+FORBIDDEN when vsPrevious is "worsened": do NOT describe the final interval as further improvement. "Progressive reduction through the final injection" is inaccurate and must not appear.
+
+The matrix does NOT override the -2 default rule, the dischargeVitals priority, or the "stable/worsened → no fabricated improvement" override in === PAIN TRAJECTORY ===. If vsBaseline is "improved" but vsPrevious is "worsened", the -2 default rule still applies to render the discharge-visit pain reading (because the patient is still expected to have continued improvement between the final injection and the discharge follow-up visit), but the subjective narrative MUST acknowledge the penultimate-to-final regression using the MIXED framing in the matrix.
 
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 

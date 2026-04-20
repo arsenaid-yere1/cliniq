@@ -27,6 +27,20 @@ export function computePainToneLabel(
   return 'stable'
 }
 
+/**
+ * Two-signal pain tone payload passed to AI generators.
+ * - vsBaseline: current pain vs the FIRST procedure in the series (cumulative arc).
+ * - vsPrevious: current pain vs the IMMEDIATELY PREVIOUS procedure (per-session change).
+ *   Null when no prior procedure exists (first in series).
+ *
+ * Both signals use `computePainToneLabel` with the same thresholds. Callers are
+ * responsible for picking the right reference anchor for each.
+ */
+export type PainToneSignals = {
+  vsBaseline: PainToneLabel
+  vsPrevious: PainToneLabel | null
+}
+
 export type ChiroProgress = 'improving' | 'stable' | 'plateauing' | 'worsening' | null
 
 export function deriveChiroProgress(functionalOutcomes: unknown): ChiroProgress {

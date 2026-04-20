@@ -7,7 +7,7 @@ import {
   type ProcedureNoteSection,
   procedureNoteSectionLabels,
 } from '@/lib/validations/procedure-note'
-import type { PainToneLabel, ChiroProgress } from '@/lib/claude/pain-tone'
+import type { PainToneLabel, PainToneSignals, ChiroProgress } from '@/lib/claude/pain-tone'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -66,7 +66,15 @@ export interface ProcedureNoteInputData {
     pain_score_max: number | null
     procedure_number: number
   }>
+  // paintoneLabel: series-baseline comparison. Kept as a top-level field for
+  // prompt-rule backward compatibility (all existing section-specific branching
+  // reads this field). Equals paintoneSignals.vsBaseline.
   paintoneLabel: PainToneLabel
+  // paintoneSignals: full two-signal payload. vsBaseline mirrors paintoneLabel;
+  // vsPrevious captures per-session change (last procedure vs the immediately
+  // previous procedure). Referenced by the PAIN TONE MATRIX block in the system
+  // prompt for interval-regression detection.
+  paintoneSignals: PainToneSignals
   chiroProgress: ChiroProgress
   pmExtraction: {
     chief_complaints: unknown
@@ -137,6 +145,34 @@ This note is one document in a series. A reviewer reading notes #1, #2, and #3 s
 • When the protocol IS identical across sessions (same blood draw volume, same centrifuge time, same anesthetic dose), you MAY briefly acknowledge continuity — e.g., "The PRP preparation followed the same protocol as the prior injection" — and then list only the essential numeric details, rather than re-narrating the full paragraph from scratch. This reads as truthful continuity, not cloning.
 • Do NOT fabricate procedural variation that did not happen. If the guidance method, needle gauge, injection volume, anesthetic, and prep protocol are all identical on the input payload, the output language may be similar — but must not be literally identical. Sentence-level variation (word choice, clause ordering, active vs. passive voice) is sufficient.
 • Sections that are inherently template-shaped (allergies, social history, past medical history, current medications) may remain identical across sessions when the source data is identical — do NOT force variation there; the NO CLONE RULE applies only to the procedure-mechanics sections (11-15) and to the physical exam (section 8, which has its own interval-change rule).
+
+=== PAIN TONE MATRIX — TWO-SIGNAL INTERPRETATION (MANDATORY) ===
+
+You are given two independent pain-tone signals:
+• "paintoneLabel" (top-level) — mirrors paintoneSignals.vsBaseline. All section-specific branching below reads paintoneLabel. Do NOT change that behavior.
+• "paintoneSignals.vsBaseline" — current pain vs the FIRST procedure in the series. Captures cumulative arc across all sessions.
+• "paintoneSignals.vsPrevious" — current pain vs the IMMEDIATELY PREVIOUS procedure. Captures per-session change. Is null when no prior procedure exists (first in series).
+
+RULE: In the subjective narrative and in the interval-response sentences, you MUST acknowledge the session-level direction (vsPrevious) even when it diverges from the cumulative arc (vsBaseline). The matrix below defines the required narrative framing for each combination:
+
+| vsBaseline | vsPrevious | Required narrative tone                                                                                                                         |
+|------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| improved   | improved   | Strong positive. Cumulative + continuing gains. Standard "improved" reference examples apply.                                                   |
+| improved   | stable     | Positive with plateau. "Durable gains since the prior injection, holding at the current level."                                                 |
+| improved   | worsened   | MIXED — MANDATORY acknowledgement. Do NOT assert the patient is improving this session. Phrase as: cumulative trajectory favorable, BUT interval regression from the prior injection. Example: "While the overall trajectory across the injection series remains favorable, the patient reports interval worsening of pain since the prior injection, rising from X/10 to Y/10." |
+| stable     | improved   | Early positive shift. Cautiously optimistic. Phrase as: "Modest interval improvement since the prior injection, though the series-level change remains within a stable range."                                                                           |
+| stable     | stable     | Plateau language. Discuss options.                                                                                                              |
+| stable     | worsened   | Concerning. MANDATORY flag regression from the most recent baseline even though series-level change is stable.                                  |
+| worsened   | improved   | Complex — partial recovery from setback. Phrase as: "Interval improvement since the prior injection; however, overall pain remains elevated above the series baseline."                                                                                  |
+| worsened   | stable     | Persistent elevation above baseline.                                                                                                            |
+| worsened   | worsened   | Clear decline. Document and revisit plan.                                                                                                       |
+| any        | null       | First procedure in the series. vsPrevious is not applicable. Use the paintoneLabel branching as documented in each section below.              |
+
+FORBIDDEN when vsPrevious is "worsened": the narrative MUST NOT read as unambiguously improved this session, regardless of vsBaseline. Do not use "continued improvement since the prior injection" / "further improvement since the last injection" / "progressive reduction" when vsPrevious is "worsened". Those phrasings are only defensible when vsPrevious is "improved" or, weakly, "stable".
+
+FORBIDDEN when vsPrevious is "improved" AND vsBaseline is "worsened": do NOT describe the cumulative arc as improving. The series is still net-negative; the current session simply reclaimed some ground. Phrase as partial recovery from setback.
+
+Section-scope application: apply the matrix to subjective, INTERVAL-RESPONSE NARRATIVE, review_of_systems tone words, assessment_summary closing clause, and procedure_followup RESPONSE-CALIBRATED FOLLOW-UP. Procedure-mechanics sections remain governed by the NO CLONE RULE and are not affected by vsPrevious.
 
 === PRIOR PROCEDURE NOTES CONTEXT (CONDITIONAL) ===
 
