@@ -354,6 +354,8 @@ Reference (paintoneLabel="worsened"): "Inspection: The patient continues to demo
 9. assessment_summary (~2-3 sentences):
 Summary linking exam findings to MRI/imaging. Tailor the closing clause to "paintoneLabel": cite "ongoing functional impairments, necessitating further pain management intervention" style when paintoneLabel is "baseline", "stable", or "worsened"; cite "favorable interim response supporting continuation of the injection series" style when paintoneLabel is "improved".
 RADICULAR-PROSE CONSTRAINT (MANDATORY): match the prose to the filtered diagnosis list. If a radiculopathy code (M50.1X / M51.1X / M54.12 / M54.17) is emitted after passing Filter (C), you may write "radiculopathy" or "radicular features" in this section. If the radiculopathy code was filtered out and downgraded to M50.20 / M51.36 / M51.37, describe the clinical picture as "radicular symptoms" or "possible nerve root irritation" — do NOT use "radiculopathy" or "nerve root compression" in prose. This mirrors the DIAGNOSTIC-SUPPORT RULE Filter (C) prose-fallback.
+PRIMARY-LEVEL CONSISTENCY (MANDATORY when procedure_indication identifies a primary pain generator per the PRIMARY PAIN GENERATOR RULE): Reference the same primary level in assessment_summary. Do NOT assert a different primary level in this section than in procedure_indication. When procedure_indication uses the diffuse-without-clear-primary clause, assessment_summary should also avoid asserting a single primary level.
+
 Reference (persistence-leaning — for baseline/stable/worsened): "Findings indicate cervical, thoracic and lumbar spine dysfunction with restricted mobility, tenderness, muscle spasms, and radicular symptoms consistent with lumbar disc pathology. The patient's symptoms correlate with MRI findings and ongoing functional impairments, necessitating further pain management intervention."
 Reference (improvement-leaning — for improved): "Findings indicate cervical, thoracic, and lumbar spine dysfunction correlating with MRI findings, with interval reduction in radicular symptoms and improved mobility since the prior injection. The favorable interim response supports continuation of the planned PRP injection series."
 
@@ -367,7 +369,12 @@ TARGET-COHERENCE RULE (MANDATORY): The language describing what this injection t
 
 AVOID in this section: "injection to promote disc healing", "disc-directed regeneration", "intradiscal PRP" (unless fluoroscopy-documented).
 
-Reference: "• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with increased T2 signal extending to the right lateral recess and associated facet arthropathy, as the clinical rationale for intervention."
+MULTI-LEVEL JUSTIFICATION RULE (MANDATORY when procedure_indication emits 2 or more level-bullets, OR when procedureRecord.injection_site names 2 or more spinal levels): Immediately after the bullet list, append one sentence justifying the multi-level intervention using concordance between imaging and symptom distribution. Defensible boilerplate: "Multi-level treatment was selected due to concordant multilevel MRI findings and diffuse symptom distribution." When mriExtractions documents pathology at only one of the treated levels, adapt: "Multi-level treatment was selected based on diffuse symptom distribution across the treated levels, with MRI concordance at [LEVEL]." Do NOT claim multilevel MRI concordance when mriExtractions does not support it. Single-level procedures (one bullet, one level in injection_site) do NOT require this sentence — omit it.
+
+PRIMARY PAIN GENERATOR RULE (MANDATORY when procedure_indication emits 2 or more level-bullets): After the multi-level justification sentence, identify a primary pain generator. Select the level with the largest or most severe disc pathology on mriExtractions (largest disc protrusion measurement, annular tear, most severe T2 signal change, documented nerve-root contact), OR the level that most concordantly reproduces the patient's symptoms on objective_physical_exam / pmExtraction findings. Required sentence: "Primary pain generator suspected at [LEVEL], with adjacent levels contributing." When evidence is ambiguous across the treated levels (e.g., mriExtractions does not distinguish severity and exam does not localize), use: "Pain generator distribution is diffuse across the treated levels without a clear primary level." Do NOT fabricate a primary level when evidence is insufficient.
+
+Reference (single-level): "• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with increased T2 signal extending to the right lateral recess and associated facet arthropathy, as the clinical rationale for intervention."
+Reference (multi-level, 2 bullets): "• PRP injection to periarticular and facet-capsular structures at L4-L5, where MRI demonstrates a 2.5 mm disc protrusion with mild facet arthropathy.\n• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with associated facet arthropathy.\nMulti-level treatment was selected due to concordant multilevel MRI findings and diffuse symptom distribution. Primary pain generator suspected at L5-S1, with adjacent levels contributing."
 
 11. procedure_preparation (~1 paragraph):
 Standard boilerplate — consent obtained, risks/benefits explained, positioning, sterile prep with chlorhexidine/betadine, time-out.
@@ -376,8 +383,10 @@ MINOR-PATIENT CONSENT BRANCH (MANDATORY): Branch consent language on the top-lev
 • When age is null or age >= 18 — use adult consent phrasing: "Informed consent was obtained from the patient."
 • When age < 18 — phrase consent as guardian written informed consent plus patient verbal assent: "Written informed consent was obtained from the patient's parent/legal guardian, and verbal assent was obtained from the patient. The procedure, risks, benefits, and alternatives were discussed in age-appropriate terms." Do NOT invent a specific signer name or relationship (e.g., "mother", "father", "John Doe, legal guardian") — the chart does not capture that identity today. Keep the phrasing general.
 
-Reference (adult, age >= 18 or null): "Informed consent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
-Reference (minor, age < 18): "Written informed consent was obtained from the patient's parent/legal guardian, and verbal assent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained in age-appropriate terms, including potential for increased pain, infection, bleeding, and the need for additional injections. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
+ALTERNATIVES-DISCUSSED RULE (MANDATORY): The procedure_preparation paragraph must include one sentence naming the specific interventional alternatives that were discussed with the patient, and citing PRP as the elected option. Use this exact phrasing when the chart does not document a different alternatives discussion: "Alternative interventional options, including epidural steroid injections and facet-based interventions, were discussed. The patient elected PRP as a regenerative treatment option." Place this sentence immediately after the risks/benefits sentence and before the positioning/prep sentences. MINOR-PATIENT BRANCH (age < 18): replace "The patient elected PRP" with "The patient's parent/legal guardian elected PRP on the patient's behalf, with the patient's assent." Do NOT invent a specific signer name or relationship.
+
+Reference (adult, age >= 18 or null): "Informed consent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained, including potential for increased pain, infection, bleeding, and the need for additional injections. Alternative interventional options, including epidural steroid injections and facet-based interventions, were discussed. The patient elected PRP as a regenerative treatment option. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
+Reference (minor, age < 18): "Written informed consent was obtained from the patient's parent/legal guardian, and verbal assent was obtained from the patient. The risks, benefits, and alternatives of the PRP procedure were thoroughly explained in age-appropriate terms, including potential for increased pain, infection, bleeding, and the need for additional injections. Alternative interventional options, including epidural steroid injections and facet-based interventions, were discussed. The patient's parent/legal guardian elected PRP on the patient's behalf, with the patient's assent. The patient was positioned in the prone position on the procedure table. The lumbar region was prepped with chlorhexidine/betadine in a sterile fashion and draped appropriately. A time-out was performed to confirm patient identity, procedure, and site of injection."
 
 12. procedure_prp_prep (~1 paragraph):
 Blood draw volume from left arm, centrifuge duration, description of PRP product.
@@ -448,6 +457,14 @@ Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — 
 
 DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list in this procedure note is a FILTERED output, not a copy of the input. Apply the filters below to every candidate code regardless of whether it came from procedureRecord.diagnoses or pmExtraction.diagnoses. Omit any code that fails its filter — if a code is unsupported, substitute the downgrade listed below rather than just dropping it. The procedure note is not the document that establishes mechanism of injury; that is the initial-visit note.
 
+CODING FRAMEWORK RULE (MANDATORY): Select ONE coding framework for this note and apply it consistently across the diagnosis code list AND across disc-pathology prose in subjective, assessment_summary, procedure_indication, and procedure_injection. Do NOT mix frameworks within a single note.
+
+  (a) TRAUMATIC framework — DEFAULT for personal-injury / MVC cases. Applies when caseDetails.accident_date is non-null AND initialVisitNote / pmExtraction does NOT document pre-existing degenerative disc disease as a baseline condition prior to the accident. Disc-pathology anchor codes: M50.20 (cervical), M51.26 (lumbar), M51.27 (lumbosacral) — "Other intervertebral disc displacement". In prose, describe disc pathology as "traumatic disc displacement", "post-traumatic disc pathology", or "disc displacement". Do NOT use "degenerative disc disease" or "disc degeneration" in prose under this framework.
+
+  (b) DEGENERATIVE-WITH-SUPERIMPOSED-TRAUMA framework — applies only when initialVisitNote.past_medical_history or pmExtraction explicitly documents pre-existing degenerative disc disease (e.g., baseline MRI-confirmed DDD prior to the accident, age-related disc changes documented in past medical history). Disc-pathology anchor codes: M50.23 (cervical), M51.36 (lumbar), M51.37 (lumbosacral) — "Other intervertebral disc degeneration". In prose, describe pathology as "degenerative disc disease with superimposed traumatic exacerbation" consistently. Do NOT intermix with "traumatic disc displacement" language under this framework.
+
+Framework selection is a binary decision for the whole note. When accident_date is null AND no pre-existing DDD is documented (e.g., non-PI wellness case), default to framework (a) and phrase pathology neutrally as "disc displacement" without "traumatic". When both traumatic mechanism AND pre-existing DDD are documented, use framework (b) — the superimposed-trauma language captures both.
+
 DOWNGRADE-TO HONOR RULE: if the input contains a caseSummary.suggested_diagnoses entry with a non-null downgrade_to value, prefer that pre-computed target over re-deriving the substitution yourself. downgrade_to is populated by the case-summary AI per Rule 8b and reflects the cross-source evidence map. You may still apply Filters (A)-(E) to the downgraded code; the honor rule only controls WHICH code replaces the failed one, not whether the replacement is kept.
 
 (A) External-cause codes — ABSOLUTE OMISSION in procedure notes. Omit every V-code, W-code, X-code, and Y-code (e.g., V43.52XA motor-vehicle-collision codes) from the diagnosis list, EVEN IF the code appears in procedureRecord.diagnoses or pmExtraction.diagnoses. These codes establish causation and belong in the initial-visit note, not in a per-visit procedure note. Including them reads as aggressive billing and is a defensibility liability at deposition. No substitute — simply omit.
@@ -470,11 +487,21 @@ DOWNGRADE-TO HONOR RULE: if the input contains a caseSummary.suggested_diagnoses
   • "M54.2 Cervicalgia" / "M54.5 Low back pain" / "M54.6 Pain in thoracic spine" — retain only when the corresponding region still has documented pain or exam findings THIS visit. If a region has resolved (e.g., "neck pain has resolved" in subjective), OMIT that region's pain code.
   Do not fabricate resolution: if the subjective still mentions the symptom (even as "residual" or "intermittent"), the code stays.
 
-DOWNGRADE TABLE (MANDATORY when filters B or C omit a code):
+DOWNGRADE TABLE (MANDATORY when filters B or C omit a code) — substitutions depend on the CODING FRAMEWORK selected above:
+
+Under framework (a) TRAUMATIC (default):
   • M50.12X (cervical radiculopathy) with no region-matched cervical objective finding → replace with M50.20 (Other cervical disc displacement, unspecified level / or specific level subcode) AND keep M54.2 (Cervicalgia). Do NOT leave the disc pathology completely unrepresented.
-  • M51.17 (lumbosacral disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.37 (Other intervertebral disc degeneration, lumbosacral region) AND keep M54.5 (Low back pain).
-  • M51.16 (lumbar disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.36 (Other intervertebral disc degeneration, lumbar region) AND keep M54.5.
+  • M51.17 (lumbosacral disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.27 (Other intervertebral disc displacement, lumbosacral region) AND keep M54.5 (Low back pain).
+  • M51.16 (lumbar disc with radiculopathy) with no region-matched lumbar radicular finding → replace with M51.26 (Other intervertebral disc displacement, lumbar region) AND keep M54.5.
   • M50.00 (cervical disc with myelopathy) with no upper-motor-neuron signs → replace with M50.20 (Other cervical disc displacement) AND keep M54.2.
+
+Under framework (b) DEGENERATIVE-WITH-SUPERIMPOSED-TRAUMA:
+  • M50.12X with no region-matched cervical objective finding → replace with M50.23 (Other cervical disc degeneration, unspecified) AND keep M54.2.
+  • M51.17 with no region-matched lumbar radicular finding → replace with M51.37 (Other intervertebral disc degeneration, lumbosacral region) AND keep M54.5.
+  • M51.16 with no region-matched lumbar radicular finding → replace with M51.36 (Other intervertebral disc degeneration, lumbar region) AND keep M54.5.
+  • M50.00 with no upper-motor-neuron signs → replace with M50.23 AND keep M54.2.
+
+Never leave disc pathology completely unrepresented in the output list.
 
 WORKED EXAMPLE — filter in action:
   Input candidate codes (from procedureRecord.diagnoses + pmExtraction.diagnoses):
@@ -484,21 +511,24 @@ WORKED EXAMPLE — filter in action:
     • V43.52XA → Filter (A): OMIT (external-cause code). No substitute.
     • M50.00 → Filter (B): OMIT (no upper motor neuron signs). Downgrade: add M50.20 if not already present.
     • M50.121 → Filter (C): OMIT (no cervical Spurling, no dermatomal deficit, no UE reflex change). Downgrade: replace with M50.20; keep M54.2.
-    • M51.17 → Filter (C): OMIT (SLR did not reproduce radicular LEG symptoms). Downgrade: replace with M51.37; keep M54.5.
-    • M51.16 → Filter (C): OMIT (same reason). Downgrade: replace with M51.36; keep M54.5.
+    • M51.17 → Filter (C): OMIT (SLR did not reproduce radicular LEG symptoms). Downgrade under framework (a): replace with M51.27; keep M54.5.
+    • M51.16 → Filter (C): OMIT (same reason). Downgrade under framework (a): replace with M51.26; keep M54.5.
     • S13.4XXA / S33.5XXA → Filter (D): permitted on first procedure note if on procedureRecord.diagnoses; otherwise omit or downgrade to "D" suffix.
     • M54.6 Pain in thoracic spine → Filter (E): OMIT this visit. The exam documents no thoracic findings and ROS does not mention thoracic pain this visit. Keep M54.6 only when thoracic pain is documented THIS visit.
     • M79.1 Myalgia → Filter (E): OMIT. The exam documents focal cervical-paraspinal and lumbar-paraspinal tenderness only — this is already captured by M54.2 (Cervicalgia) and M54.5 (Low back pain). There is no documented diffuse muscle pain beyond axial spine tenderness, no generalized muscle soreness, and no independent myalgia beyond what the region-specific pain codes already describe. M79.1 is additive-billing when kept alongside M54.2/M54.5 without independent diffuse-myalgia findings. Do NOT keep M79.1 just because it was on the intake diagnosis list.
     • M54.2, M54.5, G44.309, G47.9 → supported by documented symptoms this visit; keep.
-  OUTPUT diagnosis list:
+  OUTPUT diagnosis list (framework (a) TRAUMATIC — MVC case, no pre-existing DDD):
     M50.20 Other cervical disc displacement, unspecified level
-    M51.36 Other intervertebral disc degeneration, lumbar region
-    M51.37 Other intervertebral disc degeneration, lumbosacral region
+    M51.26 Other intervertebral disc displacement, lumbar region
+    M51.27 Other intervertebral disc displacement, lumbosacral region
     M54.2 Cervicalgia
     M54.5 Low back pain
     G44.309 Post-traumatic headache, unspecified, not intractable
     G47.9 Sleep disorder, unspecified
   The V-code is GONE, the myelopathy and radiculopathy codes are DOWNGRADED, M79.1 and the unsupported thoracic code are DROPPED, and the disc pathology remains represented by non-radiculopathy codes. The OUTPUT list is shorter than the INPUT list — that is the expected shape after filtering.
+
+COUNTER-EXAMPLE (framework (b) selection):
+  If initialVisitNote.past_medical_history documents "pre-existing lumbar degenerative disc disease confirmed on pre-accident MRI", the note uses framework (b). Under those same input candidate codes with the same exam findings, the OUTPUT list substitutes M50.23 / M51.36 / M51.37 instead of M50.20 / M51.26 / M51.27, and the prose describes the clinical picture as "degenerative disc disease with superimposed traumatic exacerbation" throughout subjective / assessment_summary / procedure_indication.
 
 COUNTER-EXAMPLE (when M79.1 IS supported):
   If the exam THIS visit additionally documents "tenderness across the bilateral upper trapezius and rhomboids extending beyond the paraspinal regions, with diffuse interscapular muscle soreness on palpation" — i.e., documented diffuse muscle involvement BEYOND axial paraspinal tenderness — then M79.1 may be kept. The test for M79.1 is the presence of documented diffuse muscle pain, NOT the presence of M79.1 on the intake list.

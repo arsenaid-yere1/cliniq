@@ -698,7 +698,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phase 12)', () => {
     const system = await capturePrompt(emptyInput)
     // Scope the check to the OUTPUT diagnosis list of the worked example.
     // Find the "OUTPUT diagnosis list:" heading and the trailing summary sentence.
-    const outStart = system.indexOf('OUTPUT diagnosis list:')
+    const outStart = system.indexOf('OUTPUT diagnosis list')
     expect(outStart).toBeGreaterThan(0)
     const outEnd = system.indexOf('The V-code is GONE', outStart)
     expect(outEnd).toBeGreaterThan(outStart)
@@ -1032,5 +1032,173 @@ describe('SERIES VOLATILITY (procedure)', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     const payload = opts.messages[0].content as string
     expect(payload).toContain('"seriesVolatility": "insufficient_data"')
+  })
+})
+
+describe('SYSTEM_PROMPT — alternatives-discussed rule', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('includes ALTERNATIVES-DISCUSSED RULE in procedure_preparation', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('ALTERNATIVES-DISCUSSED RULE')
+  })
+
+  it('names epidural steroid and facet-based interventions as alternatives', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('epidural steroid injections and facet-based interventions')
+  })
+
+  it('cites PRP as elected regenerative treatment option', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('elected PRP as a regenerative treatment option')
+  })
+
+  it('describes minor-branch guardian-elected phrasing', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain("parent/legal guardian elected PRP on the patient's behalf")
+  })
+
+  it('includes alternatives sentence in both adult and minor references', async () => {
+    const system = await capturePrompt(emptyInput)
+    const adultRef = system.match(/Reference \(adult, age >= 18 or null\):[\s\S]*?"(.*?)"/)
+    const minorRef = system.match(/Reference \(minor, age < 18\):[\s\S]*?"(.*?)"/)
+    expect(adultRef?.[1]).toContain('epidural steroid injections and facet-based interventions')
+    expect(minorRef?.[1]).toContain('epidural steroid injections and facet-based interventions')
+  })
+})
+
+describe('SYSTEM_PROMPT — multi-level justification rule', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('includes MULTI-LEVEL JUSTIFICATION RULE in procedure_indication', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MULTI-LEVEL JUSTIFICATION RULE')
+  })
+
+  it('requires concordance boilerplate for multi-level treatment', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Multi-level treatment was selected due to concordant multilevel MRI findings and diffuse symptom distribution')
+  })
+
+  it('exempts single-level procedures from the justification sentence', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Single-level procedures')
+    expect(system).toContain('do NOT require this sentence')
+  })
+
+  it('provides a multi-level reference example with 2 bullets and justification sentence', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Reference (multi-level, 2 bullets)')
+    expect(system).toContain('L4-L5')
+    expect(system).toContain('L5-S1')
+  })
+})
+
+describe('SYSTEM_PROMPT — primary pain generator rule', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('includes PRIMARY PAIN GENERATOR RULE in procedure_indication', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PRIMARY PAIN GENERATOR RULE')
+  })
+
+  it('requires the primary-generator identification sentence', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Primary pain generator suspected at')
+    expect(system).toContain('with adjacent levels contributing')
+  })
+
+  it('provides a diffuse fallback when evidence is ambiguous', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Pain generator distribution is diffuse across the treated levels without a clear primary level')
+  })
+
+  it('forbids fabricating a primary level when evidence is insufficient', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT fabricate a primary level when evidence is insufficient')
+  })
+
+  it('adds PRIMARY-LEVEL CONSISTENCY clause to assessment_summary', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PRIMARY-LEVEL CONSISTENCY')
+    expect(system).toContain('Reference the same primary level in assessment_summary')
+  })
+})
+
+describe('SYSTEM_PROMPT — coding framework rule', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('includes CODING FRAMEWORK RULE at the top of DIAGNOSTIC-SUPPORT RULE', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('CODING FRAMEWORK RULE')
+  })
+
+  it('defines both traumatic and degenerative frameworks', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('(a) TRAUMATIC framework')
+    expect(system).toContain('(b) DEGENERATIVE-WITH-SUPERIMPOSED-TRAUMA framework')
+  })
+
+  it('names traumatic-framework anchor codes M50.20 / M51.26 / M51.27', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/\(a\) TRAUMATIC framework[\s\S]*?M50\.20[\s\S]*?M51\.26[\s\S]*?M51\.27/)
+  })
+
+  it('names degenerative-framework anchor codes M50.23 / M51.36 / M51.37', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toMatch(/\(b\) DEGENERATIVE-WITH-SUPERIMPOSED-TRAUMA framework[\s\S]*?M50\.23[\s\S]*?M51\.36[\s\S]*?M51\.37/)
+  })
+
+  it('pins disc-pathology prose to the framework (no mixing)', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Do NOT mix frameworks within a single note')
+    expect(system).toContain('traumatic disc displacement')
+    expect(system).toContain('degenerative disc disease with superimposed traumatic exacerbation')
+  })
+
+  it('rewrites DOWNGRADE TABLE with both framework branches', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('Under framework (a) TRAUMATIC')
+    expect(system).toContain('Under framework (b) DEGENERATIVE-WITH-SUPERIMPOSED-TRAUMA')
+  })
+
+  it('worked-example output uses framework (a) traumatic anchors M51.26 / M51.27', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('OUTPUT diagnosis list (framework (a) TRAUMATIC')
+    expect(system).toContain('M51.26 Other intervertebral disc displacement, lumbar region')
+    expect(system).toContain('M51.27 Other intervertebral disc displacement, lumbosacral region')
+  })
+
+  it('includes framework (b) counter-example', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('COUNTER-EXAMPLE (framework (b) selection)')
   })
 })
