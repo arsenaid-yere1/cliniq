@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -44,7 +44,11 @@ import {
   resetDischargeNote,
   saveDischargeVitals,
   saveDischargeNoteToneHint,
+  getDischargePainTimeline,
 } from '@/actions/discharge-notes'
+import { PainTimelineTable } from '@/components/discharge/pain-timeline-table'
+import type { DischargePainTrajectory } from '@/lib/claude/pain-trajectory'
+import type { PainObservation } from '@/lib/claude/pain-observations'
 import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
@@ -416,6 +420,38 @@ function DraftEditor({
     },
   })
   const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
+  const [timeline, setTimeline] = useState<{
+    trajectory: DischargePainTrajectory | null
+    painObservations: PainObservation[]
+    dischargeEstimated: boolean
+  } | null>(null)
+
+  // Load the read-only trajectory payload used by the Pain Timeline widget.
+  // Runs on mount and whenever the note id changes (e.g. after reset).
+  // The server action re-runs the same gather + trajectory builder that
+  // the generator uses, so this always matches what the LLM would see.
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const res = await getDischargePainTimeline(caseId)
+      if (cancelled) return
+      if (res.error) {
+        setTimeline(null)
+        return
+      }
+      if (res.data) {
+        setTimeline({
+          trajectory: res.data.trajectory,
+          painObservations: res.data.painObservations,
+          dischargeEstimated: res.data.dischargeVisitPainEstimated,
+        })
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, note.id])
 
   function handleSave() {
     startTransition(async () => {
@@ -559,6 +595,13 @@ function DraftEditor({
             disabled={isLocked || isPending}
             description="Edits apply to subsequent section regenerations. Saved automatically on blur."
           />
+          {timeline && (
+            <PainTimelineTable
+              trajectory={timeline.trajectory}
+              painObservations={timeline.painObservations}
+              dischargeEstimated={timeline.dischargeEstimated}
+            />
+          )}
           {dischargeNoteSections.map((section) => (
             <FormField
               key={section}

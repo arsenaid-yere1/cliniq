@@ -1298,3 +1298,87 @@ export async function saveDischargeNoteToneHint(
 
   return {}
 }
+
+// --- Read-only pain timeline payload for the editor widget (R10) ---
+
+import type { DischargePainTrajectory } from '@/lib/claude/pain-trajectory'
+import type { PainObservation } from '@/lib/claude/pain-observations'
+
+export async function getDischargePainTimeline(caseId: string): Promise<{
+  data?: {
+    trajectory: DischargePainTrajectory
+    painObservations: PainObservation[]
+    painTrajectoryText: string | null
+    dischargeVisitPainDisplay: string | null
+    dischargeVisitPainEstimated: boolean
+    baselinePainSource: 'intake' | 'procedure' | null
+  }
+  error?: string
+}> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Preserve provider-entered discharge vitals so the trajectory returned
+  // here matches what generation would see. Match the same precedence
+  // logic as generateDischargeNote.
+  const { data: existingNote } = await supabase
+    .from('discharge_notes')
+    .select('visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  const today = new Date().toISOString().slice(0, 10)
+  const visitDate = existingNote?.visit_date ?? today
+  const preservedVitals: DischargeNoteInputData['dischargeVitals'] = existingNote
+    ? {
+        bp_systolic: existingNote.bp_systolic,
+        bp_diastolic: existingNote.bp_diastolic,
+        heart_rate: existingNote.heart_rate,
+        respiratory_rate: existingNote.respiratory_rate,
+        temperature_f: existingNote.temperature_f,
+        spo2_percent: existingNote.spo2_percent,
+        pain_score_min: existingNote.pain_score_min,
+        pain_score_max: existingNote.pain_score_max,
+      }
+    : null
+
+  const { data: inputData, error } = await gatherDischargeNoteSourceData(
+    supabase,
+    caseId,
+    visitDate,
+    preservedVitals,
+  )
+  if (error || !inputData) return { error: error || 'Failed to gather source data' }
+
+  // Rebuild the trajectory from the input payload so the widget receives
+  // the full entry array (only the arrow-chain string is persisted on
+  // DischargeNoteInputData — we need the entries for the table).
+  const trajectory = buildDischargePainTrajectory({
+    procedures: inputData.procedures.map((p) => ({
+      procedure_date: p.procedure_date,
+      procedure_number: p.procedure_number,
+      pain_score_min: p.pain_score_min,
+      pain_score_max: p.pain_score_max,
+    })),
+    latestVitals: inputData.latestVitals,
+    dischargeVitals: inputData.dischargeVitals,
+    baselinePain: inputData.baselinePain,
+    intakePain: inputData.intakePain,
+    overallPainTrend: inputData.overallPainTrend,
+    finalIntervalWorsened: inputData.painTrendSignals.vsPrevious === 'worsened',
+    visitDate,
+  })
+
+  return {
+    data: {
+      trajectory,
+      painObservations: inputData.painObservations,
+      painTrajectoryText: inputData.painTrajectoryText,
+      dischargeVisitPainDisplay: inputData.dischargeVisitPainDisplay,
+      dischargeVisitPainEstimated: inputData.dischargeVisitPainEstimated,
+      baselinePainSource: inputData.baselinePainSource,
+    },
+  }
+}
