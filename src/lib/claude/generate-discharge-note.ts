@@ -260,6 +260,9 @@ A discharge note MUST demonstrate that pain decreased over the treatment course 
 • "dischargeVitals" — provider-entered vitals recorded AT the discharge follow-up visit. When non-null, these REPLACE all default vitals rendering and override the pain-delta defaults below.
 • "overallPainTrend" — the computed label comparing last procedure pain to first procedure pain (both pre-injection readings).
 
+PAIN CONTEXT CONVENTION (applies to every pain number in the payload):
+Every NRS reading is understood as the patient's CURRENT pain at the time of vitals capture during that encounter. No "at rest" vs "with activity" vs "worst in 24h" tags are stored — do NOT introduce such qualifiers into the narrative unless the source is PT/PM/chiro extraction data (painObservations), which carries its own context strings. When you cite a procedure, intake, or discharge reading, refer to it as the pain "at the time of" that visit or simply "at [visit type]" — never as "at rest" or "with activity".
+
 PROVIDER-ENTERED DISCHARGE VITALS (highest priority):
 • If \`dischargeVitals\` is non-null, render \`objective_vitals\` bullets DIRECTLY from \`dischargeVitals\` (skip the -2 default). Omit any bullet whose field is null. The Pain bullet uses \`dischargeVitals.pain_score_min/max\` verbatim.
 • If \`dischargeVitals\` is non-null, the numeric endpoint cited in \`subjective\`, \`assessment\`, and \`prognosis\` MUST be \`dischargeVitals.pain_score_max\` (or the range when min/max differ). Do NOT apply the -2 rule.
