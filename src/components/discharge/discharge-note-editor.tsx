@@ -430,6 +430,21 @@ function DraftEditor({
   // Runs on mount and whenever the note id changes (e.g. after reset).
   // The server action re-runs the same gather + trajectory builder that
   // the generator uses, so this always matches what the LLM would see.
+  const refreshTimeline = async () => {
+    const res = await getDischargePainTimeline(caseId)
+    if (res.error) {
+      setTimeline(null)
+      return
+    }
+    if (res.data) {
+      setTimeline({
+        trajectory: res.data.trajectory,
+        painObservations: res.data.painObservations,
+        dischargeEstimated: res.data.dischargeVisitPainEstimated,
+      })
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -458,7 +473,13 @@ function DraftEditor({
       const values = form.getValues()
       const result = await saveDischargeNote(caseId, values)
       if (result.error) toast.error(result.error)
-      else toast.success('Draft saved')
+      else {
+        toast.success('Draft saved')
+        // Visit-date on the form may have changed, which shifts the
+        // discharge-entry day-offset in the trajectory. Refetch so the
+        // Pain Timeline table reflects the saved visit_date.
+        await refreshTimeline()
+      }
     })
   }
 
@@ -477,6 +498,11 @@ function DraftEditor({
       } else if (result.data?.content) {
         form.setValue(section, result.data.content)
         toast.success(`${dischargeNoteSectionLabels[section]} regenerated`)
+        // Source data (vitals / procedures / extractions) may have
+        // changed between generation and this regen; refresh the
+        // timeline widget so it tracks the same trajectory the regen
+        // just ran against.
+        await refreshTimeline()
       }
       setRegeneratingSection(null)
     })

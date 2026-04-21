@@ -73,7 +73,7 @@ async function gatherDischargeNoteSourceData(
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('chief_complaint, physical_exam, diagnoses, treatment_plan')
+      .select('chief_complaint, physical_exam, diagnoses, treatment_plan, visit_date')
       .eq('case_id', caseId)
       .eq('status', 'finalized')
       .is('deleted_at', null)
@@ -235,10 +235,20 @@ async function gatherDischargeNoteSourceData(
   // narrative can cite "pain at initial evaluation" against the true
   // intake anchor rather than silently against the first-procedure
   // reading. May be null when no intake vitals were recorded.
+  //
+  // Date source preference: initial_visit_notes.visit_date (clinical
+  // event date) > vital_signs.recorded_at (DB timestamp). The DB
+  // timestamp is the row creation time, which can drift if the vitals
+  // were back-entered after the encounter; the clinical visit_date
+  // reflects the actual day of the initial evaluation and is what the
+  // narrative and day-axis labels should anchor on.
   const intakePain: DischargeNoteInputData['intakePain'] =
     intakeVitalsRes.data
       ? {
-          recorded_at: intakeVitalsRes.data.recorded_at ?? null,
+          recorded_at:
+            (ivNoteRes.data?.visit_date as string | null | undefined) ??
+            intakeVitalsRes.data.recorded_at ??
+            null,
           pain_score_min: intakeVitalsRes.data.pain_score_min ?? null,
           pain_score_max: intakeVitalsRes.data.pain_score_max ?? null,
         }
