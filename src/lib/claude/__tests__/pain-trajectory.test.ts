@@ -321,6 +321,87 @@ describe('buildDischargePainTrajectory', () => {
     expect(t.baselineSource).toBe('intake')
   })
 
+  it('annotates arrow chain with (day N) labels when visitDate is supplied (R9)', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 8, pain_score_max: 8 },
+          { procedure_date: '2026-02-10', procedure_number: 2, pain_score_min: 4, pain_score_max: 4 },
+        ],
+        latestVitals: { pain_score_min: 4, pain_score_max: 4 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 8, pain_score_max: 8 },
+        intakePain: { recorded_at: '2026-01-05T00:00:00Z', pain_score_min: 9, pain_score_max: 9 },
+        overallPainTrend: 'improved',
+        visitDate: '2026-03-01',
+      }),
+    )
+    // Anchor = intake = 2026-01-05.
+    // Procedure 1 (2026-01-10) = day 5
+    // Procedure 2 (2026-02-10) = day 36
+    // Discharge visit (2026-03-01) = day 55
+    expect(t.arrowChain).toBe(
+      "9/10 at initial evaluation (day 0), 8/10 → 4/10 across the injection series (day 5 → day 36), 2/10 at today's discharge evaluation (day 55)",
+    )
+    expect(t.entries.find((e) => e.source === 'intake')?.dayOffset).toBe(0)
+    expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(5)
+    expect(t.entries.find((e) => e.label === 'procedure 2')?.dayOffset).toBe(36)
+    expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(55)
+  })
+
+  it('no day labels when visitDate is omitted (backward-compat)', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 7, pain_score_max: 7 },
+        ],
+        latestVitals: { pain_score_min: 7, pain_score_max: 7 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 7, pain_score_max: 7 },
+        intakePain: { recorded_at: '2026-01-05T00:00:00Z', pain_score_min: 9, pain_score_max: 9 },
+        overallPainTrend: 'improved',
+        // no visitDate
+      }),
+    )
+    expect(t.arrowChain).not.toContain('(day')
+    expect(t.entries.every((e) => e.dayOffset === null)).toBe(true)
+  })
+
+  it('falls back to first-procedure as anchor when intake has no date', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-02-01', procedure_number: 1, pain_score_min: 6, pain_score_max: 6 },
+        ],
+        latestVitals: { pain_score_min: 6, pain_score_max: 6 },
+        baselinePain: { procedure_date: '2026-02-01', pain_score_min: 6, pain_score_max: 6 },
+        intakePain: null,
+        overallPainTrend: 'baseline',
+        visitDate: '2026-02-15',
+      }),
+    )
+    // Anchor = first procedure = 2026-02-01 (day 0). Discharge = day 14.
+    expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(0)
+    expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(14)
+    expect(t.arrowChain).toContain('(day 0)')
+    expect(t.arrowChain).toContain('(day 14)')
+  })
+
+  it('gracefully handles malformed dates (null dayOffset, no crash)', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: 'not-a-date', procedure_number: 1, pain_score_min: 6, pain_score_max: 6 },
+        ],
+        latestVitals: { pain_score_min: 6, pain_score_max: 6 },
+        baselinePain: { procedure_date: 'not-a-date', pain_score_min: 6, pain_score_max: 6 },
+        overallPainTrend: 'baseline',
+        visitDate: 'also-bad',
+      }),
+    )
+    // No anchor can be parsed → no day labels at all.
+    expect(t.arrowChain).not.toContain('(day')
+    expect(t.entries.every((e) => e.dayOffset === null)).toBe(true)
+  })
+
   it('dischargeVitals takes priority even when finalIntervalWorsened is true', () => {
     const t = buildDischargePainTrajectory(
       baseInput({

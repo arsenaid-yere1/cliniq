@@ -23,9 +23,9 @@ function baseResult(overrides: Partial<DischargeNoteResult> = {}): DischargeNote
 
 const goodTrajectory: DischargePainTrajectory = {
   entries: [
-    { date: '2026-01-01', label: 'procedure 1', min: 7, max: 7, source: 'procedure', estimated: false },
-    { date: '2026-02-01', label: 'procedure 2', min: 4, max: 4, source: 'procedure', estimated: false },
-    { date: null, label: "today's discharge evaluation", min: 2, max: 2, source: 'discharge_estimate', estimated: true },
+    { date: '2026-01-01', label: 'procedure 1', min: 7, max: 7, source: 'procedure', estimated: false, dayOffset: null },
+    { date: '2026-02-01', label: 'procedure 2', min: 4, max: 4, source: 'procedure', estimated: false, dayOffset: null },
+    { date: null, label: "today's discharge evaluation", min: 2, max: 2, source: 'discharge_estimate', estimated: true, dayOffset: null },
   ],
   arrowChain: "7/10 → 4/10 across the injection series, 2/10 at today's discharge evaluation",
   baselineDisplay: '7/10',
@@ -33,7 +33,7 @@ const goodTrajectory: DischargePainTrajectory = {
   intakePainDisplay: null,
   firstProcedurePainDisplay: '7/10',
   dischargeDisplay: '2/10',
-  dischargeEntry: { date: null, label: "today's discharge evaluation", min: 2, max: 2, source: 'discharge_estimate', estimated: true },
+  dischargeEntry: { date: null, label: "today's discharge evaluation", min: 2, max: 2, source: 'discharge_estimate', estimated: true, dayOffset: null },
   dischargeEstimated: true,
 }
 

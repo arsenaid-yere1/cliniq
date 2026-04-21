@@ -20,6 +20,10 @@ export interface TimelineEntry {
   max: number | null
   source: TimelineSource
   estimated: boolean
+  // Days since the trajectory anchor date (intake > first procedure >
+  // null). Null when neither the anchor nor this entry has a usable date.
+  // Populated by the builder; never edited post-hoc.
+  dayOffset: number | null
 }
 
 export interface DischargePainTrajectory {
@@ -60,6 +64,11 @@ export interface BuildTrajectoryInput {
   intakePain: { recorded_at: string | null; pain_score_min: number | null; pain_score_max: number | null } | null
   overallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened'
   finalIntervalWorsened: boolean
+  // Date of today's discharge follow-up visit (ISO YYYY-MM-DD). Used to
+  // compute the dayOffset on the synthetic discharge entry so the arrow
+  // chain can render "(day N)" on the trailing segment. Optional to
+  // preserve back-compat with callers that do not yet thread visitDate.
+  visitDate?: string | null
 }
 
 export function formatPainValue(min: number | null, max: number | null): string | null {
@@ -92,7 +101,21 @@ function procedureEntryFromVitals(p: ProcedureVitalsEntry): TimelineEntry {
     max: p.pain_score_max,
     source: 'procedure',
     estimated: false,
+    dayOffset: null,
   }
+}
+
+// Parse an ISO date-or-datetime string into a UTC day number (ms / 86400000
+// floored). Returns null on any parse failure so downstream math skips the
+// entry instead of crashing. Truncating to UTC day avoids timezone drift
+// when an intake row was stored with a local-time datetime and a procedure
+// row was stored as a YYYY-MM-DD string.
+function parseDateToUtcDay(raw: string | null | undefined): number | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  const ms = d.getTime()
+  if (!Number.isFinite(ms)) return null
+  return Math.floor(ms / 86_400_000)
 }
 
 function hasValue(entry: TimelineEntry): boolean {
@@ -118,6 +141,7 @@ export function buildDischargePainTrajectory(
         max: input.intakePain!.pain_score_max,
         source: 'intake',
         estimated: false,
+        dayOffset: null,
       }
     : null
 
@@ -142,6 +166,7 @@ export function buildDischargePainTrajectory(
       max: input.dischargeVitals!.pain_score_max,
       source: 'discharge_vitals',
       estimated: false,
+      dayOffset: null,
     }
   } else if (input.latestVitals != null && (input.latestVitals.pain_score_min != null || input.latestVitals.pain_score_max != null)) {
     const suppressFabrication =
@@ -157,6 +182,7 @@ export function buildDischargePainTrajectory(
         max: input.latestVitals.pain_score_max,
         source: 'discharge_vitals',
         estimated: false,
+        dayOffset: null,
       }
     } else {
       const est = estimateDischargeFromLatest(input.latestVitals.pain_score_min, input.latestVitals.pain_score_max)
@@ -167,15 +193,43 @@ export function buildDischargePainTrajectory(
         max: est.max,
         source: 'discharge_estimate',
         estimated: true,
+        dayOffset: null,
       }
       dischargeEstimated = true
     }
+  }
+
+  // Stamp the discharge entry with today's visitDate so the day-offset pass
+  // can annotate it. The discharge entry has no DB date of its own (it
+  // represents the current visit), so callers that want a day-axis label
+  // must supply visitDate.
+  if (dischargeEntry && input.visitDate) {
+    dischargeEntry.date = input.visitDate
   }
 
   const entries: TimelineEntry[] = []
   if (intakeEntry) entries.push(intakeEntry)
   entries.push(...procEntries)
   if (dischargeEntry) entries.push(dischargeEntry)
+
+  // Anchor for the time axis: intake date > first-procedure date > null.
+  // Day labels only render when the caller supplies visitDate AND an
+  // anchor date is derivable — the visitDate gate is deliberate so
+  // callers that have not yet threaded it (historical tests, legacy paths)
+  // keep the pre-R9 chain format. When visitDate is present but no anchor
+  // date can be parsed, the discharge entry is stamped day 0 and other
+  // entries stay null.
+  const anchorDay = input.visitDate
+    ? (parseDateToUtcDay(intakeEntry?.date ?? null) ??
+       parseDateToUtcDay(procEntries[0]?.date ?? null) ??
+       null)
+    : null
+  if (anchorDay != null) {
+    for (const e of entries) {
+      const day = parseDateToUtcDay(e.date)
+      if (day != null) e.dayOffset = day - anchorDay
+    }
+  }
 
   // Arrow chain — only procedures with values contribute to the chain. The
   // discharge endpoint is rendered as a trailing clause so a mid-series null
@@ -191,18 +245,36 @@ export function buildDischargePainTrajectory(
 
   const intakeDisplay = intakeEntry ? formatPainValue(intakeEntry.min, intakeEntry.max) : null
 
+  // Day-label helpers — format a single entry's offset or a range.
+  const dayLabel = (entry: TimelineEntry | null | undefined): string =>
+    entry && entry.dayOffset != null ? ` (day ${entry.dayOffset})` : ''
+  const dayRangeLabel = (firstEntry: TimelineEntry | null | undefined, lastEntry: TimelineEntry | null | undefined): string => {
+    if (!firstEntry || !lastEntry) return ''
+    const first = firstEntry.dayOffset
+    const last = lastEntry.dayOffset
+    if (first == null || last == null) return ''
+    if (first === last) return ` (day ${first})`
+    return ` (day ${first} → day ${last})`
+  }
+
   let arrowChain = ''
   // Build chain in segments: intake → procedures → discharge. Each segment
-  // is optional; joiners adapt to which segments are present.
+  // is optional; joiners adapt to which segments are present. Day-axis
+  // annotations (R9) append to each segment when an anchor date exists.
   const segments: string[] = []
   if (intakeDisplay) {
-    segments.push(`${intakeDisplay} at initial evaluation`)
+    segments.push(`${intakeDisplay} at initial evaluation${dayLabel(intakeEntry)}`)
   }
   if (proceduresChain) {
-    segments.push(`${proceduresChain} across the injection series`)
+    const firstProc = renderedProcEntries[0]
+    const lastProc = renderedProcEntries[renderedProcEntries.length - 1]
+    const rangeLabel = renderedProcEntries.length > 1
+      ? dayRangeLabel(firstProc, lastProc)
+      : dayLabel(firstProc)
+    segments.push(`${proceduresChain} across the injection series${rangeLabel}`)
   }
   if (dischargeDisplay) {
-    segments.push(`${dischargeDisplay} at today's discharge evaluation`)
+    segments.push(`${dischargeDisplay} at today's discharge evaluation${dayLabel(dischargeEntry)}`)
   }
   if (segments.length > 0) {
     arrowChain = segments.join(', ')
