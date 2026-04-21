@@ -34,6 +34,7 @@ const emptyInput: DischargeNoteInputData = {
   dischargePainEstimateMin: null,
   dischargePainEstimateMax: null,
   intakePain: null,
+  painObservations: [],
   caseSummary: null,
   initialVisitNote: null,
   ptExtraction: null,

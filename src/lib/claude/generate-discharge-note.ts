@@ -8,6 +8,7 @@ import {
   dischargeNoteSectionLabels,
 } from '@/lib/validations/discharge-note'
 import type { PainToneSignals, SeriesVolatility } from '@/lib/claude/pain-tone'
+import type { PainObservation } from '@/lib/claude/pain-observations'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -134,6 +135,11 @@ export interface DischargeNoteInputData {
   // the LLM should reach for dischargeVisitPainDisplay instead.
   dischargePainEstimateMin: number | null
   dischargePainEstimateMax: number | null
+  // Supplementary pain observations merged from PT / PM / chiro reports
+  // (R6). Chronologically sorted. Null-dated entries are placed last.
+  // These are a sidecar for narrative color — the LLM must NOT use them
+  // to override the deterministic arrow chain in painTrajectoryText.
+  painObservations: PainObservation[]
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -223,6 +229,21 @@ RULES (these override the NUMERIC PORTIONS of every block below, including the d
   - \`'intake'\` → "from \`baselinePainDisplay\` at the initial evaluation" (the intake-visit reading — semantically a true pre-treatment anchor).
   - \`'procedure'\` → "from \`baselinePainDisplay\` at the first procedure" or "prior to the first PRP injection" (the pre-first-injection reading — falls back here only when intakePainDisplay is null).
 • When BOTH \`intakePainDisplay\` AND \`firstProcedurePainDisplay\` are non-null AND they differ, prefer citing intakePainDisplay as the initial-evaluation anchor; optionally also cite firstProcedurePainDisplay as "pain at the first injection" in the subjective arc sentence. Never conflate the two — do not describe the first-procedure reading as "pain at initial evaluation" when a distinct intake reading exists.
+• When \`painTrajectoryText\` includes "(day N)" annotations, preserve them when rendering the arrow chain verbatim. The day numbers are offsets from the anchor (intake when present, else first procedure) and give the reviewer a calibrated sense of pacing. Do NOT paraphrase them into text like "approximately two weeks" — keep the numeric "(day 14)" format.
+
+=== SUPPLEMENTARY PAIN OBSERVATIONS (CONDITIONAL) ===
+
+\`painObservations\` is a chronologically-sorted sidecar array of pain readings extracted from PT, PM, and chiropractic reports. These observations do NOT participate in the deterministic arrow chain and MUST NOT be substituted for procedure-visit pain numbers in the subjective pain-progression sentence.
+
+Allowed usage:
+• May cite in the subjective second paragraph when 2+ observations exist, as narrative color between injections. Example: "Rehabilitation records obtained during the treatment course documented intermediate pain levels (PT evaluation at 3/10 at rest and 7/10 with activity; chiropractic follow-up at 5/10) consistent with the progressive reduction seen across the injection series."
+• Preserve the scale indicator verbatim ("5/10", "60/100 VAS", "X/10 NRS"). NEVER silently convert VAS to NRS.
+• When an observation carries a \`context\` string (e.g. "at rest 3/10; with activity 7/10"), cite it with the context.
+
+Forbidden usage:
+• Do NOT inject PT/PM/chiro observations into the arrow chain in subjective/assessment/prognosis. The arrow chain is painTrajectoryText verbatim — substitutions are a validator violation.
+• Do NOT use a PT/PM/chiro observation as the baseline or discharge endpoint. Those come from intakePain, baselinePain, dischargeVitals, and latestVitals only.
+• Do NOT cite when \`painObservations\` is empty or has only one entry — a single sidecar observation is not enough to warrant a narrative mention.
 • \`dischargeVisitPainEstimated\` = true indicates the endpoint came from the -2 rule (no provider-entered dischargeVitals). This does NOT change the verbatim rule — still render \`dischargeVisitPainDisplay\` exactly as given. The flag is for downstream audit.
 
 Only when BOTH \`painTrajectoryText\` AND \`dischargeVisitPainDisplay\` are null do the legacy numeric rules in the blocks below apply. In that case, follow the legacy blocks in full.

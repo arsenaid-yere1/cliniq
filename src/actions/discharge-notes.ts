@@ -21,6 +21,7 @@ import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import { validateDischargeTrajectoryConsistency } from '@/lib/claude/pain-trajectory-validator'
+import { buildPainObservations } from '@/lib/claude/pain-observations'
 
 // --- Helper: compute source data hash ---
 
@@ -79,7 +80,7 @@ async function gatherDischargeNoteSourceData(
       .maybeSingle(),
     supabase
       .from('pt_extractions')
-      .select('outcome_measures, short_term_goals, long_term_goals, clinical_impression, prognosis, diagnoses')
+      .select('outcome_measures, short_term_goals, long_term_goals, clinical_impression, prognosis, diagnoses, pain_ratings, evaluation_date, created_at')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -88,7 +89,7 @@ async function gatherDischargeNoteSourceData(
       .maybeSingle(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, provider_overrides')
+      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, provider_overrides, created_at')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -357,6 +358,25 @@ async function gatherDischargeNoteSourceData(
     intakePain,
     overallPainTrend: foldedOverallPainTrend,
     finalIntervalWorsened: painTrendSignals.vsPrevious === 'worsened',
+    visitDate,
+  })
+
+  // Supplementary pain observations from PT/PM/chiro reports (R6). These
+  // do NOT feed into the deterministic arrow chain — they are a sidecar
+  // the LLM may cite in the subjective narrative for additional color.
+  const painObservations = buildPainObservations({
+    ptExtraction: ptRes.data as {
+      pain_ratings?: unknown
+      evaluation_date?: string | null
+      created_at?: string | null
+    } | null,
+    pmExtraction: pmRes.data as {
+      chief_complaints?: unknown
+      created_at?: string | null
+    } | null,
+    chiroExtraction: chiroRes.data as {
+      functional_outcomes?: unknown
+    } | null,
   })
 
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
@@ -399,6 +419,7 @@ async function gatherDischargeNoteSourceData(
       firstProcedurePainDisplay: painTrajectory.firstProcedurePainDisplay,
       dischargePainEstimateMin: painTrajectory.dischargeEntry?.min ?? null,
       dischargePainEstimateMax: painTrajectory.dischargeEntry?.max ?? null,
+      painObservations,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,
@@ -674,6 +695,7 @@ export async function generateDischargeNote(
               max: inputData.intakePain.pain_score_max,
               source: 'intake' as const,
               estimated: false,
+              dayOffset: null,
             },
           ]
         : []),
@@ -684,6 +706,7 @@ export async function generateDischargeNote(
         max: p.pain_score_max,
         source: 'procedure' as const,
         estimated: false,
+        dayOffset: null,
       })),
       ...(inputData.dischargeVisitPainDisplay != null
         ? [
@@ -694,6 +717,7 @@ export async function generateDischargeNote(
               max: inputData.dischargePainEstimateMax,
               source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
               estimated: inputData.dischargeVisitPainEstimated,
+              dayOffset: null,
             },
           ]
         : []),
@@ -712,6 +736,7 @@ export async function generateDischargeNote(
           max: inputData.dischargePainEstimateMax,
           source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
           estimated: inputData.dischargeVisitPainEstimated,
+          dayOffset: null,
         }
       : null,
     dischargeEstimated: inputData.dischargeVisitPainEstimated,
@@ -1026,6 +1051,7 @@ export async function regenerateDischargeNoteSectionAction(
               max: inputData.intakePain.pain_score_max,
               source: 'intake' as const,
               estimated: false,
+              dayOffset: null,
             },
           ]
         : []),
@@ -1036,6 +1062,7 @@ export async function regenerateDischargeNoteSectionAction(
         max: p.pain_score_max,
         source: 'procedure' as const,
         estimated: false,
+        dayOffset: null,
       })),
       ...(inputData.dischargeVisitPainDisplay != null
         ? [
@@ -1046,6 +1073,7 @@ export async function regenerateDischargeNoteSectionAction(
               max: inputData.dischargePainEstimateMax,
               source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
               estimated: inputData.dischargeVisitPainEstimated,
+              dayOffset: null,
             },
           ]
         : []),
@@ -1064,6 +1092,7 @@ export async function regenerateDischargeNoteSectionAction(
           max: inputData.dischargePainEstimateMax,
           source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
           estimated: inputData.dischargeVisitPainEstimated,
+          dayOffset: null,
         }
       : null,
     dischargeEstimated: inputData.dischargeVisitPainEstimated,
