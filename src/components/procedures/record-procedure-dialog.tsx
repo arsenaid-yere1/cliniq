@@ -305,7 +305,7 @@ export function RecordProcedureDialog({
         </DialogHeader>
 
         {/* Section nav */}
-        <div className="flex gap-1.5 flex-wrap pb-2 sticky top-0 bg-background z-10 py-2 border-b mb-2">
+        <div className="flex gap-1.5 flex-wrap pb-2 sticky top-0 bg-background z-10 py-2 border-b mb-2 min-w-0">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
@@ -319,7 +319,7 @@ export function RecordProcedureDialog({
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 min-w-0">
             {/* ── Encounter Details ── */}
             <div id="section-encounter" className="space-y-4">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -353,7 +353,7 @@ export function RecordProcedureDialog({
                       <FormLabel>Laterality</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select..." />
                           </SelectTrigger>
                         </FormControl>
@@ -572,7 +572,7 @@ export function RecordProcedureDialog({
                     <FormLabel>Patient Tolerance</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value ?? ''}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                       </FormControl>
@@ -642,7 +642,7 @@ export function RecordProcedureDialog({
                       <FormLabel>Guidance Method *</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? ''}>
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select..." />
                           </SelectTrigger>
                         </FormControl>
@@ -707,7 +707,7 @@ export function RecordProcedureDialog({
                       value={complicationsMode}
                     >
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                       </FormControl>
