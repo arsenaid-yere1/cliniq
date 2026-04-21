@@ -19,6 +19,8 @@ import {
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
+import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
+import { validateDischargeTrajectoryConsistency } from '@/lib/claude/pain-trajectory-validator'
 
 // --- Helper: compute source data hash ---
 
@@ -291,6 +293,29 @@ async function gatherDischargeNoteSourceData(
     procedures.map((p) => p.pain_score_max),
   )
 
+  // Deterministic pain trajectory — Phase 1 precision fix. The LLM used to
+  // assemble the arrow chain and apply the -2 rule in prose; we now compute
+  // both in TS and instruct the prompt to render the resulting strings
+  // verbatim. The endpoint values are persisted alongside the note so edits
+  // do not silently drift away from the computed anchor.
+  const foldedOverallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened' =
+    painTrendSignals.vsBaseline === 'missing_vitals'
+      ? 'baseline'
+      : painTrendSignals.vsBaseline
+  const painTrajectory = buildDischargePainTrajectory({
+    procedures: procedures.map((p) => ({
+      procedure_date: p.procedure_date,
+      procedure_number: p.procedure_number,
+      pain_score_min: p.pain_score_min,
+      pain_score_max: p.pain_score_max,
+    })),
+    latestVitals,
+    dischargeVitals,
+    baselinePain,
+    overallPainTrend: foldedOverallPainTrend,
+    finalIntervalWorsened: painTrendSignals.vsPrevious === 'worsened',
+  })
+
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
   return {
@@ -318,11 +343,15 @@ async function gatherDischargeNoteSourceData(
       // existing suppression rules fire correctly. BASELINE DATA-GAP OVERRIDE
       // in the prompt reads painTrendSignals.vsBaseline directly for the
       // missing-vitals branch.
-      overallPainTrend: painTrendSignals.vsBaseline === 'missing_vitals'
-        ? 'baseline'
-        : painTrendSignals.vsBaseline,
+      overallPainTrend: foldedOverallPainTrend,
       painTrendSignals,
       seriesVolatility,
+      painTrajectoryText: painTrajectory.arrowChain || null,
+      dischargeVisitPainDisplay: painTrajectory.dischargeDisplay,
+      dischargeVisitPainEstimated: painTrajectory.dischargeEstimated,
+      baselinePainDisplay: painTrajectory.baselineDisplay,
+      dischargePainEstimateMin: painTrajectory.dischargeEntry?.min ?? null,
+      dischargePainEstimateMax: painTrajectory.dischargeEntry?.max ?? null,
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint,
@@ -501,6 +530,19 @@ export async function generateDischargeNote(
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
+  // Generation-time pain-anchor gate (Phase 1). When neither the deterministic
+  // trajectory chain nor the discharge endpoint could be produced, the note
+  // cannot be grounded numerically. Rather than silently emitting a qualitative
+  // narrative that a reviewer may later mistake for numeric data, require the
+  // provider to supply a discharge-visit pain reading or record pain on at
+  // least one procedure before generation.
+  if (inputData.painTrajectoryText == null && inputData.dischargeVisitPainDisplay == null) {
+    return {
+      error:
+        'Cannot generate discharge summary: no pain score data is available. Enter the discharge-visit pain under Discharge Vitals, or record pain on at least one procedure, then retry.',
+    }
+  }
+
   // Soft-delete existing discharge note for this case
   await supabase
     .from('discharge_notes')
@@ -527,6 +569,10 @@ export async function generateDischargeNote(
       spo2_percent: preservedVitals?.spo2_percent ?? null,
       pain_score_min: preservedVitals?.pain_score_min ?? null,
       pain_score_max: preservedVitals?.pain_score_max ?? null,
+      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
+      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
+      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
+      pain_trajectory_text: inputData.painTrajectoryText,
       tone_hint: effectiveToneHint,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
@@ -561,8 +607,74 @@ export async function generateDischargeNote(
     return { error: result.error || 'Note generation failed' }
   }
 
-  // Write success
+  // Write success — includes a post-generation numeric consistency check so
+  // LLM drift (fabricated pain numbers, missing endpoint in prose, Pain
+  // bullet mismatch) is captured in raw_ai_response for audit. Warnings are
+  // non-fatal today; they surface in logs and in the stored raw response.
   const data = result.data!
+
+  // Rebuild the trajectory shape needed by the validator from the
+  // deterministic fields already present on inputData. This keeps the
+  // validator call site pure and avoids re-running the builder.
+  const trajectoryForValidator = {
+    entries: [
+      ...inputData.procedures.map((p) => ({
+        date: p.procedure_date,
+        label: `procedure ${p.procedure_number}`,
+        min: p.pain_score_min,
+        max: p.pain_score_max,
+        source: 'procedure' as const,
+        estimated: false,
+      })),
+      ...(inputData.dischargeVisitPainDisplay != null
+        ? [
+            {
+              date: null,
+              label: "today's discharge evaluation",
+              min: inputData.dischargePainEstimateMin,
+              max: inputData.dischargePainEstimateMax,
+              source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
+              estimated: inputData.dischargeVisitPainEstimated,
+            },
+          ]
+        : []),
+    ],
+    arrowChain: inputData.painTrajectoryText ?? '',
+    baselineDisplay: inputData.baselinePainDisplay,
+    dischargeDisplay: inputData.dischargeVisitPainDisplay,
+    dischargeEntry: inputData.dischargeVisitPainDisplay
+      ? {
+          date: null,
+          label: "today's discharge evaluation",
+          min: inputData.dischargePainEstimateMin,
+          max: inputData.dischargePainEstimateMax,
+          source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
+          estimated: inputData.dischargeVisitPainEstimated,
+        }
+      : null,
+    dischargeEstimated: inputData.dischargeVisitPainEstimated,
+  }
+  const validation = validateDischargeTrajectoryConsistency(data, trajectoryForValidator)
+  if (validation.warnings.length > 0) {
+    console.warn('[discharge-note] trajectory validator warnings', {
+      caseId,
+      recordId: record.id,
+      warnings: validation.warnings,
+    })
+  }
+
+  // Wrap raw_ai_response to carry the validator output alongside the raw LLM
+  // payload. Readers downstream can still extract the original tool result
+  // from `.raw`.
+  const wrappedRawResponse = {
+    raw: result.rawResponse ?? null,
+    trajectory_warnings: validation.warnings,
+    discharge_readings_found: validation.dischargeReadingsFound,
+    pain_trajectory_text: inputData.painTrajectoryText,
+    discharge_visit_pain_display: inputData.dischargeVisitPainDisplay,
+    discharge_visit_pain_estimated: inputData.dischargeVisitPainEstimated,
+  }
+
   await supabase
     .from('discharge_notes')
     .update({
@@ -579,9 +691,13 @@ export async function generateDischargeNote(
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-opus-4-7',
-      raw_ai_response: result.rawResponse || null,
+      raw_ai_response: wrappedRawResponse,
       status: 'draft',
       source_data_hash: sourceHash,
+      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
+      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
+      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
+      pain_trajectory_text: inputData.painTrajectoryText,
       updated_by_user_id: user.id,
     })
     .eq('id', record.id)

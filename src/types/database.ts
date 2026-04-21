@@ -812,6 +812,9 @@ export type Database = {
           created_by_user_id: string | null
           deleted_at: string | null
           diagnoses: string | null
+          discharge_pain_estimate_max: number | null
+          discharge_pain_estimate_min: number | null
+          discharge_pain_estimated: boolean
           document_id: string | null
           finalized_at: string | null
           finalized_by_user_id: string | null
@@ -826,6 +829,7 @@ export type Database = {
           objective_vitals: string | null
           pain_score_max: number | null
           pain_score_min: number | null
+          pain_trajectory_text: string | null
           patient_education: string | null
           plan_and_recommendations: string | null
           prognosis: string | null
@@ -852,6 +856,9 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          discharge_pain_estimate_max?: number | null
+          discharge_pain_estimate_min?: number | null
+          discharge_pain_estimated?: boolean
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
@@ -866,6 +873,7 @@ export type Database = {
           objective_vitals?: string | null
           pain_score_max?: number | null
           pain_score_min?: number | null
+          pain_trajectory_text?: string | null
           patient_education?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null
@@ -892,6 +900,9 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          discharge_pain_estimate_max?: number | null
+          discharge_pain_estimate_min?: number | null
+          discharge_pain_estimated?: boolean
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
@@ -906,6 +917,7 @@ export type Database = {
           objective_vitals?: string | null
           pain_score_max?: number | null
           pain_score_min?: number | null
+          pain_trajectory_text?: string | null
           patient_education?: string | null
           plan_and_recommendations?: string | null
           prognosis?: string | null

@@ -87,6 +87,27 @@ export interface DischargeNoteInputData {
   // and vsPrevious='improved' but seriesVolatility='mixed_with_regression'.
   // Prompt branch requires acknowledging the variability.
   seriesVolatility: SeriesVolatility
+  // Deterministic pain-trajectory payload (Phase 1 precision fix).
+  // painTrajectoryText: TS-assembled arrow chain + endpoint sentence. When
+  //   non-null, the LLM MUST render it verbatim inside `subjective` and reuse
+  //   the numeric endpoint in `assessment`, `prognosis`, and `objective_vitals`.
+  //   Null only when the case has no pain data anywhere.
+  // dischargeVisitPainDisplay: the endpoint string (e.g. "1/10" or "1-2/10"
+  //   or "6/10"). Source depends on dischargeVitals presence and trend:
+  //   provider-entered verbatim, latestVitals verbatim on stable/worsened or
+  //   final-interval regression, else latestVitals - 2 floored at 0.
+  // dischargeVisitPainEstimated: true iff the endpoint was fabricated via -2.
+  //   False for provider-entered and latestVitals-passthrough.
+  // baselinePainDisplay: formatted first-procedure pain ("7/10" / "7-8/10")
+  //   or null. Used for audit and prompt narration guardrails.
+  painTrajectoryText: string | null
+  dischargeVisitPainDisplay: string | null
+  dischargeVisitPainEstimated: boolean
+  baselinePainDisplay: string | null
+  // Raw numeric endpoints passed through for back-compat references; usually
+  // the LLM should reach for dischargeVisitPainDisplay instead.
+  dischargePainEstimateMin: number | null
+  dischargePainEstimateMax: number | null
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: string | null
@@ -164,7 +185,22 @@ PDF-SAFE FORMATTING:
 
 This is a DISCHARGE note — the patient has COMPLETED their PRP treatment series and is being evaluated for discharge from active interventional pain management care. The tone should reflect completion, improvement, and forward-looking recommendations. Summarize the entire treatment course and outcomes.
 
-=== PAIN TRAJECTORY (MANDATORY) ===
+=== DETERMINISTIC PAIN TRAJECTORY (HIGHEST PRIORITY) ===
+
+The top-level fields \`painTrajectoryText\` and \`dischargeVisitPainDisplay\` are computed deterministically in TypeScript from the structured source data. They already encode the -2 rule, the dischargeVitals override, the stable/worsened no-fabrication override, and the final-interval regression override. **When these fields are non-null, the numeric decisions have already been made — do NOT re-derive them.**
+
+RULES (these override the NUMERIC PORTIONS of every block below, including the default -2 math in === PAIN TRAJECTORY ===, === BASELINE DATA-GAP OVERRIDE ===, and === PAIN TONE MATRIX ===):
+
+• If \`painTrajectoryText\` is non-null, it MUST appear verbatim inside the subjective pain-progression sentence. Do NOT paraphrase, reorder, or re-number the chain. Example verbatim rendering: "... with pain decreasing from [painTrajectoryText]." (You may place a brief lead-in clause before it, but the arrow chain itself is copied character-for-character.)
+• If \`dischargeVisitPainDisplay\` is non-null, use it verbatim as the discharge-visit pain number in subjective, assessment, prognosis, AND as the Pain bullet value in objective_vitals (rendered as "• Pain: {dischargeVisitPainDisplay}"). Do NOT apply any additional -2 math. Do NOT substitute latestVitals.pain_score_max.
+• If \`baselinePainDisplay\` is non-null, use it verbatim as the baseline number in the assessment's "reduction from X to Y" sentence.
+• \`dischargeVisitPainEstimated\` = true indicates the endpoint came from the -2 rule (no provider-entered dischargeVitals). This does NOT change the verbatim rule — still render \`dischargeVisitPainDisplay\` exactly as given. The flag is for downstream audit.
+
+Only when BOTH \`painTrajectoryText\` AND \`dischargeVisitPainDisplay\` are null do the legacy numeric rules in the blocks below apply. In that case, follow the legacy blocks in full.
+
+Narrative-tone rules (pain-tone matrix, series volatility, missing-vitals caveats, stable/worsened framing) continue to apply REGARDLESS of whether the deterministic fields are populated — the deterministic pipeline governs numbers; the tone blocks govern the surrounding prose.
+
+=== PAIN TRAJECTORY (LEGACY NUMERIC FALLBACK — applies only when painTrajectoryText and dischargeVisitPainDisplay are both null) ===
 
 A discharge note MUST demonstrate that pain decreased over the treatment course AND continued to improve between the final injection and today's discharge follow-up visit. You are provided:
 • "baselinePain" — the pain range recorded at the FIRST procedure (pre-treatment anchor).
