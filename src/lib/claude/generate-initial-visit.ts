@@ -141,6 +141,15 @@ const INITIAL_VISIT_SECTIONS = `
 === VISIT TYPE: INITIAL VISIT ===
 This patient is presenting for their INITIAL clinical evaluation following a personal injury event. There are NO prior medical records, NO prior imaging results, and NO prior treatment history (other than self-treatment with OTC medications). Generate the note accordingly — do NOT assume any prior clinical encounters exist.
 
+=== NULL-CONTRACT FOR INITIAL VISIT (ABSOLUTE) ===
+\`caseSummary\`, \`caseSummary.imaging_findings\`, \`caseSummary.suggested_diagnoses\`, \`pmExtraction\`, and \`priorVisitData\` are \`null\` by contract for INITIAL VISIT generation. The action layer does not load MRI, CT, pain management extraction, or cross-source case summary data on this visit type.
+• Do NOT reference any MRI, CT, or imaging finding in any section — there is nothing to reference.
+• Do NOT cite pre-extracted ICD-10 codes from \`suggested_diagnoses\` — that field is null.
+• Do NOT reference any prior pain management evaluation, extracted PM diagnosis, or PM-sourced exam finding — \`pmExtraction\` is null.
+• Do NOT reference any prior initial visit, prior conservative care outcome, or interval pain comparison — \`priorVisitData\` is null.
+• Imaging for this visit is ORDERED only; results are pending. Do NOT describe imaging findings, severity, or imaging-derived pathology.
+• All diagnosis coding at the initial visit is driven by physical examination findings and mechanism of injury ONLY. See DIAGNOSTIC-SUPPORT RULE (MANDATORY) below.
+
 2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences. Use providerIntake.accident_details if available.
 Para 2: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in daily activities, including self-care."
@@ -290,7 +299,9 @@ DOWNGRADE-TO HONOR RULE: if a caseSummary.suggested_diagnoses entry carries a no
 (B) Radiculopathy codes (M54.12, M54.17, M50.1X, M51.1X, M47.2X with radiculopathy qualifier) — require REGION-MATCHED objective findings documented in THIS visit's providerIntake.exam_findings OR a pmExtraction diagnosis with exam_support="objective" for the same region. MRI signal of nerve-root contact alone is NOT sufficient; subjective radiation alone is NOT sufficient.
   • M54.12 / M50.1X (cervical) — requires one of: positive Spurling maneuver, dermatomal sensory deficit in C5/C6/C7/C8/T1, myotomal weakness in an upper-extremity root distribution, OR diminished biceps/triceps/brachioradialis reflex. A positive SLR is a LUMBAR test and does NOT support a cervical radiculopathy code.
   • M54.17 / M51.1X (lumbar/lumbosacral) — requires one of: SLR positive AND reproducing radicular leg symptoms (pain radiating down the leg, paresthesia below the knee — SLR reproducing "low back pain" alone does NOT qualify), dermatomal sensory deficit in L4/L5/S1, myotomal weakness in a lower-extremity root distribution, OR diminished patellar/Achilles reflex.
-  • If the radiculopathy filter fails, DOWNGRADE: replace M54.12/M50.1X with M50.20 + keep M54.2; replace M54.17/M51.17 with M51.37 + keep the lumbar pain code; replace M51.16 with M51.36 + keep the lumbar pain code. Do NOT leave disc pathology unrepresented. In imaging_findings prose for downgraded radiculopathy codes, describe the clinical picture as "radicular symptoms" or "possible nerve root irritation" — NEVER as "radiculopathy" or "nerve root compression". Reserve "radiculopathy" prose for codes that pass the region-match filter.
+  • If the radiculopathy filter fails, DOWNGRADE: replace M54.12/M50.1X with M50.20 + keep M54.2; replace M54.17/M51.17 with M51.37 + keep the lumbar pain code; replace M51.16 with M51.36 + keep the lumbar pain code. Do NOT leave disc pathology unrepresented.
+  • PROSE-FALLBACK (MANDATORY when a radiculopathy code is filtered out and downgraded): in \`imaging_findings\`, \`physical_exam\`, \`medical_necessity\`, \`treatment_plan\`, and \`prognosis\` narrative prose, describe the clinical picture as "radicular symptoms" or "possible nerve root irritation" — NEVER as "radiculopathy" or "nerve root compression". This applies regardless of what the MRI shows: imaging-only nerve-root contact without objective exam correlation is "possible nerve root irritation", not "radiculopathy". Reserve "radiculopathy" prose exclusively for codes that PASSED Filter (B).
+  • MYELOPATHY PROSE-FALLBACK (MANDATORY when Filter A failed and myelopathy code downgraded): NEVER write "myelopathy", "cord compression", "cord compromise", or "myelopathic" anywhere in the note. Describe the underlying pathology using the downgraded-code label (e.g., "cervical disc displacement", "disc pathology without myelopathic features"). Reserve "myelopathy" prose exclusively for codes that PASSED Filter (A).
 
 (C) M79.1 Myalgia — redundancy guard. OMIT M79.1 whenever a region pain/strain code already covers the documented exam findings (e.g., M54.2, M54.50/M54.51/M54.59, M54.6, or S13.4XXA/S23.3XXA/S39.012A). Focal paraspinal tenderness is already captured by the region code and does NOT additionally support M79.1. Keep M79.1 ONLY if the exam documents diffuse muscle pain beyond axial spine tenderness (upper-trapezius involvement, generalized muscle soreness in multiple non-contiguous regions).
 
@@ -440,13 +451,19 @@ export interface InitialVisitInputData {
     accident_date: string | null
     accident_description: string | null
   }
+  /**
+   * Cross-source clinical synthesis (MRI, CT, PM, PT, ortho, chiro). Populated
+   * only for pain_evaluation_visit generation. Null for initial_visit — the
+   * first visit is scoped to provider intake + physical exam + mechanism of
+   * injury, with no imaging correlation or PM-sourced diagnosis suggestions.
+   */
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: unknown
     prior_treatment: unknown
     symptoms_timeline: unknown
     suggested_diagnoses: unknown
-  }
+  } | null
   clinicInfo: {
     clinic_name: string | null
     address_line1: string | null
@@ -597,6 +614,7 @@ export async function regenerateSection(
   visitType: NoteVisitType,
   section: InitialVisitSection,
   currentContent: string,
+  otherSections?: Partial<Record<InitialVisitSection, string>>,
 ): Promise<{ data?: string; error?: string }> {
   const systemPrompt = buildSystemPrompt(visitType)
   const sectionLabel = sectionLabels[section]
@@ -604,18 +622,27 @@ export async function regenerateSection(
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
     : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
 
+  let otherSectionsBlock = ''
+  let systemSuffix = `You are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`
+  if (otherSections) {
+    const entries = Object.entries(otherSections)
+      .filter(([k, v]) => k !== section && typeof v === 'string' && v.trim().length > 0)
+      .map(([k, v]) => `--- ${sectionLabels[k as InitialVisitSection]} ---\n${v}`)
+    if (entries.length > 0) {
+      otherSectionsBlock = `\n\nOTHER SECTIONS CURRENTLY PRESENT IN THIS NOTE (for context — keep this regenerated section consistent with them, do NOT duplicate their content):\n${entries.join('\n\n')}`
+      systemSuffix += ' Avoid duplicating content that already appears in the OTHER SECTIONS listed in the user message — each section must contribute NEW information. Ensure prose-vs-diagnosis-code consistency: if the finalized diagnoses section emits a downgraded code (e.g., M50.20 instead of M50.1X), narrative prose in the regenerated section must use the downgrade-aligned phrasing ("radicular symptoms" / "possible nerve root irritation") per the PROSE-FALLBACK rules above.'
+    }
+  }
+
+  const userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
+
   const result = await callClaudeTool<{ content: string }>({
     model: 'claude-opus-4-7',
     maxTokens: 4096,
-    system: `${systemPrompt}\n\nYou are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`,
+    system: `${systemPrompt}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
-    messages: [
-      {
-        role: 'user',
-        content: `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`,
-      },
-    ],
+    messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
       return validated.success

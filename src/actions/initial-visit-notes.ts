@@ -63,7 +63,12 @@ async function gatherSourceData(
   visitType: NoteVisitType,
   romData?: InitialVisitRomValues | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const priorVisitQuery = visitType === 'pain_evaluation_visit'
+  // Imaging context (case summary, PM extraction) only flows into
+  // pain_evaluation_visit generation. Initial visit is scoped to
+  // provider-intake + ROM + vitals — no MRI/CT/PM data leaks into the prompt.
+  const loadImagingContext = visitType === 'pain_evaluation_visit'
+
+  const priorVisitQuery = loadImagingContext
     ? supabase
         .from('initial_visit_notes')
         .select(
@@ -73,6 +78,29 @@ async function gatherSourceData(
         .eq('visit_type', 'initial_visit')
         .eq('status', 'finalized')
         .is('deleted_at', null)
+        .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+
+  const summaryQuery = loadImagingContext
+    ? supabase
+        .from('case_summaries')
+        .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline, suggested_diagnoses')
+        .eq('case_id', caseId)
+        .is('deleted_at', null)
+        .in('review_status', ['approved', 'edited'])
+        .eq('generation_status', 'completed')
+        .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+
+  const pmQuery = loadImagingContext
+    ? supabase
+        .from('pain_management_extractions')
+        .select('diagnoses, physical_exam, diagnostic_studies_summary, provider_overrides, review_status')
+        .eq('case_id', caseId)
+        .is('deleted_at', null)
+        .in('review_status', ['approved', 'edited'])
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
 
@@ -96,14 +124,7 @@ async function gatherSourceData(
       .eq('id', caseId)
       .is('deleted_at', null)
       .single(),
-    supabase
-      .from('case_summaries')
-      .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline, suggested_diagnoses')
-      .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .in('review_status', ['approved', 'edited'])
-      .eq('generation_status', 'completed')
-      .maybeSingle(),
+    summaryQuery,
     supabase
       .from('clinic_settings')
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
@@ -139,15 +160,7 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
-    supabase
-      .from('pain_management_extractions')
-      .select('diagnoses, physical_exam, diagnostic_studies_summary, provider_overrides, review_status')
-      .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .in('review_status', ['approved', 'edited'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    pmQuery,
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -261,13 +274,15 @@ async function gatherSourceData(
         accident_date: caseRes.data.accident_date,
         accident_description: caseRes.data.accident_description,
       },
-      caseSummary: {
-        chief_complaint: summaryData?.chief_complaint ?? null,
-        imaging_findings: summaryData?.imaging_findings ?? null,
-        prior_treatment: summaryData?.prior_treatment ?? null,
-        symptoms_timeline: summaryData?.symptoms_timeline ?? null,
-        suggested_diagnoses: summaryData?.suggested_diagnoses ?? null,
-      },
+      caseSummary: loadImagingContext
+        ? {
+            chief_complaint: summaryData?.chief_complaint ?? null,
+            imaging_findings: summaryData?.imaging_findings ?? null,
+            prior_treatment: summaryData?.prior_treatment ?? null,
+            symptoms_timeline: summaryData?.symptoms_timeline ?? null,
+            suggested_diagnoses: summaryData?.suggested_diagnoses ?? null,
+          }
+        : null,
       clinicInfo: {
         clinic_name: clinicRes.data?.clinic_name ?? null,
         address_line1: clinicRes.data?.address_line1 ?? null,
@@ -756,7 +771,39 @@ export async function regenerateNoteSection(
 
   const currentContent = (note[section] as string) || ''
 
-  const result = await regenerateSectionAI(inputData, visitType, section, currentContent)
+  // Build otherSections context — every non-target section present on the
+  // draft row. Lets the regen prompt enforce prose-vs-diagnosis-code
+  // consistency (e.g., if diagnoses were downgraded to M50.20, narrative
+  // prose in the regenerated section must use the downgrade-aligned
+  // phrasing rather than re-asserting "radiculopathy").
+  const ALL_SECTIONS: InitialVisitSection[] = [
+    'introduction',
+    'history_of_accident',
+    'post_accident_history',
+    'chief_complaint',
+    'past_medical_history',
+    'social_history',
+    'review_of_systems',
+    'physical_exam',
+    'imaging_findings',
+    'medical_necessity',
+    'diagnoses',
+    'treatment_plan',
+    'patient_education',
+    'prognosis',
+    'time_complexity_attestation',
+    'clinician_disclaimer',
+  ]
+  const otherSections: Partial<Record<InitialVisitSection, string>> = {}
+  for (const s of ALL_SECTIONS) {
+    if (s === section) continue
+    const v = note[s]
+    if (typeof v === 'string' && v.trim().length > 0) {
+      otherSections[s] = v
+    }
+  }
+
+  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, otherSections)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
