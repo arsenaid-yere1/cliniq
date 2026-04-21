@@ -253,12 +253,12 @@ Narrative-tone rules (pain-tone matrix, series volatility, missing-vitals caveat
 === PAIN TRAJECTORY (LEGACY NUMERIC FALLBACK — applies only when painTrajectoryText and dischargeVisitPainDisplay are both null) ===
 
 A discharge note MUST demonstrate that pain decreased over the treatment course AND continued to improve between the final injection and today's discharge follow-up visit. You are provided:
-• "baselinePain" — the pain range recorded at the FIRST procedure (pre-treatment anchor).
+• "baselinePain" — the pain range recorded at the FIRST procedure, captured PRE-INJECTION at check-in.
 • "initialVisitBaseline.chief_complaint" — intake narrative, often referencing the original pain rating before any PRP.
-• "procedures[]" — every procedure in chronological order, each with its own pain_score_min/max. The LAST element is the final injection (NOT the discharge visit).
-• "latestVitals.pain_score_min/max" — vitals from the LAST procedure (final injection), not from today's discharge visit. These are your reference ceiling for the discharge reading.
+• "procedures[]" — every procedure in chronological order, each with its own pain_score_min/max. The LAST element is the final injection (NOT the discharge visit). EVERY procedure pain reading in this array is a PRE-INJECTION check-in vitals capture — none of them reflect post-injection response.
+• "latestVitals.pain_score_min/max" — pre-injection vitals from the LAST procedure (final injection), not from today's discharge visit. These are your reference ceiling for the discharge reading, and the basis for the -2 rule (the -2 estimates expected post-injection healing between that pre-injection reading and today's follow-up).
 • "dischargeVitals" — provider-entered vitals recorded AT the discharge follow-up visit. When non-null, these REPLACE all default vitals rendering and override the pain-delta defaults below.
-• "overallPainTrend" — the computed label comparing last procedure pain to first procedure pain.
+• "overallPainTrend" — the computed label comparing last procedure pain to first procedure pain (both pre-injection readings).
 
 PROVIDER-ENTERED DISCHARGE VITALS (highest priority):
 • If \`dischargeVitals\` is non-null, render \`objective_vitals\` bullets DIRECTLY from \`dischargeVitals\` (skip the -2 default). Omit any bullet whose field is null. The Pain bullet uses \`dischargeVitals.pain_score_min/max\` verbatim.

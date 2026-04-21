@@ -34,7 +34,10 @@ function sourceBadge(source: TimelineEntry['source']): { label: string; classNam
     case 'intake':
       return { label: 'Intake', className: 'bg-blue-500/10 text-blue-700 border-blue-600 dark:text-blue-300' }
     case 'procedure':
-      return { label: 'Procedure', className: 'bg-slate-500/10 text-slate-700 border-slate-600 dark:text-slate-300' }
+      // Labeled "Pre-injection" to match the semantic captured at
+      // Record Procedure time — the vital_signs reading is taken at
+      // check-in before the injection, not after.
+      return { label: 'Pre-injection', className: 'bg-slate-500/10 text-slate-700 border-slate-600 dark:text-slate-300' }
     case 'discharge_vitals':
       return { label: 'Provider entered', className: 'bg-emerald-500/10 text-emerald-700 border-emerald-600 dark:text-emerald-300' }
     case 'discharge_estimate':
@@ -89,7 +92,7 @@ export function PainTimelineTable({
       <CardHeader>
         <CardTitle className="text-base">Pain Timeline</CardTitle>
         <CardDescription>
-          Read-only — reflects the deterministic trajectory the discharge generator uses.
+          Read-only — reflects the deterministic trajectory the discharge generator uses. Procedure rows are <strong>pre-injection</strong> readings captured at check-in; the discharge-visit row is the provider-entered reading at today&apos;s follow-up (or the <em>-2</em> estimate when absent).
           {dischargeEstimated ? ' The discharge-visit reading is an estimate via the -2 rule; enter discharge vitals to replace.' : null}
         </CardDescription>
       </CardHeader>

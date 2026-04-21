@@ -832,13 +832,19 @@ export function RecordProcedureDialog({
                 Vital Signs (optional)
               </h3>
 
+              <p className="text-xs text-muted-foreground -mt-2">
+                Pain readings here are captured <strong>pre-injection</strong> (at check-in, before
+                the PRP administration). Post-injection response is narrated in the procedure note
+                and estimated via the discharge-visit reading at end of series.
+              </p>
+
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="vital_signs.pain_score_min"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Pain Min (0–10)</FormLabel>
+                      <FormLabel>Pre-Procedure Pain Min (0–10)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -861,7 +867,7 @@ export function RecordProcedureDialog({
                   name="vital_signs.pain_score_max"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Pain Max (0–10)</FormLabel>
+                      <FormLabel>Pre-Procedure Pain Max (0–10)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
