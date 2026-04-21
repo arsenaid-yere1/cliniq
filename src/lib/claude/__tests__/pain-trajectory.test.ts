@@ -12,6 +12,7 @@ function baseInput(overrides: Partial<BuildTrajectoryInput> = {}): BuildTrajecto
     latestVitals: null,
     dischargeVitals: null,
     baselinePain: null,
+    intakePain: null,
     overallPainTrend: 'baseline',
     finalIntervalWorsened: false,
     ...overrides,
@@ -244,6 +245,80 @@ describe('buildDischargePainTrajectory', () => {
     expect(t.arrowChain).toBe('')
     expect(t.dischargeDisplay).toBeNull()
     expect(t.dischargeEntry).toBeNull()
+  })
+
+  it('prepends intake entry when intakePain has a value', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 7, pain_score_max: 7 },
+          { procedure_date: '2026-02-10', procedure_number: 2, pain_score_min: 4, pain_score_max: 4 },
+        ],
+        latestVitals: { pain_score_min: 4, pain_score_max: 4 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 7, pain_score_max: 7 },
+        intakePain: { recorded_at: '2026-01-05T10:00:00Z', pain_score_min: 8, pain_score_max: 8 },
+        overallPainTrend: 'improved',
+      }),
+    )
+    expect(t.arrowChain).toBe("8/10 at initial evaluation, 7/10 → 4/10 across the injection series, 2/10 at today's discharge evaluation")
+    expect(t.baselineDisplay).toBe('8/10')
+    expect(t.baselineSource).toBe('intake')
+    expect(t.intakePainDisplay).toBe('8/10')
+    expect(t.firstProcedurePainDisplay).toBe('7/10')
+    expect(t.entries).toHaveLength(4)
+    expect(t.entries[0].source).toBe('intake')
+  })
+
+  it('falls back to first-procedure as baseline anchor when intakePain is null', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 7, pain_score_max: 7 },
+        ],
+        latestVitals: { pain_score_min: 7, pain_score_max: 7 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 7, pain_score_max: 7 },
+        intakePain: null,
+        overallPainTrend: 'baseline',
+      }),
+    )
+    expect(t.baselineDisplay).toBe('7/10')
+    expect(t.baselineSource).toBe('procedure')
+    expect(t.intakePainDisplay).toBeNull()
+    expect(t.firstProcedurePainDisplay).toBe('7/10')
+  })
+
+  it('ignores intake entry when intakePain has only nulls', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 6, pain_score_max: 6 },
+        ],
+        latestVitals: { pain_score_min: 6, pain_score_max: 6 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 6, pain_score_max: 6 },
+        intakePain: { recorded_at: '2026-01-05T10:00:00Z', pain_score_min: null, pain_score_max: null },
+        overallPainTrend: 'baseline',
+      }),
+    )
+    expect(t.baselineSource).toBe('procedure')
+    expect(t.intakePainDisplay).toBeNull()
+    expect(t.entries[0].source).toBe('procedure')
+  })
+
+  it('renders intake-only chain when no procedures yet recorded', () => {
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [],
+        latestVitals: null,
+        dischargeVitals: null,
+        baselinePain: null,
+        intakePain: { recorded_at: '2026-01-05T10:00:00Z', pain_score_min: 8, pain_score_max: 8 },
+        overallPainTrend: 'baseline',
+      }),
+    )
+    // No procedures means no endpoint either — but intake still leads.
+    expect(t.arrowChain).toBe('8/10 at initial evaluation')
+    expect(t.baselineDisplay).toBe('8/10')
+    expect(t.baselineSource).toBe('intake')
   })
 
   it('dischargeVitals takes priority even when finalIntervalWorsened is true', () => {

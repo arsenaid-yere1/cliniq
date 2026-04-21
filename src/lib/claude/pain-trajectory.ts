@@ -11,7 +11,7 @@
 // is included in `DischargeNoteInputData` and instructs the LLM to render
 // the arrow chain + endpoint number verbatim.
 
-export type TimelineSource = 'procedure' | 'discharge_vitals' | 'discharge_estimate'
+export type TimelineSource = 'intake' | 'procedure' | 'discharge_vitals' | 'discharge_estimate'
 
 export interface TimelineEntry {
   date: string | null
@@ -25,7 +25,21 @@ export interface TimelineEntry {
 export interface DischargePainTrajectory {
   entries: TimelineEntry[]
   arrowChain: string
+  // Preferred "initial evaluation" anchor for assessment prose. Uses
+  // intakePain when its pain_score_max is non-null; falls back to
+  // baselinePain (first-procedure vitals) otherwise. Null when neither
+  // anchor has a value.
   baselineDisplay: string | null
+  // The actual source the baselineDisplay came from. 'intake' when the
+  // intake vitals anchored it, 'procedure' when it fell back to
+  // baselinePain, null when no anchor.
+  baselineSource: 'intake' | 'procedure' | null
+  // Intake-specific display. Always reads intakePain directly. Null when
+  // intakePain or its pain_score_max is null.
+  intakePainDisplay: string | null
+  // First-procedure-specific display. Always reads baselinePain directly.
+  // Null when baselinePain or its pain_score_max is null.
+  firstProcedurePainDisplay: string | null
   dischargeDisplay: string | null
   dischargeEntry: TimelineEntry | null
   dischargeEstimated: boolean
@@ -43,6 +57,7 @@ export interface BuildTrajectoryInput {
   latestVitals: { pain_score_min: number | null; pain_score_max: number | null } | null
   dischargeVitals: { pain_score_min: number | null; pain_score_max: number | null } | null
   baselinePain: { procedure_date: string; pain_score_min: number | null; pain_score_max: number | null } | null
+  intakePain: { recorded_at: string | null; pain_score_min: number | null; pain_score_max: number | null } | null
   overallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened'
   finalIntervalWorsened: boolean
 }
@@ -88,6 +103,23 @@ export function buildDischargePainTrajectory(
   input: BuildTrajectoryInput,
 ): DischargePainTrajectory {
   const procEntries: TimelineEntry[] = input.procedures.map(procedureEntryFromVitals)
+
+  // Intake entry leads the timeline when intakePain carries a numeric
+  // reading. When intakePain is null or empty the chain starts at the
+  // first procedure.
+  const intakeHasValue =
+    input.intakePain != null &&
+    (input.intakePain.pain_score_min != null || input.intakePain.pain_score_max != null)
+  const intakeEntry: TimelineEntry | null = intakeHasValue
+    ? {
+        date: input.intakePain!.recorded_at,
+        label: 'initial evaluation',
+        min: input.intakePain!.pain_score_min,
+        max: input.intakePain!.pain_score_max,
+        source: 'intake',
+        estimated: false,
+      }
+    : null
 
   // Endpoint determination mirrors the prompt rules in priority order:
   // 1) dischargeVitals non-null → verbatim endpoint (not estimated)
@@ -140,7 +172,9 @@ export function buildDischargePainTrajectory(
     }
   }
 
-  const entries: TimelineEntry[] = [...procEntries]
+  const entries: TimelineEntry[] = []
+  if (intakeEntry) entries.push(intakeEntry)
+  entries.push(...procEntries)
   if (dischargeEntry) entries.push(dischargeEntry)
 
   // Arrow chain — only procedures with values contribute to the chain. The
@@ -155,25 +189,48 @@ export function buildDischargePainTrajectory(
 
   const dischargeDisplay = dischargeEntry ? formatPainValue(dischargeEntry.min, dischargeEntry.max) : null
 
+  const intakeDisplay = intakeEntry ? formatPainValue(intakeEntry.min, intakeEntry.max) : null
+
   let arrowChain = ''
-  if (proceduresChain && dischargeDisplay) {
-    arrowChain = `${proceduresChain} across the injection series, ${dischargeDisplay} at today's discharge evaluation`
-  } else if (proceduresChain) {
-    arrowChain = `${proceduresChain} across the injection series`
-  } else if (dischargeDisplay) {
-    // Procedures had no recorded pain but discharge/latest vitals exist. Still
-    // useful as a single anchor.
-    arrowChain = `${dischargeDisplay} at today's discharge evaluation`
+  // Build chain in segments: intake → procedures → discharge. Each segment
+  // is optional; joiners adapt to which segments are present.
+  const segments: string[] = []
+  if (intakeDisplay) {
+    segments.push(`${intakeDisplay} at initial evaluation`)
+  }
+  if (proceduresChain) {
+    segments.push(`${proceduresChain} across the injection series`)
+  }
+  if (dischargeDisplay) {
+    segments.push(`${dischargeDisplay} at today's discharge evaluation`)
+  }
+  if (segments.length > 0) {
+    arrowChain = segments.join(', ')
   }
 
-  const baselineDisplay = input.baselinePain
+  const firstProcedurePainDisplay = input.baselinePain
     ? formatPainValue(input.baselinePain.pain_score_min, input.baselinePain.pain_score_max)
     : null
+
+  // Preferred baseline anchor: intake first, first-procedure reading as
+  // fallback. The "source" field tells the caller which one was picked.
+  let baselineDisplay: string | null = null
+  let baselineSource: 'intake' | 'procedure' | null = null
+  if (intakeDisplay) {
+    baselineDisplay = intakeDisplay
+    baselineSource = 'intake'
+  } else if (firstProcedurePainDisplay) {
+    baselineDisplay = firstProcedurePainDisplay
+    baselineSource = 'procedure'
+  }
 
   return {
     entries,
     arrowChain,
     baselineDisplay,
+    baselineSource,
+    intakePainDisplay: intakeDisplay,
+    firstProcedurePainDisplay,
     dischargeDisplay,
     dischargeEntry,
     dischargeEstimated,

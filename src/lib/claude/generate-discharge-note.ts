@@ -66,6 +66,18 @@ export interface DischargeNoteInputData {
     pain_score_min: number | null
     pain_score_max: number | null
   } | null
+  // Intake pain — most recent vital_signs row for the case with
+  // procedure_id IS NULL, representing the pre-PRP intake reading captured
+  // at the initial evaluation visit. Semantically distinct from
+  // baselinePain (which is the pre-FIRST-INJECTION reading on the day of
+  // the first procedure). Prefer intakePain when narrating "pain at
+  // initial evaluation" / "at intake" / "pre-treatment baseline"; fall
+  // back to baselinePain only when intakePain.pain_score_max is null.
+  intakePain: {
+    recorded_at: string | null
+    pain_score_min: number | null
+    pain_score_max: number | null
+  } | null
   initialVisitBaseline: {
     chief_complaint: string | null
     physical_exam: string | null
@@ -106,7 +118,18 @@ export interface DischargeNoteInputData {
   painTrajectoryText: string | null
   dischargeVisitPainDisplay: string | null
   dischargeVisitPainEstimated: boolean
+  // Preferred "initial evaluation" anchor for assessment prose. Reads
+  // intakePainDisplay when non-null, else firstProcedurePainDisplay.
   baselinePainDisplay: string | null
+  // Which anchor populated baselinePainDisplay ('intake' vs 'procedure'),
+  // or null when neither was available. Prompt uses this to pick the
+  // right narrative phrasing ("at initial evaluation" vs "at the first
+  // procedure").
+  baselinePainSource: 'intake' | 'procedure' | null
+  // Intake-only display (from intakePain vital_signs row).
+  intakePainDisplay: string | null
+  // First-procedure-only display (from baselinePain).
+  firstProcedurePainDisplay: string | null
   // Raw numeric endpoints passed through for back-compat references; usually
   // the LLM should reach for dischargeVisitPainDisplay instead.
   dischargePainEstimateMin: number | null
@@ -196,7 +219,10 @@ RULES (these override the NUMERIC PORTIONS of every block below, including the d
 
 • If \`painTrajectoryText\` is non-null, it MUST appear verbatim inside the subjective pain-progression sentence. Do NOT paraphrase, reorder, or re-number the chain. Example verbatim rendering: "... with pain decreasing from [painTrajectoryText]." (You may place a brief lead-in clause before it, but the arrow chain itself is copied character-for-character.)
 • If \`dischargeVisitPainDisplay\` is non-null, use it verbatim as the discharge-visit pain number in subjective, assessment, prognosis, AND as the Pain bullet value in objective_vitals (rendered as "• Pain: {dischargeVisitPainDisplay}"). Do NOT apply any additional -2 math. Do NOT substitute latestVitals.pain_score_max.
-• If \`baselinePainDisplay\` is non-null, use it verbatim as the baseline number in the assessment's "reduction from X to Y" sentence.
+• If \`baselinePainDisplay\` is non-null, use it verbatim as the baseline number in the assessment's "reduction from X to Y" sentence. Choose the phrasing based on \`baselinePainSource\`:
+  - \`'intake'\` → "from \`baselinePainDisplay\` at the initial evaluation" (the intake-visit reading — semantically a true pre-treatment anchor).
+  - \`'procedure'\` → "from \`baselinePainDisplay\` at the first procedure" or "prior to the first PRP injection" (the pre-first-injection reading — falls back here only when intakePainDisplay is null).
+• When BOTH \`intakePainDisplay\` AND \`firstProcedurePainDisplay\` are non-null AND they differ, prefer citing intakePainDisplay as the initial-evaluation anchor; optionally also cite firstProcedurePainDisplay as "pain at the first injection" in the subjective arc sentence. Never conflate the two — do not describe the first-procedure reading as "pain at initial evaluation" when a distinct intake reading exists.
 • \`dischargeVisitPainEstimated\` = true indicates the endpoint came from the -2 rule (no provider-entered dischargeVitals). This does NOT change the verbatim rule — still render \`dischargeVisitPainDisplay\` exactly as given. The flag is for downstream audit.
 
 Only when BOTH \`painTrajectoryText\` AND \`dischargeVisitPainDisplay\` are null do the legacy numeric rules in the blocks below apply. In that case, follow the legacy blocks in full.

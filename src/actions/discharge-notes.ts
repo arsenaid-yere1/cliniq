@@ -47,6 +47,7 @@ async function gatherDischargeNoteSourceData(
     mriRes,
     chiroRes,
     clinicRes,
+    intakeVitalsRes,
   ] = await Promise.all([
     supabase
       .from('cases')
@@ -114,6 +115,23 @@ async function gatherDischargeNoteSourceData(
       .from('clinic_settings')
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
       .is('deleted_at', null)
+      .maybeSingle(),
+    // Intake vital_signs — procedure_id IS NULL rows are non-procedure
+    // readings (initial visit / pre-PRP intake). Most recent wins. The
+    // intake reading is NOT the same as the first-procedure reading:
+    // intake happens before any injection, usually on the intake day; the
+    // first procedure is a separate encounter. Splitting them lets the
+    // discharge narrative cite a true "pain at initial evaluation" anchor
+    // that corresponds to the intake visit rather than silently using the
+    // pre-first-injection reading and calling it "initial evaluation".
+    supabase
+      .from('vital_signs')
+      .select('pain_score_min, pain_score_max, recorded_at')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -198,7 +216,8 @@ async function gatherDischargeNoteSourceData(
       }
     : null
 
-  // Baseline pain = first procedure's vitals (pre-treatment anchor)
+  // Baseline pain = first procedure's vitals (pre-treatment anchor at the
+  // first injection encounter — NOT the intake visit).
   const firstProcedure = procRows[0]
   const firstVitals = firstProcedure ? vitalsByProcedureId.get(firstProcedure.id) : null
   const baselinePain: DischargeNoteInputData['baselinePain'] = firstProcedure
@@ -208,6 +227,21 @@ async function gatherDischargeNoteSourceData(
         pain_score_max: firstVitals?.pain_score_max ?? null,
       }
     : null
+
+  // Intake pain = most recent non-procedure vital_signs row (procedure_id
+  // IS NULL). This is the pre-PRP reading captured at the initial
+  // evaluation visit. Kept distinct from baselinePain so the discharge
+  // narrative can cite "pain at initial evaluation" against the true
+  // intake anchor rather than silently against the first-procedure
+  // reading. May be null when no intake vitals were recorded.
+  const intakePain: DischargeNoteInputData['intakePain'] =
+    intakeVitalsRes.data
+      ? {
+          recorded_at: intakeVitalsRes.data.recorded_at ?? null,
+          pain_score_min: intakeVitalsRes.data.pain_score_min ?? null,
+          pain_score_max: intakeVitalsRes.data.pain_score_max ?? null,
+        }
+      : null
 
   // Initial visit baseline — chief_complaint + physical_exam for pre-PRP pain narrative
   const initialVisitBaseline: DischargeNoteInputData['initialVisitBaseline'] = ivNoteRes.data
@@ -320,6 +354,7 @@ async function gatherDischargeNoteSourceData(
     latestVitals,
     dischargeVitals,
     baselinePain,
+    intakePain,
     overallPainTrend: foldedOverallPainTrend,
     finalIntervalWorsened: painTrendSignals.vsPrevious === 'worsened',
   })
@@ -345,6 +380,7 @@ async function gatherDischargeNoteSourceData(
       latestVitals,
       dischargeVitals,
       baselinePain,
+      intakePain,
       initialVisitBaseline,
       // overallPainTrend is kept as narrow 4-way label for PAIN TRAJECTORY
       // rules. When vsBaseline is 'missing_vitals', fold to 'baseline' so
@@ -358,6 +394,9 @@ async function gatherDischargeNoteSourceData(
       dischargeVisitPainDisplay: painTrajectory.dischargeDisplay,
       dischargeVisitPainEstimated: painTrajectory.dischargeEstimated,
       baselinePainDisplay: painTrajectory.baselineDisplay,
+      baselinePainSource: painTrajectory.baselineSource,
+      intakePainDisplay: painTrajectory.intakePainDisplay,
+      firstProcedurePainDisplay: painTrajectory.firstProcedurePainDisplay,
       dischargePainEstimateMin: painTrajectory.dischargeEntry?.min ?? null,
       dischargePainEstimateMax: painTrajectory.dischargeEntry?.max ?? null,
       caseSummary: caseSummaryRes.data
@@ -626,6 +665,18 @@ export async function generateDischargeNote(
   // validator call site pure and avoids re-running the builder.
   const trajectoryForValidator = {
     entries: [
+      ...(inputData.intakePain && (inputData.intakePain.pain_score_min != null || inputData.intakePain.pain_score_max != null)
+        ? [
+            {
+              date: inputData.intakePain.recorded_at,
+              label: 'initial evaluation',
+              min: inputData.intakePain.pain_score_min,
+              max: inputData.intakePain.pain_score_max,
+              source: 'intake' as const,
+              estimated: false,
+            },
+          ]
+        : []),
       ...inputData.procedures.map((p) => ({
         date: p.procedure_date,
         label: `procedure ${p.procedure_number}`,
@@ -649,6 +700,9 @@ export async function generateDischargeNote(
     ],
     arrowChain: inputData.painTrajectoryText ?? '',
     baselineDisplay: inputData.baselinePainDisplay,
+    baselineSource: inputData.baselinePainSource,
+    intakePainDisplay: inputData.intakePainDisplay,
+    firstProcedurePainDisplay: inputData.firstProcedurePainDisplay,
     dischargeDisplay: inputData.dischargeVisitPainDisplay,
     dischargeEntry: inputData.dischargeVisitPainDisplay
       ? {
@@ -963,6 +1017,18 @@ export async function regenerateDischargeNoteSectionAction(
 
   const trajectoryForValidator = {
     entries: [
+      ...(inputData.intakePain && (inputData.intakePain.pain_score_min != null || inputData.intakePain.pain_score_max != null)
+        ? [
+            {
+              date: inputData.intakePain.recorded_at,
+              label: 'initial evaluation',
+              min: inputData.intakePain.pain_score_min,
+              max: inputData.intakePain.pain_score_max,
+              source: 'intake' as const,
+              estimated: false,
+            },
+          ]
+        : []),
       ...inputData.procedures.map((p) => ({
         date: p.procedure_date,
         label: `procedure ${p.procedure_number}`,
@@ -986,6 +1052,9 @@ export async function regenerateDischargeNoteSectionAction(
     ],
     arrowChain: inputData.painTrajectoryText ?? '',
     baselineDisplay: inputData.baselinePainDisplay,
+    baselineSource: inputData.baselinePainSource,
+    intakePainDisplay: inputData.intakePainDisplay,
+    firstProcedurePainDisplay: inputData.firstProcedurePainDisplay,
     dischargeDisplay: inputData.dischargeVisitPainDisplay,
     dischargeEntry: inputData.dischargeVisitPainDisplay
       ? {
