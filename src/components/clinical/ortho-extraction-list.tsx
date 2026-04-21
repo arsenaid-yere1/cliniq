@@ -123,7 +123,7 @@ export function OrthoExtractionList({
                     {extraction.report_date && (
                       <>
                         <span>·</span>
-                        <span>{format(new Date(extraction.report_date), 'MMM d, yyyy')}</span>
+                        <span>{format(new Date(extraction.report_date), 'MM/dd/yyyy')}</span>
                       </>
                     )}
                     {(diagnoses.length > 0 || complaints.length > 0) && (

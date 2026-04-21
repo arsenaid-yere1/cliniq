@@ -110,7 +110,7 @@ export function ChiroExtractionList({
                   {extraction.report_date && (
                     <>
                       <span>·</span>
-                      <span>{format(new Date(extraction.report_date), 'MMM d, yyyy')}</span>
+                      <span>{format(new Date(extraction.report_date), 'MM/dd/yyyy')}</span>
                     </>
                   )}
                 </div>

@@ -65,6 +65,7 @@ SCOPE: DO NOT expand beyond the scope of the original template. If the patient o
 • For ROM data, use "• Flexion: Normal 50° / Actual 40° / Pain: Yes" format. NEVER use pipe tables.
 • No "---" horizontal rules, no "**bold**" markers.
 • Use plain line breaks between paragraphs.
+• DATE FORMAT: every date cited in the narrative MUST be in MM/DD/YYYY format (e.g. "10/13/2025", "03/12/2025"). Do NOT use long-form ("October 13, 2025"), short-form ("Oct 13, 2025"), or ISO ("2025-10-13"). Applies to accident date, visit date, DOB when cited in prose, imaging dates, and every other calendar reference in the generated note.
 
 === PROVIDER INTAKE DATA ===
 
@@ -84,10 +85,10 @@ function buildCommonSections(visitType: NoteVisitType): string {
     ? `Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age (use the top-level "age" field verbatim — this is the patient's age on the visit date; do NOT recompute from date_of_birth), gender, presents for initial medical evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
 DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
 DO NOT characterize this encounter as a "pain management visit" or use "pain management evaluation" phrasing in the introduction or chief complaint. Use "initial medical evaluation" or "initial evaluation" instead.
-Reference: "Ms. [Name] is a 21-year-old female who presents for initial medical evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
+Reference: "Ms. [Name] is a 21-year-old female who presents for initial medical evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on 03/12/2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
     : `Opening paragraph (DO NOT include "To Whom it May Concern" — that heading is added by the template). State: patient age (use the top-level "age" field verbatim — this is the patient's age on the visit date; do NOT recompute from date_of_birth), gender, presents for pain management evaluation due to injuries sustained in [accident type] on [date]. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations. That's it.
 DO NOT restate clinic name/address. DO NOT list section names. DO NOT include provider credentials. DO NOT start with "To Whom it May Concern".
-Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on March 12, 2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
+Reference: "Ms. [Name] is a 21-year-old female who presents for pain management evaluation due to injuries sustained in a motor vehicle accident (MVA), occurring on 03/12/2025. The following is the patient's history, comprehensive physical examination, diagnostic studies, and treatment recommendations."`
 
   return `
 === SECTION-SPECIFIC INSTRUCTIONS ===
@@ -325,7 +326,7 @@ Select codes that correspond to actual MRI findings in the source data. Do NOT a
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
 Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
-Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of March 12, 2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
+Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of 03/12/2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
 12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
 Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region (e.g., cervical, thoracic, lumbar) and citing the MRI-confirmed pathology that supports intervention (e.g., disc herniations, disc bulges, annular tears, cervical instability/ligamentous laxity). State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.

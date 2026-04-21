@@ -212,6 +212,7 @@ PDF-SAFE FORMATTING:
 • Use ALL CAPS sub-headings with colon (e.g., "VITAL SIGNS:") for sub-sections. NEVER use "###" or "**bold**".
 • No "---" horizontal rules, no "**bold**" markers.
 • Use plain line breaks between paragraphs.
+• DATE FORMAT: every date cited in the narrative MUST be in MM/DD/YYYY format (e.g. "10/13/2025", "03/12/2025"). Do NOT use long-form ("October 13, 2025"), short-form ("Oct 13, 2025"), or ISO ("2025-10-13"). Applies to accident date, final injection date, every injection date cited by name, every date reference in clinician_disclaimer, and any date annotations in painTrajectoryText (which are already in MM/DD/YYYY — preserve verbatim).
 
 === CONTEXT ===
 
@@ -368,7 +369,7 @@ Post-PRP follow-up narrative. Describe the patient's self-reported improvement s
 Para 1: Opening sentence identifying patient, age (use the top-level "age" field verbatim — the patient's age on visitDate; do NOT recompute from date_of_birth), presents for follow-up after completing PRP treatment to [sites] on [last procedure date]. Report sustained and progressive improvement in pain severity, functional capacity, and quality of life.
 Para 2: Region-by-region symptom status — current pain rating at discharge, quality of remaining pain (mild stiffness vs sharp), improvement in mobility, resolution of radicular symptoms. REQUIRED: cite the pain trajectory using concrete numbers from baselinePain → each procedure → discharge-visit reading (e.g., "pain has decreased from 7-8/10 at the initial evaluation to 1-2/10 at today's discharge visit" — where last procedure pain was 3-4/10, apply the default -2 drop to get 1-2/10). When procedures[] has 3+ entries, render the full series terminating at the discharge reading (e.g., "8/10 → 6/10 → 4/10 → 3/10 across the injection series, and has further improved to 1/10 at today's discharge evaluation").
 Para 3: Additional improvements — sleep quality, ADL function, denial of red-flag symptoms (bowel/bladder dysfunction, saddle anesthesia, gait instability, progressive weakness, new neurologic complaints, adverse effects from PRP). End with patient's overall assessment that PRP provided meaningful relief.
-Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on October 13, 2025. She reports sustained and progressive improvement, with pain decreasing from 7/10 at her initial evaluation to 1/10 at today's discharge visit, reflecting continued healing since her final injection..."
+Reference: "Ms. Taylor Cook is a 21-year-old female who presents for a comprehensive follow-up evaluation after completing Platelet-Rich Plasma (PRP) treatment to the cervical and lumbar spine on 10/13/2025. She reports sustained and progressive improvement, with pain decreasing from 7/10 at her initial evaluation to 1/10 at today's discharge visit, reflecting continued healing since her final injection..."
 
 2. objective_vitals (~6 bullets):
 BP, HR, RR, Temp, SpO2, Pain.
@@ -440,7 +441,7 @@ Reference: "The prognosis is favorable. The patient has demonstrated meaningful 
 
 12. clinician_disclaimer (~2-3 sentences):
 Medical-legal disclaimer. Report prepared for documentation and continuity of care related exclusively to injuries sustained in the accident on [date]. Does not constitute comprehensive general medical exam. Only relevant symptoms addressed. Closing pleasantry and contact instruction.
-Reference: "This report is prepared for medical-legal documentation and continuity of care related exclusively to injuries sustained in the motor vehicle accident dated March 12, 2025..."
+Reference: "This report is prepared for medical-legal documentation and continuity of care related exclusively to injuries sustained in the motor vehicle accident dated 03/12/2025..."
 
 If source data is sparse for any section, write what can be reasonably inferred from available data. Do not fabricate specific measurements, test results, or vital signs — use brackets only for data that requires in-person examination.`
 

@@ -125,7 +125,7 @@ export function PtExtractionList({
                     {extraction.evaluation_date && (
                       <>
                         <span>·</span>
-                        <span>{format(new Date(extraction.evaluation_date), 'MMM d, yyyy')}</span>
+                        <span>{format(new Date(extraction.evaluation_date), 'MM/dd/yyyy')}</span>
                       </>
                     )}
                     {(outcomeMeasures.length > 0 || diagnoses.length > 0) && (

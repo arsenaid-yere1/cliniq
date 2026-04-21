@@ -864,7 +864,7 @@ function FinalizedView({
             )}
             {note.finalized_at && (
               <p className="text-xs text-muted-foreground">
-                Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
+                Finalized: {format(new Date(note.finalized_at), 'MM/dd/yyyy \'at\' h:mm a')}
               </p>
             )}
           </div>

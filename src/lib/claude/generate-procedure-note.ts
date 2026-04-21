@@ -206,6 +206,7 @@ PDF-SAFE FORMATTING:
 • Use ALL CAPS sub-headings with colon (e.g., "VITAL SIGNS:") for sub-sections. NEVER use "###" or "**bold**".
 • No "---" horizontal rules, no "**bold**" markers.
 • Use plain line breaks between paragraphs.
+• DATE FORMAT: every date cited in the narrative MUST be in MM/DD/YYYY format (e.g. "10/13/2025", "03/12/2025"). Do NOT use long-form ("October 13, 2025"), short-form ("Oct 13, 2025"), or ISO ("2025-10-13"). Applies to accident date, procedure dates, prior procedure dates, and every other calendar reference.
 
 NO CLONE RULE (MANDATORY when priorProcedures has 1 or more entries):
 This note is one document in a series. A reviewer reading notes #1, #2, and #3 side-by-side should NOT see verbatim-identical paragraphs where the underlying clinical facts have evolved. Apply these variation patterns to the procedure-mechanics sections (procedure_preparation, procedure_prp_prep, procedure_anesthesia, procedure_injection, procedure_post_care):

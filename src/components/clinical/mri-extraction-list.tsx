@@ -152,7 +152,7 @@ function ExtractionCard({
               {extraction.extracted_at && (
                 <>
                   {showFileName && extraction.body_region && <span>·</span>}
-                  <span>{format(new Date(extraction.extracted_at), 'MMM d, yyyy')}</span>
+                  <span>{format(new Date(extraction.extracted_at), 'MM/dd/yyyy')}</span>
                 </>
               )}
             </div>

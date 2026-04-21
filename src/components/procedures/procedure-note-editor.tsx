@@ -572,7 +572,7 @@ function DraftEditor({
               {note.plan_deviation_acknowledged_at
                 ? `Provider acknowledged on ${format(
                     new Date(note.plan_deviation_acknowledged_at),
-                    'MMM d, yyyy h:mm a',
+                    'MM/dd/yyyy h:mm a',
                   )}. Finalization unblocked.`
                 : 'This procedure was not part of the documented treatment plan. Acknowledge below before finalizing to create a dated attestation in the medical record.'}
             </div>
@@ -863,7 +863,7 @@ function FinalizedView({
             )}
             {note.finalized_at && (
               <p className="text-xs text-muted-foreground">
-                Finalized: {format(new Date(note.finalized_at), 'MMMM d, yyyy \'at\' h:mm a')}
+                Finalized: {format(new Date(note.finalized_at), 'MM/dd/yyyy \'at\' h:mm a')}
               </p>
             )}
           </div>
