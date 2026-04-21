@@ -50,7 +50,11 @@ CONCISENESS: Write in the same clinical prose style as the reference examples be
 
 NO REPETITION: DO NOT repeat information that appears in earlier sections. Each section should contain only NEW information. DO NOT repeat information that appears in the document header (clinic name, address, phone/fax, provider name/credentials — these are rendered separately in the PDF header and signature block).
 
-NO UNNECESSARY BRACKETS: DO NOT add "[Provider to confirm]" brackets unless the data is truly absent from the source. If data exists in the case summary, USE IT. Only use brackets for vitals when not provided. If romData is provided in the source data, use the actual values for each region's range of motion using the format: "• {movement}: Normal {normal}° / Actual {actual}° / Pain: {Yes|No}". For any movement where actual is null, use "[XX]" for the actual value only. If romData is null entirely, do NOT include any ROM measurements or RANGE OF MOTION sub-headings — omit ROM from the note completely.
+NO UNNECESSARY BRACKETS: "[Provider to confirm]" / "[unknown]" / "[not provided]" / similar bracketed placeholders are BANNED in narrative sections (Social History, Past Medical History, Chief Complaint, Review of Systems, Physical Exam prose, Assessment, Plan, Prognosis, Clinician Disclaimer). If data is absent, either use the documented standard fallback phrase for that section (e.g. the Social History "Denies the use of alcohol, tobacco, and/or drugs." default) OR OMIT the field entirely. The ONLY places brackets are permitted:
+  • Vital-sign values when the specific vital is not provided: use "[XX]" for the missing number (and ONLY the number — do not wrap the entire bullet).
+  • ROM "actual" values when the per-movement measurement is null: use "[XX]" for the actual number only.
+  • Diagnosis descriptions when an ICD-10 code is present but the description text cannot be derived.
+If romData is provided in the source data, use the actual values for each region's range of motion using the format: "• {movement}: Normal {normal}° / Actual {actual}° / Pain: {Yes|No}". For any movement where actual is null, use "[XX]" for the actual value only. If romData is null entirely, do NOT include any ROM measurements or RANGE OF MOTION sub-headings — omit ROM from the note completely.
 
 SCOPE: DO NOT expand beyond the scope of the original template. If the patient only has cervical and lumbar complaints, do not add shoulder or thoracic exam unless the source data specifically contains findings for those regions.
 
@@ -100,7 +104,9 @@ Simple bullets: Medical Problems, Surgeries, Medications Prior to Visit, Allergi
 Reference: "• Medical Problems: None reported.\n• Surgeries: None.\n• Medications Prior to Visit: Advil/Ibuprofen as needed.\n• Allergies: No known drug allergies."
 
 6. SOCIAL HISTORY (~2 bullet points):
-Smoking/Drinking status, Occupation. Fill from source data or use standard "Denies the use of alcohol, tobacco, and/or drugs."
+Smoking/Drinking status, Occupation. FILL RULES (MANDATORY):
+• Smoking/Drinking bullet: if providerIntake.social_history or caseSummary data contains any smoking/drinking/substance information, use it verbatim. Otherwise, render EXACTLY: "• Smoking/Drinking: Denies the use of alcohol, tobacco, and/or drugs." This standard denial is the default when data is missing — do NOT render "[Provider to confirm]", "[unknown]", "[not provided]", or any bracketed placeholder on this bullet.
+• Occupation bullet: if providerIntake.social_history mentions an occupation, cite it. If no occupation is in the source data, OMIT the Occupation bullet entirely — do NOT render a placeholder. A single Smoking/Drinking bullet is an acceptable Social History when occupation is unknown.
 Reference: "• Smoking/Drinking: Denies the use of alcohol, tobacco, and/or drugs.\n• Occupation: Works as a nanny."
 
 7. REVIEW OF SYSTEMS (~2 bullet points ONLY):
