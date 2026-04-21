@@ -298,10 +298,18 @@ async function gatherDischargeNoteSourceData(
   // both in TS and instruct the prompt to render the resulting strings
   // verbatim. The endpoint values are persisted alongside the note so edits
   // do not silently drift away from the computed anchor.
+  // Fold the six-way vsBaseline label down to the four-way overallPainTrend
+  // union consumed by the legacy PAIN TRAJECTORY rules. 'missing_vitals'
+  // collapses to 'baseline' (data-gap branch); 'minimally_improved' collapses
+  // to 'improved' so the -2 default and standard favorable framing still fire
+  // on MCID-level drops. The full six-way painTrendSignals.vsBaseline is
+  // still threaded to the prompt separately for tone modulation.
   const foldedOverallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened' =
     painTrendSignals.vsBaseline === 'missing_vitals'
       ? 'baseline'
-      : painTrendSignals.vsBaseline
+      : painTrendSignals.vsBaseline === 'minimally_improved'
+        ? 'improved'
+        : painTrendSignals.vsBaseline
   const painTrajectory = buildDischargePainTrajectory({
     procedures: procedures.map((p) => ({
       procedure_date: p.procedure_date,
@@ -939,11 +947,78 @@ export async function regenerateDischargeNoteSectionAction(
     return { error: result.error || 'Section regeneration failed' }
   }
 
-  // Update only the target section
+  // Run the trajectory validator against the merged note: the freshly
+  // regenerated section plus the current content of the other sections.
+  // Regen can refresh the deterministic trajectory (new vitals entered, new
+  // procedure recorded, etc.), so both the note text and the audit columns
+  // are updated atomically here — otherwise a stale pain_trajectory_text
+  // can linger on the row while the regenerated section cites a newer arrow
+  // chain.
+  const mergedForValidation = {
+    ...(Object.fromEntries(
+      dischargeNoteSections.map((s) => [s, (note[s] as string | null) ?? '']),
+    ) as Record<DischargeNoteSection, string>),
+    [section]: result.data,
+  } as unknown as import('@/lib/validations/discharge-note').DischargeNoteResult
+
+  const trajectoryForValidator = {
+    entries: [
+      ...inputData.procedures.map((p) => ({
+        date: p.procedure_date,
+        label: `procedure ${p.procedure_number}`,
+        min: p.pain_score_min,
+        max: p.pain_score_max,
+        source: 'procedure' as const,
+        estimated: false,
+      })),
+      ...(inputData.dischargeVisitPainDisplay != null
+        ? [
+            {
+              date: null,
+              label: "today's discharge evaluation",
+              min: inputData.dischargePainEstimateMin,
+              max: inputData.dischargePainEstimateMax,
+              source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
+              estimated: inputData.dischargeVisitPainEstimated,
+            },
+          ]
+        : []),
+    ],
+    arrowChain: inputData.painTrajectoryText ?? '',
+    baselineDisplay: inputData.baselinePainDisplay,
+    dischargeDisplay: inputData.dischargeVisitPainDisplay,
+    dischargeEntry: inputData.dischargeVisitPainDisplay
+      ? {
+          date: null,
+          label: "today's discharge evaluation",
+          min: inputData.dischargePainEstimateMin,
+          max: inputData.dischargePainEstimateMax,
+          source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
+          estimated: inputData.dischargeVisitPainEstimated,
+        }
+      : null,
+    dischargeEstimated: inputData.dischargeVisitPainEstimated,
+  }
+  const validation = validateDischargeTrajectoryConsistency(mergedForValidation, trajectoryForValidator)
+  if (validation.warnings.length > 0) {
+    console.warn('[discharge-note] section-regen trajectory validator warnings', {
+      caseId,
+      recordId: note.id,
+      section,
+      warnings: validation.warnings,
+    })
+  }
+
+  // Update the target section AND refresh the persisted trajectory columns
+  // so the audit trail matches the current source data.
   const { error: updateError } = await supabase
     .from('discharge_notes')
     .update({
       [section]: result.data,
+      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
+      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
+      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
+      pain_trajectory_text: inputData.painTrajectoryText,
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
