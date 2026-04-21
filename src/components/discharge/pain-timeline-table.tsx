@@ -21,12 +21,19 @@ interface PainTimelineTableProps {
 
 function formatDate(date: string | null): string {
   if (!date) return '—'
-  // Accept both YYYY-MM-DD and full ISO datetimes; render as YYYY-MM-DD.
-  const match = date.match(/^(\d{4}-\d{2}-\d{2})/)
-  if (match) return match[1]
+  // Clinic convention: MM/DD/YYYY everywhere in discharge notes + PDFs.
+  // Accept both YYYY-MM-DD strings and full ISO datetimes on input.
+  const ymdMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymdMatch) {
+    const [, y, m, d] = ymdMatch
+    return `${m}/${d}/${y}`
+  }
   const d = new Date(date)
   if (!Number.isFinite(d.getTime())) return date
-  return d.toISOString().slice(0, 10)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const yyyy = d.getUTCFullYear()
+  return `${mm}/${dd}/${yyyy}`
 }
 
 function sourceBadge(source: TimelineEntry['source']): { label: string; className: string } {

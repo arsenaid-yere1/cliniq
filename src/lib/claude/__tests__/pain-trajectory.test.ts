@@ -340,7 +340,7 @@ describe('buildDischargePainTrajectory', () => {
     // Procedure 2 (2026-02-10) = day 36
     // Discharge visit (2026-03-01) = day 55
     expect(t.arrowChain).toBe(
-      "9/10 at initial evaluation (January 5, 2026), 8/10 → 4/10 across the injection series (Jan 10, 2026 – Feb 10, 2026), 2/10 at today's discharge evaluation (March 1, 2026)",
+      "9/10 at initial evaluation (01/05/2026), 8/10 → 4/10 across the injection series (01/10/2026 – 02/10/2026), 2/10 at today's discharge evaluation (03/01/2026)",
     )
     expect(t.entries.find((e) => e.source === 'intake')?.dayOffset).toBe(0)
     expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(5)
@@ -381,8 +381,8 @@ describe('buildDischargePainTrajectory', () => {
     // Anchor = first procedure = 2026-02-01 (day 0). Discharge = day 14.
     expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(0)
     expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(14)
-    expect(t.arrowChain).toContain('(February 1, 2026)')
-    expect(t.arrowChain).toContain('(February 15, 2026)')
+    expect(t.arrowChain).toContain('(02/01/2026)')
+    expect(t.arrowChain).toContain('(02/15/2026)')
   })
 
   it('uses the earliest date between intake and first procedure as anchor (no negative offsets)', () => {

@@ -247,23 +247,18 @@ export function buildDischargePainTrajectory(
 
   const intakeDisplay = intakeEntry ? formatPainValue(intakeEntry.min, intakeEntry.max) : null
 
-  // Date-label helpers — render natural medical-legal date strings
-  // ("January 3, 2026", "Jun 4 – Sep 8, 2026") rather than engineering
-  // "(day N)" offsets in the arrow-chain prose. The dayOffset column in
-  // the Pain Timeline table still carries the numeric day axis for the
-  // chart-style readout; the narrative stays in deposition-grade voice.
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const formatLongDate = (raw: string | null | undefined): string | null => {
+  // Date-label helpers — render dates in the clinic's standard
+  // MM/DD/YYYY format (matches PDFs, patient header, and all other
+  // discharge-note date rendering). Single format everywhere so a
+  // reviewer doesn't see two date styles in one document.
+  const formatMdy = (raw: string | null | undefined): string | null => {
     if (!raw) return null
     const d = new Date(raw)
     if (!Number.isFinite(d.getTime())) return null
-    return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`
-  }
-  const formatShortDate = (raw: string | null | undefined): string | null => {
-    if (!raw) return null
-    const d = new Date(raw)
-    if (!Number.isFinite(d.getTime())) return null
-    return `${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}, ${d.getUTCFullYear()}`
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    const yyyy = d.getUTCFullYear()
+    return `${mm}/${dd}/${yyyy}`
   }
   // Date annotations only render when the caller opted into the time-
   // axis pipeline via visitDate. This preserves backward compatibility
@@ -272,14 +267,14 @@ export function buildDischargePainTrajectory(
   const emitDateLabels = !!input.visitDate
   const dateLabel = (entry: TimelineEntry | null | undefined): string => {
     if (!emitDateLabels) return ''
-    const label = formatLongDate(entry?.date ?? null)
+    const label = formatMdy(entry?.date ?? null)
     return label ? ` (${label})` : ''
   }
   const dateRangeLabel = (firstEntry: TimelineEntry | null | undefined, lastEntry: TimelineEntry | null | undefined): string => {
     if (!emitDateLabels) return ''
     if (!firstEntry || !lastEntry) return ''
-    const first = formatShortDate(firstEntry.date)
-    const last = formatShortDate(lastEntry.date)
+    const first = formatMdy(firstEntry.date)
+    const last = formatMdy(lastEntry.date)
     if (!first || !last) return ''
     if (first === last) return ` (${first})`
     return ` (${first} – ${last})`
