@@ -43,6 +43,7 @@ async function gatherDischargeNoteSourceData(
     proceduresRes,
     caseSummaryRes,
     ivNoteRes,
+    ivNoteDateRes,
     ptRes,
     pmRes,
     mriRes,
@@ -73,10 +74,24 @@ async function gatherDischargeNoteSourceData(
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('chief_complaint, physical_exam, diagnoses, treatment_plan, visit_date')
+      .select('chief_complaint, physical_exam, diagnoses, treatment_plan')
       .eq('case_id', caseId)
       .eq('status', 'finalized')
       .is('deleted_at', null)
+      .maybeSingle(),
+    // Clinical visit_date for the initial evaluation — read from ANY
+    // IV note (draft or finalized) so the Pain Timeline's "initial
+    // evaluation" anchor reflects the true clinical event even when
+    // the note is still being drafted. Separate from the finalized
+    // narrative query above because narrative content should not be
+    // pulled from unfinalized rows.
+    supabase
+      .from('initial_visit_notes')
+      .select('visit_date')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase
       .from('pt_extractions')
@@ -246,7 +261,7 @@ async function gatherDischargeNoteSourceData(
     intakeVitalsRes.data
       ? {
           recorded_at:
-            (ivNoteRes.data?.visit_date as string | null | undefined) ??
+            (ivNoteDateRes.data?.visit_date as string | null | undefined) ??
             intakeVitalsRes.data.recorded_at ??
             null,
           pain_score_min: intakeVitalsRes.data.pain_score_min ?? null,
