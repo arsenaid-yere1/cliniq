@@ -299,7 +299,7 @@ export function RecordProcedureDialog({
           <Button>Record Procedure</Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-h-[90vh] sm:max-w-[min(95vw,56rem)] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] sm:max-w-[min(95vw,56rem)] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit PRP Procedure' : 'Record PRP Procedure'}</DialogTitle>
         </DialogHeader>
@@ -326,7 +326,7 @@ export function RecordProcedureDialog({
                 Encounter Details
               </h3>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="procedure_date"
@@ -444,7 +444,7 @@ export function RecordProcedureDialog({
                 PRP Preparation
               </h3>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="prp_preparation.blood_draw_volume_ml"
@@ -526,7 +526,7 @@ export function RecordProcedureDialog({
                 Anesthesia
               </h3>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="anesthesia.anesthetic_agent"
@@ -595,7 +595,7 @@ export function RecordProcedureDialog({
                 Injection
               </h3>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="injection.injection_volume_ml"
@@ -633,7 +633,7 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="injection.guidance_method"
@@ -745,7 +745,7 @@ export function RecordProcedureDialog({
                 )}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="post_procedure.activity_restriction_hrs"
@@ -838,7 +838,7 @@ export function RecordProcedureDialog({
                 and estimated via the discharge-visit reading at end of series.
               </p>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="vital_signs.pain_score_min"
@@ -887,7 +887,7 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="vital_signs.bp_systolic"
@@ -932,7 +932,7 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="vital_signs.heart_rate"
@@ -977,7 +977,7 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="vital_signs.temperature_f"
