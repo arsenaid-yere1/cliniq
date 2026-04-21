@@ -9,7 +9,7 @@ import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
 interface Invoice {
   id: string
   invoice_date: string
-  invoice_number: string
+  invoice_type: 'visit' | 'facility'
   total_amount: number
   paid_amount: number
   status: string

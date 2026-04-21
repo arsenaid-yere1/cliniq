@@ -27,7 +27,7 @@ import {
 interface Invoice {
   id: string
   invoice_date: string
-  invoice_number: string
+  invoice_type: 'visit' | 'facility'
   total_amount: number
   paid_amount: number
   status: string
@@ -45,9 +45,12 @@ const columns: ColumnDef<Invoice>[] = [
     cell: ({ getValue }) => format(new Date((getValue() as string) + 'T00:00:00'), 'MM/dd/yyyy'),
   },
   {
-    accessorKey: 'invoice_number',
-    header: 'Invoice #',
-    cell: ({ getValue }) => <span className="font-mono">{getValue() as string}</span>,
+    accessorKey: 'invoice_type',
+    header: 'Type',
+    cell: ({ getValue }) => {
+      const type = getValue() as 'visit' | 'facility'
+      return type === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'
+    },
   },
   {
     accessorKey: 'total_amount',
