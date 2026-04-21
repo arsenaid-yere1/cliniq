@@ -102,6 +102,7 @@ export interface ProcedureInitialData {
   supplies_used: string | null
   compression_bandage: boolean | null
   activity_restriction_hrs: number | null
+  plan_deviation_reason: string | null
   _vitals?: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -271,6 +272,7 @@ export function RecordProcedureDialog({
         activity_restriction_hrs: initialData?.activity_restriction_hrs
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.post_procedure.activity_restriction_hrs),
       },
+      plan_deviation_reason: initialData?.plan_deviation_reason ?? '',
     },
   })
 
@@ -787,6 +789,39 @@ export function RecordProcedureDialog({
                   )}
                 />
               </div>
+            </div>
+
+            <Separator />
+
+            {/* ── Plan Deviation (optional) ── */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Plan Deviation (optional)
+              </h3>
+              <FormField
+                control={form.control}
+                name="plan_deviation_reason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for deviation from treatment plan</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="e.g. Patient reported new-onset cervical pain at this visit; cervical PRP substituted for the previously planned lumbar injection."
+                        rows={3}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Fill in only when the performed technique (injection site, laterality, or guidance) differs from the plan of care on file (initial visit note or pain-management evaluation). Leave blank when the procedure follows the documented plan.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             <Separator />

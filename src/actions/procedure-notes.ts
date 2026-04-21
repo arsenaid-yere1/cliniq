@@ -17,6 +17,7 @@ import {
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
+import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 
 // --- Helper: compute source data hash ---
@@ -82,7 +83,7 @@ async function gatherProcedureNoteSourceData(
       .is('deleted_at', null),
     supabase
       .from('initial_visit_notes')
-      .select('past_medical_history, social_history')
+      .select('past_medical_history, social_history, treatment_plan')
       .eq('case_id', caseId)
       .eq('status', 'finalized')
       .is('deleted_at', null)
@@ -321,6 +322,7 @@ async function gatherProcedureNoteSourceData(
         supplies_used: proc.supplies_used,
         compression_bandage: proc.compression_bandage,
         activity_restriction_hrs: proc.activity_restriction_hrs,
+        plan_deviation_reason: proc.plan_deviation_reason,
       },
       vitalSigns: vitalsRes.data ?? null,
       priorProcedures: priorProcedureRows.map((p) => ({
@@ -424,8 +426,25 @@ async function gatherProcedureNoteSourceData(
         ? {
             past_medical_history: ivNoteRes.data.past_medical_history,
             social_history: ivNoteRes.data.social_history,
+            treatment_plan: ivNoteRes.data.treatment_plan ?? null,
           }
         : null,
+      planAlignment: computePlanAlignment({
+        performed: {
+          injection_site: proc.injection_site,
+          laterality: proc.laterality as 'left' | 'right' | 'bilateral' | null,
+          guidance_method: proc.guidance_method as
+            | 'ultrasound'
+            | 'fluoroscopy'
+            | 'landmark'
+            | null,
+        },
+        pmTreatmentPlan: pmRes.data
+          ? ((pmRes.data.provider_overrides as { treatment_plan?: unknown } | null)
+              ?.treatment_plan ?? pmRes.data.treatment_plan)
+          : null,
+        initialVisitTreatmentPlan: ivNoteRes.data?.treatment_plan ?? null,
+      }),
       priorProcedureNotes: priorProcedureRows
         .filter((p) => priorNotesByProcedureId.has(p.id))
         .map((p) => {
@@ -579,6 +598,8 @@ export async function generateProcedureNote(
         ai_model: null,
         raw_ai_response: null,
         tone_hint: effectiveToneHint,
+        plan_alignment_status: null,
+        plan_deviation_acknowledged_at: null,
         updated_by_user_id: user.id,
       })
       .eq('id', existingNote.id)
@@ -670,6 +691,10 @@ export async function generateProcedureNote(
       raw_ai_response: result.rawResponse || null,
       status: 'draft',
       source_data_hash: sourceHash,
+      plan_alignment_status: inputData.planAlignment.status,
+      // Reset any prior acknowledgement — this is a fresh draft that
+      // the provider must re-acknowledge if it comes up unplanned.
+      plan_deviation_acknowledged_at: null,
       updated_by_user_id: user.id,
     })
     .eq('id', recordId)
@@ -749,6 +774,20 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
+  // Gate: block finalization of "unplanned" procedures unless provider
+  // has explicitly acknowledged. This mirrors the consent_obtained
+  // discipline — a dated attestation that the provider reviewed the
+  // flag that this procedure was not part of the documented plan.
+  if (
+    note.plan_alignment_status === 'unplanned' &&
+    !note.plan_deviation_acknowledged_at
+  ) {
+    return {
+      error:
+        'This procedure was not part of the documented treatment plan. Acknowledge the plan deviation on the note before finalizing.',
+    }
+  }
+
   // Clean up previous document if re-finalizing
   if (note.document_id) {
     const { data: oldDoc } = await supabase
@@ -825,6 +864,36 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
     .eq('id', note.id)
 
   if (updateError) return { error: 'Failed to finalize note' }
+
+  revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+  return { data: { success: true } }
+}
+
+// --- Acknowledge plan deviation (required before finalize when
+// plan_alignment_status = 'unplanned') ---
+
+export async function acknowledgePlanDeviation(
+  procedureId: string,
+  caseId: string,
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const { error } = await supabase
+    .from('procedure_notes')
+    .update({
+      plan_deviation_acknowledged_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .eq('status', 'draft')
+
+  if (error) return { error: 'Failed to record acknowledgement' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
   return { data: { success: true } }

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -2072,6 +2047,8 @@ export type Database = {
           objective_vitals: string | null
           past_medical_history: string | null
           patient_education: string | null
+          plan_alignment_status: string | null
+          plan_deviation_acknowledged_at: string | null
           procedure_anesthesia: string | null
           procedure_followup: string | null
           procedure_id: string
@@ -2112,6 +2089,8 @@ export type Database = {
           objective_vitals?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
+          plan_alignment_status?: string | null
+          plan_deviation_acknowledged_at?: string | null
           procedure_anesthesia?: string | null
           procedure_followup?: string | null
           procedure_id: string
@@ -2152,6 +2131,8 @@ export type Database = {
           objective_vitals?: string | null
           past_medical_history?: string | null
           patient_education?: string | null
+          plan_alignment_status?: string | null
+          plan_deviation_acknowledged_at?: string | null
           procedure_anesthesia?: string | null
           procedure_followup?: string | null
           procedure_id?: string
@@ -2240,6 +2221,7 @@ export type Database = {
           needle_gauge: string | null
           pain_rating: number | null
           patient_tolerance: string | null
+          plan_deviation_reason: string | null
           prep_protocol: string | null
           procedure_date: string
           procedure_name: string
@@ -2272,6 +2254,7 @@ export type Database = {
           needle_gauge?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
+          plan_deviation_reason?: string | null
           prep_protocol?: string | null
           procedure_date: string
           procedure_name: string
@@ -2304,6 +2287,7 @@ export type Database = {
           needle_gauge?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
+          plan_deviation_reason?: string | null
           prep_protocol?: string | null
           procedure_date?: string
           procedure_name?: string
@@ -2904,9 +2888,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

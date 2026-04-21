@@ -1,0 +1,219 @@
+import { describe, it, expect } from 'vitest'
+import {
+  computePlanAlignment,
+  normalizeRegion,
+} from '@/lib/procedures/compute-plan-alignment'
+
+describe('normalizeRegion', () => {
+  it('maps lumbosacral → lumbar', () => {
+    expect(normalizeRegion('lumbosacral')).toBe('lumbar')
+  })
+
+  it('maps low back → lumbar', () => {
+    expect(normalizeRegion('low back')).toBe('lumbar')
+  })
+
+  it('strips laterality prefix before lookup', () => {
+    expect(normalizeRegion('Left Knee')).toBe('knee')
+    expect(normalizeRegion('Bilateral Knees')).toBe('knee')
+  })
+
+  it('returns null for empty', () => {
+    expect(normalizeRegion(null)).toBeNull()
+    expect(normalizeRegion('')).toBeNull()
+  })
+
+  it('finds canonical via substring', () => {
+    expect(normalizeRegion('Cervical spine — posterior')).toBe('cervical')
+  })
+})
+
+describe('computePlanAlignment', () => {
+  const performedLumbar = {
+    injection_site: 'Lumbar L4-L5',
+    laterality: 'left' as const,
+    guidance_method: 'ultrasound' as const,
+  }
+
+  it('returns no_plan_on_file when both sources are empty', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: null,
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('no_plan_on_file')
+    expect(result.planned).toBeNull()
+    expect(result.mismatches).toEqual([])
+  })
+
+  it('returns no_plan_on_file when PM plan has no injection items', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        { description: 'Continue physical therapy 3x/week', type: 'therapy', body_region: 'lumbar' },
+        { description: 'Naproxen 500mg BID', type: 'medication', body_region: null },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('no_plan_on_file')
+  })
+
+  it('returns aligned when PM injection plan matches performed', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        {
+          description: 'PRP injection under ultrasound guidance',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('aligned')
+    expect(result.planned?.source).toBe('pm_extraction')
+    expect(result.mismatches).toEqual([])
+  })
+
+  it('returns deviation on laterality mismatch', () => {
+    const result = computePlanAlignment({
+      performed: { ...performedLumbar, laterality: 'right' },
+      pmTreatmentPlan: [
+        {
+          description: 'Left-sided PRP injection',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('deviation')
+    expect(result.mismatches).toContainEqual({
+      field: 'laterality',
+      planned: 'left',
+      performed: 'right',
+    })
+  })
+
+  it('returns deviation on guidance mismatch', () => {
+    const result = computePlanAlignment({
+      performed: { ...performedLumbar, guidance_method: 'fluoroscopy' },
+      pmTreatmentPlan: [
+        {
+          description: 'PRP injection under ultrasound guidance',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('deviation')
+    expect(result.mismatches).toContainEqual({
+      field: 'guidance_method',
+      planned: 'ultrasound',
+      performed: 'fluoroscopy',
+    })
+  })
+
+  it('returns deviation on target levels divergence', () => {
+    const result = computePlanAlignment({
+      performed: { ...performedLumbar, injection_site: 'Lumbar L5-S1' },
+      pmTreatmentPlan: [
+        {
+          description: 'PRP injection at L4-L5',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('deviation')
+    expect(
+      result.mismatches.some((m) => m.field === 'target_levels'),
+    ).toBe(true)
+  })
+
+  it('returns unplanned when plan exists but no candidate matches performed region', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        {
+          description: 'Cervical PRP injection',
+          type: 'injection',
+          body_region: 'cervical',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('unplanned')
+    expect(result.mismatches[0]).toMatchObject({
+      field: 'body_region',
+      performed: 'lumbar',
+    })
+  })
+
+  it('falls back to initial visit plan narrative when PM has no injection items', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        { description: 'Physical therapy', type: 'therapy', body_region: 'lumbar' },
+      ],
+      initialVisitTreatmentPlan:
+        'The patient will continue conservative care. Plan to proceed with left-sided PRP injection to the lumbar spine at L4-L5 under ultrasound guidance within the next 2 weeks.',
+    })
+    expect(result.status).toBe('aligned')
+    expect(result.planned?.source).toBe('initial_visit_note')
+  })
+
+  it('prefers PM candidate matching performed region over first PM item', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        {
+          description: 'Cervical PRP injection',
+          type: 'injection',
+          body_region: 'cervical',
+        },
+        {
+          description: 'Lumbar PRP injection under ultrasound guidance',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('aligned')
+    expect(result.planned?.body_region).toBe('lumbar')
+  })
+
+  it('detects injection-like description even when type is not "injection"', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        {
+          description: 'PRP to lumbar spine under ultrasound',
+          type: 'other',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('aligned')
+  })
+
+  it('treats missing planned laterality as non-mismatch', () => {
+    const result = computePlanAlignment({
+      performed: performedLumbar,
+      pmTreatmentPlan: [
+        {
+          description: 'Lumbar PRP injection under ultrasound',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    // planned description has no laterality word → no mismatch on laterality
+    expect(result.status).toBe('aligned')
+  })
+})

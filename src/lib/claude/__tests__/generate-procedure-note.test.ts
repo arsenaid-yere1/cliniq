@@ -38,6 +38,7 @@ const emptyInput: ProcedureNoteInputData = {
     supplies_used: null,
     compression_bandage: null,
     activity_restriction_hrs: null,
+    plan_deviation_reason: null,
   },
   vitalSigns: null,
   priorProcedures: [],
@@ -50,6 +51,7 @@ const emptyInput: ProcedureNoteInputData = {
   pmExtraction: null,
   pmSupplementaryDiagnoses: [],
   initialVisitNote: null,
+  planAlignment: { status: 'no_plan_on_file', planned: null, mismatches: [] },
   priorProcedureNotes: [],
   mriExtractions: [],
   clinicInfo: {

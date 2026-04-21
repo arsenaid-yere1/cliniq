@@ -39,6 +39,7 @@ import {
   regenerateProcedureNoteSectionAction,
   resetProcedureNote,
   saveProcedureNoteToneHint,
+  acknowledgePlanDeviation,
 } from '@/actions/procedure-notes'
 import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
@@ -84,6 +85,8 @@ interface NoteRow {
   finalized_by_user_id: string | null
   document_id: string | null
   updated_at: string | null
+  plan_alignment_status: string | null
+  plan_deviation_acknowledged_at: string | null
 }
 
 interface ClinicSettings {
@@ -485,9 +488,33 @@ function DraftEditor({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          {note.plan_alignment_status === 'unplanned' &&
+            !note.plan_deviation_acknowledged_at && (
+              <Button
+                variant="outline"
+                disabled={isLocked || isPending}
+                onClick={() => {
+                  startTransition(async () => {
+                    const result = await acknowledgePlanDeviation(procedureId, caseId)
+                    if (result.error) toast.error(result.error)
+                    else toast.success('Plan deviation acknowledged')
+                  })
+                }}
+              >
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Acknowledge Unplanned Procedure
+              </Button>
+            )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isLocked || isPending}>
+              <Button
+                disabled={
+                  isLocked ||
+                  isPending ||
+                  (note.plan_alignment_status === 'unplanned' &&
+                    !note.plan_deviation_acknowledged_at)
+                }
+              >
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize
               </Button>
@@ -525,6 +552,45 @@ function DraftEditor({
       </div>
 
       {hasMissingPriorVitals && <MissingPriorVitalsBadge />}
+
+      {note.plan_alignment_status === 'unplanned' && (
+        <div
+          className={`rounded-md border px-3 py-2 text-sm flex items-start gap-2 ${
+            note.plan_deviation_acknowledged_at
+              ? 'border-amber-500/40 bg-amber-500/5 text-amber-900 dark:text-amber-200'
+              : 'border-red-500/60 bg-red-500/10 text-red-900 dark:text-red-200'
+          }`}
+        >
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <div className="font-medium">
+              {note.plan_deviation_acknowledged_at
+                ? 'Unplanned procedure — acknowledged'
+                : 'Unplanned procedure — acknowledgement required'}
+            </div>
+            <div className="text-xs opacity-90">
+              {note.plan_deviation_acknowledged_at
+                ? `Provider acknowledged on ${format(
+                    new Date(note.plan_deviation_acknowledged_at),
+                    'MMM d, yyyy h:mm a',
+                  )}. Finalization unblocked.`
+                : 'This procedure was not part of the documented treatment plan. Acknowledge below before finalizing to create a dated attestation in the medical record.'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {note.plan_alignment_status === 'deviation' && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm flex items-start gap-2 text-amber-900 dark:text-amber-200">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <div className="font-medium">Plan deviation detected</div>
+            <div className="text-xs opacity-90">
+              The performed technique differs from the documented treatment plan. The PLAN-COHERENCE rule in the note should name the deviation and rationale; review the Assessment &amp; Plan section before finalizing.
+            </div>
+          </div>
+        </div>
+      )}
 
       <Form {...form}>
         <form className="space-y-6">

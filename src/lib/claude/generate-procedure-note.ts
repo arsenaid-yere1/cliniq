@@ -49,6 +49,7 @@ export interface ProcedureNoteInputData {
     supplies_used: string | null
     compression_bandage: boolean | null
     activity_restriction_hrs: number | null
+    plan_deviation_reason: string | null
   }
   vitalSigns: {
     bp_systolic: number | null
@@ -140,7 +141,20 @@ export interface ProcedureNoteInputData {
   initialVisitNote: {
     past_medical_history: string | null
     social_history: string | null
+    treatment_plan: string | null
   } | null
+  /**
+   * Plan-vs-performed alignment for this visit. Computed deterministically
+   * from `pmExtraction.treatment_plan` + `initialVisitNote.treatment_plan`
+   * against `procedureRecord.{injection_site, laterality, guidance_method}`.
+   * Consumed by the PLAN-COHERENCE RULE in the system prompt. Status values:
+   *   - 'aligned' — plan matches performed
+   *   - 'deviation' — plan exists and matches region, but laterality /
+   *     guidance / target levels differ
+   *   - 'unplanned' — plan on file does not cover the performed body region
+   *   - 'no_plan_on_file' — no injection plan could be located
+   */
+  planAlignment: import('../procedures/compute-plan-alignment').PlanAlignment
   priorProcedureNotes: Array<{
     procedure_date: string
     procedure_number: number
@@ -278,6 +292,30 @@ SECTION SCOPE:
 
 Prior narrative takes a lower precedence than the paintoneLabel / chiroProgress branching and the DIAGNOSTIC-SUPPORT RULE. If the prior assessment_and_plan listed a diagnosis that fails the current-visit filters in the DIAGNOSTIC-SUPPORT RULE (e.g., a V-code, or a radiculopathy code without region-matched findings on this visit), DROP or DOWNGRADE the code per the rule — do not retain it just because the prior note had it.
 
+=== PLAN-COHERENCE RULE (MANDATORY) ===
+
+The input payload supplies a precomputed "planAlignment" object with shape { status, planned, mismatches[] }. Status is one of "aligned", "deviation", "unplanned", "no_plan_on_file". DO NOT re-derive alignment yourself; trust planAlignment.status. The "planned" object, when non-null, captures the planned body_region, laterality, guidance_hint, target_levels, and the raw_description it was derived from (source = "pm_extraction" or "initial_visit_note").
+
+Branch narrative language on planAlignment.status:
+
+• planAlignment.status == "aligned"
+  → In procedure_indication and assessment_and_plan, reference the plan in continuity terms. Example phrasings: "The procedure performed today follows the care plan established at the initial visit." or "PRP injection today proceeded as planned at the pain-management evaluation." Do NOT belabor the match; one sentence is sufficient.
+
+• planAlignment.status == "deviation"
+  → MANDATORY: In assessment_and_plan, include exactly one sentence naming the specific deviation(s) drawn from planAlignment.mismatches and the clinical rationale. Preferred rationale sources, in order: procedureRecord.plan_deviation_reason (provider-entered narrative captured at the encounter form — quote or paraphrase this when present), procedureRecord.complications, procedureRecord.patient_tolerance, pmExtraction.updated_after_procedure, caseSummary.prior_treatment. When no chart field documents a rationale, emit "[confirm rationale for plan deviation: planned <planned>, performed <performed>]" using the exact planned/performed values from the mismatch. DO NOT fabricate a rationale. Mismatch field labels in human language: body_region → "treated region"; laterality → "side"; guidance_method → "guidance modality"; target_levels → "treatment level".
+
+• planAlignment.status == "unplanned"
+  → MANDATORY: In procedure_indication, use language acknowledging that the procedure was not part of the prior documented plan. Defensible phrasings: "performed based on clinical progression since the last evaluation" or "indicated by interval change in the patient's presentation". Cite the specific clinical driver, in this preference order: procedureRecord.plan_deviation_reason (provider-entered rationale), procedureRecord.complications, the most recent pmExtraction.chief_complaints, or caseSummary.symptoms_timeline. Emit "[confirm indication for unplanned procedure]" when no driver is documented. Do NOT describe the procedure as continuing an established plan.
+
+• planAlignment.status == "no_plan_on_file"
+  → Do NOT invent a planned-vs-performed comparison. Do NOT say "the procedure follows the plan" since no plan was located. Proceed per the other rules. The procedure_indication section may state that the procedure was performed pursuant to the evaluating provider's clinical judgment, which is already true.
+
+Interaction with other rules:
+• The NO CLONE RULE still applies — vary the phrasing of plan-continuity sentences across sessions in a series.
+• PLAN-COHERENCE is independent of TARGET-COHERENCE RULE. TARGET-COHERENCE governs whether the prose describing the target matches procedureRecord.guidance_method (internal to this encounter). PLAN-COHERENCE governs whether the performed procedure matches what was previously planned (across documents). Both rules must be satisfied.
+• PLAN-COHERENCE does NOT override the DIAGNOSTIC-SUPPORT RULE. Diagnosis filtering happens independently. Do NOT retain a diagnosis code in the final list merely because it appeared in the planned treatment description.
+• The plan-continuity sentence belongs in procedure_indication (for "aligned" / "unplanned") and assessment_and_plan (for "deviation" and recap of "unplanned"). Do NOT add plan-continuity language to procedure_prp_prep, procedure_anesthesia, procedure_injection, procedure_post_care, or procedure_followup.
+
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 
 If the user message contains a section labeled "ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:", treat its content as the provider's preference for phrasing, emphasis, and voice. Apply it to:
@@ -287,7 +325,7 @@ If the user message contains a section labeled "ADDITIONAL TONE/DIRECTION GUIDAN
 
 The provider hint does NOT override:
 • Clinical facts, numeric values, or structured data in the input payload.
-• The MANDATORY rules above (NO REPETITION, NO CLONE RULE) and below (INTERVAL-CHANGE RULE, MINIMUM INTERVAL-CHANGE FLOOR, SERIES-TOTAL RULE, INTERVAL-RESPONSE NARRATIVE, PRE-PROCEDURE SAFETY CHECKLIST, RESPONSE-CALIBRATED FOLLOW-UP, DIAGNOSTIC-SUPPORT RULE, TARGET-COHERENCE RULE, DATA-NULL RULE).
+• The MANDATORY rules above (NO REPETITION, NO CLONE RULE, PLAN-COHERENCE RULE) and below (INTERVAL-CHANGE RULE, MINIMUM INTERVAL-CHANGE FLOOR, SERIES-TOTAL RULE, INTERVAL-RESPONSE NARRATIVE, PRE-PROCEDURE SAFETY CHECKLIST, RESPONSE-CALIBRATED FOLLOW-UP, DIAGNOSTIC-SUPPORT RULE, TARGET-COHERENCE RULE, DATA-NULL RULE).
 • The paintoneLabel-based and chiroProgress-based branching logic in the section-specific instructions.
 • PDF-SAFE FORMATTING rules.
 

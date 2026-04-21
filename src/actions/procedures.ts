@@ -130,6 +130,8 @@ export async function createPrpProcedure(
       supplies_used: values.post_procedure.supplies_used || null,
       compression_bandage: values.post_procedure.compression_bandage,
       activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
+      // --- Plan-vs-performed rationale (optional) ---
+      plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
       // --- audit ---
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
@@ -318,6 +320,8 @@ export async function updatePrpProcedure(
       supplies_used: values.post_procedure.supplies_used || null,
       compression_bandage: values.post_procedure.compression_bandage,
       activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
+      // Plan-vs-performed rationale (optional)
+      plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
       updated_by_user_id: user.id,
     })
     .eq('id', procedureId)

@@ -78,6 +78,10 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
     anesthesia: anesthesiaSchema,
     injection: injectionSchema,
     post_procedure: postProcedureSchema,
+    // Optional rationale entered by the provider when the performed
+    // technique diverges from the documented treatment plan. Consumed by
+    // the PLAN-COHERENCE RULE in procedure-note generation.
+    plan_deviation_reason: z.string().optional(),
   })
 
 export type PrpProcedureFormValues = z.infer<ReturnType<typeof prpProcedureFormSchema>>
