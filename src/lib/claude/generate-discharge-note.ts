@@ -72,7 +72,10 @@ export interface DischargeNoteInputData {
   } | null
   // overallPainTrend: last-procedure-vs-first-procedure comparison. Kept as a
   // top-level field for prompt-rule backward compatibility (PAIN TRAJECTORY
-  // block reads this). Equals painTrendSignals.vsBaseline.
+  // block reads this). Equals painTrendSignals.vsBaseline, with
+  // 'minimally_improved' folded to 'improved' and 'missing_vitals' folded to
+  // 'baseline' for the narrow four-way legacy rule branching. Narrative
+  // phrasing in the prompt still reads the full six-way painTrendSignals.
   overallPainTrend: 'baseline' | 'improved' | 'stable' | 'worsened'
   // painTrendSignals: full two-signal payload. vsBaseline mirrors
   // overallPainTrend; vsPrevious compares last procedure vs second-to-last
@@ -245,9 +248,15 @@ This override takes precedence over the PAIN TONE MATRIX rows below. When both s
 === PAIN TONE MATRIX — FINAL-INTERVAL SIGNAL (MANDATORY) ===
 
 You are given two tone signals:
-• "overallPainTrend" (top-level) — mirrors painTrendSignals.vsBaseline. Every rule in === PAIN TRAJECTORY === above reads this field. Do NOT change that behavior.
-• "painTrendSignals.vsBaseline" — last procedure pain vs first procedure pain. Full-series arc.
-• "painTrendSignals.vsPrevious" — last procedure pain vs second-to-last procedure pain. Captures the FINAL-INTERVAL change between the penultimate and final injections. Is null when only one procedure exists.
+• "overallPainTrend" (top-level) — four-way folded label consumed by the legacy rules in === PAIN TRAJECTORY === above. 'minimally_improved' is folded to 'improved' and 'missing_vitals' is folded to 'baseline' for that block. Do NOT change that behavior.
+• "painTrendSignals.vsBaseline" — last procedure pain vs first procedure pain. Full six-way label: 'baseline', 'missing_vitals', 'minimally_improved', 'improved', 'stable', 'worsened'.
+• "painTrendSignals.vsPrevious" — last procedure pain vs second-to-last procedure pain. Same six-way union, or null when only one procedure exists.
+
+MINIMAL-IMPROVEMENT TIER (vsBaseline == "minimally_improved" or vsPrevious == "minimally_improved"):
+• Meaning: exactly a 2-point drop on the NRS — the minimum clinically important difference. Real improvement, but modest.
+• Narrative calibration: acknowledge the improvement without overstating it. Prefer phrasing like "modest reduction in pain intensity", "measurable but incremental improvement", "pain reduced by the minimum clinically important difference". AVOID "significant improvement", "substantial gains", "marked reduction".
+• Prognosis framing: favorable but measured. Do NOT imply the patient has fully responded to therapy. A discharge note under minimal improvement often warrants acknowledging that continued conservative management is needed and that reassessment may be appropriate if the modest gains do not consolidate.
+• The -2 default rule for the discharge-visit pain endpoint STILL applies under minimal improvement (it reflects expected post-procedure healing, independent of series-arc magnitude). The tier changes tone, not numbers.
 
 Discharge narrative is inherently retrospective. The matrix below applies to the subjective, assessment, and prognosis framing of the FINAL interval before discharge:
 
@@ -277,7 +286,7 @@ Values:
 • "monotone_stable" — series is flat (all consecutive deltas are 0). Plateau narrative.
 • "monotone_worsened" — every consecutive procedure pain was ≥ the previous, with at least one rise. Worsening narrative.
 • "mixed_with_regression" — at least one intermediate consecutive delta was ≥ +2. Even if overallPainTrend reads "improved", the course was NOT monotone. E.g., 9 → 5 → 7 → 3 has overallPainTrend="improved" and vsPrevious="improved" (3 vs 7) but seriesVolatility="mixed_with_regression".
-• "insufficient_data" — fewer than 2 procedures, or any procedure's pain_score_max is null. Do NOT cite volatility.
+• "insufficient_data" — fewer than 2 non-null pain_score_max readings in the procedure series. Null entries elsewhere are skipped, not disqualifying. Do NOT cite volatility.
 
 MANDATORY when seriesVolatility == "mixed_with_regression": the subjective, assessment, and prognosis MUST acknowledge mid-course variability. Use language such as "the treatment course included an interval fluctuation between the Nth and Mth procedures before subsequent stabilization" or "pain regressed transiently mid-series before recovering at the final injection." Do NOT assert monotone improvement. Do NOT describe the trajectory as "sustained progressive improvement" or "steady reduction" — those phrases imply monotonicity that did not occur.
 

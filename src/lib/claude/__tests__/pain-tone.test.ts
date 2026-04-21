@@ -24,14 +24,15 @@ describe('computePainToneLabel', () => {
     expect(computePainToneLabel(5, 9)).toBe('improved')
     expect(computePainToneLabel(6, 9)).toBe('improved')
   })
-  it('returns stable for a 2-point drop (threshold case — was improved in pre-threshold-bump v1)', () => {
-    // 9→7 baseline-to-current is still stable under the v2 threshold because
-    // at 7/10 residual pain the physical exam reads persistence-leaning.
-    expect(computePainToneLabel(7, 9)).toBe('stable')
-    expect(computePainToneLabel(5, 7)).toBe('stable')
-    expect(computePainToneLabel(3, 5)).toBe('stable')
+  it('returns minimally_improved for exactly a 2-point drop (MCID on NRS)', () => {
+    // Previously collapsed to 'stable'; v3 splits this out as MCID-tier
+    // improvement so the narrative can credit real gains without overstating.
+    expect(computePainToneLabel(7, 9)).toBe('minimally_improved')
+    expect(computePainToneLabel(5, 7)).toBe('minimally_improved')
+    expect(computePainToneLabel(3, 5)).toBe('minimally_improved')
+    expect(computePainToneLabel(0, 2)).toBe('minimally_improved')
   })
-  it('returns stable when delta is within [-2, +1]', () => {
+  it('returns stable when delta is within [-1, +1]', () => {
     expect(computePainToneLabel(7, 7)).toBe('stable')
     expect(computePainToneLabel(6, 7)).toBe('stable')
     expect(computePainToneLabel(8, 7)).toBe('stable')
@@ -72,10 +73,24 @@ describe('computeSeriesVolatility', () => {
     expect(computeSeriesVolatility([5])).toBe('insufficient_data')
   })
 
-  it('returns insufficient_data when any entry is null', () => {
-    expect(computeSeriesVolatility([null, 5])).toBe('insufficient_data')
-    expect(computeSeriesVolatility([5, null, 3])).toBe('insufficient_data')
+  it('returns insufficient_data only when fewer than 2 non-null readings exist', () => {
     expect(computeSeriesVolatility([null, null])).toBe('insufficient_data')
+    expect(computeSeriesVolatility([null, 5])).toBe('insufficient_data')
+    expect(computeSeriesVolatility([null, null, 3])).toBe('insufficient_data')
+  })
+
+  it('skips null entries and classifies based on surviving non-null deltas', () => {
+    // One missing vitals row in the middle should not collapse the series.
+    expect(computeSeriesVolatility([9, null, 5, 3])).toBe('monotone_improved')
+    expect(computeSeriesVolatility([3, null, 5, 7])).toBe('monotone_worsened')
+    expect(computeSeriesVolatility([5, null, 5, 5])).toBe('monotone_stable')
+    // Leading/trailing nulls also skipped.
+    expect(computeSeriesVolatility([null, 9, 7, null, 5])).toBe('monotone_improved')
+  })
+
+  it('detects mid-series regression across a null gap', () => {
+    // 9 -> [skip] -> 5 -> 7 -> 3: effective deltas -4, +2, -4 → regression present + drop present
+    expect(computeSeriesVolatility([9, null, 5, 7, 3])).toBe('mixed_with_regression')
   })
 
   it('returns monotone_improved for strictly non-increasing series with at least one drop', () => {

@@ -237,6 +237,13 @@ You are given two independent pain-tone signals:
 • "paintoneSignals.vsBaseline" — current pain vs the FIRST procedure in the series. Captures cumulative arc across all sessions.
 • "paintoneSignals.vsPrevious" — current pain vs the IMMEDIATELY PREVIOUS procedure. Captures per-session change. Is null when no prior procedure exists (first in series).
 
+BOTH signals use this six-way union: 'baseline', 'missing_vitals', 'minimally_improved', 'improved', 'stable', 'worsened'.
+
+'minimally_improved' denotes a 2-point drop on the NRS — the minimum clinically important difference. The matrix rows below label either signal as "improved" — apply those rows when the signal is either "improved" or "minimally_improved", but CALIBRATE the wording when the signal is 'minimally_improved':
+• Prefer "modest reduction", "measurable but incremental improvement", "minimum clinically important difference" over "significant improvement" or "marked reduction".
+• Keep numeric framing honest; do not round a 2-point drop up rhetorically.
+• When vsBaseline = "minimally_improved" with 2+ priors, the cumulative summary clause should acknowledge the arc as "modestly favorable" rather than "favorable".
+
 RULE: In the subjective narrative and in the interval-response sentences, you MUST acknowledge the session-level direction (vsPrevious) even when it diverges from the cumulative arc (vsBaseline). The matrix below defines the required narrative framing for each combination:
 
 | vsBaseline | vsPrevious | Required narrative tone                                                                                                                         |
@@ -265,13 +272,13 @@ Top-level "seriesVolatility" classifies the full prior-procedure pain_score_max 
 • "monotone_stable" — flat series (all consecutive deltas 0). Plateau framing.
 • "monotone_worsened" — every consecutive prior pain was ≥ the previous. Worsening framing.
 • "mixed_with_regression" — at least one consecutive prior delta was ≥ +2. The patient had an intra-series regression that may have since recovered.
-• "insufficient_data" — fewer than 2 priors, or any prior pain_score_max is null. Do NOT cite volatility.
+• "insufficient_data" — fewer than 2 non-null prior pain_score_max readings. Null entries in the prior series are skipped, not disqualifying. Do NOT cite volatility.
 
 MANDATORY when seriesVolatility == "mixed_with_regression": the subjective TRAJECTORY sentence MUST acknowledge the mid-series fluctuation — do not assert a monotone arc. Example framing: "pain fluctuated across the injection series (e.g., 8/10 → 5/10 → 7/10 → 3/10) before reaching today's reading." Do NOT render a linear arrow chain ("8/10 → 5/10 → 3/10") that hides an intermediate rise. Do NOT describe the trajectory as "progressive decline in pain" or "steady improvement" — those phrasings imply monotonicity that the data contradicts.
 
 When seriesVolatility == "monotone_improved" AND paintoneLabel == "improved", the standard TRAJECTORY arrow-chain is permitted.
 
-When seriesVolatility == "insufficient_data" (procedure #1 or #2 with any null priors), do NOT cite volatility. Fall back to the existing paintoneLabel / paintoneSignals branching.
+When seriesVolatility == "insufficient_data" (procedure #1, or fewer than 2 non-null prior readings across the entire series), do NOT cite volatility. Fall back to the existing paintoneLabel / paintoneSignals branching.
 
 This rule operates on priorProcedures only — the current procedure is not part of the computed series. It takes precedence over TRAJECTORY when the two conflict: never describe a volatile series as monotone just because the endpoints are favorable.
 

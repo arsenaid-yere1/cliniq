@@ -1,7 +1,8 @@
 export type PainToneLabel =
-  | 'baseline'        // first in series / no prior procedure exists
-  | 'missing_vitals'  // prior procedure exists but its pain_score_max is null
-  | 'improved'
+  | 'baseline'           // first in series / no prior procedure exists
+  | 'missing_vitals'     // prior procedure exists but its pain_score_max is null
+  | 'minimally_improved' // drop of exactly 2 points — MCID on NRS (≥30% reduction)
+  | 'improved'           // drop of ≥3 points — clinically meaningful improvement
   | 'stable'
   | 'worsened'
 
@@ -27,12 +28,21 @@ export type PainToneContext = 'no_prior' | 'prior_with_vitals' | 'prior_missing_
  * - Discharge-note generation passes baselinePain.pain_score_max (same
  *   semantics — first procedure in the series).
  *
- * Thresholds are asymmetric on purpose: "improved" requires a clinically
- * meaningful drop (≥3 points) because a 2-point drop on a high-severity
- * baseline (e.g. 9→7) still leaves the patient in moderate-severe pain and
- * the physical exam reads persistence-leaning; forcing "improved" tone on
- * that case produces output that contradicts the exam. "worsened" keeps the
- * ±2 threshold because any 2-point increase is reliably a negative signal.
+ * Thresholds are asymmetric on purpose and tiered on the improvement side:
+ *   delta ≤ -3 → 'improved'            (clinically meaningful reduction)
+ *   delta == -2 → 'minimally_improved' (MCID on NRS — ≥30% reduction at
+ *                                       most baselines, but still leaves
+ *                                       residual pain that can read as
+ *                                       persistence on exam)
+ *   delta ∈ [-1, +1] → 'stable'
+ *   delta ≥ +2 → 'worsened'             (reliably a negative signal)
+ *
+ * The MCID tier was added to stop 2-point drops from collapsing into
+ * 'stable' — previously a patient moving 7→5 read the same as 7→7 in the
+ * narrative, swallowing the clinical credit for real improvement. Callers
+ * that treat 'improved' and 'minimally_improved' the same should fold the
+ * labels at the call site; callers that want MCID-tier phrasing can branch
+ * on the new label directly.
  *
  * When `context === 'prior_missing_vitals'` the function returns
  * 'missing_vitals' regardless of the numeric inputs — data-gap signalling
@@ -50,6 +60,7 @@ export function computePainToneLabel(
   if (currentPainMax == null || referencePainMax == null) return 'baseline'
   const delta = currentPainMax - referencePainMax
   if (delta <= -3) return 'improved'
+  if (delta === -2) return 'minimally_improved'
   if (delta >= 2) return 'worsened'
   return 'stable'
 }
@@ -95,23 +106,25 @@ export type SeriesVolatility =
 
 /**
  * Scans a pain_score_max series in chronological order and classifies its
- * volatility. Any null entry collapses the classification to
- * 'insufficient_data' because the series cannot be fully scanned — partial
- * classification would be misleading.
+ * volatility. Null entries are SKIPPED rather than collapsing the result
+ * to 'insufficient_data'; deltas are computed between consecutive non-null
+ * values. 'insufficient_data' is only returned when fewer than 2 non-null
+ * readings exist in the series. One missed vitals row on a 6-procedure
+ * series should not erase the volatility signal entirely — the surviving
+ * deltas still carry clinical meaning for the discharge narrative.
  */
 export function computeSeriesVolatility(
   painSeries: Array<number | null>,
 ): SeriesVolatility {
-  if (painSeries.length < 2) return 'insufficient_data'
-  if (painSeries.some((p) => p == null)) return 'insufficient_data'
-  const series = painSeries as number[]
+  const nonNull = painSeries.filter((p): p is number => p != null)
+  if (nonNull.length < 2) return 'insufficient_data'
 
   let anyDrop = false
   let anyRise = false
-  let anyRegression = false // any ≥+2 rise
+  let anyRegression = false // any ≥+2 rise between consecutive non-null values
 
-  for (let i = 1; i < series.length; i++) {
-    const delta = series[i] - series[i - 1]
+  for (let i = 1; i < nonNull.length; i++) {
+    const delta = nonNull[i] - nonNull[i - 1]
     if (delta < 0) anyDrop = true
     if (delta > 0) anyRise = true
     if (delta >= 2) anyRegression = true
