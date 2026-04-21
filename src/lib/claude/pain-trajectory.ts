@@ -212,18 +212,20 @@ export function buildDischargePainTrajectory(
   entries.push(...procEntries)
   if (dischargeEntry) entries.push(dischargeEntry)
 
-  // Anchor for the time axis: intake date > first-procedure date > null.
-  // Day labels only render when the caller supplies visitDate AND an
-  // anchor date is derivable — the visitDate gate is deliberate so
-  // callers that have not yet threaded it (historical tests, legacy paths)
-  // keep the pre-R9 chain format. When visitDate is present but no anchor
-  // date can be parsed, the discharge entry is stamped day 0 and other
-  // entries stay null.
-  const anchorDay = input.visitDate
-    ? (parseDateToUtcDay(intakeEntry?.date ?? null) ??
-       parseDateToUtcDay(procEntries[0]?.date ?? null) ??
-       null)
-    : null
+  // Anchor for the time axis: the EARLIEST parseable date among intake +
+  // first procedure. Using min() (rather than "intake if present else
+  // first proc") guarantees non-negative dayOffsets even when the intake
+  // vitals row was back-entered with a clinical visit_date later than
+  // the first procedure, or when the initial_visit_notes.visit_date
+  // happens to be wrong relative to the procedure order. Day labels
+  // only render when the caller supplies visitDate AND an anchor date
+  // is derivable.
+  const candidateAnchors = input.visitDate
+    ? [intakeEntry?.date ?? null, procEntries[0]?.date ?? null]
+        .map(parseDateToUtcDay)
+        .filter((d): d is number => d != null)
+    : []
+  const anchorDay = candidateAnchors.length > 0 ? Math.min(...candidateAnchors) : null
   if (anchorDay != null) {
     for (const e of entries) {
       const day = parseDateToUtcDay(e.date)
@@ -245,36 +247,62 @@ export function buildDischargePainTrajectory(
 
   const intakeDisplay = intakeEntry ? formatPainValue(intakeEntry.min, intakeEntry.max) : null
 
-  // Day-label helpers — format a single entry's offset or a range.
-  const dayLabel = (entry: TimelineEntry | null | undefined): string =>
-    entry && entry.dayOffset != null ? ` (day ${entry.dayOffset})` : ''
-  const dayRangeLabel = (firstEntry: TimelineEntry | null | undefined, lastEntry: TimelineEntry | null | undefined): string => {
+  // Date-label helpers — render natural medical-legal date strings
+  // ("January 3, 2026", "Jun 4 – Sep 8, 2026") rather than engineering
+  // "(day N)" offsets in the arrow-chain prose. The dayOffset column in
+  // the Pain Timeline table still carries the numeric day axis for the
+  // chart-style readout; the narrative stays in deposition-grade voice.
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const formatLongDate = (raw: string | null | undefined): string | null => {
+    if (!raw) return null
+    const d = new Date(raw)
+    if (!Number.isFinite(d.getTime())) return null
+    return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`
+  }
+  const formatShortDate = (raw: string | null | undefined): string | null => {
+    if (!raw) return null
+    const d = new Date(raw)
+    if (!Number.isFinite(d.getTime())) return null
+    return `${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}, ${d.getUTCFullYear()}`
+  }
+  // Date annotations only render when the caller opted into the time-
+  // axis pipeline via visitDate. This preserves backward compatibility
+  // for callers (and historical tests) that do not thread visitDate —
+  // those see the pre-R9 "arrow chain only" format.
+  const emitDateLabels = !!input.visitDate
+  const dateLabel = (entry: TimelineEntry | null | undefined): string => {
+    if (!emitDateLabels) return ''
+    const label = formatLongDate(entry?.date ?? null)
+    return label ? ` (${label})` : ''
+  }
+  const dateRangeLabel = (firstEntry: TimelineEntry | null | undefined, lastEntry: TimelineEntry | null | undefined): string => {
+    if (!emitDateLabels) return ''
     if (!firstEntry || !lastEntry) return ''
-    const first = firstEntry.dayOffset
-    const last = lastEntry.dayOffset
-    if (first == null || last == null) return ''
-    if (first === last) return ` (day ${first})`
-    return ` (day ${first} → day ${last})`
+    const first = formatShortDate(firstEntry.date)
+    const last = formatShortDate(lastEntry.date)
+    if (!first || !last) return ''
+    if (first === last) return ` (${first})`
+    return ` (${first} – ${last})`
   }
 
   let arrowChain = ''
   // Build chain in segments: intake → procedures → discharge. Each segment
-  // is optional; joiners adapt to which segments are present. Day-axis
-  // annotations (R9) append to each segment when an anchor date exists.
+  // is optional; joiners adapt to which segments are present. Date
+  // annotations appear only when an entry has a parseable date.
   const segments: string[] = []
   if (intakeDisplay) {
-    segments.push(`${intakeDisplay} at initial evaluation${dayLabel(intakeEntry)}`)
+    segments.push(`${intakeDisplay} at initial evaluation${dateLabel(intakeEntry)}`)
   }
   if (proceduresChain) {
     const firstProc = renderedProcEntries[0]
     const lastProc = renderedProcEntries[renderedProcEntries.length - 1]
     const rangeLabel = renderedProcEntries.length > 1
-      ? dayRangeLabel(firstProc, lastProc)
-      : dayLabel(firstProc)
+      ? dateRangeLabel(firstProc, lastProc)
+      : dateLabel(firstProc)
     segments.push(`${proceduresChain} across the injection series${rangeLabel}`)
   }
   if (dischargeDisplay) {
-    segments.push(`${dischargeDisplay} at today's discharge evaluation${dayLabel(dischargeEntry)}`)
+    segments.push(`${dischargeDisplay} at today's discharge evaluation${dateLabel(dischargeEntry)}`)
   }
   if (segments.length > 0) {
     arrowChain = segments.join(', ')

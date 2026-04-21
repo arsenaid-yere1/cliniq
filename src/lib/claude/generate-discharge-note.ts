@@ -229,7 +229,7 @@ RULES (these override the NUMERIC PORTIONS of every block below, including the d
   - \`'intake'\` → "from \`baselinePainDisplay\` at the initial evaluation" (the intake-visit reading — semantically a true pre-treatment anchor).
   - \`'procedure'\` → "from \`baselinePainDisplay\` at the first procedure" or "prior to the first PRP injection" (the pre-first-injection reading — falls back here only when intakePainDisplay is null).
 • When BOTH \`intakePainDisplay\` AND \`firstProcedurePainDisplay\` are non-null AND they differ, prefer citing intakePainDisplay as the initial-evaluation anchor; optionally also cite firstProcedurePainDisplay as "pain at the first injection" in the subjective arc sentence. Never conflate the two — do not describe the first-procedure reading as "pain at initial evaluation" when a distinct intake reading exists.
-• When \`painTrajectoryText\` includes "(day N)" annotations, preserve them when rendering the arrow chain verbatim. The day numbers are offsets from the anchor (intake when present, else first procedure) and give the reviewer a calibrated sense of pacing. Do NOT paraphrase them into text like "approximately two weeks" — keep the numeric "(day 14)" format.
+• When \`painTrajectoryText\` includes parenthetical date annotations (e.g. "(January 3, 2026)", "(Jun 4 – Sep 8, 2026)"), preserve them verbatim when rendering the arrow chain. Do NOT collapse them into vague phrasing like "approximately two weeks" and do NOT strip them — the dates are the medical-legal record of when each reading occurred and reviewers rely on them for timeline defensibility.
 
 === SUPPLEMENTARY PAIN OBSERVATIONS (CONDITIONAL) ===
 

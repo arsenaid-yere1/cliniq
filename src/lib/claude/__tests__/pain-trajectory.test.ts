@@ -321,7 +321,7 @@ describe('buildDischargePainTrajectory', () => {
     expect(t.baselineSource).toBe('intake')
   })
 
-  it('annotates arrow chain with (day N) labels when visitDate is supplied (R9)', () => {
+  it('annotates arrow chain with parenthetical dates when visitDate is supplied (R9)', () => {
     const t = buildDischargePainTrajectory(
       baseInput({
         procedures: [
@@ -335,12 +335,12 @@ describe('buildDischargePainTrajectory', () => {
         visitDate: '2026-03-01',
       }),
     )
-    // Anchor = intake = 2026-01-05.
+    // Anchor = min(intake 2026-01-05, proc1 2026-01-10) = 2026-01-05.
     // Procedure 1 (2026-01-10) = day 5
     // Procedure 2 (2026-02-10) = day 36
     // Discharge visit (2026-03-01) = day 55
     expect(t.arrowChain).toBe(
-      "9/10 at initial evaluation (day 0), 8/10 → 4/10 across the injection series (day 5 → day 36), 2/10 at today's discharge evaluation (day 55)",
+      "9/10 at initial evaluation (January 5, 2026), 8/10 → 4/10 across the injection series (Jan 10, 2026 – Feb 10, 2026), 2/10 at today's discharge evaluation (March 1, 2026)",
     )
     expect(t.entries.find((e) => e.source === 'intake')?.dayOffset).toBe(0)
     expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(5)
@@ -348,7 +348,7 @@ describe('buildDischargePainTrajectory', () => {
     expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(55)
   })
 
-  it('no day labels when visitDate is omitted (backward-compat)', () => {
+  it('no date labels when visitDate is omitted (backward-compat)', () => {
     const t = buildDischargePainTrajectory(
       baseInput({
         procedures: [
@@ -361,7 +361,7 @@ describe('buildDischargePainTrajectory', () => {
         // no visitDate
       }),
     )
-    expect(t.arrowChain).not.toContain('(day')
+    expect(t.arrowChain).not.toContain('(')
     expect(t.entries.every((e) => e.dayOffset === null)).toBe(true)
   })
 
@@ -381,8 +381,35 @@ describe('buildDischargePainTrajectory', () => {
     // Anchor = first procedure = 2026-02-01 (day 0). Discharge = day 14.
     expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(0)
     expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(14)
-    expect(t.arrowChain).toContain('(day 0)')
-    expect(t.arrowChain).toContain('(day 14)')
+    expect(t.arrowChain).toContain('(February 1, 2026)')
+    expect(t.arrowChain).toContain('(February 15, 2026)')
+  })
+
+  it('uses the earliest date between intake and first procedure as anchor (no negative offsets)', () => {
+    // Intake was back-entered with a clinical visit_date LATER than the
+    // first procedure — a data-entry quirk. Anchor must be the earliest
+    // parseable date so every other entry is a non-negative offset.
+    const t = buildDischargePainTrajectory(
+      baseInput({
+        procedures: [
+          { procedure_date: '2026-01-10', procedure_number: 1, pain_score_min: 8, pain_score_max: 8 },
+          { procedure_date: '2026-02-10', procedure_number: 2, pain_score_min: 6, pain_score_max: 6 },
+        ],
+        latestVitals: { pain_score_min: 6, pain_score_max: 6 },
+        baselinePain: { procedure_date: '2026-01-10', pain_score_min: 8, pain_score_max: 8 },
+        // Intake date LATER than first procedure (data quirk).
+        intakePain: { recorded_at: '2026-02-20T00:00:00Z', pain_score_min: 9, pain_score_max: 9 },
+        overallPainTrend: 'improved',
+        visitDate: '2026-03-15',
+      }),
+    )
+    // Anchor = min(2026-01-10, 2026-02-20) = 2026-01-10 (procedure 1).
+    expect(t.entries.find((e) => e.label === 'procedure 1')?.dayOffset).toBe(0)
+    expect(t.entries.find((e) => e.source === 'intake')?.dayOffset).toBe(41)
+    expect(t.entries.find((e) => e.label === 'procedure 2')?.dayOffset).toBe(31)
+    expect(t.entries.find((e) => e.source === 'discharge_estimate')?.dayOffset).toBe(64)
+    // Every offset non-negative.
+    expect(t.entries.every((e) => e.dayOffset == null || e.dayOffset >= 0)).toBe(true)
   })
 
   it('gracefully handles malformed dates (null dayOffset, no crash)', () => {
@@ -397,8 +424,8 @@ describe('buildDischargePainTrajectory', () => {
         visitDate: 'also-bad',
       }),
     )
-    // No anchor can be parsed → no day labels at all.
-    expect(t.arrowChain).not.toContain('(day')
+    // No anchor can be parsed → no date labels at all.
+    expect(t.arrowChain).not.toContain('(')
     expect(t.entries.every((e) => e.dayOffset === null)).toBe(true)
   })
 
