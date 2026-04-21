@@ -95,13 +95,48 @@ export interface ProcedureNoteInputData {
   // the current-in-progress procedure is not part of the series yet.
   seriesVolatility: SeriesVolatility
   chiroProgress: ChiroProgress
+  /**
+   * Cross-source clinical synthesis (case_summaries row). Supplies
+   * pre-computed `suggested_diagnoses` entries with `confidence` and
+   * `downgrade_to` fields consumed by the DOWNGRADE-TO HONOR RULE in the
+   * prompt. Null when no case summary has been generated for this case yet.
+   */
+  caseSummary: {
+    chief_complaint: string | null
+    imaging_findings: unknown
+    prior_treatment: unknown
+    symptoms_timeline: unknown
+    suggested_diagnoses: unknown
+  } | null
   pmExtraction: {
     chief_complaints: unknown
     physical_exam: unknown
     diagnoses: unknown
     treatment_plan: unknown
     diagnostic_studies_summary: string | null
+    /**
+     * True when this PM extraction row's most recent edit timestamp is later
+     * than the procedureRecord's `procedure_date`. Signals that the PM data
+     * currently in scope diverges from what the provider saw when committing
+     * `procedureRecord.diagnoses`. The prompt uses this flag to prefer the
+     * provider-committed list over fresh PM overrides for the current visit.
+     */
+    updated_after_procedure: boolean
   } | null
+  /**
+   * Supplementary PM-sourced candidate codes — codes present in the PM
+   * extraction but NOT already in procedureRecord.diagnoses. Deduplicated
+   * upstream so the LLM sees each candidate code at most once. Used by the
+   * SOURCE PRECEDENCE rule to surface PM codes the provider may have
+   * omitted that still carry strong evidence.
+   */
+  pmSupplementaryDiagnoses: Array<{
+    icd10_code: string | null
+    description: string
+    imaging_support?: string | null
+    exam_support?: string | null
+    source_quote?: string | null
+  }>
   initialVisitNote: {
     past_medical_history: string | null
     social_history: string | null
@@ -456,6 +491,18 @@ Reference (paintoneLabel="worsened"): "Mr. Israyelyan will return in 1 week for 
 Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — description format (no bullet prefix, just code space dash space description, one per line). Then "PLAN:" heading with bullet list of action items.
 
 DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list in this procedure note is a FILTERED output, not a copy of the input. Apply the filters below to every candidate code regardless of whether it came from procedureRecord.diagnoses or pmExtraction.diagnoses. Omit any code that fails its filter — if a code is unsupported, substitute the downgrade listed below rather than just dropping it. The procedure note is not the document that establishes mechanism of injury; that is the initial-visit note.
+
+SOURCE PRECEDENCE RULE (MANDATORY): The candidate code pool has TWO tiers, not one. Treat them asymmetrically.
+
+  • PRIMARY — procedureRecord.diagnoses: the provider's committed diagnosis list at the time this procedure was recorded. This list represents the provider's clinical decision AFTER reviewing PM extraction suggestions and the pre-populated combobox. Treat it as AUTHORITATIVE. Every code in procedureRecord.diagnoses MUST be evaluated against Filters (A)–(E) and either (i) emitted as-is if it passes, or (ii) downgraded per the Downgrade Table if it fails. Do NOT silently drop a provider-committed code; a failing code must be substituted with its downgrade target.
+
+  • SECONDARY — pmSupplementaryDiagnoses: codes that exist in the PM extraction but were NOT committed by the provider (dedup applied upstream). Treat as ADVISORY. Each carries per-code imaging_support / exam_support / source_quote tags. A supplementary code may be ADDED to the emitted diagnosis list ONLY when ALL of the following hold: (i) it passes every applicable filter including (B)/(C) region-match, (ii) its imaging_support == "confirmed" AND exam_support == "objective", (iii) the code is clinically essential to justify the procedure indication or primary pain generator on this visit. In all other cases, omit. Do NOT emit supplementary codes merely because they are present in the PM extraction.
+
+  • pmExtraction.diagnoses remains available as raw evidence-tag context. When evaluating a procedureRecord code against Filters (B)/(C), you MAY cite a matching pmExtraction.diagnoses entry's exam_support tag as evidence. This does NOT promote the supplementary tier — it only informs filter application on the primary tier.
+
+  • When pmExtraction.updated_after_procedure == true, the PM extraction was edited AFTER the procedure was recorded. In this case, the provider's committed list (procedureRecord.diagnoses) may have been informed by older PM data. Prefer the provider-committed list even more strongly; do NOT add supplementary codes from pmSupplementaryDiagnoses when this flag is true unless the code independently passes the high-evidence bar above AND its source_quote clearly establishes the clinical basis.
+
+  • caseSummary.suggested_diagnoses is a THIRD advisory source (cross-source synthesis). Use it to (i) resolve the CODING FRAMEWORK RULE between TRAUMATIC and DEGENERATIVE, (ii) consume the DOWNGRADE-TO HONOR RULE (see below). Do NOT add codes from suggested_diagnoses to the emitted list unless they are already present in procedureRecord.diagnoses or qualify for promotion under the pmSupplementaryDiagnoses rule above.
 
 CODING FRAMEWORK RULE (MANDATORY): Select ONE coding framework for this note and apply it consistently across the diagnosis code list AND across disc-pathology prose in subjective, assessment_summary, procedure_indication, and procedure_injection. Do NOT mix frameworks within a single note.
 

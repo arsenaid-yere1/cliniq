@@ -116,7 +116,13 @@ export interface ProcedureInitialData {
 
 interface RecordProcedureDialogProps {
   caseId: string
-  diagnosisSuggestions: Array<{ icd10_code: string | null; description: string }>
+  diagnosisSuggestions: Array<{
+    icd10_code: string | null
+    description: string
+    imaging_support?: 'confirmed' | 'referenced' | 'none' | null
+    exam_support?: 'objective' | 'subjective_only' | 'none' | null
+    source_quote?: string | null
+  }>
   procedureDefaults?: ProcedureDefaults | null
   initialData?: ProcedureInitialData
   patientLastName: string | null
@@ -200,9 +206,24 @@ export function RecordProcedureDialog({
       laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined)
         ?? (defaults?.laterality as 'left' | 'right' | 'bilateral' | undefined)
         ?? undefined,
+      // Pre-check ONLY high-evidence PM codes — those with BOTH
+      // imaging_support === 'confirmed' AND exam_support === 'objective'.
+      // Lower-evidence codes (subjective-only exam, no imaging cite) still
+      // appear in the combobox dropdown but start UNCHECKED so the provider
+      // must consciously commit them. Prevents the default "check
+      // everything" behavior from propagating unsupported codes into
+      // procedures.diagnoses. IVN-parsed entries (no evidence tags) are
+      // also pre-checked because they come from a clinician-reviewed note.
       diagnoses: Array.isArray(initialData?.diagnoses)
         ? (initialData.diagnoses as PrpProcedureFormValues['diagnoses'])
-        : diagnosisSuggestions.filter((d): d is { icd10_code: string; description: string } => !!d.icd10_code),
+        : diagnosisSuggestions
+            .filter((d): d is typeof d & { icd10_code: string } => !!d.icd10_code)
+            .filter((d) => {
+              const hasEvidenceTags = d.imaging_support !== undefined || d.exam_support !== undefined
+              if (!hasEvidenceTags) return true
+              return d.imaging_support === 'confirmed' && d.exam_support === 'objective'
+            })
+            .map((d) => ({ icd10_code: d.icd10_code, description: d.description })),
       consent_obtained: initialData?.consent_obtained ?? (isEditing ? false : STATIC_PROCEDURE_DEFAULTS.consent_obtained),
       vital_signs: {
         bp_systolic: initialData?._vitals?.bp_systolic ?? defaults?.vital_signs.bp_systolic ?? null,

@@ -44,6 +44,7 @@ async function gatherProcedureNoteSourceData(
     clinicRes,
     chiroRes,
     intakeVitalsRes,
+    caseSummaryRes,
   ] = await Promise.all([
     supabase
       .from('procedures')
@@ -66,7 +67,7 @@ async function gatherProcedureNoteSourceData(
       .single(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides')
+      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides, updated_at')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -120,6 +121,14 @@ async function gatherProcedureNoteSourceData(
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('case_summaries')
+      .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline, suggested_diagnoses')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited'])
+      .eq('generation_status', 'completed')
       .maybeSingle(),
   ])
 
@@ -351,6 +360,15 @@ async function gatherProcedureNoteSourceData(
         priorProcedureRows.map((p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null),
       ),
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
+      caseSummary: caseSummaryRes.data
+        ? {
+            chief_complaint: caseSummaryRes.data.chief_complaint ?? null,
+            imaging_findings: caseSummaryRes.data.imaging_findings ?? null,
+            prior_treatment: caseSummaryRes.data.prior_treatment ?? null,
+            symptoms_timeline: caseSummaryRes.data.symptoms_timeline ?? null,
+            suggested_diagnoses: caseSummaryRes.data.suggested_diagnoses ?? null,
+          }
+        : null,
       pmExtraction: pmRes.data
         ? (() => {
             const overrides = pmRes.data.provider_overrides as {
@@ -359,15 +377,49 @@ async function gatherProcedureNoteSourceData(
               diagnoses?: unknown
               treatment_plan?: unknown
             } | null
+            const pmUpdatedAt = pmRes.data.updated_at as string | null
+            const procedureDate = proc.procedure_date as string | null
+            const updatedAfterProcedure =
+              !!(pmUpdatedAt && procedureDate && new Date(pmUpdatedAt).getTime() > new Date(procedureDate).getTime())
             return {
               chief_complaints: overrides?.chief_complaints ?? pmRes.data.chief_complaints,
               physical_exam: overrides?.physical_exam ?? pmRes.data.physical_exam,
               diagnoses: overrides?.diagnoses ?? pmRes.data.diagnoses,
               treatment_plan: overrides?.treatment_plan ?? pmRes.data.treatment_plan,
               diagnostic_studies_summary: pmRes.data.diagnostic_studies_summary,
+              updated_after_procedure: updatedAfterProcedure,
             }
           })()
         : null,
+      // Supplementary PM-sourced candidate codes: codes present in the
+      // PM extraction but NOT already committed on procedureRecord.diagnoses.
+      // Dedup keyed on uppercased icd10_code so the LLM sees each candidate
+      // code at most once across the two sources. Preserves per-code
+      // evidence tags (imaging_support, exam_support, source_quote) for
+      // Filter F gating.
+      pmSupplementaryDiagnoses: (() => {
+        if (!pmRes.data) return []
+        const overrides = pmRes.data.provider_overrides as { diagnoses?: unknown } | null
+        const pmDxRaw = (overrides?.diagnoses ?? pmRes.data.diagnoses) as unknown
+        if (!Array.isArray(pmDxRaw)) return []
+        const committedCodes = new Set(
+          diagnoses
+            .map((d) => d.icd10_code?.toUpperCase())
+            .filter((c): c is string => !!c),
+        )
+        return (pmDxRaw as Array<Record<string, unknown>>)
+          .filter((d) => {
+            const code = typeof d.icd10_code === 'string' ? d.icd10_code.toUpperCase() : null
+            return code != null && !committedCodes.has(code)
+          })
+          .map((d) => ({
+            icd10_code: (d.icd10_code as string) ?? null,
+            description: (d.description as string) ?? '',
+            imaging_support: (d.imaging_support as string | null | undefined) ?? null,
+            exam_support: (d.exam_support as string | null | undefined) ?? null,
+            source_quote: (d.source_quote as string | null | undefined) ?? null,
+          }))
+      })(),
       initialVisitNote: ivNoteRes.data
         ? {
             past_medical_history: ivNoteRes.data.past_medical_history,
