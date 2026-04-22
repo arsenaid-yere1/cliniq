@@ -4,7 +4,9 @@
 
 Unfinalizing a note flipped the note row back to `draft` but left the generated PDF and its `documents` row live in the repository. Re-finalizing spawned a second document, so repeated finalize/unfinalize cycles accumulated stale PDFs on the case with no back-reference from any note. This plan cascades the soft-delete to the `documents` row + storage object when a note is unfinalized and consolidates the finalize re-entry cleanup into a shared helper.
 
-Status: **implemented** in commit `115e360` on main (2026-04-22).
+Status: **implemented** on main (2026-04-22). Commits:
+- `115e360` — core cleanup (helper, unfinalize patch, finalize simplification, dialog copy)
+- `91beef5` — documents-tab revalidation on finalize/unfinalize
 
 ## Current State Analysis (pre-fix)
 
@@ -217,6 +219,27 @@ New text:
 ### Success Criteria
 - Copy matches behavior. User is warned before a destructive soft-delete.
 
+## Phase 5: Revalidate Documents Tab on Finalize/Unfinalize
+
+### Overview
+Finalize and unfinalize previously revalidated only the note's own page (`/patients/[caseId]/procedures/[id]/note`, `/patients/[caseId]/discharge`, or `/patients/[caseId]`). The patient documents tab at `/patients/[caseId]/documents` served stale SSR output until something unrelated revalidated it. After a fresh finalize the PDF wouldn't show up on the documents list; after an unfinalize the now-soft-deleted row would linger.
+
+### Changes
+Add one line to each of the six lifecycle call sites:
+
+```typescript
+revalidatePath(`/patients/${caseId}/documents`)
+```
+
+Sites:
+- `src/actions/procedure-notes.ts` — `finalizeProcedureNote` + `unfinalizeProcedureNote`
+- `src/actions/discharge-notes.ts` — `finalizeDischargeNote` + `unfinalizeDischargeNote`
+- `src/actions/initial-visit-notes.ts` — `finalizeInitialVisitNote` + `unfinalizeInitialVisitNote`
+
+### Success Criteria
+- After finalize, the documents tab shows the new PDF without a hard refresh.
+- After unfinalize, the documents tab drops the removed PDF without a hard refresh.
+
 ## Testing Strategy
 
 ### Manual
@@ -272,7 +295,7 @@ Note: SQL soft-deletes the rows only. Storage objects for those paths remain in 
 ## Related
 
 - Research: `thoughts/shared/research/2026-04-22-unfinalize-document-repository-impact.md`
-- Ships on commit: `115e360`
+- Ships on commits: `115e360` (core), `91beef5` (documents-tab revalidate)
 - Pre-existing finalize/lifecycle plans touched peripherally (no edits required):
   - `thoughts/shared/plans/2026-03-09-epic-3-story-3.1-initial-visit-note.md`
   - `thoughts/shared/plans/2026-03-11-epic-4-story-4.3-generate-prp-procedure-note.md`
