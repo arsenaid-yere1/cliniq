@@ -103,8 +103,8 @@ Note: `CASE_STATUS_CONFIG` is already imported at [src/actions/case-status.ts:5]
 - [x] Action tests pass (after Phase 4 updates): `npm test -- actions/__tests__/case-status.test.ts`
 
 #### Manual Verification:
-- [ ] In dev, move a case to Pending Settlement. Attempt to upload a document via the UI — sheet opens and submits an error toast containing `"locked (Pending Settlement)"`.
-- [ ] Transition the same case Pending Settlement → Active via the status dropdown; verify it succeeds (status change action is not itself guarded by `assertCaseNotClosed`).
+- [x] In dev, move a case to Pending Settlement. Attempt to upload a document via the UI — sheet opens and submits an error toast containing `"locked (Pending Settlement)"`.
+- [x] Transition the same case Pending Settlement → Active via the status dropdown; verify it succeeds (status change action is not itself guarded by `assertCaseNotClosed`).
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation from the human that the manual testing was successful before proceeding to the next phase.
 
@@ -202,10 +202,10 @@ Preview stays unchanged — still gated only by `canPreview` (mime-type).
 - [x] Unit tests pass: `npm test`
 
 #### Manual Verification:
-- [ ] Case in `active` — DocumentCard Download and Delete buttons enabled; Delete dialog opens.
-- [ ] Case in `pending_settlement` — both buttons are visibly disabled; clicking does nothing. Preview still works for PDFs/images.
-- [ ] Case in `closed` — same as `pending_settlement`.
-- [ ] Case transitioned back to `active` — buttons re-enable after the page/context rerenders (revalidation is already wired in `updateCaseStatus`).
+- [x] Case in `active` — DocumentCard Download and Delete buttons enabled; Delete dialog opens.
+- [x] Case in `pending_settlement` — both buttons are visibly disabled; clicking does nothing. Preview still works for PDFs/images.
+- [x] Case in `closed` — same as `pending_settlement`.
+- [x] Case transitioned back to `active` — buttons re-enable after the page/context rerenders (revalidation is already wired in `updateCaseStatus`).
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation from the human that the manual testing was successful before proceeding to the next phase.
 
@@ -260,8 +260,8 @@ Components that already derive `isLocked` from the constant — confirm their ga
 - [x] No new `isClosed` / `isArchived` identifiers outside tests.
 
 #### Manual Verification:
-- [ ] Visit a case in Pending Settlement and exercise each tab (Overview, Initial Visit, Clinical extractions, Procedures, Discharge, Documents, Billing). All Generate/Regenerate/Save/Edit/Upload/Delete affordances are disabled. Forms are read-only.
-- [ ] Move the case back to Active. All affordances re-enable.
+- [x] Visit a case in Pending Settlement and exercise each tab (Overview, Initial Visit, Clinical extractions, Procedures, Discharge, Documents, Billing). All Generate/Regenerate/Save/Edit/Upload/Delete affordances are disabled. Forms are read-only.
+- [x] Move the case back to Active. All affordances re-enable.
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation from the human that the manual testing was successful before proceeding to the next phase.
 
