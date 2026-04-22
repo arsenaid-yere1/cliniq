@@ -19,6 +19,7 @@ import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
 import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
+import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 
 // --- Helper: compute source data hash ---
 
@@ -789,25 +790,7 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
   }
 
   // Clean up previous document if re-finalizing
-  if (note.document_id) {
-    const { data: oldDoc } = await supabase
-      .from('documents')
-      .select('id, file_path')
-      .eq('id', note.document_id)
-      .is('deleted_at', null)
-      .single()
-
-    if (oldDoc) {
-      await supabase
-        .from('documents')
-        .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
-        .eq('id', oldDoc.id)
-
-      if (oldDoc.file_path) {
-        await supabase.storage.from('case-documents').remove([oldDoc.file_path])
-      }
-    }
-  }
+  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
 
   // Render PDF
   const { renderProcedureNotePdf } = await import('@/lib/pdf/render-procedure-note-pdf')
@@ -909,17 +892,28 @@ export async function unfinalizeProcedureNote(procedureId: string, caseId: strin
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  const { data: note } = await supabase
+    .from('procedure_notes')
+    .select('id, document_id')
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .eq('status', 'finalized')
+    .maybeSingle()
+
+  if (!note) return { error: 'No finalized note to unfinalize' }
+
+  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
+
   const { error } = await supabase
     .from('procedure_notes')
     .update({
       status: 'draft',
       finalized_by_user_id: null,
       finalized_at: null,
+      document_id: null,
       updated_by_user_id: user.id,
     })
-    .eq('procedure_id', procedureId)
-    .is('deleted_at', null)
-    .eq('status', 'finalized')
+    .eq('id', note.id)
 
   if (error) return { error: 'Failed to unfinalize note' }
 

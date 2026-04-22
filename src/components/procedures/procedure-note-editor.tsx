@@ -765,7 +765,7 @@ function FinalizedView({
               <AlertDialogHeader>
                 <AlertDialogTitle>Unfinalize Note</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will re-open the note for editing. The existing document record will be preserved. Continue?
+                  This will re-open the note for editing and remove the current finalized PDF from the document repository. Re-finalizing will generate a fresh PDF. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
+import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -572,25 +573,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
   // Clean up previous document if re-finalizing
-  if (note.document_id) {
-    const { data: oldDoc } = await supabase
-      .from('documents')
-      .select('id, file_path')
-      .eq('id', note.document_id)
-      .is('deleted_at', null)
-      .single()
-
-    if (oldDoc) {
-      await supabase
-        .from('documents')
-        .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
-        .eq('id', oldDoc.id)
-
-      if (oldDoc.file_path) {
-        await supabase.storage.from('case-documents').remove([oldDoc.file_path])
-      }
-    }
-  }
+  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
 
   // Render PDF
   const { renderInitialVisitPdf } = await import('@/lib/pdf/render-initial-visit-pdf')
@@ -660,18 +643,29 @@ export async function unfinalizeInitialVisitNote(caseId: string, visitType: Note
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  const { data: note } = await supabase
+    .from('initial_visit_notes')
+    .select('id, document_id')
+    .eq('case_id', caseId)
+    .eq('visit_type', visitType)
+    .is('deleted_at', null)
+    .eq('status', 'finalized')
+    .maybeSingle()
+
+  if (!note) return { error: 'No finalized note to unfinalize' }
+
+  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
+
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
       status: 'draft',
       finalized_by_user_id: null,
       finalized_at: null,
+      document_id: null,
       updated_by_user_id: user.id,
     })
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .eq('status', 'finalized')
+    .eq('id', note.id)
 
   if (error) return { error: 'Failed to unfinalize note' }
 
