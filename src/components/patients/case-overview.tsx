@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2 } from 'lucide-react'
 import { StatusChangeDropdown } from '@/components/patients/status-change-dropdown'
-import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
+import { LOCKED_STATUSES, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
 import { generateLienAgreement } from '@/actions/lien'
 import { generateProcedureConsent } from '@/actions/procedure-consents'
@@ -157,7 +157,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
           {isLocked && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
               <Lock className="h-4 w-4 shrink-0" />
-              This case is {caseData.case_status === 'archived' ? 'archived' : 'closed'}. No modifications are allowed until it is reopened.
+              This case is locked ({CASE_STATUS_CONFIG[caseData.case_status as CaseStatus].label}). Move it back to Active to make changes.
             </div>
           )}
           <div className="flex gap-3 flex-wrap">

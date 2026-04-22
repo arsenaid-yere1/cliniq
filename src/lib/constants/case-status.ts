@@ -21,4 +21,4 @@ export const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   archived:           ['closed'],
 }
 
-export const LOCKED_STATUSES: CaseStatus[] = ['closed', 'archived']
+export const LOCKED_STATUSES: CaseStatus[] = ['pending_settlement', 'closed', 'archived']

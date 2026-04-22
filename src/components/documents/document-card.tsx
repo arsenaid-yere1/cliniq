@@ -126,10 +126,11 @@ interface DocumentCardProps {
     uploaded_by: { full_name: string } | null
   }
   patientLastName: string | null
+  isLocked?: boolean
   onRemoved?: () => void
 }
 
-export function DocumentCard({ document, patientLastName, onRemoved }: DocumentCardProps) {
+export function DocumentCard({ document, patientLastName, isLocked = false, onRemoved }: DocumentCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const [isRemoving, setIsRemoving] = useState(false)
@@ -206,13 +207,14 @@ export function DocumentCard({ document, patientLastName, onRemoved }: DocumentC
             <Button
               variant="ghost"
               size="sm"
+              disabled={isLocked}
               onClick={handleDownload}
             >
               Download
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                <Button variant="ghost" size="sm" disabled={isLocked} className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>

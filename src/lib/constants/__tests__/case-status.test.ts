@@ -78,14 +78,14 @@ describe('CASE_STATUS_TRANSITIONS', () => {
 })
 
 describe('LOCKED_STATUSES', () => {
-  it('includes closed and archived', () => {
+  it('includes pending_settlement, closed, and archived', () => {
+    expect(LOCKED_STATUSES).toContain('pending_settlement')
     expect(LOCKED_STATUSES).toContain('closed')
     expect(LOCKED_STATUSES).toContain('archived')
   })
 
-  it('does not include active statuses', () => {
+  it('does not include editable statuses', () => {
     expect(LOCKED_STATUSES).not.toContain('intake')
     expect(LOCKED_STATUSES).not.toContain('active')
-    expect(LOCKED_STATUSES).not.toContain('pending_settlement')
   })
 })

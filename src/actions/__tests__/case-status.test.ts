@@ -44,7 +44,7 @@ describe('assertCaseNotClosed', () => {
       cases: { data: { case_status: 'closed' }, error: null },
     })
     const result = await assertCaseNotClosed(mockSupabase as never, TEST_CASE_ID)
-    expect(result.error).toContain('closed')
+    expect(result.error).toContain('locked')
   })
 
   it('returns error for an archived case', async () => {
@@ -52,7 +52,16 @@ describe('assertCaseNotClosed', () => {
       cases: { data: { case_status: 'archived' }, error: null },
     })
     const result = await assertCaseNotClosed(mockSupabase as never, TEST_CASE_ID)
-    expect(result.error).toContain('closed')
+    expect(result.error).toContain('locked')
+  })
+
+  it('returns error for a pending_settlement case', async () => {
+    mockTableResults(mockSupabase, {
+      cases: { data: { case_status: 'pending_settlement' }, error: null },
+    })
+    const result = await assertCaseNotClosed(mockSupabase as never, TEST_CASE_ID)
+    expect(result.error).toContain('locked')
+    expect(result.error).toContain('Pending Settlement')
   })
 
   it('returns no error for intake case', async () => {

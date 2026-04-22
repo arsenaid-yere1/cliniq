@@ -169,7 +169,7 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
       ) : (
         <div className="grid gap-3">
           {filtered.map((doc) => (
-            <DocumentCard key={doc.id} document={doc} patientLastName={patientLastName} onRemoved={refreshDocuments} />
+            <DocumentCard key={doc.id} document={doc} patientLastName={patientLastName} isLocked={isLocked} onRemoved={refreshDocuments} />
           ))}
         </div>
       )}

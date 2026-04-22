@@ -18,7 +18,8 @@ export async function assertCaseNotClosed(
     .single()
 
   if (data?.case_status && LOCKED_STATUSES.includes(data.case_status as CaseStatus)) {
-    return { error: 'This case is closed. No modifications are allowed until it is reopened.' }
+    const label = CASE_STATUS_CONFIG[data.case_status as CaseStatus].label
+    return { error: `This case is locked (${label}). Move it back to Active to make changes.` }
   }
   return { error: null }
 }
