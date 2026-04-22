@@ -103,43 +103,43 @@ describe('updateCaseStatus', () => {
     expect(result.error).toContain('Cannot change status')
   })
 
-  it('requires finalized discharge for pending_settlement transition', async () => {
+  it('requires medical invoice for pending_settlement transition', async () => {
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'cases') {
         return createMockQueryBuilder({ data: { case_status: 'active' }, error: null })
       }
-      if (table === 'discharge_notes') {
+      if (table === 'invoices') {
         return createMockQueryBuilder({ data: null, error: null })
       }
       return createMockQueryBuilder()
     })
 
     const result = await updateCaseStatus(TEST_CASE_ID, 'pending_settlement')
-    expect(result.error).toContain('finalized discharge')
+    expect(result.error).toContain('medical invoice')
   })
 
-  it('requires finalized discharge for closed transition from active', async () => {
+  it('requires medical invoice for closed transition from active', async () => {
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'cases') {
         return createMockQueryBuilder({ data: { case_status: 'active' }, error: null })
       }
-      if (table === 'discharge_notes') {
+      if (table === 'invoices') {
         return createMockQueryBuilder({ data: null, error: null })
       }
       return createMockQueryBuilder()
     })
 
     const result = await updateCaseStatus(TEST_CASE_ID, 'closed')
-    expect(result.error).toContain('finalized discharge')
+    expect(result.error).toContain('medical invoice')
   })
 
-  it('succeeds on valid transition with discharge present', async () => {
+  it('succeeds on valid transition with medical invoice present', async () => {
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'cases') {
         return createMockQueryBuilder({ data: { case_status: 'active' }, error: null })
       }
-      if (table === 'discharge_notes') {
-        return createMockQueryBuilder({ data: { id: 'dn-1' }, error: null })
+      if (table === 'invoices') {
+        return createMockQueryBuilder({ data: { id: 'inv-1' }, error: null })
       }
       return createMockQueryBuilder({ data: null, error: null })
     })
@@ -148,7 +148,7 @@ describe('updateCaseStatus', () => {
     expect(result).toEqual({ data: { success: true } })
   })
 
-  it('succeeds for intake → active (no discharge required)', async () => {
+  it('succeeds for intake → active (no invoice required)', async () => {
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'cases') {
         return createMockQueryBuilder({ data: { case_status: 'intake' }, error: null })
@@ -215,18 +215,18 @@ describe('closeCase / reopenCase wrappers', () => {
   })
 
   it('closeCase delegates to updateCaseStatus with "closed"', async () => {
-    // intake → closed requires discharge, proving it delegates correctly
+    // intake → closed requires medical invoice, proving it delegates correctly
     mockSupabase.from.mockImplementation((table: string) => {
       if (table === 'cases') {
         return createMockQueryBuilder({ data: { case_status: 'intake' }, error: null })
       }
-      if (table === 'discharge_notes') {
+      if (table === 'invoices') {
         return createMockQueryBuilder({ data: null, error: null })
       }
       return createMockQueryBuilder()
     })
     const result = await closeCase(TEST_CASE_ID)
-    expect(result.error).toContain('finalized discharge')
+    expect(result.error).toContain('medical invoice')
   })
 
   it('reopenCase delegates to updateCaseStatus with "active"', async () => {

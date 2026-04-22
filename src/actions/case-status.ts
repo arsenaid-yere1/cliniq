@@ -52,18 +52,18 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
     return { error: `Cannot change status from ${CASE_STATUS_CONFIG[currentStatus].label} to ${CASE_STATUS_CONFIG[newStatus].label}` }
   }
 
-  // Prerequisites: finalized discharge required for pending_settlement and closed
+  // Prerequisites: medical (visit) invoice required for pending_settlement and closed
   if (newStatus === 'pending_settlement' || newStatus === 'closed') {
-    const { data: dischargeNote } = await supabase
-      .from('discharge_notes')
+    const { data: medicalInvoice } = await supabase
+      .from('invoices')
       .select('id')
       .eq('case_id', caseId)
-      .eq('status', 'finalized')
+      .eq('invoice_type', 'visit')
       .is('deleted_at', null)
       .maybeSingle()
 
-    if (!dischargeNote) {
-      return { error: 'A finalized discharge summary is required before changing to this status.' }
+    if (!medicalInvoice) {
+      return { error: 'A medical invoice is required before changing to this status.' }
     }
   }
 
