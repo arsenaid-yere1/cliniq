@@ -75,6 +75,7 @@ interface BillingPageClientProps {
   invoices: Invoice[]
   summary: BillingSummary | null
   invoiceFormData: InvoiceFormData | null
+  patientLastName: string | null
 }
 
 export function BillingPageClient({
@@ -82,6 +83,7 @@ export function BillingPageClient({
   invoices,
   summary,
   invoiceFormData,
+  patientLastName,
 }: BillingPageClientProps) {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
 
@@ -92,6 +94,7 @@ export function BillingPageClient({
       <BillingTable
         invoices={invoices}
         caseId={caseId}
+        patientLastName={patientLastName}
         onCreateClick={() => setIsCreateDialogOpen(true)}
       />
       {invoiceFormData && (
