@@ -630,6 +630,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
   if (updateError) return { error: 'Failed to finalize note' }
 
   revalidatePath(`/patients/${caseId}`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 
@@ -670,6 +671,7 @@ export async function unfinalizeInitialVisitNote(caseId: string, visitType: Note
   if (error) return { error: 'Failed to unfinalize note' }
 
   revalidatePath(`/patients/${caseId}`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 

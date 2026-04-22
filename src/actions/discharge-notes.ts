@@ -961,6 +961,7 @@ export async function finalizeDischargeNote(caseId: string) {
   if (updateError) return { error: 'Failed to finalize note' }
 
   revalidatePath(`/patients/${caseId}/discharge`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 
@@ -1000,6 +1001,7 @@ export async function unfinalizeDischargeNote(caseId: string) {
   if (error) return { error: 'Failed to unfinalize note' }
 
   revalidatePath(`/patients/${caseId}/discharge`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 

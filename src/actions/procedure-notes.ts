@@ -849,6 +849,7 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
   if (updateError) return { error: 'Failed to finalize note' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 
@@ -918,6 +919,7 @@ export async function unfinalizeProcedureNote(procedureId: string, caseId: strin
   if (error) return { error: 'Failed to unfinalize note' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
+  revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
 
