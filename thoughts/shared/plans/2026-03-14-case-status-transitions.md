@@ -10,7 +10,7 @@ Implement the full case status lifecycle for ClinIQ: transition validation, unif
 
 **Code**: Only 3 transitions implemented:
 - `new → intake` (case creation)
-- `any → closed` (closeCase, requires finalized discharge)
+- `any → closed` (closeCase, requires medical invoice — originally required finalized discharge; swapped 2026-04-22)
 - `closed → active` (reopenCase)
 
 **Problems**:
@@ -231,18 +231,19 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
     return { error: `Cannot change status from ${CASE_STATUS_CONFIG[currentStatus].label} to ${CASE_STATUS_CONFIG[newStatus].label}` }
   }
 
-  // Prerequisites: finalized discharge required for pending_settlement and closed
+  // Prerequisites: medical (visit) invoice required for pending_settlement and closed
+  // (Originally required finalized discharge note; swapped 2026-04-22.)
   if (newStatus === 'pending_settlement' || newStatus === 'closed') {
-    const { data: dischargeNote } = await supabase
-      .from('discharge_notes')
+    const { data: medicalInvoice } = await supabase
+      .from('invoices')
       .select('id')
       .eq('case_id', caseId)
-      .eq('status', 'finalized')
+      .eq('invoice_type', 'visit')
       .is('deleted_at', null)
       .maybeSingle()
 
-    if (!dischargeNote) {
-      return { error: 'A finalized discharge summary is required before changing to this status.' }
+    if (!medicalInvoice) {
+      return { error: 'A medical invoice is required before changing to this status.' }
     }
   }
 
@@ -302,7 +303,7 @@ export async function reopenCase(caseId: string) {
 #### Manual Verification:
 - [x] Closing a case still works via existing UI (uses thin wrapper)
 - [x] Reopening a case still works
-- [x] Closing without a finalized discharge note shows error
+- [x] Closing without a medical invoice (`invoice_type='visit'`) shows error
 - [x] Timeline shows status change entries
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 3.
@@ -517,7 +518,7 @@ The 21 files to update:
 - [x] Dropdown shows only valid transitions (e.g., intake shows Active and Closed)
 - [x] Clicking a transition shows confirmation dialog
 - [x] Confirming changes the status and shows success toast
-- [x] Invalid transitions (e.g., closing without discharge) show error toast
+- [x] Invalid transitions (e.g., closing without a medical invoice) show error toast
 - [x] Closed/archived cases show locked banner and disable quick actions + edit
 - [x] All extraction forms, editors, and tables properly disable on closed AND archived cases
 
@@ -697,8 +698,8 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
 ### Manual Testing Steps:
 1. Create a new case → verify status is `intake`
 2. Upload a document → verify auto-advance to `active`
-3. Use dropdown to change to `pending_settlement` → verify error (no discharge note)
-4. Create and finalize a discharge note
+3. Use dropdown to change to `pending_settlement` → verify error (no medical invoice)
+4. Create an invoice with `invoice_type='visit'` for the case
 5. Change to `pending_settlement` → verify success
 6. Change to `closed` → verify success, case_close_date set
 7. Change to `archived` → verify success

@@ -206,10 +206,10 @@ Test `assertCaseNotClosed`, `updateCaseStatus`, `autoAdvanceFromIntake`, `closeC
 - Returns error when case is not found
 - Returns error for same-status transition (e.g., `active` → `active`)
 - Returns error for disallowed transition (e.g., `intake` → `pending_settlement`)
-- Returns error when transitioning to `pending_settlement` without finalized discharge note
-- Returns error when transitioning to `closed` without finalized discharge note
+- Returns error when transitioning to `pending_settlement` without a medical invoice (`invoice_type='visit'`)
+- Returns error when transitioning to `closed` without a medical invoice (`invoice_type='visit'`)
 - Returns `{ data: { success: true } }` for valid `intake` → `active` transition
-- Returns `{ data: { success: true } }` for valid `active` → `closed` with finalized discharge
+- Returns `{ data: { success: true } }` for valid `active` → `closed` with medical invoice present
 - Sets `case_close_date` when transitioning to `closed`
 - Clears `case_close_date` when transitioning from `closed` to `active`
 - Inserts case_status_history record on success
