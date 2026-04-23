@@ -803,7 +803,7 @@ export async function generateDischargeNote(
       patient_education: data.patient_education,
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
-      ai_model: 'claude-opus-4-7',
+      ai_model: 'claude-opus-4-6',
       raw_ai_response: wrappedRawResponse,
       status: 'draft',
       source_data_hash: sourceHash,

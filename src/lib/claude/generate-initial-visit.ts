@@ -584,7 +584,7 @@ export async function generateInitialVisitFromData(
   }
 
   return callClaudeTool<InitialVisitNoteResult>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: systemPrompt,
     tools: [INITIAL_VISIT_TOOL],
@@ -648,7 +648,7 @@ export async function regenerateSection(
   }
 
   const result = await callClaudeTool<{ content: string }>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 4096,
     system: `${systemPrompt}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],

@@ -495,7 +495,7 @@ export async function generateDischargeNoteFromData(
   }
 
   return callClaudeTool<DischargeNoteResult>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [DISCHARGE_NOTE_TOOL],
@@ -554,7 +554,7 @@ export async function regenerateDischargeNoteSection(
   }
 
   const result = await callClaudeTool<{ content: string }>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 4096,
     system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],

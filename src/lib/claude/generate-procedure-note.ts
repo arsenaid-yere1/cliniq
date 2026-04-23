@@ -719,7 +719,7 @@ export async function generateProcedureNoteFromData(
   }
 
   return callClaudeTool<ProcedureNoteResult>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [PROCEDURE_NOTE_TOOL],
@@ -778,7 +778,7 @@ export async function regenerateProcedureNoteSection(
   }
 
   const result = await callClaudeTool<{ content: string }>({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-6',
     maxTokens: 4096,
     system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],
