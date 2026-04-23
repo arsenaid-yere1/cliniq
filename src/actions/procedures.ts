@@ -6,6 +6,7 @@ import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
 import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
+import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -226,8 +227,7 @@ export async function getCaseDiagnoses(caseId: string) {
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
     ?? null
 
-  // Parse ICD-10 codes from the chosen IVN diagnoses text.
-  // Format: "• M54.5 — Low back pain" or "M54.5 — Low back pain" per line
+  // Parse ICD-10 codes from the chosen IVN diagnoses text via shared helper.
   type SuggestedDiagnosis = {
     icd10_code: string | null
     description: string
@@ -235,22 +235,7 @@ export async function getCaseDiagnoses(caseId: string) {
     exam_support?: 'objective' | 'subjective_only' | 'none' | null
     source_quote?: string | null
   }
-  const ivnDiagnoses: SuggestedDiagnosis[] = []
-  if (preferredIvn?.diagnoses) {
-    const lines = preferredIvn.diagnoses.split('\n')
-    for (const line of lines) {
-      // Match patterns like "• M54.5 — Description" or "M54.5 — Description" or "M54.5 - Description"
-      const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
-      if (match) {
-        const v = validateIcd10Code(match[1])
-        if (!v.ok && v.reason === 'structure') continue
-        ivnDiagnoses.push({
-          icd10_code: normalizeIcd10Code(match[1]),
-          description: match[2].trim(),
-        })
-      }
-    }
-  }
+  const ivnDiagnoses: SuggestedDiagnosis[] = parseIvnDiagnoses(preferredIvn?.diagnoses)
 
   // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code)
   const seen = new Set(pmDiagnoses.map((d) => d.icd10_code?.toUpperCase()))

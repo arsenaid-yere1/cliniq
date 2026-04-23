@@ -11,6 +11,7 @@ import {
 import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service-catalog'
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
+import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 
 // Count distinct injection sites in a free-text string.
 // Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
@@ -157,7 +158,6 @@ export async function getInvoiceFormData(caseId: string) {
   if (procedureWithDiagnoses) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
   } else if (!dischargeNoteResult.data) {
-    // Same parsing approach as getCaseDiagnoses() in src/actions/procedures.ts.
     // Prefer pain_evaluation_visit (imaging-confirmed codes) over initial_visit (clinical impression).
     const visitNotesForDx = (initialVisitNotesResult.data ?? []) as Array<{
       visit_type: string
@@ -167,14 +167,7 @@ export async function getInvoiceFormData(caseId: string) {
       visitNotesForDx.find((r) => r.visit_type === 'pain_evaluation_visit' && r.diagnoses)
       ?? visitNotesForDx.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
       ?? null
-    if (preferredIvn?.diagnoses) {
-      for (const line of preferredIvn.diagnoses.split('\n')) {
-        const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
-        if (match) {
-          diagnoses.push({ icd10_code: match[1].trim(), description: match[2].trim() })
-        }
-      }
-    }
+    diagnoses = parseIvnDiagnoses(preferredIvn?.diagnoses)
   }
 
   // Derive indication: use formatReasonForVisit() — same medical-legal etiology phrase
