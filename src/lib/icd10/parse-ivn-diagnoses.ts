@@ -12,7 +12,7 @@ export function parseIvnDiagnoses(text: string | null | undefined): ParsedIvnDia
   if (!text) return []
   const out: ParsedIvnDiagnosis[] = []
   for (const line of text.split('\n')) {
-    const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,2})\s*[—–\-]\s*(.+)$/i)
+    const match = line.match(/^[•\-\d.]*\s*([A-Z]\d{1,2}\.?\d{0,4}[A-Z]{0,4})\s*[—–\-]\s*(.+)$/i)
     if (!match) continue
     const v = validateIcd10Code(match[1])
     if (!v.ok && v.reason === 'structure') continue

@@ -237,11 +237,27 @@ export async function getCaseDiagnoses(caseId: string) {
   }
   const ivnDiagnoses: SuggestedDiagnosis[] = parseIvnDiagnoses(preferredIvn?.diagnoses)
 
-  // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code)
-  const seen = new Set(pmDiagnoses.map((d) => d.icd10_code?.toUpperCase()))
+  // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code).
+  // When a code appears in BOTH PM and IVN, strip the PM evidence tags so the dialog's
+  // default-init treats it as clinician-confirmed (pre-checked) rather than gating on
+  // AI-extracted imaging/exam support. IVN is the provider-written source of truth.
+  const ivnCodeSet = new Set(
+    ivnDiagnoses.map((d) => d.icd10_code?.toUpperCase()).filter((c): c is string => !!c),
+  )
+  const pmMerged: SuggestedDiagnosis[] = pmDiagnoses.map((d) => {
+    if (d.icd10_code && ivnCodeSet.has(d.icd10_code.toUpperCase())) {
+      return {
+        icd10_code: d.icd10_code,
+        description: d.description,
+        source_quote: d.source_quote,
+      }
+    }
+    return d
+  })
+  const pmCodeSet = new Set(pmDiagnoses.map((d) => d.icd10_code?.toUpperCase()))
   const merged: SuggestedDiagnosis[] = [
-    ...pmDiagnoses,
-    ...ivnDiagnoses.filter((d) => d.icd10_code && !seen.has(d.icd10_code.toUpperCase())),
+    ...pmMerged,
+    ...ivnDiagnoses.filter((d) => d.icd10_code && !pmCodeSet.has(d.icd10_code.toUpperCase())),
   ]
 
   return { data: merged }
