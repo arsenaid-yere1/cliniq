@@ -20,7 +20,7 @@ export interface CallClaudeToolOptions<TOutput> {
   parse: (raw: Record<string, unknown>) =>
     | { success: true; data: TOutput }
     | { success: false; error: z.ZodError }
-  _client?: { messages: { create: Anthropic['messages']['create'] } }
+  _client?: { messages: { stream: Anthropic['messages']['stream'] } }
 }
 
 export interface CallClaudeToolSuccess<TOutput> {
@@ -57,15 +57,17 @@ export async function callClaudeTool<TOutput>(
 
     while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
-        apiResponse = await client.messages.create({
-          model: opts.model,
-          max_tokens: opts.maxTokens,
-          ...(opts.thinking ? { thinking: opts.thinking } : {}),
-          system: opts.system,
-          tools: opts.tools,
-          tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
-          messages: opts.messages,
-        })
+        apiResponse = await client.messages
+          .stream({
+            model: opts.model,
+            max_tokens: opts.maxTokens,
+            ...(opts.thinking ? { thinking: opts.thinking } : {}),
+            system: opts.system,
+            tools: opts.tools,
+            tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
+            messages: opts.messages,
+          })
+          .finalMessage()
         break
       } catch (err) {
         lastApiError = err
