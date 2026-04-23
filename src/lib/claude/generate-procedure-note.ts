@@ -705,9 +705,16 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
   },
 }
 
+/**
+ * Total number of top-level keys in the PROCEDURE_NOTE_TOOL input_schema.
+ * Used by callers to seed sections_total when starting a generation.
+ */
+export const PROCEDURE_NOTE_SECTIONS_TOTAL = 20
+
 export async function generateProcedureNoteFromData(
   inputData: ProcedureNoteInputData,
   toneHint?: string | null,
+  onProgress?: (completedKeys: string[]) => void | Promise<void>,
 ): Promise<{
   data?: ProcedureNoteResult
   rawResponse?: unknown
@@ -731,6 +738,7 @@ export async function generateProcedureNoteFromData(
         ? { success: true, data: validated.data }
         : { success: false, error: validated.error }
     },
+    onProgress,
   })
 }
 

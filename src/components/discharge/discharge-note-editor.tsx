@@ -96,6 +96,8 @@ interface NoteRow {
   spo2_percent: number | null
   pain_score_min: number | null
   pain_score_max: number | null
+  sections_done: number | null
+  sections_total: number | null
 }
 
 interface ClinicSettings {
@@ -233,7 +235,16 @@ export function DischargeNoteEditor({
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={optimisticStartedAt} />
+        <GeneratingProgress
+          startedAt={optimisticStartedAt}
+          noteId={note?.id}
+          realtimeTable="discharge_notes"
+          initialProgress={
+            note && typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {dischargeNoteSections.map((section) => (
             <div key={section} className="space-y-2">
@@ -286,7 +297,16 @@ export function DischargeNoteEditor({
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={note.updated_at ?? null} />
+        <GeneratingProgress
+          startedAt={note.updated_at ?? null}
+          noteId={note.id}
+          realtimeTable="discharge_notes"
+          initialProgress={
+            typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {dischargeNoteSections.map((section) => (
             <div key={section} className="space-y-2">

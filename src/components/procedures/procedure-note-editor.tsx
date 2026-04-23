@@ -87,6 +87,8 @@ interface NoteRow {
   updated_at: string | null
   plan_alignment_status: string | null
   plan_deviation_acknowledged_at: string | null
+  sections_done: number | null
+  sections_total: number | null
 }
 
 interface ClinicSettings {
@@ -228,7 +230,16 @@ export function ProcedureNoteEditor({
           <h1 className="text-2xl font-bold">Procedure Note</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={optimisticStartedAt} />
+        <GeneratingProgress
+          startedAt={optimisticStartedAt}
+          noteId={note?.id}
+          realtimeTable="procedure_notes"
+          initialProgress={
+            note && typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {procedureNoteSections.map((section) => (
             <div key={section} className="space-y-2">
@@ -278,7 +289,16 @@ export function ProcedureNoteEditor({
           <h1 className="text-2xl font-bold">Procedure Note</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={note.updated_at ?? null} />
+        <GeneratingProgress
+          startedAt={note.updated_at ?? null}
+          noteId={note.id}
+          realtimeTable="procedure_notes"
+          initialProgress={
+            typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {procedureNoteSections.map((section) => (
             <div key={section} className="space-y-2">

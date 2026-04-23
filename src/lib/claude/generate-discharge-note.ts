@@ -481,9 +481,16 @@ const DISCHARGE_NOTE_TOOL: Anthropic.Tool = {
   },
 }
 
+/**
+ * Total number of top-level keys in the DISCHARGE_NOTE_TOOL input_schema.
+ * Used by callers to seed sections_total when starting a generation.
+ */
+export const DISCHARGE_NOTE_SECTIONS_TOTAL = 12
+
 export async function generateDischargeNoteFromData(
   inputData: DischargeNoteInputData,
   toneHint?: string | null,
+  onProgress?: (completedKeys: string[]) => void | Promise<void>,
 ): Promise<{
   data?: DischargeNoteResult
   rawResponse?: unknown
@@ -507,6 +514,7 @@ export async function generateDischargeNoteFromData(
         ? { success: true, data: validated.data }
         : { success: false, error: validated.error }
     },
+    onProgress,
   })
 }
 

@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
   generateProcedureNoteFromData,
+  PROCEDURE_NOTE_SECTIONS_TOTAL,
   regenerateProcedureNoteSection as regenerateSectionAI,
   type ProcedureNoteInputData,
 } from '@/lib/claude/generate-procedure-note'
@@ -576,6 +577,8 @@ export async function generateProcedureNote(
         generation_attempts: 1,
         generation_error: null,
         source_data_hash: sourceHash,
+        sections_done: 0,
+        sections_total: PROCEDURE_NOTE_SECTIONS_TOTAL,
         subjective: null,
         past_medical_history: null,
         allergies: null,
@@ -624,6 +627,8 @@ export async function generateProcedureNote(
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
+        sections_done: 0,
+        sections_total: PROCEDURE_NOTE_SECTIONS_TOTAL,
         tone_hint: effectiveToneHint,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
@@ -644,8 +649,29 @@ export async function generateProcedureNote(
     recordId = record.id
   }
 
+  // Throttled progress writer — coalesce Anthropic SDK inputJson events to
+  // at most one DB UPDATE per 500ms so realtime subscribers get visible
+  // ticks without thrashing the table.
+  let lastProgressWriteAt = 0
+  let lastWrittenCount = 0
+  const writeProgress = async (count: number) => {
+    if (count <= lastWrittenCount) return
+    const now = Date.now()
+    if (now - lastProgressWriteAt < 500) return
+    lastProgressWriteAt = now
+    lastWrittenCount = count
+    await supabase
+      .from('procedure_notes')
+      .update({ sections_done: count })
+      .eq('id', recordId)
+  }
+
   // Call Claude
-  const result = await generateProcedureNoteFromData(inputData, effectiveToneHint)
+  const result = await generateProcedureNoteFromData(
+    inputData,
+    effectiveToneHint,
+    (completedKeys) => writeProgress(completedKeys.length),
+  )
 
   if (result.error || !result.data) {
     await supabase
@@ -691,6 +717,7 @@ export async function generateProcedureNote(
       ai_model: 'claude-opus-4-6',
       raw_ai_response: result.rawResponse || null,
       status: 'draft',
+      sections_done: PROCEDURE_NOTE_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
       plan_alignment_status: inputData.planAlignment.status,
       // Reset any prior acknowledgement — this is a fresh draft that

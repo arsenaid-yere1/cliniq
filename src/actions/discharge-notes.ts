@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
   generateDischargeNoteFromData,
+  DISCHARGE_NOTE_SECTIONS_TOTAL,
   regenerateDischargeNoteSection as regenerateSectionAI,
   type DischargeNoteInputData,
 } from '@/lib/claude/generate-discharge-note'
@@ -654,6 +655,8 @@ export async function generateDischargeNote(
       status: 'generating',
       generation_attempts: 1,
       source_data_hash: sourceHash,
+      sections_done: 0,
+      sections_total: DISCHARGE_NOTE_SECTIONS_TOTAL,
       visit_date: visitDate,
       bp_systolic: preservedVitals?.bp_systolic ?? null,
       bp_diastolic: preservedVitals?.bp_diastolic ?? null,
@@ -682,8 +685,29 @@ export async function generateDischargeNote(
     return { error: 'Failed to create note record' }
   }
 
+  // Throttled progress writer — coalesce Anthropic SDK inputJson events to
+  // at most one DB UPDATE per 500ms so realtime subscribers get visible
+  // ticks without thrashing the table.
+  let lastProgressWriteAt = 0
+  let lastWrittenCount = 0
+  const writeProgress = async (count: number) => {
+    if (count <= lastWrittenCount) return
+    const now = Date.now()
+    if (now - lastProgressWriteAt < 500) return
+    lastProgressWriteAt = now
+    lastWrittenCount = count
+    await supabase
+      .from('discharge_notes')
+      .update({ sections_done: count })
+      .eq('id', record.id)
+  }
+
   // Call Claude
-  const result = await generateDischargeNoteFromData(inputData, effectiveToneHint)
+  const result = await generateDischargeNoteFromData(
+    inputData,
+    effectiveToneHint,
+    (completedKeys) => writeProgress(completedKeys.length),
+  )
 
   if (result.error || !result.data) {
     await supabase
@@ -806,6 +830,7 @@ export async function generateDischargeNote(
       ai_model: 'claude-opus-4-6',
       raw_ai_response: wrappedRawResponse,
       status: 'draft',
+      sections_done: DISCHARGE_NOTE_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
       discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
       discharge_pain_estimate_max: inputData.dischargePainEstimateMax,

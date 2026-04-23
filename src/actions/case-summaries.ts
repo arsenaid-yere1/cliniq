@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
-import { generateCaseSummaryFromData, type SummaryInputData } from '@/lib/claude/generate-summary'
+import { generateCaseSummaryFromData, CASE_SUMMARY_SECTIONS_TOTAL, type SummaryInputData } from '@/lib/claude/generate-summary'
 import { caseSummaryEditSchema, type CaseSummaryEditValues } from '@/lib/validations/case-summary'
 import { assertCaseNotClosed } from '@/actions/case-status'
 
@@ -140,6 +140,8 @@ export async function generateCaseSummary(caseId: string) {
       generation_status: 'processing',
       generation_attempts: 1,
       source_data_hash: sourceHash,
+      sections_done: 0,
+      sections_total: CASE_SUMMARY_SECTIONS_TOTAL,
       created_by_user_id: user.id,
       updated_by_user_id: user.id,
     })
@@ -151,8 +153,28 @@ export async function generateCaseSummary(caseId: string) {
     return { error: 'Failed to create summary record' }
   }
 
+  // Throttled progress writer — coalesce Anthropic SDK inputJson events to
+  // at most one DB UPDATE per 500ms so realtime subscribers get visible
+  // ticks without thrashing the table.
+  let lastProgressWriteAt = 0
+  let lastWrittenCount = 0
+  const writeProgress = async (count: number) => {
+    if (count <= lastWrittenCount) return
+    const now = Date.now()
+    if (now - lastProgressWriteAt < 500) return
+    lastProgressWriteAt = now
+    lastWrittenCount = count
+    await supabase
+      .from('case_summaries')
+      .update({ sections_done: count })
+      .eq('id', record.id)
+  }
+
   // Call Claude
-  const result = await generateCaseSummaryFromData(inputData)
+  const result = await generateCaseSummaryFromData(
+    inputData,
+    (completedKeys) => writeProgress(completedKeys.length),
+  )
 
   if (result.error || !result.data) {
     await supabase
@@ -186,6 +208,7 @@ export async function generateCaseSummary(caseId: string) {
       raw_ai_response: result.rawResponse || null,
       generation_status: 'completed',
       generated_at: new Date().toISOString(),
+      sections_done: CASE_SUMMARY_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
       updated_by_user_id: user.id,
     })

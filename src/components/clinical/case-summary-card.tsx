@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GeneratingProgress } from '@/components/clinical/generating-progress'
 import { generateCaseSummary, approveCaseSummary } from '@/actions/case-summaries'
 import { CaseSummaryEditDialog } from './case-summary-edit-dialog'
 import type {
@@ -60,6 +61,9 @@ interface CaseSummaryRow {
   provider_overrides: Partial<CaseSummaryEditValues> | Record<string, never>
   generation_status: string
   generation_error: string | null
+  updated_at: string | null
+  sections_done: number | null
+  sections_total: number | null
 }
 
 interface CaseSummaryCardProps {
@@ -138,6 +142,16 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
           <Badge variant="outline">Generating...</Badge>
         </CardHeader>
         <CardContent className="space-y-4">
+          <GeneratingProgress
+            startedAt={summary.updated_at ?? null}
+            noteId={summary.id}
+            realtimeTable="case_summaries"
+            initialProgress={
+              typeof summary.sections_total === 'number'
+                ? { done: summary.sections_done ?? 0, total: summary.sections_total }
+                : null
+            }
+          />
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-2/3" />

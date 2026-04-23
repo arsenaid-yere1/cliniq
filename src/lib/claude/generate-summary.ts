@@ -287,8 +287,15 @@ function normalizeNullStringsInArray<T extends Record<string, unknown>>(
   })
 }
 
+/**
+ * Total number of top-level keys in the SUMMARY_TOOL input_schema.
+ * Used by callers to seed sections_total when starting a generation.
+ */
+export const CASE_SUMMARY_SECTIONS_TOTAL = 7
+
 export async function generateCaseSummaryFromData(
   inputData: SummaryInputData,
+  onProgress?: (completedKeys: string[]) => void | Promise<void>,
 ): Promise<{
   data?: CaseSummaryResult
   rawResponse?: unknown
@@ -302,6 +309,7 @@ export async function generateCaseSummaryFromData(
     tools: [SUMMARY_TOOL],
     toolName: 'extract_case_summary',
     toolChoice: { type: 'auto' },
+    onProgress,
     messages: [
       {
         role: 'user',
