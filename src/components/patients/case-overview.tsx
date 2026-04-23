@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2 } from 'lucide-react'
+import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2, FilePlus } from 'lucide-react'
 import { StatusChangeDropdown } from '@/components/patients/status-change-dropdown'
 import { LOCKED_STATUSES, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
@@ -201,6 +201,14 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
               )}
               Generate Procedure Consent Form
             </Button>
+            {patient && (
+              <Button variant="outline" asChild>
+                <Link href={`/patients/new?patientId=${patient.id}`}>
+                  <FilePlus className="h-4 w-4 mr-2" />
+                  New Case for This Patient
+                </Link>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

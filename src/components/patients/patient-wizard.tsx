@@ -12,10 +12,19 @@ import { WizardStepDetails } from './wizard-step-details'
 import { WizardStepReview } from './wizard-step-review'
 import { Button } from '@/components/ui/button'
 
+export interface ExistingPatientSummary {
+  id: string
+  first_name: string
+  last_name: string
+  middle_name: string | null
+  date_of_birth: string
+  gender: string | null
+}
+
 const STEPS = [
-  { label: 'Patient Identity', component: WizardStepIdentity },
-  { label: 'Contact & Case Details', component: WizardStepDetails },
-  { label: 'Review & Confirm', component: WizardStepReview },
+  { label: 'Patient Identity' },
+  { label: 'Contact & Case Details' },
+  { label: 'Review & Confirm' },
 ]
 
 const STEP_FIELDS: (keyof CreatePatientCaseValues)[][] = [
@@ -24,19 +33,28 @@ const STEP_FIELDS: (keyof CreatePatientCaseValues)[][] = [
   [],
 ]
 
-export function PatientWizard() {
+function patientDefaults(existing?: ExistingPatientSummary) {
+  return {
+    first_name: existing?.first_name ?? '',
+    last_name: existing?.last_name ?? '',
+    middle_name: existing?.middle_name ?? '',
+    date_of_birth: existing?.date_of_birth ?? '',
+    gender: (existing?.gender as CreatePatientCaseValues['gender']) ?? undefined,
+  }
+}
+
+export function PatientWizard({ existingPatient }: { existingPatient?: ExistingPatientSummary } = {}) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [existingPatientId, setExistingPatientId] = useState<string | null>(
+    existingPatient?.id ?? null
+  )
 
   const form = useForm<CreatePatientCaseValues>({
     resolver: zodResolver(createPatientCaseSchema),
     defaultValues: {
-      first_name: '',
-      last_name: '',
-      middle_name: '',
-      date_of_birth: '',
-      gender: undefined,
+      ...patientDefaults(existingPatient),
       phone_primary: '',
       email: '',
       address_line1: '',
@@ -54,6 +72,8 @@ export function PatientWizard() {
     mode: 'onBlur',
   })
 
+  const identityLocked = existingPatientId !== null
+
   async function handleNext() {
     const fields = STEP_FIELDS[currentStep]
     const valid = await form.trigger(fields)
@@ -69,11 +89,28 @@ export function PatientWizard() {
     setCurrentStep(step)
   }
 
+  function handleUseExistingPatient(patient: {
+    id: string
+    first_name: string
+    last_name: string
+    date_of_birth: string
+  }) {
+    setExistingPatientId(patient.id)
+    form.setValue('first_name', patient.first_name)
+    form.setValue('last_name', patient.last_name)
+    form.setValue('date_of_birth', patient.date_of_birth)
+    setCurrentStep(1)
+  }
+
   async function handleSubmit() {
     const values = form.getValues()
     setIsSubmitting(true)
 
-    const result = await createPatientCase(values)
+    const result = await createPatientCase(
+      existingPatientId
+        ? { mode: 'existing_patient', patient_id: existingPatientId, ...values }
+        : { mode: 'new_patient', ...values }
+    )
 
     if ('error' in result && result.error) {
       toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
@@ -87,10 +124,19 @@ export function PatientWizard() {
     }
   }
 
-  const StepComponent = STEPS[currentStep].component
 
   return (
     <div className="max-w-2xl space-y-8">
+      {identityLocked && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <p className="font-medium">Creating case for existing patient</p>
+          <p className="text-muted-foreground">
+            {form.getValues('first_name')} {form.getValues('last_name')} — DOB{' '}
+            {form.getValues('date_of_birth')}
+          </p>
+        </div>
+      )}
+
       {/* Progress Bar */}
       <nav aria-label="Wizard progress">
         <ol className="flex items-center gap-2">
@@ -130,7 +176,15 @@ export function PatientWizard() {
 
       {/* Step Content */}
       <FormProvider {...form}>
-        <StepComponent goToStep={goToStep} />
+        {currentStep === 0 && (
+          <WizardStepIdentity
+            goToStep={goToStep}
+            identityLocked={identityLocked}
+            onUseExistingPatient={handleUseExistingPatient}
+          />
+        )}
+        {currentStep === 1 && <WizardStepDetails goToStep={goToStep} />}
+        {currentStep === 2 && <WizardStepReview goToStep={goToStep} />}
       </FormProvider>
 
       {/* Navigation */}

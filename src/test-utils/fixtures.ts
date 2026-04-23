@@ -14,9 +14,18 @@ export const validAttorneyData = {
 }
 
 export const validPatientCaseData = {
+  mode: 'new_patient' as const,
   first_name: 'John',
   last_name: 'Doe',
   date_of_birth: '1990-01-15',
+  attorney_id: TEST_ATTORNEY_ID,
+  assigned_provider_id: TEST_PROVIDER_ID,
+  lien_on_file: false,
+}
+
+export const validExistingPatientCaseData = {
+  mode: 'existing_patient' as const,
+  patient_id: TEST_PATIENT_ID,
   attorney_id: TEST_ATTORNEY_ID,
   assigned_provider_id: TEST_PROVIDER_ID,
   lien_on_file: false,

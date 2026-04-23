@@ -3,6 +3,8 @@ import {
   patientIdentitySchema,
   patientDetailsSchema,
   createPatientCaseSchema,
+  createCaseForExistingPatientSchema,
+  createPatientCaseInputSchema,
   editPatientSchema,
   editCaseSchema,
 } from '../patient'
@@ -248,6 +250,103 @@ describe('editCaseSchema', () => {
       attorney_id: validAttorneyId,
       assigned_provider_id: validProviderId,
       accident_type: 'auto',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('createCaseForExistingPatientSchema', () => {
+  const validAttorneyId = '550e8400-e29b-41d4-a716-446655440000'
+  const validProviderId = '660e8400-e29b-41d4-a716-446655440000'
+  const validPatientId = '770e8400-e29b-41d4-a716-446655440000'
+
+  it('accepts valid data', () => {
+    const result = createCaseForExistingPatientSchema.safeParse({
+      patient_id: validPatientId,
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects non-UUID patient_id', () => {
+    const result = createCaseForExistingPatientSchema.safeParse({
+      patient_id: 'not-a-uuid',
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects missing patient_id', () => {
+    const result = createCaseForExistingPatientSchema.safeParse({
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('createPatientCaseInputSchema', () => {
+  const validAttorneyId = '550e8400-e29b-41d4-a716-446655440000'
+  const validProviderId = '660e8400-e29b-41d4-a716-446655440000'
+  const validPatientId = '770e8400-e29b-41d4-a716-446655440000'
+
+  it('accepts new_patient variant', () => {
+    const result = createPatientCaseInputSchema.safeParse({
+      mode: 'new_patient',
+      first_name: 'John',
+      last_name: 'Doe',
+      date_of_birth: '1990-01-15',
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts existing_patient variant', () => {
+    const result = createPatientCaseInputSchema.safeParse({
+      mode: 'existing_patient',
+      patient_id: validPatientId,
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects missing mode discriminator', () => {
+    const result = createPatientCaseInputSchema.safeParse({
+      first_name: 'John',
+      last_name: 'Doe',
+      date_of_birth: '1990-01-15',
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects existing_patient without patient_id', () => {
+    const result = createPatientCaseInputSchema.safeParse({
+      mode: 'existing_patient',
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects new_patient without identity fields', () => {
+    const result = createPatientCaseInputSchema.safeParse({
+      mode: 'new_patient',
+      attorney_id: validAttorneyId,
+      assigned_provider_id: validProviderId,
+      lien_on_file: false,
     })
     expect(result.success).toBe(false)
   })

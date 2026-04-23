@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { createMockSupabase, createMockQueryBuilder, mockTableResults, type MockSupabaseClient } from '@/test-utils/supabase-mock'
-import { TEST_CASE_ID, TEST_PATIENT_ID, TEST_ATTORNEY_ID, TEST_PROVIDER_ID, TEST_USER_ID, validPatientCaseData } from '@/test-utils/fixtures'
+import { TEST_CASE_ID, TEST_PATIENT_ID, TEST_ATTORNEY_ID, TEST_PROVIDER_ID, validPatientCaseData, validExistingPatientCaseData } from '@/test-utils/fixtures'
 
 // ---- Mocks ----
 
@@ -20,6 +20,7 @@ import {
   checkDuplicatePatient,
   createPatientCase,
   getPatientCase,
+  getPatientForNewCase,
   listPatientCases,
   updatePatient,
   updateCase,
@@ -65,7 +66,12 @@ describe('createPatientCase', () => {
   })
 
   it('returns validation errors for missing required fields', async () => {
-    const result = await createPatientCase({ first_name: '', last_name: '', date_of_birth: '' } as never)
+    const result = await createPatientCase({ mode: 'new_patient', first_name: '', last_name: '', date_of_birth: '' } as never)
+    expect(result.error).toBeDefined()
+  })
+
+  it('returns validation error when mode is missing', async () => {
+    const result = await createPatientCase({ first_name: 'a', last_name: 'b', date_of_birth: '1990-01-15' } as never)
     expect(result.error).toBeDefined()
   })
 
@@ -116,6 +122,96 @@ describe('createPatientCase', () => {
 
     const result = await createPatientCase(validPatientCaseData as never)
     expect(result.error).toBe('case insert failed')
+  })
+
+  it('creates case for existing patient without inserting patient', async () => {
+    const caseRecord = { id: TEST_CASE_ID, patient_id: TEST_PATIENT_ID, case_number: 'PI-2026-0002' }
+    const patientsBuilder = createMockQueryBuilder({ data: { id: TEST_PATIENT_ID }, error: null })
+    const casesBuilder = createMockQueryBuilder({ data: caseRecord, error: null })
+
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'patients') return patientsBuilder
+      if (table === 'cases') return casesBuilder
+      if (table === 'case_status_history') return createMockQueryBuilder({ data: null, error: null })
+      return createMockQueryBuilder()
+    })
+
+    const result = await createPatientCase(validExistingPatientCaseData as never)
+    expect(result.data).toEqual(caseRecord)
+    // Existing-patient path must not INSERT into patients, only SELECT
+    expect(patientsBuilder.insert).not.toHaveBeenCalled()
+    expect(patientsBuilder.select).toHaveBeenCalled()
+  })
+
+  it('returns error when existing patient not found', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'patients') return createMockQueryBuilder({ data: null, error: null })
+      return createMockQueryBuilder()
+    })
+
+    const result = await createPatientCase(validExistingPatientCaseData as never)
+    expect(result.error).toBe('Patient not found')
+  })
+
+  it('returns error when existing patient lookup fails', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'patients') return createMockQueryBuilder({ data: null, error: { message: 'db error' } })
+      return createMockQueryBuilder()
+    })
+
+    const result = await createPatientCase(validExistingPatientCaseData as never)
+    expect(result.error).toBe('db error')
+  })
+
+  it('rejects existing_patient payload without patient_id', async () => {
+    const result = await createPatientCase({
+      mode: 'existing_patient',
+      attorney_id: TEST_ATTORNEY_ID,
+      assigned_provider_id: TEST_PROVIDER_ID,
+      lien_on_file: false,
+    } as never)
+    expect(result.error).toBeDefined()
+  })
+})
+
+describe('getPatientForNewCase', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('returns patient summary', async () => {
+    const patient = {
+      id: TEST_PATIENT_ID,
+      first_name: 'John',
+      last_name: 'Doe',
+      middle_name: null,
+      date_of_birth: '1990-01-15',
+      gender: null,
+    }
+    mockTableResults(mockSupabase, {
+      patients: { data: patient, error: null },
+    })
+
+    const result = await getPatientForNewCase(TEST_PATIENT_ID)
+    expect(result.data).toEqual(patient)
+  })
+
+  it('returns error when patient not found', async () => {
+    mockTableResults(mockSupabase, {
+      patients: { data: null, error: null },
+    })
+
+    const result = await getPatientForNewCase(TEST_PATIENT_ID)
+    expect(result.error).toBe('Patient not found')
+  })
+
+  it('returns error on db failure', async () => {
+    mockTableResults(mockSupabase, {
+      patients: { data: null, error: { message: 'timeout' } },
+    })
+
+    const result = await getPatientForNewCase(TEST_PATIENT_ID)
+    expect(result.error).toBe('timeout')
   })
 })
 

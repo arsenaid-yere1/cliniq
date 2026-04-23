@@ -35,8 +35,16 @@ interface DuplicatePatient {
   date_of_birth: string
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => void }) {
+interface WizardStepIdentityProps {
+  goToStep: (step: number) => void
+  identityLocked?: boolean
+  onUseExistingPatient?: (patient: DuplicatePatient) => void
+}
+
+export function WizardStepIdentity({
+  identityLocked = false,
+  onUseExistingPatient,
+}: WizardStepIdentityProps) {
   const form = useFormContext<CreatePatientCaseValues>()
   const [duplicates, setDuplicates] = useState<DuplicatePatient[]>([])
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
@@ -44,6 +52,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
   // This is called by the parent wizard's handleNext via form.trigger
   // We also expose a way to check duplicates after Step 1 validation
   async function onStepComplete() {
+    if (identityLocked) return
     const firstName = form.getValues('first_name')
     const lastName = form.getValues('last_name')
     const dob = form.getValues('date_of_birth')
@@ -59,12 +68,18 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
 
   // Trigger duplicate check on blur of the last required field
   function handleDobBlur() {
+    if (identityLocked) return
     const firstName = form.getValues('first_name')
     const lastName = form.getValues('last_name')
     const dob = form.getValues('date_of_birth')
     if (firstName && lastName && dob) {
       onStepComplete()
     }
+  }
+
+  function handleUseExisting(dup: DuplicatePatient) {
+    setShowDuplicateDialog(false)
+    onUseExistingPatient?.(dup)
   }
 
   return (
@@ -77,7 +92,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
             <FormItem>
               <FormLabel>First Name</FormLabel>
               <FormControl>
-                <Input {...field} />
+                <Input {...field} disabled={identityLocked} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -90,7 +105,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
             <FormItem>
               <FormLabel>Last Name</FormLabel>
               <FormControl>
-                <Input {...field} />
+                <Input {...field} disabled={identityLocked} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -105,7 +120,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
           <FormItem>
             <FormLabel>Middle Name (optional)</FormLabel>
             <FormControl>
-              <Input {...field} />
+              <Input {...field} disabled={identityLocked} />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -123,6 +138,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
                 <Input
                   type="date"
                   {...field}
+                  disabled={identityLocked}
                   onBlur={() => {
                     field.onBlur()
                     handleDobBlur()
@@ -136,6 +152,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
                     size="icon"
                     className={cn(!field.value && 'text-muted-foreground')}
                     type="button"
+                    disabled={identityLocked}
                   >
                     <CalendarIcon className="h-4 w-4" />
                   </Button>
@@ -169,7 +186,7 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
         render={({ field }) => (
           <FormItem>
             <FormLabel>Gender (optional)</FormLabel>
-            <Select onValueChange={field.onChange} value={field.value ?? ''}>
+            <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={identityLocked}>
               <FormControl>
                 <SelectTrigger>
                   <SelectValue placeholder="Select gender" />
@@ -198,13 +215,24 @@ export function WizardStepIdentity({ goToStep }: { goToStep: (step: number) => v
           </DialogHeader>
           <div className="space-y-2">
             {duplicates.map((dup) => (
-              <div key={dup.id} className="rounded-md border p-3">
-                <p className="font-medium">
-                  {dup.first_name} {dup.last_name}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  DOB: {dup.date_of_birth}
-                </p>
+              <div key={dup.id} className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <p className="font-medium">
+                    {dup.first_name} {dup.last_name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    DOB: {dup.date_of_birth}
+                  </p>
+                </div>
+                {onUseExistingPatient && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleUseExisting(dup)}
+                  >
+                    Use this patient
+                  </Button>
+                )}
               </div>
             ))}
           </div>

@@ -26,6 +26,15 @@ export const patientDetailsSchema = z.object({
 
 export const createPatientCaseSchema = patientIdentitySchema.merge(patientDetailsSchema)
 
+export const createCaseForExistingPatientSchema = patientDetailsSchema.extend({
+  patient_id: z.string().uuid('Invalid patient id'),
+})
+
+export const createPatientCaseInputSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('new_patient') }).merge(createPatientCaseSchema),
+  z.object({ mode: z.literal('existing_patient') }).merge(createCaseForExistingPatientSchema),
+])
+
 // --- Edit schemas (split by table) ---
 
 export const editPatientSchema = z.object({
@@ -55,5 +64,7 @@ export const editCaseSchema = z.object({
 export type PatientIdentityValues = z.infer<typeof patientIdentitySchema>
 export type PatientDetailsValues = z.infer<typeof patientDetailsSchema>
 export type CreatePatientCaseValues = z.infer<typeof createPatientCaseSchema>
+export type CreateCaseForExistingPatientValues = z.infer<typeof createCaseForExistingPatientSchema>
+export type CreatePatientCaseInput = z.infer<typeof createPatientCaseInputSchema>
 export type EditPatientValues = z.infer<typeof editPatientSchema>
 export type EditCaseValues = z.infer<typeof editCaseSchema>
