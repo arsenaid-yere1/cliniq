@@ -20,7 +20,7 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
 ): Promise<{ data: SummaryInputData | null; error: string | null }> {
-  const [caseRes, mriRes, chiroRes, pmRes, ptRes, orthoRes, ctScanRes] = await Promise.all([
+  const [caseRes, mriRes, chiroRes, pmRes, ptRes, orthoRes, ctScanRes, xRayRes] = await Promise.all([
     supabase
       .from('cases')
       .select('accident_type, accident_date, accident_description')
@@ -63,6 +63,12 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('x_ray_extractions')
+      .select('body_region, laterality, scan_date, procedure_description, view_count, views_description, reading_type, ordering_provider, reading_provider, reason_for_study, findings, impression_summary, provider_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -75,8 +81,17 @@ async function gatherSourceData(
   const ptExtractions = ptRes.data || []
   const orthoExtractions = orthoRes.data || []
   const ctScanExtractions = ctScanRes.data || []
+  const xRayExtractions = xRayRes.data || []
 
-  if (mriExtractions.length === 0 && chiroExtractions.length === 0 && pmExtractions.length === 0 && ptExtractions.length === 0 && orthoExtractions.length === 0 && ctScanExtractions.length === 0) {
+  if (
+    mriExtractions.length === 0 &&
+    chiroExtractions.length === 0 &&
+    pmExtractions.length === 0 &&
+    ptExtractions.length === 0 &&
+    orthoExtractions.length === 0 &&
+    ctScanExtractions.length === 0 &&
+    xRayExtractions.length === 0
+  ) {
     return { data: null, error: 'No approved extractions found. Approve at least one extraction first.' }
   }
 
@@ -89,6 +104,7 @@ async function gatherSourceData(
       ptExtractions,
       orthoExtractions,
       ctScanExtractions,
+      xRayExtractions,
     },
     error: null,
   }

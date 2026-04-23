@@ -249,6 +249,11 @@ export async function removeDocument(documentId: string) {
       .update({ deleted_at: now, updated_by_user_id: user.id })
       .eq('document_id', documentId)
       .is('deleted_at', null),
+    supabase
+      .from('x_ray_extractions')
+      .update({ deleted_at: now, updated_by_user_id: user.id })
+      .eq('document_id', documentId)
+      .is('deleted_at', null),
   ])
 
   revalidatePath(`/patients/${data.case_id}/documents`)

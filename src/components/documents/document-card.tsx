@@ -25,6 +25,7 @@ const docTypeLabels: Record<string, string> = {
   pt_report: 'PT Report',
   orthopedic_report: 'Orthopedic Report',
   ct_scan: 'CT Scan',
+  x_ray: 'X-Ray',
   generated: 'Generated',
   lien_agreement: 'Lien Agreement',
   other: 'Other',
@@ -37,6 +38,7 @@ const docTypeColors: Record<string, string> = {
   pt_report: 'bg-teal-100 text-teal-800 border-teal-200',
   orthopedic_report: 'bg-rose-100 text-rose-800 border-rose-200',
   ct_scan: 'bg-amber-100 text-amber-800 border-amber-200',
+  x_ray: 'bg-sky-100 text-sky-800 border-sky-200',
   generated: 'bg-green-100 text-green-800 border-green-200',
   lien_agreement: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   other: 'bg-gray-100 text-gray-800 border-gray-200',
@@ -59,6 +61,7 @@ const docTypeFilenameLabels: Record<string, string> = {
   pt_report: 'PTReport',
   orthopedic_report: 'OrthopedicReport',
   ct_scan: 'CTScan',
+  x_ray: 'XRay',
   lien_agreement: 'LienAgreement',
   procedure_consent: 'ProcedureConsent',
 }

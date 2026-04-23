@@ -5,12 +5,14 @@ import { listPainManagementExtractions } from '@/actions/pain-management-extract
 import { listPtExtractions } from '@/actions/pt-extractions'
 import { listOrthopedicExtractions } from '@/actions/orthopedic-extractions'
 import { listCtScanExtractions } from '@/actions/ct-scan-extractions'
+import { listXRayExtractions } from '@/actions/x-ray-extractions'
 import { MriExtractionList } from '@/components/clinical/mri-extraction-list'
 import { ChiroExtractionList } from '@/components/clinical/chiro-extraction-list'
 import { PmExtractionList } from '@/components/clinical/pm-extraction-list'
 import { PtExtractionList } from '@/components/clinical/pt-extraction-list'
 import { OrthoExtractionList } from '@/components/clinical/ortho-extraction-list'
 import { CtScanExtractionList } from '@/components/clinical/ct-scan-extraction-list'
+import { XRayExtractionList } from '@/components/clinical/x-ray-extraction-list'
 
 export default async function ClinicalDataPage({
   params,
@@ -18,13 +20,22 @@ export default async function ClinicalDataPage({
   params: Promise<{ caseId: string }>
 }) {
   const { caseId } = await params
-  const [{ data: mriExtractions }, { data: chiroExtractions }, { data: pmExtractions }, { data: ptExtractions }, { data: orthoExtractions }, { data: ctScanExtractions }] = await Promise.all([
+  const [
+    { data: mriExtractions },
+    { data: chiroExtractions },
+    { data: pmExtractions },
+    { data: ptExtractions },
+    { data: orthoExtractions },
+    { data: ctScanExtractions },
+    { data: xRayExtractions },
+  ] = await Promise.all([
     listMriExtractions(caseId),
     listChiroExtractions(caseId),
     listPainManagementExtractions(caseId),
     listPtExtractions(caseId),
     listOrthopedicExtractions(caseId),
     listCtScanExtractions(caseId),
+    listXRayExtractions(caseId),
   ])
 
   return (
@@ -38,6 +49,7 @@ export default async function ClinicalDataPage({
           <TabsTrigger value="pt">Physical Therapy</TabsTrigger>
           <TabsTrigger value="orthopedic">Orthopedic</TabsTrigger>
           <TabsTrigger value="ct-scan">CT Scan</TabsTrigger>
+          <TabsTrigger value="x-ray">X-Ray</TabsTrigger>
         </TabsList>
         <TabsContent value="mri">
           <MriExtractionList extractions={mriExtractions} caseId={caseId} />
@@ -56,6 +68,9 @@ export default async function ClinicalDataPage({
         </TabsContent>
         <TabsContent value="ct-scan">
           <CtScanExtractionList extractions={ctScanExtractions} caseId={caseId} />
+        </TabsContent>
+        <TabsContent value="x-ray">
+          <XRayExtractionList extractions={xRayExtractions} caseId={caseId} />
         </TabsContent>
       </Tabs>
     </div>

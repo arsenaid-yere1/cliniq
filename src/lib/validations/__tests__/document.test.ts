@@ -33,7 +33,10 @@ describe('documentTypeEnum', () => {
       'pt_report',
       'orthopedic_report',
       'ct_scan',
+      'x_ray',
       'generated',
+      'lien_agreement',
+      'procedure_consent',
       'other',
     ]
     for (const type of types) {
@@ -42,7 +45,7 @@ describe('documentTypeEnum', () => {
   })
 
   it('rejects invalid document type', () => {
-    expect(documentTypeEnum.safeParse('x_ray').success).toBe(false)
+    expect(documentTypeEnum.safeParse('radiograph').success).toBe(false)
   })
 })
 

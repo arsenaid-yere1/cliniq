@@ -15,6 +15,7 @@ const emptyInput: SummaryInputData = {
   ptExtractions: [],
   orthoExtractions: [],
   ctScanExtractions: [],
+  xRayExtractions: [],
 }
 
 describe('generateCaseSummaryFromData', () => {

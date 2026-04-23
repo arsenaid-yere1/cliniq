@@ -36,7 +36,8 @@ Do not drop diagnoses based on this rubric — tag them with the correct confide
 13. Include PT outcome measure scores in the symptoms timeline pain_levels when they indicate functional status changes
 14. When orthopedic data is present, incorporate the surgeon's physical exam findings, ICD-10 diagnoses, treatment recommendations with cost estimates, and any referenced imaging (X-ray, MRI) into the appropriate summary sections. Orthopedic recommendations with cost estimates are especially valuable for damages calculations
 15. Orthopedic reports often contain detailed history of injury narratives — use these to enrich the chief complaint when available
-16. When CT scan data is present, incorporate CT findings into imaging_findings alongside MRI data. CT scans provide bone and structural detail complementary to MRI soft tissue findings. Cross-reference CT and MRI findings for the same body region to build a complete picture`
+16. When CT scan data is present, incorporate CT findings into imaging_findings alongside MRI data. CT scans provide bone and structural detail complementary to MRI soft tissue findings. Cross-reference CT and MRI findings for the same body region to build a complete picture
+17. When X-ray data is present, incorporate X-ray findings into imaging_findings alongside MRI and CT. Weight by reading_type: "formal_radiology" reads (ABR-certified radiologist or dedicated imaging facility) carry full evidentiary weight and should cite the reading_provider name; "in_office_alignment" reads (ordering physician reading own films, typically with alignment-only disclaimers) carry lower weight — cite them but note the reading context in supporting_evidence. Plain X-ray does NOT satisfy the imaging-showing-nerve-root-compromise requirement in rule 8a — do NOT upgrade radiculopathy codes to "high" based on X-ray findings alone; MRI or CT evidence is required. X-ray findings such as "loss of disk height C5-C6" support disc-degeneration codes (M50.3X cervical, M51.3X lumbar) and cervicalgia/lumbago codes at medium-to-high confidence when symptom-correlated. Negative X-rays ("no fracture, normal alignment") still carry value — document them as ruling out acute structural injury, which supports soft-tissue/radiculopathy diagnosis pathways`
 
 const SUMMARY_TOOL: Anthropic.Tool = {
   name: 'extract_case_summary',
@@ -246,6 +247,21 @@ export interface SummaryInputData {
     body_region: string | null
     scan_date: string | null
     technique: string | null
+    reason_for_study: string | null
+    findings: unknown
+    impression_summary: string | null
+    provider_overrides: unknown
+  }>
+  xRayExtractions: Array<{
+    body_region: string | null
+    laterality: string | null
+    scan_date: string | null
+    procedure_description: string | null
+    view_count: number | null
+    views_description: string | null
+    reading_type: string | null
+    ordering_provider: string | null
+    reading_provider: string | null
     reason_for_study: string | null
     findings: unknown
     impression_summary: string | null

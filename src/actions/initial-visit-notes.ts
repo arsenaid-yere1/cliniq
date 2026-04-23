@@ -115,6 +115,7 @@ async function gatherSourceData(
     priorVisitRes,
     mriCountRes,
     ctCountRes,
+    xRayCountRes,
     pmRes,
   ] = await Promise.all([
     supabase
@@ -161,6 +162,12 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited']),
+    supabase
+      .from('x_ray_extractions')
+      .select('id', { count: 'exact', head: true })
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('review_status', ['approved', 'edited']),
     pmQuery,
   ])
 
@@ -189,7 +196,7 @@ async function gatherSourceData(
     gender: string | null
   }
 
-  const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0)) > 0
+  const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0) + (xRayCountRes.count ?? 0)) > 0
 
   // Build pmExtraction with overrides-first precedence on diagnoses so provider
   // edits (review_status='edited') reach the note generator instead of the raw

@@ -21,6 +21,7 @@ const docTypeOptions = [
   { value: 'pt_report', label: 'PT Report' },
   { value: 'orthopedic_report', label: 'Orthopedic Report' },
   { value: 'ct_scan', label: 'CT Scan Report' },
+  { value: 'x_ray', label: 'X-Ray Report' },
   { value: 'generated', label: 'Generated' },
   { value: 'lien_agreement', label: 'Lien Agreement' },
 ]
