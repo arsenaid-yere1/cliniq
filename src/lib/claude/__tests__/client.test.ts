@@ -177,6 +177,33 @@ describe('callClaudeTool', () => {
     })
   })
 
+  it('returns max_tokens error without calling parse when Claude hits token cap', async () => {
+    const stub = createMockAnthropic()
+    const truncated: Anthropic.Message = {
+      id: 'msg_t',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-6',
+      stop_reason: 'max_tokens',
+      stop_sequence: null,
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tu_1',
+          name: 't2',
+          input: { value: 'partial' },
+        },
+      ],
+      usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    } as Anthropic.Message
+    stub._create.mockResolvedValue(truncated)
+
+    const result = await callClaudeTool({ ...baseOpts(), _client: stub })
+    expect(result.error).toMatch(/max_tokens/)
+    expect(result.data).toBeUndefined()
+    expect(stub._create).toHaveBeenCalledTimes(1)
+  })
+
   it('returns error when response has no tool_use block', async () => {
     const stub = createMockAnthropic()
     const noToolResp: Anthropic.Message = {

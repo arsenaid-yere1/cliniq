@@ -83,6 +83,13 @@ export async function callClaudeTool<TOutput>(
 
     logUsage(opts.model, apiResponse.usage)
 
+    if (apiResponse.stop_reason === 'max_tokens') {
+      return {
+        error: `Claude hit max_tokens (${opts.maxTokens}) before finishing tool output. Raise maxTokens or shorten input.`,
+        rawResponse: apiResponse,
+      }
+    }
+
     const toolBlock = apiResponse.content.find((b) => b.type === 'tool_use')
     if (!toolBlock || toolBlock.type !== 'tool_use') {
       return { error: 'No tool use response from Claude', rawResponse: apiResponse }

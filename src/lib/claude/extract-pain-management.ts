@@ -219,7 +219,7 @@ export async function extractPainManagementFromPdf(pdfBase64: string): Promise<{
 }> {
   return callClaudeTool<PainManagementExtractionResult>({
     model: 'claude-sonnet-4-6',
-    maxTokens: 4096,
+    maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [EXTRACTION_TOOL],
     toolName: 'extract_pain_management_data',

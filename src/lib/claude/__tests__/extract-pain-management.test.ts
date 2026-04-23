@@ -16,7 +16,7 @@ describe('extractPainManagementFromPdf', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.model).toBe('claude-sonnet-4-6')
     expect(opts.toolName).toBe('extract_pain_management_data')
-    expect(opts.maxTokens).toBe(4096)
+    expect(opts.maxTokens).toBe(16384)
     expect(opts.messages[0].content).toContainEqual(expect.objectContaining({
       type: 'document',
       source: expect.objectContaining({ data: 'base64-pdf' }),
