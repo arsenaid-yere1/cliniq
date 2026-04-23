@@ -334,7 +334,7 @@ export async function generateInitialVisitNote(
   // live row per pair, so the other visit type's row is never touched.
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('id, rom_data, provider_intake, visit_date')
+    .select('id, rom_data, provider_intake, visit_date, tone_hint')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
@@ -348,6 +348,11 @@ export async function generateInitialVisitNote(
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const sourceHash = computeSourceHash(inputData)
+
+  // Normalize tone hint; fall back to persisted value (e.g., Retry from failed state)
+  const normalizedToneHint = toneHint?.trim() ? toneHint.trim() : null
+  const effectiveToneHint =
+    normalizedToneHint !== null ? normalizedToneHint : (existingNote?.tone_hint ?? null)
 
   let recordId: string
 
@@ -386,6 +391,7 @@ export async function generateInitialVisitNote(
         ai_model: null,
         raw_ai_response: null,
         generation_error: null,
+        tone_hint: effectiveToneHint,
         updated_by_user_id: user.id,
       })
       .eq('id', existingNote.id)
@@ -409,6 +415,7 @@ export async function generateInitialVisitNote(
         generation_attempts: 1,
         source_data_hash: sourceHash,
         visit_date: today,
+        tone_hint: effectiveToneHint,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
       })
@@ -427,7 +434,7 @@ export async function generateInitialVisitNote(
   }
 
   // Call Claude
-  const result = await generateInitialVisitFromData(inputData, visitType, toneHint)
+  const result = await generateInitialVisitFromData(inputData, visitType, effectiveToneHint)
 
   if (result.error || !result.data) {
     await supabase
@@ -799,7 +806,8 @@ export async function regenerateNoteSection(
     }
   }
 
-  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, otherSections)
+  const toneHint = (note.tone_hint as string | null) ?? null
+  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, toneHint, otherSections)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
@@ -1072,5 +1080,34 @@ export async function saveProviderIntake(
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
+}
+
+// --- Save tone hint (auto-save from draft editor) ---
+
+export async function saveInitialVisitNoteToneHint(
+  caseId: string,
+  visitType: NoteVisitType,
+  toneHint: string | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const normalized = toneHint?.trim() ? toneHint.trim() : null
+
+  const { error } = await supabase
+    .from('initial_visit_notes')
+    .update({ tone_hint: normalized, updated_by_user_id: user.id })
+    .eq('case_id', caseId)
+    .eq('visit_type', visitType)
+    .is('deleted_at', null)
+    .in('status', ['draft', 'generating', 'failed'])
+
+  if (error) return { error: 'Failed to save tone hint' }
+
+  return {}
 }
 

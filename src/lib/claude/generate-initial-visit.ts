@@ -621,6 +621,7 @@ export async function regenerateSection(
   visitType: NoteVisitType,
   section: InitialVisitSection,
   currentContent: string,
+  toneHint?: string | null,
   otherSections?: Partial<Record<InitialVisitSection, string>>,
 ): Promise<{ data?: string; error?: string }> {
   const systemPrompt = buildSystemPrompt(visitType)
@@ -641,7 +642,10 @@ export async function regenerateSection(
     }
   }
 
-  const userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
+  let userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
+  if (toneHint?.trim()) {
+    userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+  }
 
   const result = await callClaudeTool<{ content: string }>({
     model: 'claude-opus-4-7',

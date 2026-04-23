@@ -54,8 +54,10 @@ import {
   saveInitialVisitVitals,
   saveInitialVisitRom,
   saveProviderIntake,
+  saveInitialVisitNoteToneHint,
 } from '@/actions/initial-visit-notes'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
+import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
@@ -104,6 +106,7 @@ interface NoteRow {
   finalized_by_user_id: string | null
   document_id: string | null
   rom_data: unknown
+  tone_hint: string | null
 }
 
 interface ClinicSettings {
@@ -432,23 +435,11 @@ function InitialVisitEditorInner({
           </TabsContent>
         </Tabs>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Tone & Direction (optional)</CardTitle>
-            <CardDescription>
-              Provide optional guidance to influence the AI&apos;s writing style and emphasis. This is used only for the initial generation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              placeholder="e.g., Use assertive language about medical necessity, emphasize conservative treatment failure, keep prognosis cautious..."
-              value={toneHint}
-              onChange={(e) => setToneHint(e.target.value)}
-              rows={3}
-              disabled={isLocked || isPending}
-            />
-          </CardContent>
-        </Card>
+        <ToneDirectionCard
+          value={toneHint}
+          onChange={setToneHint}
+          disabled={isLocked || isPending}
+        />
 
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -1651,12 +1642,20 @@ function DraftEditor({
     },
   })
 
+  const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
+
   function handleSave() {
     startTransition(async () => {
       const values = form.getValues()
       const result = await saveInitialVisitNote(caseId, visitType, values)
       if (result.error) toast.error(result.error)
       else toast.success('Draft saved')
+    })
+  }
+
+  function handleToneHintBlur() {
+    void saveInitialVisitNoteToneHint(caseId, visitType, toneHint || null).then((result) => {
+      if (result.error) toast.error(result.error)
     })
   }
 
@@ -1789,6 +1788,13 @@ function DraftEditor({
         <TabsContent value="note" className="mt-4">
           <Form {...form}>
             <form className="space-y-6">
+              <ToneDirectionCard
+                value={toneHint}
+                onChange={setToneHint}
+                onBlur={handleToneHintBlur}
+                disabled={isLocked || isPending}
+                description="Edits apply to subsequent section regenerations. Saved automatically on blur."
+              />
               {initialVisitSections.map((section) => (
                 <FormField
                   key={section}

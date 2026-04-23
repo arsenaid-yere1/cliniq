@@ -1157,6 +1157,7 @@ export type Database = {
           source_data_hash: string | null
           status: string
           time_complexity_attestation: string | null
+          tone_hint: string | null
           treatment_plan: string | null
           updated_at: string
           updated_by_user_id: string | null
@@ -1195,6 +1196,7 @@ export type Database = {
           source_data_hash?: string | null
           status?: string
           time_complexity_attestation?: string | null
+          tone_hint?: string | null
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
@@ -1233,6 +1235,7 @@ export type Database = {
           source_data_hash?: string | null
           status?: string
           time_complexity_attestation?: string | null
+          tone_hint?: string | null
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
