@@ -564,10 +564,18 @@ export interface InitialVisitInputData {
   } | null
 }
 
+/**
+ * Total number of top-level keys in the INITIAL_VISIT_TOOL input_schema. Used
+ * by callers to seed sections_total on the initial_visit_notes row when
+ * starting a generation; also the divisor the UI renders progress against.
+ */
+export const INITIAL_VISIT_SECTIONS_TOTAL = 16
+
 export async function generateInitialVisitFromData(
   inputData: InitialVisitInputData,
   visitType: NoteVisitType,
   toneHint?: string | null,
+  onProgress?: (completedKeys: string[]) => void | Promise<void>,
 ): Promise<{
   data?: InitialVisitNoteResult
   rawResponse?: unknown
@@ -596,6 +604,7 @@ export async function generateInitialVisitFromData(
         ? { success: true, data: validated.data }
         : { success: false, error: validated.error }
     },
+    onProgress,
   })
 }
 

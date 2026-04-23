@@ -20,6 +20,15 @@ export interface CallClaudeToolOptions<TOutput> {
   parse: (raw: Record<string, unknown>) =>
     | { success: true; data: TOutput }
     | { success: false; error: z.ZodError }
+  /**
+   * Optional callback fired whenever Claude completes a new top-level key in
+   * the tool's input JSON during streaming. Receives the full list of keys
+   * observed so far. The wrapper invokes this after each `inputJson` SDK
+   * event, but only when the key count has increased — callers get one call
+   * per new section, not per fragment. Throttling/persistence is the caller's
+   * responsibility.
+   */
+  onProgress?: (completedKeys: string[]) => void | Promise<void>
   _client?: { messages: { stream: Anthropic['messages']['stream'] } }
 }
 
@@ -57,17 +66,29 @@ export async function callClaudeTool<TOutput>(
 
     while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
-        apiResponse = await client.messages
-          .stream({
-            model: opts.model,
-            max_tokens: opts.maxTokens,
-            ...(opts.thinking ? { thinking: opts.thinking } : {}),
-            system: opts.system,
-            tools: opts.tools,
-            tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
-            messages: opts.messages,
+        const stream = client.messages.stream({
+          model: opts.model,
+          max_tokens: opts.maxTokens,
+          ...(opts.thinking ? { thinking: opts.thinking } : {}),
+          system: opts.system,
+          tools: opts.tools,
+          tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
+          messages: opts.messages,
+        })
+        if (opts.onProgress) {
+          const onProgress = opts.onProgress
+          let lastCount = 0
+          stream.on('inputJson', (_partialJson, jsonSnapshot) => {
+            if (!jsonSnapshot || typeof jsonSnapshot !== 'object') return
+            const keys = Object.keys(jsonSnapshot as Record<string, unknown>)
+            if (keys.length <= lastCount) return
+            lastCount = keys.length
+            // Fire-and-forget — callers throttle persistence, stream
+            // iteration must not await on DB writes.
+            Promise.resolve(onProgress(keys)).catch(() => {})
           })
-          .finalMessage()
+        }
+        apiResponse = await stream.finalMessage()
         break
       } catch (err) {
         lastApiError = err

@@ -107,6 +107,8 @@ interface NoteRow {
   document_id: string | null
   rom_data: unknown
   tone_hint: string | null
+  sections_done: number | null
+  sections_total: number | null
 }
 
 interface ClinicSettings {
@@ -362,7 +364,16 @@ function InitialVisitEditorInner({
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={optimisticStartedAt} />
+        <GeneratingProgress
+          startedAt={optimisticStartedAt}
+          noteId={note?.id}
+          realtimeTable="initial_visit_notes"
+          initialProgress={
+            note && typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {initialVisitSections.map((section) => (
             <div key={section} className="space-y-2">
@@ -467,7 +478,16 @@ function InitialVisitEditorInner({
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
-        <GeneratingProgress startedAt={note.updated_at ?? null} />
+        <GeneratingProgress
+          startedAt={note.updated_at ?? null}
+          noteId={note.id}
+          realtimeTable="initial_visit_notes"
+          initialProgress={
+            typeof note.sections_total === 'number'
+              ? { done: note.sections_done ?? 0, total: note.sections_total }
+              : null
+          }
+        />
         <div className="space-y-6">
           {initialVisitSections.map((section) => (
             <div key={section} className="space-y-2">

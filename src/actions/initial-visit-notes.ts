@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import {
   generateInitialVisitFromData,
   regenerateSection as regenerateSectionAI,
+  INITIAL_VISIT_SECTIONS_TOTAL,
   type InitialVisitInputData,
   type NoteVisitType,
 } from '@/lib/claude/generate-initial-visit'
@@ -379,6 +380,8 @@ export async function generateInitialVisitNote(
         generation_attempts: 1,
         source_data_hash: sourceHash,
         visit_date: existingNote.visit_date ?? today,
+        sections_done: 0,
+        sections_total: INITIAL_VISIT_SECTIONS_TOTAL,
         introduction: null,
         history_of_accident: null,
         post_accident_history: null,
@@ -422,6 +425,8 @@ export async function generateInitialVisitNote(
         generation_attempts: 1,
         source_data_hash: sourceHash,
         visit_date: today,
+        sections_done: 0,
+        sections_total: INITIAL_VISIT_SECTIONS_TOTAL,
         tone_hint: effectiveToneHint,
         created_by_user_id: user.id,
         updated_by_user_id: user.id,
@@ -440,8 +445,33 @@ export async function generateInitialVisitNote(
     recordId = record.id
   }
 
+  // Throttled progress writer. The Anthropic SDK fires inputJson events
+  // many times per second; we coalesce to at most one UPDATE per 500ms so
+  // the realtime subscribers get visible ticks without thrashing the DB.
+  // The last progress value before finalMessage() resolves is not flushed —
+  // that's fine because the generation status transitions to 'draft' or
+  // 'failed' immediately after, which supersedes any pending progress.
+  let lastProgressWriteAt = 0
+  let lastWrittenCount = 0
+  const writeProgress = async (count: number) => {
+    if (count <= lastWrittenCount) return
+    const now = Date.now()
+    if (now - lastProgressWriteAt < 500) return
+    lastProgressWriteAt = now
+    lastWrittenCount = count
+    await supabase
+      .from('initial_visit_notes')
+      .update({ sections_done: count })
+      .eq('id', recordId)
+  }
+
   // Call Claude
-  const result = await generateInitialVisitFromData(inputData, visitType, effectiveToneHint)
+  const result = await generateInitialVisitFromData(
+    inputData,
+    visitType,
+    effectiveToneHint,
+    (completedKeys) => writeProgress(completedKeys.length),
+  )
 
   if (result.error || !result.data) {
     await supabase
@@ -482,6 +512,7 @@ export async function generateInitialVisitNote(
       ai_model: 'claude-opus-4-6',
       raw_ai_response: result.rawResponse || null,
       status: 'draft',
+      sections_done: INITIAL_VISIT_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
       updated_by_user_id: user.id,
     })

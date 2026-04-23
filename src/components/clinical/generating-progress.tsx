@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
 /**
  * Client-side progress surface for AI note generation.
@@ -14,25 +15,31 @@ import { Loader2 } from 'lucide-react'
  * the appropriate state WITHOUT requiring the provider to refresh or
  * navigate.
  *
- * Why polling over SSE/streaming:
- * - Current generators use tool-use forcing for clinical-safety Zod validation.
- *   Tool-use output is inherently all-or-nothing at the model level — the
- *   tool_use.input JSON only becomes parseable at message_stop. Streaming
- *   offers no mid-flight payload to render.
- * - Next.js server actions don't natively stream to client. True streaming
- *   requires route handlers + SSE/ReadableStream + partial-write durability
- *   — multi-session refactor with low net clinical benefit.
+ * Section-level progress (optional):
+ * - When `noteId` + `realtimeTable` are provided, the component subscribes to
+ *   Supabase Realtime UPDATEs on that row and renders a `{done}/{total}` line
+ *   alongside the elapsed timer. Requires the table to be in the
+ *   `supabase_realtime` publication (initial_visit_notes is, as of 20260429).
+ * - `initialProgress` seeds the counter from the server-rendered row so the
+ *   UI isn't blank before the first realtime event lands.
+ * - Router polling continues as a fallback at a slower cadence when realtime
+ *   is active — covers reconnect gaps + the final status transition, which
+ *   the server component tree still needs a refresh to pick up.
  *
- * Polling a single status column (cheap indexed read) delivers the same UX
- * win — provider knows work is in flight, sees elapsed time, UI transitions
- * automatically on completion — without the backend refactor.
+ * Historical note on polling vs SSE: tool-use JSON is only parseable at
+ * message_stop, so token-level streaming is not a viable UX for the current
+ * generators. Section progress via DB + realtime gives the same "work
+ * happening" signal without a backend refactor.
  *
  * Defaults: poll every 3s while visible, cap displayed elapsed at 180s so
  * the counter doesn't grow unboundedly on pathological stalls.
  */
 export function GeneratingProgress({
-  pollIntervalMs = 3000,
+  pollIntervalMs,
   startedAt,
+  noteId,
+  realtimeTable,
+  initialProgress,
 }: {
   pollIntervalMs?: number
   // ISO string from the note row's updated_at at the moment status became
@@ -40,29 +47,60 @@ export function GeneratingProgress({
   // refresh, this preserves the original elapsed time instead of restarting
   // the counter.
   startedAt?: string | null
+  noteId?: string
+  realtimeTable?: string
+  initialProgress?: { done: number; total: number } | null
 }) {
   const router = useRouter()
   const [elapsedMs, setElapsedMs] = useState(0)
+  const [progress, setProgress] = useState(initialProgress ?? null)
+
+  const realtimeActive = Boolean(noteId && realtimeTable)
+  const effectivePollMs = pollIntervalMs ?? (realtimeActive ? 10000 : 3000)
 
   useEffect(() => {
     // Origin is captured on mount. For a row that was already in 'generating'
     // state when the page loaded, startedAt (the row's updated_at) is used so
     // the counter reflects real elapsed time rather than restarting at 0.
     const origin = startedAt ? new Date(startedAt).getTime() : Date.now()
-    // Tick once per second; the first tick at t=0 also updates the initial
-    // elapsed reading, which avoids a sync setState inside the effect body.
     const tick = setInterval(() => {
       setElapsedMs(Math.max(0, Date.now() - origin))
     }, 1000)
-    // Poll the router for fresh server-component data.
     const poll = setInterval(() => {
       router.refresh()
-    }, pollIntervalMs)
+    }, effectivePollMs)
     return () => {
       clearInterval(tick)
       clearInterval(poll)
     }
-  }, [startedAt, pollIntervalMs, router])
+  }, [startedAt, effectivePollMs, router])
+
+  useEffect(() => {
+    if (!noteId || !realtimeTable) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`note-progress-${noteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: realtimeTable,
+          filter: `id=eq.${noteId}`,
+        },
+        (payload) => {
+          const row = payload.new as { sections_done?: number; sections_total?: number } | null
+          if (!row) return
+          if (typeof row.sections_done === 'number' && typeof row.sections_total === 'number') {
+            setProgress({ done: row.sections_done, total: row.sections_total })
+          }
+        },
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [noteId, realtimeTable])
 
   const displaySeconds = Math.min(180, Math.floor(elapsedMs / 1000))
   const note =
@@ -86,6 +124,11 @@ export function GeneratingProgress({
           Generating note… ({displaySeconds}s)
         </span>
         <span className="text-muted-foreground">{note}</span>
+        {progress && progress.total > 0 ? (
+          <span className="text-muted-foreground">
+            {progress.done}/{progress.total} sections drafted
+          </span>
+        ) : null}
       </div>
     </div>
   )
