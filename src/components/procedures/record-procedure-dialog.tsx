@@ -52,7 +52,7 @@ const SECTIONS = [
 const STATIC_PROCEDURE_DEFAULTS = {
   consent_obtained: true,
   prp_preparation: {
-    blood_draw_volume_ml: 15,
+    blood_draw_volume_ml: 30,
     centrifuge_duration_min: 5,
     prep_protocol: 'ACP Double Syringe System',
     kit_lot_number: '',
