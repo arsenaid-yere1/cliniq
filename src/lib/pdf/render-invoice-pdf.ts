@@ -107,12 +107,14 @@ export async function renderInvoicePdf(input: RenderInvoicePdfInput): Promise<Bu
     cpt_code: string
     description: string
     quantity: number
+    unit_price: number
     total_price: number
   }>).map((item) => ({
     serviceDate: item.service_date ? format(new Date(item.service_date + 'T00:00:00'), 'MM/dd/yyyy') : 'N/A',
     cptCode: item.cpt_code,
     description: item.description,
     quantity: item.quantity,
+    unitPrice: Number(item.unit_price),
     amount: Number(item.total_price),
   }))
 

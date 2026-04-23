@@ -41,6 +41,7 @@ export interface InvoicePdfData {
     cptCode: string
     description: string
     quantity: number
+    unitPrice: number
     amount: number
   }>
 
@@ -124,15 +125,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   // Column widths
-  colDate: { width: '14%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colCpt: { width: '12%', paddingLeft: 4, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colDesc: { width: '46%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colQty: { width: '8%', textAlign: 'center', borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colAmount: { width: '20%', textAlign: 'right', paddingRight: 6 },
+  colDate: { width: '12%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colCpt: { width: '11%', paddingLeft: 4, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colDesc: { width: '40%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colQty: { width: '7%', textAlign: 'center', borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colUnit: { width: '15%', textAlign: 'right', paddingRight: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colAmount: { width: '15%', textAlign: 'right', paddingRight: 6 },
   thText: { fontFamily: 'Helvetica-Bold', fontSize: 9 },
   tdText: { fontSize: 9 },
-  totalLabelCell: { width: '80%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  totalValueCell: { width: '20%', textAlign: 'right', paddingRight: 6 },
+  totalLabelCell: { width: '85%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  totalValueCell: { width: '15%', textAlign: 'right', paddingRight: 6 },
   totalLabel: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   totalValue: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   // Payee
@@ -256,6 +258,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
             <Text style={[styles.colCpt, styles.thText]}>CPT</Text>
             <Text style={[styles.colDesc, styles.thText]}>Description</Text>
             <Text style={[styles.colQty, styles.thText]}>Qty</Text>
+            <Text style={[styles.colUnit, styles.thText]}>Unit Price</Text>
             <Text style={[styles.colAmount, styles.thText]}>Amount</Text>
           </View>
           {data.lineItems.map((item, i) => (
@@ -264,6 +267,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
               <Text style={[styles.colCpt, styles.tdText]}>{item.cptCode}</Text>
               <Text style={[styles.colDesc, styles.tdText]}>{item.description}</Text>
               <Text style={[styles.colQty, styles.tdText]}>{item.quantity}</Text>
+              <Text style={[styles.colUnit, styles.tdText]}>{formatCurrency(item.unitPrice)}</Text>
               <Text style={[styles.colAmount, styles.tdText]}>{formatCurrency(item.amount)}</Text>
             </View>
           ))}
