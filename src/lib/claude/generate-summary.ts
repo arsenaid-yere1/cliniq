@@ -296,8 +296,8 @@ export async function generateCaseSummaryFromData(
 }> {
   return callClaudeTool<CaseSummaryResult>({
     model: 'claude-opus-4-6',
-    maxTokens: 16384,
-    thinking: { type: 'adaptive' },
+    maxTokens: 24000,
+    thinking: { type: 'enabled', budget_tokens: 8000 },
     system: SYSTEM_PROMPT,
     tools: [SUMMARY_TOOL],
     toolName: 'extract_case_summary',

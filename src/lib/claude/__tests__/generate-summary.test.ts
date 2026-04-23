@@ -26,8 +26,8 @@ describe('generateCaseSummaryFromData', () => {
     await generateCaseSummaryFromData(emptyInput)
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.model).toBe('claude-opus-4-6')
-    expect(opts.maxTokens).toBe(16384)
-    expect(opts.thinking).toEqual({ type: 'adaptive' })
+    expect(opts.maxTokens).toBe(24000)
+    expect(opts.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
     expect(opts.toolChoice).toEqual({ type: 'auto' })
     expect(opts.toolName).toBe('extract_case_summary')
   })
