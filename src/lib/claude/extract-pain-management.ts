@@ -181,6 +181,37 @@ function normalizeNullStringsInArray<T extends Record<string, unknown>>(
   })
 }
 
+function toNumberOrNull(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed === '' || trimmed.toLowerCase() === 'null') return null
+    const n = Number(trimmed)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+function normalizeRomArray(arr: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(arr)) return []
+  return arr.map((item: Record<string, unknown>) => ({
+    movement: typeof item.movement === 'string' ? item.movement : String(item.movement ?? ''),
+    normal: toNumberOrNull(item.normal),
+    actual: toNumberOrNull(item.actual),
+    pain: item.pain === true,
+  }))
+}
+
+function normalizeOrthopedicTestsArray(arr: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(arr)) return []
+  return arr
+    .map((item: Record<string, unknown>) => ({
+      name: typeof item.name === 'string' ? item.name : String(item.name ?? ''),
+      result: item.result,
+    }))
+    .filter((item) => item.result === 'positive' || item.result === 'negative')
+}
+
 export async function extractPainManagementFromPdf(pdfBase64: string): Promise<{
   data?: PainManagementExtractionResult
   rawResponse?: unknown
@@ -210,8 +241,8 @@ export async function extractPainManagementFromPdf(pdfBase64: string): Promise<{
             ...region,
             palpation_findings: normalizeNullString(region.palpation_findings),
             neurological_summary: normalizeNullString(region.neurological_summary),
-            range_of_motion: Array.isArray(region.range_of_motion) ? region.range_of_motion : [],
-            orthopedic_tests: Array.isArray(region.orthopedic_tests) ? region.orthopedic_tests : [],
+            range_of_motion: normalizeRomArray(region.range_of_motion),
+            orthopedic_tests: normalizeOrthopedicTestsArray(region.orthopedic_tests),
           }),
         ),
         diagnoses: normalizeNullStringsInArray(raw.diagnoses, ['icd10_code', 'imaging_support', 'exam_support', 'source_quote']),
