@@ -69,26 +69,26 @@ const styles = StyleSheet.create({
   sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
   sectionBody: { fontSize: 10, lineHeight: 1.6 },
   subHeading: { fontFamily: 'Helvetica-Bold', fontSize: 10, marginTop: 6, marginBottom: 2 },
-  findingBlock: { borderWidth: 1, borderColor: '#e5e5e5', borderStyle: 'solid', padding: 6, marginBottom: 6, borderRadius: 2 },
+  findingBlock: { marginBottom: 8, paddingLeft: 6, borderLeftWidth: 2, borderLeftColor: '#e5e5e5', borderLeftStyle: 'solid' },
   findingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   findingRegion: { fontFamily: 'Helvetica-Bold', fontSize: 10, flex: 1, paddingRight: 8 },
-  severityBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 60, textAlign: 'center' },
+  severityBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 60, textAlign: 'center', borderRadius: 2 },
   bulletRow: { flexDirection: 'row', marginLeft: 8, marginTop: 1 },
   bullet: { width: 10 },
   bulletContent: { flex: 1 },
-  dxRow: { borderWidth: 1, borderColor: '#e5e5e5', borderStyle: 'solid', padding: 6, marginBottom: 4, borderRadius: 2 },
+  dxRow: { marginBottom: 6, paddingLeft: 6, borderLeftWidth: 2, borderLeftColor: '#e5e5e5', borderLeftStyle: 'solid' },
   dxHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   dxMain: { flex: 1, paddingRight: 8 },
   dxName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   dxIcd: { fontSize: 9, color: '#666', marginLeft: 4 },
   dxEvidence: { fontSize: 9, color: '#666', marginTop: 2 },
-  confidenceBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 50, textAlign: 'center' },
+  confidenceBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 50, textAlign: 'center', borderRadius: 2 },
   gapWarning: { fontSize: 9, color: '#b45309', marginTop: 2 },
   muted: { color: '#666' },
   timelineRow: { flexDirection: 'row', marginTop: 2 },
   timelineDate: { fontSize: 9, color: '#666', width: 80 },
   timelineText: { flex: 1, fontSize: 10 },
-  painBadge: { fontSize: 9, marginRight: 6, marginBottom: 2, borderWidth: 1, borderColor: '#ccc', borderStyle: 'solid', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 },
+  painBadge: { fontSize: 9, marginRight: 6, marginBottom: 2, backgroundColor: '#f0f0f0', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 },
   signatureBlock: { marginTop: 24 },
   signatureImage: { height: 40, width: 120, marginBottom: 4 },
   providerName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
@@ -310,7 +310,7 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
                       </Text>
                     </View>
                     {confStyle && (
-                      <Text style={[styles.confidenceBadge, { color: confStyle.color, backgroundColor: confStyle.backgroundColor, borderWidth: 1, borderColor: confStyle.borderColor, borderStyle: 'solid', borderRadius: 2 }]}>
+                      <Text style={[styles.confidenceBadge, { color: confStyle.color, backgroundColor: confStyle.backgroundColor }]}>
                         {dx.confidence}
                       </Text>
                     )}
