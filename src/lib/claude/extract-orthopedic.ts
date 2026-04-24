@@ -228,7 +228,7 @@ export async function extractOrthopedicFromPdf(pdfBase64: string): Promise<{
 }> {
   return callClaudeTool<OrthopedicExtractionResult>({
     model: 'claude-sonnet-4-6',
-    maxTokens: 4096,
+    maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [EXTRACTION_TOOL],
     toolName: 'extract_orthopedic_data',
