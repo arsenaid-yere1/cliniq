@@ -13,9 +13,11 @@ export function computeAgeAtDate(
 }
 
 export function pickVisitAnchor(
+  override: string | null | undefined,
   visitDate: string | null | undefined,
   finalizedAt: string | null | undefined,
 ): string | null {
+  if (override) return override.slice(0, 10)
   if (visitDate) return visitDate.slice(0, 10)
   if (finalizedAt) return finalizedAt.slice(0, 10)
   return new Date().toISOString().slice(0, 10)

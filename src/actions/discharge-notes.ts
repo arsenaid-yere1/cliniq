@@ -552,6 +552,7 @@ export async function checkDischargeNotePrerequisites(caseId: string) {
 export async function generateDischargeNote(
   caseId: string,
   toneHint?: string | null,
+  visitDate?: string | null,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -599,7 +600,8 @@ export async function generateDischargeNote(
   }
 
   const today = new Date().toISOString().slice(0, 10)
-  const visitDate = existingNote?.visit_date ?? today
+  const normalizedVisitDate = visitDate?.trim() ? visitDate.trim() : null
+  const effectiveVisitDate = normalizedVisitDate ?? existingNote?.visit_date ?? today
   const normalizedToneHint = toneHint?.trim() ? toneHint.trim() : null
   const effectiveToneHint =
     normalizedToneHint !== null ? normalizedToneHint : (existingNote?.tone_hint ?? null)
@@ -620,7 +622,7 @@ export async function generateDischargeNote(
   const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(
     supabase,
     caseId,
-    visitDate,
+    effectiveVisitDate,
     preservedVitals,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
@@ -657,7 +659,7 @@ export async function generateDischargeNote(
       source_data_hash: sourceHash,
       sections_done: 0,
       sections_total: DISCHARGE_NOTE_SECTIONS_TOTAL,
-      visit_date: visitDate,
+      visit_date: effectiveVisitDate,
       bp_systolic: preservedVitals?.bp_systolic ?? null,
       bp_diastolic: preservedVitals?.bp_diastolic ?? null,
       heart_rate: preservedVitals?.heart_rate ?? null,

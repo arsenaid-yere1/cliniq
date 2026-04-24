@@ -119,6 +119,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
   const patientDob = patient?.date_of_birth ? new Date(patient.date_of_birth) : null
   const visitAnchor = pickVisitAnchor(
+    null,
     input.note.visit_date as string | null | undefined,
     input.note.finalized_at as string | null | undefined,
   )

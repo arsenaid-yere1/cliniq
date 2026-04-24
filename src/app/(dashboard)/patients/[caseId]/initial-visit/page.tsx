@@ -129,6 +129,15 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     pain_evaluation_visit: painEvalDocPath,
   }
 
+  // Sibling dates power the pre-generation date input's min/max bounds,
+  // mirroring the DB trigger (20260414_initial_visit_date_order) which requires
+  // initial_visit.visit_date <= pain_evaluation_visit.visit_date. When a sibling
+  // row has no date, no client-side bound is applied (trigger still enforces).
+  const siblingDatesByVisitType: Record<NoteVisitType, string | null> = {
+    initial_visit: (painEvaluationNote?.visit_date as string | null) ?? null,
+    pain_evaluation_visit: (initialVisitNote?.visit_date as string | null) ?? null,
+  }
+
   return (
     <InitialVisitEditor
       caseId={caseId}
@@ -146,6 +155,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
       painEvalMissingPriorVitals={painEvalMissingPriorVitals}
+      siblingDatesByVisitType={siblingDatesByVisitType}
     />
   )
 }

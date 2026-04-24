@@ -452,6 +452,7 @@ export interface InitialVisitInputData {
     gender: string | null
   }
   age: number | null
+  visitDate: string | null
   caseDetails: {
     case_number: string
     accident_type: string | null

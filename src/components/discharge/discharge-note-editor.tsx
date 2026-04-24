@@ -50,6 +50,7 @@ import { PainTimelineTable } from '@/components/discharge/pain-timeline-table'
 import type { DischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import type { PainObservation } from '@/lib/claude/pain-observations'
 import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
+import { VisitDateCard } from '@/components/clinical/visit-date-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
@@ -158,6 +159,10 @@ interface DischargeNoteEditorProps {
   // Regenerating is safe — the underlying generator is always fresh. Only
   // computed for draft state; finalized notes don't show staleness.
   isStale: boolean
+  // Earliest allowed discharge visit_date. Max of live initial_visit_notes.visit_date
+  // for the case. Bounds the pre-generation date input's min attr. Null when no
+  // IV dates exist.
+  earliestDate: string | null
 }
 
 // Format visit date for display: prefers visit_date (parsed as local), falls back to finalized_at
@@ -199,21 +204,26 @@ export function DischargeNoteEditor({
   documentFilePath,
   defaultVitals,
   isStale,
+  earliestDate,
 }: DischargeNoteEditorProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
   const [toneHint, setToneHint] = useState<string>(note?.tone_hint ?? '')
+  const today = new Date().toISOString().slice(0, 10)
+  const [preGenVisitDate, setPreGenVisitDate] = useState<string>(
+    (note?.visit_date as string | null | undefined) ?? today,
+  )
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
-  const runGenerate = (toneHintArg: string | null) => {
+  const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     setOptimisticStartedAt(new Date().toISOString())
     setOptimisticGenerating(true)
     startTransition(async () => {
       try {
-        const result = await generateDischargeNote(caseId, toneHintArg)
+        const result = await generateDischargeNote(caseId, toneHintArg, visitDateArg)
         if (result.error) toast.error(result.error)
         else toast.success('Discharge summary generated successfully')
       } finally {
@@ -265,6 +275,13 @@ export function DischargeNoteEditor({
 
         <DischargeVitalsCard caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
 
+        <VisitDateCard
+          value={preGenVisitDate}
+          onChange={setPreGenVisitDate}
+          min={earliestDate ?? undefined}
+          disabled={isLocked || isPending}
+        />
+
         <ToneDirectionCard
           value={toneHint}
           onChange={setToneHint}
@@ -278,7 +295,7 @@ export function DischargeNoteEditor({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => runGenerate(toneHint || null)}
+            onClick={() => runGenerate(toneHint || null, preGenVisitDate || null)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -334,7 +351,7 @@ export function DischargeNoteEditor({
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => runGenerate(note.tone_hint ?? null)}
+            onClick={() => runGenerate(note.tone_hint ?? null, null)}
             disabled={isLocked || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}

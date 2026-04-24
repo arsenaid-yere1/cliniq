@@ -58,6 +58,7 @@ import {
 } from '@/actions/initial-visit-notes'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
+import { VisitDateCard } from '@/components/clinical/visit-date-card'
 import { getDocumentDownloadUrl } from '@/actions/documents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
@@ -171,6 +172,10 @@ interface InitialVisitEditorOuterProps {
   // a numeric pain delta for the NUMERIC-ANCHOR clause; badge surfaces the
   // data gap. Applies to the pain_evaluation_visit tab only.
   painEvalMissingPriorVitals: boolean
+  // Per-visit-type sibling visit_date. Bounds the pre-generation date input so
+  // the UI prevents a selection that would violate the pair-ordering trigger
+  // (enforce_initial_visit_date_order_trg). Null when sibling row is absent.
+  siblingDatesByVisitType: Record<NoteVisitType, string | null>
 }
 
 interface InitialVisitEditorInnerProps {
@@ -188,6 +193,7 @@ interface InitialVisitEditorInnerProps {
   caseData: CaseData | null
   documentFilePath: string | null
   initialIntake: ProviderIntakeValues | null
+  siblingDate: string | null
 }
 
 // Outer wrapper: visit type tab selector. Each tab has its own completely
@@ -210,6 +216,7 @@ export function InitialVisitEditor({
   providerSignatureUrl,
   caseData,
   painEvalMissingPriorVitals,
+  siblingDatesByVisitType,
 }: InitialVisitEditorOuterProps) {
   const [activeVisitType, setActiveVisitType] = useState<NoteVisitType>(defaultVisitType)
 
@@ -260,6 +267,7 @@ export function InitialVisitEditor({
                 caseData={caseData}
                 documentFilePath={documentFilePathByVisitType[vt.value]}
                 initialIntake={intakesByVisitType[vt.value]}
+                siblingDate={siblingDatesByVisitType[vt.value]}
               />
             </TabsContent>
           )
@@ -315,22 +323,27 @@ function InitialVisitEditorInner({
   caseData,
   documentFilePath,
   initialIntake,
+  siblingDate,
 }: InitialVisitEditorInnerProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
   const [toneHint, setToneHint] = useState('')
+  const today = new Date().toISOString().slice(0, 10)
+  const [preGenVisitDate, setPreGenVisitDate] = useState<string>(
+    (note?.visit_date as string | null | undefined) ?? today,
+  )
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
-  const runGenerate = (toneHintArg: string | null) => {
+  const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     setOptimisticStartedAt(new Date().toISOString())
     setOptimisticGenerating(true)
     startTransition(async () => {
       try {
-        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg)
+        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg)
         if (result.error) toast.error(result.error)
         else toast.success('Note generated successfully')
       } finally {
@@ -446,6 +459,14 @@ function InitialVisitEditorInner({
           </TabsContent>
         </Tabs>
 
+        <VisitDateCard
+          value={preGenVisitDate}
+          onChange={setPreGenVisitDate}
+          min={visitType === 'pain_evaluation_visit' ? siblingDate ?? undefined : undefined}
+          max={visitType === 'initial_visit' ? siblingDate ?? undefined : undefined}
+          disabled={isLocked || isPending}
+        />
+
         <ToneDirectionCard
           value={toneHint}
           onChange={setToneHint}
@@ -459,7 +480,7 @@ function InitialVisitEditorInner({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => runGenerate(toneHint || null)}
+            onClick={() => runGenerate(toneHint || null, preGenVisitDate || null)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -515,7 +536,7 @@ function InitialVisitEditorInner({
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => runGenerate(null)}
+            onClick={() => runGenerate(null, null)}
             disabled={isLocked || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
@@ -1928,7 +1949,7 @@ function FinalizedView({
     : null
   const age = computeAgeAtDate(
     caseData?.patient.date_of_birth,
-    pickVisitAnchor(note.visit_date, note.finalized_at),
+    pickVisitAnchor(null, note.visit_date, note.finalized_at),
   )
   const accidentDate = caseData?.accident_date
     ? format(new Date(caseData.accident_date), 'MM/dd/yyyy')

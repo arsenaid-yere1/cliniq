@@ -138,6 +138,24 @@ export default async function DischargePage({
     isStale = latestInputUpdates.some((d) => d > noteUpdatedAt)
   }
 
+  // Earliest allowed discharge visit_date = max(live initial_visit_notes.visit_date).
+  // No DB trigger enforces this for discharge_notes, but clinically the discharge
+  // visit must follow the initial visit. Used as the min attr on the pre-gen
+  // date input. Null when no IV dates exist.
+  const { data: ivDateRows } = await supabase
+    .from('initial_visit_notes')
+    .select('visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .not('visit_date', 'is', null)
+  const earliestDischargeDate =
+    ivDateRows && ivDateRows.length
+      ? ivDateRows
+          .map((r) => r.visit_date as string)
+          .sort()
+          .at(-1) ?? null
+      : null
+
   return (
     <DischargeNoteEditor
       caseId={caseId}
@@ -152,6 +170,7 @@ export default async function DischargePage({
       documentFilePath={documentFilePath}
       defaultVitals={defaultVitals}
       isStale={isStale}
+      earliestDate={earliestDischargeDate}
     />
   )
 }

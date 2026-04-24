@@ -64,6 +64,7 @@ async function gatherSourceData(
   caseId: string,
   visitType: NoteVisitType,
   romData?: InitialVisitRomValues | null,
+  visitDateOverride?: string | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
@@ -263,6 +264,7 @@ async function gatherSourceData(
     : null
 
   const visitAnchor = pickVisitAnchor(
+    visitDateOverride ?? null,
     (intakeRes.data?.visit_date as string | null | undefined) ?? null,
     (intakeRes.data?.finalized_at as string | null | undefined) ?? null,
   )
@@ -277,6 +279,7 @@ async function gatherSourceData(
         gender: patient.gender,
       },
       age,
+      visitDate: visitAnchor,
       caseDetails: {
         case_number: caseRes.data.case_number,
         accident_type: caseRes.data.accident_type,
@@ -327,6 +330,7 @@ export async function generateInitialVisitNote(
   caseId: string,
   visitType: NoteVisitType,
   toneHint?: string | null,
+  visitDate?: string | null,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -350,9 +354,17 @@ export async function generateInitialVisitNote(
 
   const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
   const today = new Date().toISOString().slice(0, 10)
+  const normalizedVisitDate = visitDate?.trim() ? visitDate.trim() : null
+  const effectiveVisitDate = normalizedVisitDate ?? existingNote?.visit_date ?? today
 
   // Gather source data (include ROM)
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, preservedRom)
+  const { data: inputData, error: gatherError } = await gatherSourceData(
+    supabase,
+    caseId,
+    visitType,
+    preservedRom,
+    effectiveVisitDate,
+  )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const sourceHash = computeSourceHash(inputData)
@@ -379,7 +391,7 @@ export async function generateInitialVisitNote(
       .update({
         generation_attempts: 1,
         source_data_hash: sourceHash,
-        visit_date: existingNote.visit_date ?? today,
+        visit_date: effectiveVisitDate,
         sections_done: 0,
         sections_total: INITIAL_VISIT_SECTIONS_TOTAL,
         introduction: null,
@@ -424,7 +436,7 @@ export async function generateInitialVisitNote(
         status: 'generating',
         generation_attempts: 1,
         source_data_hash: sourceHash,
-        visit_date: today,
+        visit_date: effectiveVisitDate,
         sections_done: 0,
         sections_total: INITIAL_VISIT_SECTIONS_TOTAL,
         tone_hint: effectiveToneHint,
@@ -807,7 +819,14 @@ export async function regenerateNoteSection(
   if (fetchError || !note) return { error: 'No draft note found' }
 
   const noteRom = note.rom_data as InitialVisitRomValues | null
-  const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, noteRom)
+  const noteVisitDate = (note.visit_date as string | null | undefined) ?? null
+  const { data: inputData, error: gatherError } = await gatherSourceData(
+    supabase,
+    caseId,
+    visitType,
+    noteRom,
+    noteVisitDate,
+  )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''

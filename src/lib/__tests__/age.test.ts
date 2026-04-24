@@ -41,17 +41,25 @@ describe('computeAgeAtDate', () => {
 })
 
 describe('pickVisitAnchor', () => {
-  it('returns visit_date verbatim when provided', () => {
-    expect(pickVisitAnchor('2025-05-01', '2025-06-01T12:00:00Z')).toBe('2025-05-01')
+  it('returns override verbatim when provided (highest precedence)', () => {
+    expect(pickVisitAnchor('2025-01-01', '2025-05-01', '2025-06-01T12:00:00Z')).toBe('2025-01-01')
   })
 
-  it('returns date portion of finalized_at when visit_date is missing', () => {
-    expect(pickVisitAnchor(null, '2025-06-01T12:00:00Z')).toBe('2025-06-01')
+  it('returns visit_date when override is missing', () => {
+    expect(pickVisitAnchor(null, '2025-05-01', '2025-06-01T12:00:00Z')).toBe('2025-05-01')
   })
 
-  it('falls back to today when neither is provided', () => {
+  it('returns date portion of finalized_at when override and visit_date are missing', () => {
+    expect(pickVisitAnchor(null, null, '2025-06-01T12:00:00Z')).toBe('2025-06-01')
+  })
+
+  it('falls back to today when all three are missing', () => {
     const today = new Date().toISOString().slice(0, 10)
-    expect(pickVisitAnchor(null, null)).toBe(today)
-    expect(pickVisitAnchor(undefined, undefined)).toBe(today)
+    expect(pickVisitAnchor(null, null, null)).toBe(today)
+    expect(pickVisitAnchor(undefined, undefined, undefined)).toBe(today)
+  })
+
+  it('treats empty-string override as falsy', () => {
+    expect(pickVisitAnchor('', '2025-05-01', null)).toBe('2025-05-01')
   })
 })

@@ -14,6 +14,7 @@ import { callClaudeTool } from '@/lib/claude/client'
 const emptyInput: InitialVisitInputData = {
   patientInfo: { first_name: 'A', last_name: 'B', date_of_birth: null, gender: null },
   age: null,
+  visitDate: null,
   caseDetails: { case_number: 'C1', accident_type: null, accident_date: null, accident_description: null },
   caseSummary: {
     chief_complaint: null, imaging_findings: null, prior_treatment: null,
