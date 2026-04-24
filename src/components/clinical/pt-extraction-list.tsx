@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import { format } from 'date-fns'
-import { FileText, Loader2, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
+import { FileText, Loader2, AlertCircle, FileUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PtExtractionReview } from './pt-extraction-review'
 
@@ -66,6 +68,7 @@ const reviewStatusConfig: Record<string, { label: string; className: string }> =
 
 export function PtExtractionList({
   extractions,
+  caseId,
 }: {
   extractions: Extraction[]
   caseId: string
@@ -87,7 +90,13 @@ export function PtExtractionList({
       <div className="text-center py-12 text-muted-foreground">
         <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
         <p>No physical therapy extractions yet.</p>
-        <p className="text-sm mt-1">Upload a PT evaluation report to get started.</p>
+        <p className="text-sm mt-1 mb-4">Upload a PT evaluation report to get started.</p>
+        <Button asChild size="sm">
+          <Link href={`/patients/${caseId}/documents`}>
+            <FileUp className="h-4 w-4 mr-2" />
+            Upload PT Evaluation Report
+          </Link>
+        </Button>
       </div>
     )
   }

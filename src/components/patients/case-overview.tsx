@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { FileUp, Stethoscope, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2, FilePlus } from 'lucide-react'
+import { FileUp, Activity, ClipboardList, Receipt, Lock, Pencil, FileSignature, Loader2, FilePlus } from 'lucide-react'
 import { StatusChangeDropdown } from '@/components/patients/status-change-dropdown'
 import { LOCKED_STATUSES, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { CaseOverviewEditDialog } from '@/components/patients/case-overview-edit-dialog'
@@ -65,7 +65,7 @@ const genderLabels: Record<string, string> = {
 
 const quickActions = [
   { label: 'Upload Document', icon: FileUp, href: 'documents' },
-  { label: 'Add Clinical Note', icon: Stethoscope, href: 'clinical' },
+  { label: 'View Clinical Data', icon: Activity, href: 'clinical' },
   { label: 'Record Procedure', icon: ClipboardList, href: 'procedures' },
   { label: 'Create Invoice', icon: Receipt, href: 'billing' },
 ]
