@@ -2,13 +2,13 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Sparkles, RefreshCw, Check, Pencil, Loader2, AlertTriangle } from 'lucide-react'
+import { Sparkles, RefreshCw, Check, Pencil, Loader2, AlertTriangle, Download } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { GeneratingProgress } from '@/components/clinical/generating-progress'
-import { generateCaseSummary, approveCaseSummary } from '@/actions/case-summaries'
+import { generateCaseSummary, approveCaseSummary, downloadCaseSummaryPdf } from '@/actions/case-summaries'
 import { CaseSummaryEditDialog } from './case-summary-edit-dialog'
 import type {
   ImagingFinding,
@@ -111,6 +111,29 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
     })
   }
 
+  function handleDownload() {
+    startTransition(async () => {
+      const result = await downloadCaseSummaryPdf(caseId)
+      if (result.error || !result.data) {
+        toast.error(result.error || 'Download failed')
+        return
+      }
+      const { base64, filename, mimeType } = result.data
+      const byteChars = atob(base64)
+      const bytes = new Uint8Array(byteChars.length)
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+      const blob = new Blob([bytes], { type: mimeType })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    })
+  }
+
   // No summary state
   if (!summary) {
     return (
@@ -209,6 +232,9 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
 
   const showApprove = summary.review_status === 'pending_review'
   const showRegenerate = summary.review_status !== 'pending_review' || isStale
+  const showDownload =
+    summary.generation_status === 'completed' &&
+    (summary.review_status === 'approved' || summary.review_status === 'edited')
 
   return (
     <>
@@ -245,6 +271,12 @@ export function CaseSummaryCard({ caseId, summary, isStale }: CaseSummaryCardPro
               <Button variant="outline" size="sm" onClick={handleRegenerate} disabled={isLocked || isPending}>
                 {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
                 Regenerate
+              </Button>
+            )}
+            {showDownload && (
+              <Button variant="outline" size="sm" onClick={handleDownload} disabled={isPending}>
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Download className="h-3 w-3 mr-1" />}
+                Download PDF
               </Button>
             )}
           </div>

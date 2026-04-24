@@ -293,6 +293,61 @@ export async function saveCaseSummaryEdits(caseId: string, formValues: CaseSumma
   return { data: { success: true } }
 }
 
+// --- Download PDF ---
+
+export async function downloadCaseSummaryPdf(caseId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: summary, error } = await supabase
+    .from('case_summaries')
+    .select('*')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (error || !summary) return { error: 'Summary not found' }
+  if (summary.generation_status !== 'completed') {
+    return { error: 'Summary generation not complete' }
+  }
+  if (!['approved', 'edited'].includes(summary.review_status)) {
+    return { error: 'Summary must be approved or edited before download' }
+  }
+
+  const { data: caseRow } = await supabase
+    .from('cases')
+    .select('patient:patients!inner(last_name)')
+    .eq('id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  const patient = caseRow?.patient as unknown as { last_name: string } | undefined
+
+  const { renderCaseSummaryPdf } = await import('@/lib/pdf/render-case-summary-pdf')
+  const { buildDownloadFilename } = await import('@/lib/filenames/build-download-filename')
+
+  try {
+    const buffer = await renderCaseSummaryPdf({ summary, caseId })
+    const filename = buildDownloadFilename({
+      lastName: patient?.last_name,
+      docType: 'CaseSummary',
+      date: summary.generated_at as string | null,
+    })
+
+    return {
+      data: {
+        base64: buffer.toString('base64'),
+        filename,
+        mimeType: 'application/pdf',
+      },
+    }
+  } catch (err) {
+    console.error('[downloadCaseSummaryPdf] render failed:', err)
+    return { error: 'Failed to render PDF' }
+  }
+}
+
 // --- Approve summary ---
 
 export async function approveCaseSummary(caseId: string) {
