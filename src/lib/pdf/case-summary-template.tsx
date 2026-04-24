@@ -65,22 +65,24 @@ const styles = StyleSheet.create({
   metaBadge: { marginHorizontal: 6 },
   patientInfoRow: { flexDirection: 'row', marginBottom: 2 },
   patientLabel: { fontFamily: 'Helvetica-Bold', marginRight: 4 },
+  patientValue: { flex: 1 },
   sectionHeading: { fontFamily: 'Helvetica-Bold', fontSize: 11, marginTop: 14, marginBottom: 4 },
   sectionBody: { fontSize: 10, lineHeight: 1.6 },
   subHeading: { fontFamily: 'Helvetica-Bold', fontSize: 10, marginTop: 6, marginBottom: 2 },
   findingBlock: { borderWidth: 1, borderColor: '#e5e5e5', borderStyle: 'solid', padding: 6, marginBottom: 6, borderRadius: 2 },
-  findingHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  findingRegion: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
-  severityBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1 },
+  findingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
+  findingRegion: { fontFamily: 'Helvetica-Bold', fontSize: 10, flex: 1, paddingRight: 8 },
+  severityBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 60, textAlign: 'center' },
   bulletRow: { flexDirection: 'row', marginLeft: 8, marginTop: 1 },
   bullet: { width: 10 },
   bulletContent: { flex: 1 },
-  dxRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderWidth: 1, borderColor: '#e5e5e5', borderStyle: 'solid', padding: 6, marginBottom: 4, borderRadius: 2 },
+  dxRow: { borderWidth: 1, borderColor: '#e5e5e5', borderStyle: 'solid', padding: 6, marginBottom: 4, borderRadius: 2 },
+  dxHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 },
   dxMain: { flex: 1, paddingRight: 8 },
   dxName: { fontFamily: 'Helvetica-Bold', fontSize: 10 },
   dxIcd: { fontSize: 9, color: '#666', marginLeft: 4 },
   dxEvidence: { fontSize: 9, color: '#666', marginTop: 2 },
-  confidenceBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1 },
+  confidenceBadge: { fontSize: 8, paddingHorizontal: 4, paddingVertical: 1, width: 50, textAlign: 'center' },
   gapWarning: { fontSize: 9, color: '#b45309', marginTop: 2 },
   muted: { color: '#666' },
   timelineRow: { flexDirection: 'row', marginTop: 2 },
@@ -152,26 +154,21 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
         <Text style={styles.documentTitle}>Clinical Case Summary</Text>
 
         <View style={styles.metaRow}>
-          <Text>Generated: {data.generatedAt}</Text>
-          <Text style={styles.metaBadge}>•</Text>
-          <Text>Status: {reviewStatusLabel[data.reviewStatus] ?? data.reviewStatus}</Text>
-          {data.aiConfidence && (
-            <>
-              <Text style={styles.metaBadge}>•</Text>
-              <Text>Confidence: {data.aiConfidence}</Text>
-            </>
-          )}
+          <Text>
+            Generated: {data.generatedAt}  •  Status: {reviewStatusLabel[data.reviewStatus] ?? data.reviewStatus}
+            {data.aiConfidence ? `  •  Confidence: ${data.aiConfidence}` : ''}
+          </Text>
         </View>
 
         <View style={styles.separator} />
 
         {/* Patient Info Block */}
         <View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text>{data.patientName}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>DOB:</Text><Text>{data.dob}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Patient:</Text><Text style={styles.patientValue}>{data.patientName}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>DOB:</Text><Text style={styles.patientValue}>{data.dob}</Text></View>
+          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text style={styles.patientValue}>{data.dateOfInjury}</Text></View>
           {data.accidentType && (
-            <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Accident Type:</Text><Text>{data.accidentType}</Text></View>
+            <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Accident Type:</Text><Text style={styles.patientValue}>{data.accidentType}</Text></View>
           )}
         </View>
 
@@ -190,7 +187,7 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
             {data.imagingFindings.map((f, i) => {
               const sevStyle = f.severity ? severityStyleMap[f.severity] : null
               return (
-                <View key={i} style={styles.findingBlock} wrap={false}>
+                <View key={i} style={styles.findingBlock}>
                   <View style={styles.findingHeader}>
                     <Text style={styles.findingRegion}>{f.body_region}</Text>
                     {f.severity && sevStyle && (
@@ -223,19 +220,19 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
             {data.priorTreatment.modalities.length > 0 && (
               <View style={styles.patientInfoRow}>
                 <Text style={styles.patientLabel}>Modalities:</Text>
-                <Text>{data.priorTreatment.modalities.join(', ')}</Text>
+                <Text style={styles.patientValue}>{data.priorTreatment.modalities.join(', ')}</Text>
               </View>
             )}
             {data.priorTreatment.total_visits != null && (
               <View style={styles.patientInfoRow}>
                 <Text style={styles.patientLabel}>Total Visits:</Text>
-                <Text>{String(data.priorTreatment.total_visits)}</Text>
+                <Text style={styles.patientValue}>{String(data.priorTreatment.total_visits)}</Text>
               </View>
             )}
             {data.priorTreatment.treatment_period && (
               <View style={styles.patientInfoRow}>
                 <Text style={styles.patientLabel}>Period:</Text>
-                <Text>{data.priorTreatment.treatment_period}</Text>
+                <Text style={styles.patientValue}>{data.priorTreatment.treatment_period}</Text>
               </View>
             )}
             {data.priorTreatment.gaps.length > 0 && (
@@ -260,7 +257,7 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
             {data.symptomsTimeline.onset && (
               <View style={styles.patientInfoRow}>
                 <Text style={styles.patientLabel}>Onset:</Text>
-                <Text>{data.symptomsTimeline.onset}</Text>
+                <Text style={styles.patientValue}>{data.symptomsTimeline.onset}</Text>
               </View>
             )}
             {data.symptomsTimeline.progression.length > 0 && (
@@ -277,7 +274,7 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
             {data.symptomsTimeline.current_status && (
               <View style={[styles.patientInfoRow, { marginTop: 4 }]}>
                 <Text style={styles.patientLabel}>Current Status:</Text>
-                <Text>{data.symptomsTimeline.current_status}</Text>
+                <Text style={styles.patientValue}>{data.symptomsTimeline.current_status}</Text>
               </View>
             )}
             {data.symptomsTimeline.pain_levels.length > 0 && (
@@ -304,20 +301,22 @@ export function CaseSummaryPdf({ data }: { data: CaseSummaryPdfData }) {
             {data.suggestedDiagnoses.map((dx, i) => {
               const confStyle = confidenceStyleMap[dx.confidence]
               return (
-                <View key={i} style={styles.dxRow} wrap={false}>
-                  <View style={styles.dxMain}>
-                    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                      <Text style={styles.dxName}>{dx.diagnosis}</Text>
-                      {dx.icd10_code && <Text style={styles.dxIcd}>{dx.icd10_code}</Text>}
+                <View key={i} style={styles.dxRow}>
+                  <View style={styles.dxHeader}>
+                    <View style={styles.dxMain}>
+                      <Text>
+                        <Text style={styles.dxName}>{dx.diagnosis}</Text>
+                        {dx.icd10_code && <Text style={styles.dxIcd}>  {dx.icd10_code}</Text>}
+                      </Text>
                     </View>
-                    {dx.supporting_evidence && (
-                      <Text style={styles.dxEvidence}>{dx.supporting_evidence}</Text>
+                    {confStyle && (
+                      <Text style={[styles.confidenceBadge, { color: confStyle.color, backgroundColor: confStyle.backgroundColor, borderWidth: 1, borderColor: confStyle.borderColor, borderStyle: 'solid', borderRadius: 2 }]}>
+                        {dx.confidence}
+                      </Text>
                     )}
                   </View>
-                  {confStyle && (
-                    <Text style={[styles.confidenceBadge, { color: confStyle.color, backgroundColor: confStyle.backgroundColor, borderWidth: 1, borderColor: confStyle.borderColor, borderStyle: 'solid', borderRadius: 2 }]}>
-                      {dx.confidence}
-                    </Text>
+                  {dx.supporting_evidence && (
+                    <Text style={styles.dxEvidence}>{dx.supporting_evidence}</Text>
                   )}
                 </View>
               )
