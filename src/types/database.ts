@@ -217,6 +217,8 @@ export type Database = {
           review_status: string
           reviewed_at: string | null
           reviewed_by_user_id: string | null
+          sections_done: number
+          sections_total: number
           source_data_hash: string | null
           suggested_diagnoses: Json
           symptoms_timeline: Json
@@ -244,6 +246,8 @@ export type Database = {
           review_status?: string
           reviewed_at?: string | null
           reviewed_by_user_id?: string | null
+          sections_done?: number
+          sections_total?: number
           source_data_hash?: string | null
           suggested_diagnoses?: Json
           symptoms_timeline?: Json
@@ -271,6 +275,8 @@ export type Database = {
           review_status?: string
           reviewed_at?: string | null
           reviewed_by_user_id?: string | null
+          sections_done?: number
+          sections_total?: number
           source_data_hash?: string | null
           suggested_diagnoses?: Json
           symptoms_timeline?: Json
@@ -860,6 +866,8 @@ export type Database = {
           prognosis: string | null
           raw_ai_response: Json | null
           respiratory_rate: number | null
+          sections_done: number
+          sections_total: number
           source_data_hash: string | null
           spo2_percent: number | null
           status: string
@@ -904,6 +912,8 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           respiratory_rate?: number | null
+          sections_done?: number
+          sections_total?: number
           source_data_hash?: string | null
           spo2_percent?: number | null
           status?: string
@@ -948,6 +958,8 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           respiratory_rate?: number | null
+          sections_done?: number
+          sections_total?: number
           source_data_hash?: string | null
           spo2_percent?: number | null
           status?: string
@@ -1178,6 +1190,8 @@ export type Database = {
           raw_ai_response: Json | null
           review_of_systems: string | null
           rom_data: Json | null
+          sections_done: number
+          sections_total: number
           social_history: string | null
           source_data_hash: string | null
           status: string
@@ -1217,6 +1231,8 @@ export type Database = {
           raw_ai_response?: Json | null
           review_of_systems?: string | null
           rom_data?: Json | null
+          sections_done?: number
+          sections_total?: number
           social_history?: string | null
           source_data_hash?: string | null
           status?: string
@@ -1256,6 +1272,8 @@ export type Database = {
           raw_ai_response?: Json | null
           review_of_systems?: string | null
           rom_data?: Json | null
+          sections_done?: number
+          sections_total?: number
           social_history?: string | null
           source_data_hash?: string | null
           status?: string
@@ -1428,6 +1446,7 @@ export type Database = {
           paid_amount: number
           payee_address: string | null
           payee_name: string | null
+          settlement_reason: string | null
           status: string
           total_amount: number
           updated_at: string
@@ -1450,6 +1469,7 @@ export type Database = {
           paid_amount?: number
           payee_address?: string | null
           payee_name?: string | null
+          settlement_reason?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -1472,6 +1492,7 @@ export type Database = {
           paid_amount?: number
           payee_address?: string | null
           payee_name?: string | null
+          settlement_reason?: string | null
           status?: string
           total_amount?: number
           updated_at?: string
@@ -2100,6 +2121,8 @@ export type Database = {
           prognosis: string | null
           raw_ai_response: Json | null
           review_of_systems: string | null
+          sections_done: number
+          sections_total: number
           social_history: string | null
           source_data_hash: string | null
           status: string
@@ -2142,6 +2165,8 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
+          sections_done?: number
+          sections_total?: number
           social_history?: string | null
           source_data_hash?: string | null
           status?: string
@@ -2184,6 +2209,8 @@ export type Database = {
           prognosis?: string | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
+          sections_done?: number
+          sections_total?: number
           social_history?: string | null
           source_data_hash?: string | null
           status?: string

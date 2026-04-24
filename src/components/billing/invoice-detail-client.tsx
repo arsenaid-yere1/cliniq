@@ -30,9 +30,10 @@ import { CreateInvoiceDialog } from './create-invoice-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { deleteInvoice, generateInvoicePdf } from '@/actions/billing'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
-import { issueInvoice, markInvoicePaid, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
+import { issueInvoice, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
 import { ALLOWED_TRANSITIONS, INVOICE_STATUS_COLORS, INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
+import { PaymentDialog, type PaymentDialogMode } from './payment-dialog'
 
 interface InvoiceData {
   id: string
@@ -48,6 +49,7 @@ interface InvoiceData {
   total_amount: number
   paid_amount: number
   status: string
+  settlement_reason: string | null
   line_items: Array<{
     id: string
     procedure_id: string | null
@@ -177,6 +179,8 @@ export function InvoiceDetailClient({
   const [voidReason, setVoidReason] = useState('')
   const [showWriteOffDialog, setShowWriteOffDialog] = useState(false)
   const [writeOffReason, setWriteOffReason] = useState('')
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [paymentDialogMode, setPaymentDialogMode] = useState<PaymentDialogMode>('mark-paid')
 
   const currentStatus = invoice.status as InvoiceStatus
   const availableTransitions = ALLOWED_TRANSITIONS[currentStatus] ?? []
@@ -333,9 +337,25 @@ export function InvoiceDetailClient({
               size="sm"
               className="bg-green-600 hover:bg-green-700"
               disabled={isTransitioning}
-              onClick={() => handleTransition(() => markInvoicePaid(invoice.id), 'Invoice marked as paid')}
+              onClick={() => {
+                setPaymentDialogMode('mark-paid')
+                setShowPaymentDialog(true)
+              }}
             >
               Mark as Paid
+            </Button>
+          )}
+          {(currentStatus === 'issued' || currentStatus === 'overdue') && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isTransitioning}
+              onClick={() => {
+                setPaymentDialogMode('record-payment')
+                setShowPaymentDialog(true)
+              }}
+            >
+              Record Payment
             </Button>
           )}
           {availableTransitions.includes('overdue') && (
@@ -550,6 +570,14 @@ export function InvoiceDetailClient({
             <p>{invoice.notes}</p>
           </div>
         )}
+
+        {/* Settlement Reason */}
+        {invoice.settlement_reason && (
+          <div className="text-sm pt-2 border-t">
+            <p className="font-medium text-muted-foreground">Settlement Reason</p>
+            <p>{invoice.settlement_reason}</p>
+          </div>
+        )}
       </div>
 
       {/* Edit Dialog */}
@@ -601,6 +629,16 @@ export function InvoiceDetailClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Payment Dialog (Mark Paid / Record Payment) */}
+      <PaymentDialog
+        open={showPaymentDialog}
+        onOpenChange={setShowPaymentDialog}
+        mode={paymentDialogMode}
+        invoiceId={invoice.id}
+        totalAmount={Number(invoice.total_amount)}
+        paidAmount={Number(invoice.paid_amount)}
+      />
 
       {/* Write Off Reason Dialog */}
       <AlertDialog open={showWriteOffDialog} onOpenChange={(open) => { setShowWriteOffDialog(open); if (!open) setWriteOffReason('') }}>
