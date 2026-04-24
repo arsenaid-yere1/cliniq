@@ -42,9 +42,19 @@ Invoices have a 6-status lifecycle (`draft`, `issued`, `paid`, `void`, `overdue`
 
 - PI-specific lien statuses (`pending_settlement`, `submitted_to_attorney`, etc.) — deferred to future epic
 - Automated `overdue` detection via cron — manual only for now
-- Payment tracking system (amounts, payment methods, payment records)
+- Overpayment handling / refunds (paid amount > total_amount is rejected)
 - Insurance claims or EDI integration
 - Invoice status React context (unlike cases, invoices don't need a layout-level provider since status changes happen on the detail page, not across sibling routes)
+
+## Payment Model
+
+Invoices have existing columns `total_amount` and `paid_amount`, plus an existing `payments` table (see [002_case_dashboard_tables.sql:46-91](supabase/migrations/002_case_dashboard_tables.sql#L46-L91)). The status lifecycle integrates with these as follows:
+
+- Recording a payment inserts a row into `payments` and increments `invoices.paid_amount`.
+- Marking an invoice `paid` is a user decision — it means "this invoice is settled" regardless of whether `paid_amount == total_amount`. Common in personal injury cases where a settlement check is accepted as final payment for a larger billed amount.
+- When `paid_amount < total_amount` at the time of marking paid, the user must supply a `settlement_reason` which is persisted on the invoice and in status history metadata. The unpaid remainder is effectively written off as part of the settlement.
+- Overpayment (`amount > balance_due`) is rejected at the server action level.
+- Partial payments that do NOT settle the invoice (user records a payment but leaves status as `issued`) are supported via a separate `recordPayment` action.
 
 ## Implementation Approach
 
@@ -110,6 +120,9 @@ alter table public.invoices drop constraint invoices_status_check;
 alter table public.invoices add constraint invoices_status_check
   check (status in ('draft', 'issued', 'paid', 'void', 'overdue', 'uncollectible'));
 
+-- 3a. Add settlement_reason column for invoices paid below total_amount
+alter table public.invoices add column settlement_reason text;
+
 -- 4. Seed history for all existing non-draft invoices (audit backfill)
 -- This creates a single "initial" history entry so the audit trail has a starting point
 insert into public.invoice_status_history (invoice_id, previous_status, new_status, reason)
@@ -121,11 +134,12 @@ where status != 'draft' and deleted_at is null;
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Migration applies cleanly against current DB
-- [ ] `SELECT DISTINCT status FROM invoices` returns only values from new set
-- [ ] `invoice_status_history` table exists with correct columns
-- [ ] RLS policies exist (select + insert only, no update/delete)
-- [ ] History rows exist for all non-draft invoices
+- [x] Migration applies cleanly against current DB
+- [x] `SELECT DISTINCT status FROM invoices` returns only values from new set
+- [x] `invoice_status_history` table exists with correct columns
+- [x] `invoices.settlement_reason` column exists (nullable text)
+- [x] RLS policies exist (select + insert only, no update/delete)
+- [x] History rows exist for all non-draft invoices
 
 #### Manual Verification:
 - [ ] Existing invoices retain correct data after status migration
@@ -239,9 +253,9 @@ description: `$${Number(i.total_amount).toFixed(2)} - ${INVOICE_STATUS_LABELS[i.
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles with no errors: `npm run typecheck`
-- [ ] No remaining references to `invoiceStatusColors`, `invoiceStatusLabels`, or `formatInvoiceStatus` in the codebase
-- [ ] `INVOICE_STATUS_COLORS` and `INVOICE_STATUS_LABELS` are imported in all 3 consumer files
+- [x] TypeScript compiles with no errors: `npm run typecheck`
+- [x] No remaining references to `invoiceStatusColors`, `invoiceStatusLabels`, or `formatInvoiceStatus` in the codebase
+- [x] `INVOICE_STATUS_COLORS` and `INVOICE_STATUS_LABELS` are imported in all 3 consumer files
 
 #### Manual Verification:
 - [ ] Billing table renders status badges with correct colors
@@ -268,6 +282,7 @@ Create named transition functions with validation and history logging. Add `asse
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { ALLOWED_TRANSITIONS, type InvoiceStatus } from '@/lib/constants/invoice-status'
+import { assertCaseNotClosed } from '@/actions/case-status'
 
 // -- Internal helper: validate and execute a status transition --
 
@@ -349,8 +364,169 @@ export async function issueInvoice(invoiceId: string) {
   return transitionInvoiceStatus(invoiceId, 'issued')
 }
 
-export async function markInvoicePaid(invoiceId: string) {
-  return transitionInvoiceStatus(invoiceId, 'paid')
+export async function markInvoicePaid(
+  invoiceId: string,
+  input: {
+    amount: number
+    paymentDate?: string // ISO date; defaults to today
+    paymentMethod?: string
+    referenceNumber?: string
+    notes?: string
+    settlementReason?: string // required if amount + existing paid_amount < total_amount
+  }
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Fetch invoice totals
+  const { data: invoice, error: fetchError } = await supabase
+    .from('invoices')
+    .select('id, status, case_id, total_amount, paid_amount')
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .single()
+
+  if (fetchError || !invoice) return { error: 'Invoice not found' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const currentStatus = invoice.status as InvoiceStatus
+  if (!ALLOWED_TRANSITIONS[currentStatus]?.includes('paid')) {
+    return { error: `Cannot mark invoice paid from status '${currentStatus}'` }
+  }
+
+  const total = Number(invoice.total_amount)
+  const alreadyPaid = Number(invoice.paid_amount)
+  const balanceDue = total - alreadyPaid
+  const amount = Number(input.amount)
+
+  if (!(amount > 0)) return { error: 'Payment amount must be greater than 0' }
+  if (amount > balanceDue) {
+    return { error: `Payment amount (${amount}) exceeds balance due (${balanceDue}). Overpayment is not supported.` }
+  }
+
+  const newPaidTotal = alreadyPaid + amount
+  const isSettledBelowTotal = newPaidTotal < total
+  const settlementReason = input.settlementReason?.trim() ?? ''
+
+  if (isSettledBelowTotal && settlementReason.length === 0) {
+    return { error: 'Settlement reason is required when marking an invoice paid below its total amount' }
+  }
+
+  // Insert payment record
+  const { error: paymentError } = await supabase.from('payments').insert({
+    invoice_id: invoiceId,
+    amount,
+    payment_date: input.paymentDate ?? new Date().toISOString().slice(0, 10),
+    payment_method: input.paymentMethod ?? null,
+    reference_number: input.referenceNumber ?? null,
+    notes: input.notes ?? null,
+    created_by_user_id: user.id,
+  })
+  if (paymentError) return { error: paymentError.message }
+
+  // Update invoice: paid_amount, status, settlement_reason (if below total)
+  const { error: updateError } = await supabase
+    .from('invoices')
+    .update({
+      paid_amount: newPaidTotal,
+      status: 'paid',
+      settlement_reason: isSettledBelowTotal ? settlementReason : null,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', invoiceId)
+  if (updateError) return { error: updateError.message }
+
+  // Insert status history with payment metadata
+  const { error: historyError } = await supabase.from('invoice_status_history').insert({
+    invoice_id: invoiceId,
+    previous_status: currentStatus,
+    new_status: 'paid',
+    changed_by_user_id: user.id,
+    reason: isSettledBelowTotal ? settlementReason : null,
+    metadata: {
+      payment_amount: amount,
+      total_amount: total,
+      paid_amount_after: newPaidTotal,
+      settled_below_total: isSettledBelowTotal,
+      settlement_shortfall: isSettledBelowTotal ? total - newPaidTotal : 0,
+    },
+  })
+  if (historyError) {
+    console.error('Failed to insert invoice status history:', historyError)
+  }
+
+  revalidatePath(`/patients/${invoice.case_id}/billing`)
+  return { error: null }
+}
+
+// Record a partial payment without changing invoice status.
+// Use when user receive payment but not yet settling the invoice.
+export async function recordPayment(
+  invoiceId: string,
+  input: {
+    amount: number
+    paymentDate?: string
+    paymentMethod?: string
+    referenceNumber?: string
+    notes?: string
+  }
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: invoice, error: fetchError } = await supabase
+    .from('invoices')
+    .select('id, status, case_id, total_amount, paid_amount')
+    .eq('id', invoiceId)
+    .is('deleted_at', null)
+    .single()
+  if (fetchError || !invoice) return { error: 'Invoice not found' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Only issued/overdue invoices can accept a partial payment
+  const status = invoice.status as InvoiceStatus
+  if (status !== 'issued' && status !== 'overdue') {
+    return { error: `Cannot record payment on invoice with status '${status}'` }
+  }
+
+  const total = Number(invoice.total_amount)
+  const alreadyPaid = Number(invoice.paid_amount)
+  const balanceDue = total - alreadyPaid
+  const amount = Number(input.amount)
+
+  if (!(amount > 0)) return { error: 'Payment amount must be greater than 0' }
+  if (amount > balanceDue) {
+    return { error: `Payment amount (${amount}) exceeds balance due (${balanceDue}). Overpayment is not supported.` }
+  }
+
+  const { error: paymentError } = await supabase.from('payments').insert({
+    invoice_id: invoiceId,
+    amount,
+    payment_date: input.paymentDate ?? new Date().toISOString().slice(0, 10),
+    payment_method: input.paymentMethod ?? null,
+    reference_number: input.referenceNumber ?? null,
+    notes: input.notes ?? null,
+    created_by_user_id: user.id,
+  })
+  if (paymentError) return { error: paymentError.message }
+
+  const { error: updateError } = await supabase
+    .from('invoices')
+    .update({
+      paid_amount: alreadyPaid + amount,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', invoiceId)
+  if (updateError) return { error: updateError.message }
+
+  revalidatePath(`/patients/${invoice.case_id}/billing`)
+  return { error: null }
 }
 
 export async function voidInvoice(invoiceId: string, reason: string) {
@@ -464,22 +640,33 @@ export async function deleteInvoice(invoiceId: string, caseId: string) {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles with no errors: `npm run typecheck`
-- [ ] `issueInvoice` rejects invoices with no line items
-- [ ] `voidInvoice` rejects empty reason
-- [ ] `writeOffInvoice` rejects empty reason
-- [ ] `updateInvoice` rejects non-draft invoices
-- [ ] `deleteInvoice` rejects non-draft invoices
-- [ ] `deleteInvoice` requires authentication
-- [ ] All transition functions insert a row into `invoice_status_history`
-- [ ] Invalid transitions return an error (e.g., `paid → draft`)
+- [x] TypeScript compiles with no errors: `npm run typecheck`
+- [x] `issueInvoice` rejects invoices with no line items
+- [x] `voidInvoice` rejects empty reason
+- [x] `writeOffInvoice` rejects empty reason
+- [x] `updateInvoice` rejects non-draft invoices
+- [x] `deleteInvoice` rejects non-draft invoices
+- [x] `deleteInvoice` requires authentication
+- [x] All transition functions insert a row into `invoice_status_history`
+- [x] Invalid transitions return an error (e.g., `paid → draft`)
+- [x] `markInvoicePaid` rejects amount <= 0 and amount > balance_due
+- [x] `markInvoicePaid` requires `settlementReason` when paid_amount after payment < total_amount
+- [x] `markInvoicePaid` inserts a row in `payments`, updates `invoices.paid_amount`, and sets `invoices.settlement_reason` when applicable
+- [x] `markInvoicePaid` status history `metadata` records `payment_amount`, `settled_below_total`, `settlement_shortfall`
+- [x] `recordPayment` accepts partial payment on `issued`/`overdue` invoices without changing status
+- [x] `recordPayment` rejects payments on invoices in any other status
 
 #### Manual Verification:
-- [ ] Create a draft invoice → issue it → mark paid (happy path)
+- [ ] Create a draft invoice → issue it → mark paid in full (happy path)
+- [ ] Issue a $1000 invoice → mark paid for $600 with settlement reason → status is `paid`, `paid_amount=600`, `settlement_reason` populated
+- [ ] Issue a $1000 invoice → record $400 partial payment → status stays `issued`, `paid_amount=400`
+- [ ] Then mark paid for remaining $600 → status `paid`, `paid_amount=1000`, `settlement_reason` null
+- [ ] Try to mark paid below total without a settlement reason — should be rejected
+- [ ] Try to mark paid with amount > balance_due — should be rejected
 - [ ] Try to edit an issued invoice — should be rejected
 - [ ] Try to delete an issued invoice — should be rejected
 - [ ] Void an issued invoice with a reason — should succeed
-- [ ] Check `invoice_status_history` table has correct entries
+- [ ] Check `invoice_status_history` table has correct entries including payment metadata
 - [ ] Close a case → try to create/edit/delete invoice — should be blocked
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 4.
@@ -498,7 +685,7 @@ Add status transition buttons to the invoice detail page, disable edit/delete fo
 
 **Import transition actions and constants:**
 ```typescript
-import { issueInvoice, markInvoicePaid, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
+import { issueInvoice, markInvoicePaid, recordPayment, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
 import { ALLOWED_TRANSITIONS, INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 ```
 
@@ -516,15 +703,38 @@ const availableTransitions = ALLOWED_TRANSITIONS[currentStatus] ?? []
 
 For each available transition, render an appropriate button:
 - `issued` → "Issue Invoice" button (primary style)
-- `paid` → "Mark as Paid" button (green/success style)
+- `paid` → "Mark as Paid" button (green/success style, opens a payment dialog)
 - `void` → "Void Invoice" button (red/destructive style, opens a dialog for reason)
 - `overdue` → "Mark Overdue" button (amber/warning style)
 - `uncollectible` → "Write Off" button (destructive style, opens a dialog for reason)
+
+Additionally, for `issued` and `overdue` invoices, render a "Record Payment" button (secondary style) that opens the payment dialog in partial-payment mode (no status change).
+
+**Add Mark-as-Paid payment dialog:**
+A `Dialog` containing a small form. Shared with Record Payment (same dialog component, different submit action). Fields:
+- `amount` (number input) — defaults to current `balance_due = total_amount - paid_amount`
+- `paymentDate` (date input) — defaults to today
+- `paymentMethod` (select or text: e.g., Check, Card, Cash, Settlement, Other)
+- `referenceNumber` (text)
+- `notes` (textarea)
+- `settlementReason` (textarea) — only visible/required when `amount < balanceDue` AND mode is "mark paid". Hidden for "record payment".
+
+Header summary shows `Total: $X  •  Already Paid: $Y  •  Balance Due: $Z`.
+
+On submit:
+- Mark-as-Paid mode → call `markInvoicePaid(invoiceId, { amount, paymentDate, paymentMethod, referenceNumber, notes, settlementReason })`
+- Record-Payment mode → call `recordPayment(invoiceId, { amount, paymentDate, paymentMethod, referenceNumber, notes })`
+
+Client-side validations (server re-validates):
+- `amount > 0`
+- `amount <= balanceDue`
+- For mark-paid with `amount < balanceDue`: `settlementReason` non-empty
 
 **Add void/write-off reason dialog:**
 A simple `AlertDialog` with a `<Textarea>` for the reason, similar to the existing delete confirmation dialog. Two separate dialogs (void and write-off) each with their own state:
 - `showVoidDialog` / `voidReason` state
 - `showWriteOffDialog` / `writeOffReason` state
+- `showPaymentDialog` / `paymentDialogMode` (`'mark-paid' | 'record-payment'`) / form fields state
 
 **Toast feedback:**
 Each action should show `toast.success` on success and `toast.error` on failure, following the existing pattern.
@@ -542,20 +752,25 @@ Already handled in Phase 2 — the imported `INVOICE_STATUS_COLORS` and `INVOICE
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles with no errors: `npm run typecheck`
-- [ ] Lint passes: `npm run lint`
-- [ ] Build succeeds: `npm run build`
+- [x] TypeScript compiles with no errors: `npm run typecheck`
+- [x] Lint passes: `npm run lint`
+- [x] Build succeeds: `npm run build`
 
 #### Manual Verification:
 - [ ] Draft invoice shows: Edit, Delete, "Issue Invoice", "Void Invoice" buttons
-- [ ] Issued invoice shows: "Mark as Paid", "Mark Overdue", "Void Invoice" buttons (no Edit/Delete)
-- [ ] Overdue invoice shows: "Mark as Paid", "Write Off" buttons
+- [ ] Issued invoice shows: "Mark as Paid", "Record Payment", "Mark Overdue", "Void Invoice" buttons (no Edit/Delete)
+- [ ] Overdue invoice shows: "Mark as Paid", "Record Payment", "Write Off" buttons
 - [ ] Paid/Void/Uncollectible invoices show no action buttons (terminal states)
 - [ ] Void dialog requires a reason before confirming
 - [ ] Write-off dialog requires a reason before confirming
+- [ ] Payment dialog defaults amount to balance_due and shows Total/Paid/Balance summary
+- [ ] Payment dialog (mark-paid mode) reveals settlement reason field when amount < balance_due and blocks submit when empty
+- [ ] Payment dialog rejects amount > balance_due client-side
+- [ ] Record Payment flow on $1000/$400-paid invoice then Mark Paid flow correctly updates running totals in UI
+- [ ] Settlement reason appears on the invoice detail after mark-paid-below-total
 - [ ] Toast notifications appear on success and failure
 - [ ] Status badge updates immediately after transition
-- [ ] Billing table reflects updated statuses
+- [ ] Billing table reflects updated statuses and paid_amount
 
 **Implementation Note**: After completing this phase and all automated verification passes, pause here for manual confirmation before proceeding to Phase 5.
 
@@ -589,28 +804,72 @@ const invoiceStatusHistoryPromise = supabase
   .order('changed_at', { ascending: false })
 ```
 
-Map results to `TimelineEvent` entries:
+Map results to `TimelineEvent` entries. For `paid` transitions with payment metadata, include the payment amount and settlement note:
 ```typescript
-{
-  type: 'invoice_status_change',
-  date: record.changed_at,
-  title: `Invoice ${record.invoices.invoice_number} — ${INVOICE_STATUS_LABELS[record.new_status]}`,
-  description: record.reason
-    ? `${INVOICE_STATUS_LABELS[record.previous_status] ?? 'New'} → ${INVOICE_STATUS_LABELS[record.new_status]}. Reason: ${record.reason}`
-    : `${INVOICE_STATUS_LABELS[record.previous_status] ?? 'New'} → ${INVOICE_STATUS_LABELS[record.new_status]}`,
+function buildInvoiceStatusEvent(record) {
+  const prev = INVOICE_STATUS_LABELS[record.previous_status] ?? 'New'
+  const next = INVOICE_STATUS_LABELS[record.new_status]
+  const meta = record.metadata as { payment_amount?: number; settled_below_total?: boolean; settlement_shortfall?: number } | null
+
+  let description = `${prev} → ${next}`
+  if (record.new_status === 'paid' && meta?.payment_amount != null) {
+    description += `. Payment: $${Number(meta.payment_amount).toFixed(2)}`
+    if (meta.settled_below_total) {
+      description += ` (settled; $${Number(meta.settlement_shortfall ?? 0).toFixed(2)} written off)`
+    }
+  }
+  if (record.reason) description += `. Reason: ${record.reason}`
+
+  return {
+    type: 'invoice_status_change',
+    date: record.changed_at,
+    title: `Invoice ${record.invoices.invoice_number} — ${next}`,
+    description,
+  }
 }
 ```
 
-Merge these events into the existing sorted timeline array.
+Add a 6th parallel query for partial payments recorded via `recordPayment` (payments that did NOT trigger a status change). One way: fetch all `payments` for the case, then exclude those whose `(invoice_id, payment_date)` coincides with a `paid`-transition history row. Simpler approach: emit a timeline event for every payment and let the status-change event (when it exists) be complementary:
+
+```typescript
+const paymentsPromise = supabase
+  .from('payments')
+  .select(`
+    id,
+    invoice_id,
+    amount,
+    payment_date,
+    payment_method,
+    reference_number,
+    invoices!inner(invoice_number, case_id)
+  `)
+  .eq('invoices.case_id', caseId)
+  .order('payment_date', { ascending: false })
+```
+
+Map each payment to:
+```typescript
+{
+  type: 'invoice_payment',
+  date: record.payment_date,
+  title: `Payment received — Invoice ${record.invoices.invoice_number}`,
+  description: `$${Number(record.amount).toFixed(2)}${record.payment_method ? ` via ${record.payment_method}` : ''}${record.reference_number ? ` (ref ${record.reference_number})` : ''}`,
+}
+```
+
+Merge all events into the existing sorted timeline array.
 
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] TypeScript compiles with no errors: `npm run typecheck`
+- [x] TypeScript compiles with no errors: `npm run typecheck`
 
 #### Manual Verification:
 - [ ] Issue an invoice → timeline shows "Invoice INV-2026-XXXX — Issued" event
 - [ ] Void an invoice → timeline shows the transition with the reason
+- [ ] Mark paid in full → timeline shows status change with payment amount
+- [ ] Mark paid below total with settlement reason → timeline shows `settled; $X written off` and reason
+- [ ] Record a partial payment (no status change) → timeline shows "Payment received" event
 - [ ] Events appear in correct chronological order
 
 ---
@@ -618,19 +877,27 @@ Merge these events into the existing sorted timeline array.
 ## Testing Strategy
 
 ### Integration Testing (Manual):
-1. **Happy path**: Create draft → Issue → Mark Paid
-2. **Void from draft**: Create draft → Void (with reason)
-3. **Void from issued**: Create draft → Issue → Void (with reason)
-4. **Overdue flow**: Create draft → Issue → Mark Overdue → Mark Paid
-5. **Write-off flow**: Create draft → Issue → Mark Overdue → Write Off (with reason)
-6. **Immutability**: Issue an invoice → try Edit button (should not appear) → try API update (should be rejected)
-7. **Delete guard**: Issue an invoice → try Delete (should not appear) → try API delete (should be rejected)
-8. **Case-closed guard**: Close a case → try creating/editing/deleting invoices (all should fail)
-9. **Invalid transitions**: Try `paid → draft`, `void → issued` via direct API call (should be rejected)
+1. **Happy path (full payment)**: Create draft → Issue ($1000) → Mark Paid for $1000 → `paid_amount=1000`, no settlement_reason
+2. **Settlement below total**: Create draft → Issue ($1000) → Mark Paid for $600 with reason "PI settlement final" → status `paid`, `paid_amount=600`, `settlement_reason` persisted
+3. **Partial then full**: Issue ($1000) → Record Payment $400 (status stays `issued`) → Mark Paid $600 → status `paid`, `paid_amount=1000`
+4. **Partial then settled**: Issue ($1000) → Record Payment $400 → Mark Paid $300 with settlement reason → status `paid`, `paid_amount=700`, `settlement_reason` set
+5. **Overpayment rejected**: Issue ($1000) → Mark Paid $1200 → rejected
+6. **Missing settlement reason**: Issue ($1000) → Mark Paid $600 with empty reason → rejected
+7. **Void from draft**: Create draft → Void (with reason)
+8. **Void from issued**: Create draft → Issue → Void (with reason)
+9. **Overdue flow**: Create draft → Issue → Mark Overdue → Mark Paid
+10. **Write-off flow**: Create draft → Issue → Mark Overdue → Write Off (with reason)
+11. **Immutability**: Issue an invoice → try Edit button (should not appear) → try API update (should be rejected)
+12. **Delete guard**: Issue an invoice → try Delete (should not appear) → try API delete (should be rejected)
+13. **Case-closed guard**: Close a case → try creating/editing/deleting invoices, recording payments, marking paid (all should fail)
+14. **Invalid transitions**: Try `paid → draft`, `void → issued` via direct API call (should be rejected)
 
 ### Edge Cases:
 - Invoice with no line items cannot be issued
 - Void and write-off require non-empty reason
+- Mark-paid below total requires non-empty settlement reason
+- Overpayment (amount > balance_due) rejected in both `markInvoicePaid` and `recordPayment`
+- `recordPayment` rejected on `draft`, `paid`, `void`, `uncollectible` invoices
 - Deleted (soft) invoices should not be transitionable
 - History backfill from migration should be visible
 
