@@ -1,9 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { FilePlus } from 'lucide-react'
+import { toast } from 'sonner'
+import { FilePlus, Pencil, Trash2, Loader2 } from 'lucide-react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -16,7 +18,13 @@ import { Badge } from '@/components/ui/badge'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
+import { deletePatient } from '@/actions/patients'
+import { PatientEditDialog } from './patient-edit-dialog'
 
 interface Patient {
   id: string
@@ -62,6 +70,22 @@ const genderLabels: Record<string, string> = {
 
 export function PatientDetail({ patient, cases }: { patient: Patient; cases: CaseRow[] }) {
   const router = useRouter()
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const canDelete = cases.length === 0
+
+  async function handleDelete() {
+    setDeleting(true)
+    const result = await deletePatient(patient.id)
+    setDeleting(false)
+    if (result.error) {
+      toast.error(result.error)
+      return
+    }
+    toast.success('Patient deleted')
+    router.push('/people')
+  }
 
   const columns: ColumnDef<CaseRow>[] = [
     {
@@ -124,12 +148,27 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
         <h1 className="text-2xl font-bold">
           {patient.first_name} {patient.middle_name ? `${patient.middle_name} ` : ''}{patient.last_name}
         </h1>
-        <Button asChild>
-          <Link href={`/patients/new?patientId=${patient.id}`}>
-            <FilePlus className="h-4 w-4 mr-2" />
-            New Case for This Patient
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDeleteOpen(true)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : 'Cannot delete: patient has cases'}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+          <Button asChild>
+            <Link href={`/patients/new?patientId=${patient.id}`}>
+              <FilePlus className="h-4 w-4 mr-2" />
+              New Case for This Patient
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -215,6 +254,32 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
           </div>
         </CardContent>
       </Card>
+
+      <PatientEditDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        patientId={patient.id}
+        patient={patient}
+      />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete patient?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will soft-delete {patient.first_name} {patient.last_name}. Only allowed
+              because no cases are attached. This action can be reversed by a database admin.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+              {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -24,6 +24,7 @@ import {
   listPatientCases,
   updatePatient,
   updateCase,
+  deletePatient,
 } from '../patients'
 
 // ---- Tests ----
@@ -361,5 +362,65 @@ describe('updateCase', () => {
 
     const result = await updateCase(TEST_CASE_ID, { ...validCaseEdit, lien_on_file: false })
     expect(result.error).toBe('case update failed')
+  })
+})
+
+describe('deletePatient', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('refuses when patient has attached cases', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') return createMockQueryBuilder({ data: null, error: null, count: 2 } as never)
+      return createMockQueryBuilder()
+    })
+
+    const result = await deletePatient(TEST_PATIENT_ID)
+    expect(result.error).toBe('Cannot delete patient with attached cases')
+  })
+
+  it('soft-deletes patient when no cases attached', async () => {
+    const patientsBuilder = createMockQueryBuilder({ data: null, error: null })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') return createMockQueryBuilder({ data: null, error: null, count: 0 } as never)
+      if (table === 'patients') return patientsBuilder
+      return createMockQueryBuilder()
+    })
+
+    const result = await deletePatient(TEST_PATIENT_ID)
+    expect(result.data).toEqual({ success: true })
+    expect(patientsBuilder.update).toHaveBeenCalled()
+    const updateArg = (patientsBuilder.update as Mock).mock.calls[0][0]
+    expect(updateArg.deleted_at).toBeDefined()
+  })
+
+  it('returns error when count query fails', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') {
+        return createMockQueryBuilder({ data: null, error: { message: 'count failed' }, count: null } as never)
+      }
+      return createMockQueryBuilder()
+    })
+
+    const result = await deletePatient(TEST_PATIENT_ID)
+    expect(result.error).toBe('count failed')
+  })
+
+  it('returns error when update fails', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') return createMockQueryBuilder({ data: null, error: null, count: 0 } as never)
+      if (table === 'patients') return createMockQueryBuilder({ data: null, error: { message: 'update failed' } })
+      return createMockQueryBuilder()
+    })
+
+    const result = await deletePatient(TEST_PATIENT_ID)
+    expect(result.error).toBe('update failed')
+  })
+
+  it('returns error when not authenticated', async () => {
+    ;(mockSupabase.auth.getUser as Mock).mockResolvedValueOnce({ data: { user: null }, error: null })
+    const result = await deletePatient(TEST_PATIENT_ID)
+    expect(result.error).toBe('Not authenticated')
   })
 })

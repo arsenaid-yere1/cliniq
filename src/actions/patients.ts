@@ -311,6 +311,39 @@ export async function updatePatient(patientId: string, data: EditPatientValues) 
 
   if (error) return { error: error.message }
 
+  revalidatePath('/people')
+  revalidatePath(`/people/${patientId}`)
+  return { data: { success: true } }
+}
+
+export async function deletePatient(patientId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { count, error: countError } = await supabase
+    .from('cases')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', patientId)
+    .is('deleted_at', null)
+
+  if (countError) return { error: countError.message }
+  if ((count ?? 0) > 0) {
+    return { error: 'Cannot delete patient with attached cases' }
+  }
+
+  const { error } = await supabase
+    .from('patients')
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    })
+    .eq('id', patientId)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/people')
   return { data: { success: true } }
 }
 
