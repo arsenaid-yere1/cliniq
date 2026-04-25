@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Briefcase, Settings } from "lucide-react";
+import { Users, Briefcase, FolderOpen, Settings } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { title: "Patients", href: "/patients", icon: Users },
+  { title: "Patients", href: "/people", icon: Users },
+  { title: "Cases", href: "/patients", icon: FolderOpen },
   { title: "Attorneys", href: "/attorneys", icon: Briefcase },
 ];
 
@@ -26,7 +27,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b px-6 py-4">
-        <Link href="/patients" className="text-xl font-bold">
+        <Link href="/people" className="text-xl font-bold">
           ClinIQ
         </Link>
       </SidebarHeader>

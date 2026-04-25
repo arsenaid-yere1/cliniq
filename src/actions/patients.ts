@@ -162,6 +162,86 @@ export async function getPatientCase(caseId: string) {
   return { data }
 }
 
+export async function listPatients() {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('patients')
+    .select(`
+      id,
+      first_name,
+      last_name,
+      date_of_birth,
+      phone_primary,
+      cases(id, case_status, accident_date, balance_due, updated_at)
+    `)
+    .is('deleted_at', null)
+    .order('last_name', { ascending: true })
+
+  if (error) {
+    return { error: error.message, data: [] }
+  }
+
+  const normalized = (data ?? []).map((row) => {
+    const cases = (Array.isArray(row.cases) ? row.cases : []).filter(
+      (c) => c.case_status !== 'archived'
+    )
+    const activeCount = cases.filter((c) =>
+      ['intake', 'active', 'pending_settlement'].includes(c.case_status)
+    ).length
+    const balanceTotal = cases.reduce((sum, c) => sum + Number(c.balance_due ?? 0), 0)
+    const lastActivity = cases
+      .map((c) => c.updated_at)
+      .filter(Boolean)
+      .sort()
+      .pop() ?? null
+    const lastAccident = cases
+      .map((c) => c.accident_date)
+      .filter(Boolean)
+      .sort()
+      .pop() ?? null
+    return {
+      id: row.id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      date_of_birth: row.date_of_birth,
+      phone_primary: row.phone_primary,
+      case_count: cases.length,
+      active_case_count: activeCount,
+      balance_total: balanceTotal,
+      last_activity: lastActivity,
+      last_accident_date: lastAccident,
+    }
+  })
+
+  return { data: normalized }
+}
+
+export async function getPatientWithCases(patientId: string) {
+  const supabase = await createClient()
+
+  const { data: patient, error: patientError } = await supabase
+    .from('patients')
+    .select('*')
+    .eq('id', patientId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (patientError) return { error: patientError.message }
+  if (!patient) return { error: 'Patient not found' }
+
+  const { data: cases, error: casesError } = await supabase
+    .from('cases')
+    .select('id, case_number, case_status, accident_date, accident_type, total_billed, total_paid, balance_due, created_at')
+    .eq('patient_id', patientId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+
+  if (casesError) return { error: casesError.message }
+
+  return { data: { patient, cases: cases ?? [] } }
+}
+
 export async function listPatientCases(search?: string) {
   const supabase = await createClient()
 
