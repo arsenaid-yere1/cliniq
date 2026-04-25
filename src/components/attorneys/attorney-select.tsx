@@ -26,18 +26,11 @@ interface AttorneySelectProps {
   initialAttorneys?: Attorney[]
 }
 
-// Stable promise for initial load — created once per module
-let initialLoadPromise: Promise<Attorney[]> | null = null
-
-function getInitialAttorneys(): Promise<Attorney[]> {
-  if (!initialLoadPromise) {
-    initialLoadPromise = listAttorneys().then((r) => r.data ?? [])
-  }
-  return initialLoadPromise
-}
-
 export function AttorneySelect({ value, onChange, initialAttorneys }: AttorneySelectProps) {
-  const loaded = initialAttorneys ?? use(getInitialAttorneys())
+  const [fetchPromise] = useState<Promise<Attorney[]> | null>(() =>
+    initialAttorneys ? null : listAttorneys().then((r) => r.data ?? [])
+  )
+  const loaded = initialAttorneys ?? use(fetchPromise!)
   const [attorneys, setAttorneys] = useState<Attorney[]>(loaded)
   const [showAddDialog, setShowAddDialog] = useState(false)
 
