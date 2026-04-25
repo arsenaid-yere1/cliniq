@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use } from 'react'
+import { useEffect, useState, use } from 'react'
 import { listAttorneys } from '@/actions/attorneys'
 import { AttorneyForm } from './attorney-form'
 import { Button } from '@/components/ui/button'
@@ -26,18 +26,38 @@ interface AttorneySelectProps {
   initialAttorneys?: Attorney[]
 }
 
+// Stable promise for initial load — created once per module, refreshed on each new mount
+let initialLoadPromise: Promise<Attorney[]> | null = null
+
+function getInitialAttorneys(): Promise<Attorney[]> {
+  if (!initialLoadPromise) {
+    initialLoadPromise = listAttorneys().then((r) => r.data ?? [])
+  }
+  return initialLoadPromise
+}
+
 export function AttorneySelect({ value, onChange, initialAttorneys }: AttorneySelectProps) {
-  const [fetchPromise] = useState<Promise<Attorney[]> | null>(() =>
-    initialAttorneys ? null : listAttorneys().then((r) => r.data ?? [])
-  )
-  const loaded = initialAttorneys ?? use(fetchPromise!)
+  const loaded = initialAttorneys ?? use(getInitialAttorneys())
   const [attorneys, setAttorneys] = useState<Attorney[]>(loaded)
   const [showAddDialog, setShowAddDialog] = useState(false)
+
+  useEffect(() => {
+    if (initialAttorneys) return
+    let cancelled = false
+    listAttorneys().then((r) => {
+      if (cancelled) return
+      const fresh = r.data ?? []
+      setAttorneys(fresh)
+      initialLoadPromise = Promise.resolve(fresh)
+    })
+    return () => { cancelled = true }
+  }, [initialAttorneys])
 
   function handleAttorneyCreated(attorney: { id: string; first_name: string; last_name: string; firm_name?: string | null }) {
     setAttorneys((prev) => [...prev, { ...attorney, firm_name: attorney.firm_name ?? null }])
     onChange(attorney.id)
     setShowAddDialog(false)
+    initialLoadPromise = null
   }
 
   return (
