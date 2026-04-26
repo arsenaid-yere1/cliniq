@@ -1206,3 +1206,51 @@ describe('SYSTEM_PROMPT — coding framework rule', () => {
     expect(system).toContain('COUNTER-EXAMPLE (framework (b) selection)')
   })
 })
+
+describe('SYSTEM_PROMPT — per-site volume allocation', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  async function capturePrompt(input: ProcedureNoteInputData): Promise<string> {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(input)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    return opts.system as string
+  }
+
+  it('emits PER-SITE VOLUME ALLOCATION RULE with FORBIDDEN PHRASES guard against per-site mL fabrication', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PER-SITE VOLUME ALLOCATION RULE')
+    expect(system).toContain('MUST NOT assert a specific per-site mL number')
+    expect(system).toContain('FORBIDDEN PHRASES')
+    expect(system).toContain('approximately X mL per site')
+  })
+
+  it('emits both [confirm total volume in mL] and [confirm per-site mL allocation] for the null-volume branch', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('[confirm total volume in mL]')
+    expect(system).toContain('[confirm per-site mL allocation]')
+  })
+
+  it('includes a spine multi-site reference paragraph that names sites without per-site mL', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('distributed across L4-L5 and L5-S1, with allocation calibrated to the pathology burden at each level')
+    expect(system).not.toMatch(/approximately 3 mL .* L4-L5/)
+  })
+
+  it('includes a non-spine multi-site reference paragraph', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('right knee and the right shoulder')
+    expect(system).toContain('at each site')
+  })
+
+  it('forbids needle-redirection / multi-needle technique claims in multi-site narration', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('NEEDLE-INSERTION LANGUAGE')
+    expect(system).toContain('Do NOT claim a specific number of needles')
+  })
+
+  it('preserves the existing single-site reference paragraph unchanged', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('The PRP solution (5 mL) was injected slowly into the joint to maximize distribution and tissue saturation.')
+  })
+})
