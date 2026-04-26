@@ -1225,10 +1225,13 @@ describe('SYSTEM_PROMPT — per-site volume allocation', () => {
     expect(system).toContain('approximately X mL per site')
   })
 
-  it('emits both [confirm total volume in mL] and [confirm per-site mL allocation] for the null-volume branch', async () => {
+  it('emits only [confirm total volume in mL] for the null-volume branch — no orphan per-site bracket', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('[confirm total volume in mL]')
-    expect(system).toContain('[confirm per-site mL allocation]')
+    expect(system).toContain('Do NOT emit a separate per-site mL bracket')
+    // Per-site bracket appears only inside FORBIDDEN PHRASES guard text, not as
+    // an emitted placeholder. Reference paragraphs must not include it.
+    expect(system).not.toMatch(/distributed across L4-L5 and L5-S1; \[confirm total volume in mL\] and \[confirm per-site mL allocation\]/)
   })
 
   it('includes a spine multi-site reference paragraph that names sites without per-site mL', async () => {
