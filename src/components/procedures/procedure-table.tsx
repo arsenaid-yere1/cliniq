@@ -41,13 +41,14 @@ import { RecordProcedureDialog, type ProcedureInitialData } from './record-proce
 import { deleteProcedure, getProcedureById, type ProcedureDefaults } from '@/actions/procedures'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
+import { lateralityFromSites, parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 
 interface Procedure {
   id: string
   procedure_date: string
   procedure_name: string
   injection_site: string | null
-  laterality: string | null
+  sites: unknown
   procedure_number: number | null
   // Story 4.2 fields
   blood_draw_volume_ml: number | null
@@ -60,7 +61,6 @@ interface Procedure {
   injection_volume_ml: number | null
   needle_gauge: string | null
   guidance_method: string | null
-  target_confirmed_imaging: boolean | null
   complications: string | null
   supplies_used: string | null
   compression_bandage: boolean | null
@@ -95,10 +95,11 @@ const columns: ColumnDef<Procedure>[] = [
     cell: ({ getValue }) => (getValue() as string | null) || '—',
   },
   {
-    accessorKey: 'laterality',
+    accessorKey: 'sites',
     header: 'Laterality',
-    cell: ({ getValue }) => {
-      const val = getValue() as string | null
+    cell: ({ row }) => {
+      const sites = parseSitesJsonb(row.original.sites)
+      const val = lateralityFromSites(sites)
       if (!val) return '—'
       return val.charAt(0).toUpperCase() + val.slice(1)
     },

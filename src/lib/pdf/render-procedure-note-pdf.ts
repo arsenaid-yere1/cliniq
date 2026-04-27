@@ -3,6 +3,7 @@ import { ProcedureNotePdf, type ProcedureNotePdfData } from './procedure-note-te
 import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import React from 'react'
+import { lateralityFromSites, parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 
 function getMimeType(path: string): string {
   if (path.endsWith('.png')) return 'image/png'
@@ -42,7 +43,7 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
   // Fetch procedure record
   const { data: procedure } = await supabase
     .from('procedures')
-    .select('procedure_date, procedure_name, procedure_number, injection_site, laterality, diagnoses')
+    .select('procedure_date, procedure_name, procedure_number, injection_site, sites, diagnoses')
     .eq('id', input.procedureId)
     .is('deleted_at', null)
     .single()
@@ -125,7 +126,7 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
     procedureName,
     procedureNumber: procedure?.procedure_number ?? 1,
     injectionSite: procedure?.injection_site || '\u2014',
-    laterality: procedure?.laterality || '\u2014',
+    laterality: lateralityFromSites(parseSitesJsonb(procedure?.sites)) ?? '\u2014',
 
     subjective: input.note.subjective as string | null,
     past_medical_history: input.note.past_medical_history as string | null,

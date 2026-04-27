@@ -33,7 +33,12 @@ export interface DischargeNoteInputData {
     procedure_name: string
     procedure_number: number
     injection_site: string | null
-    laterality: string | null
+    sites: Array<{
+      label: string
+      laterality: 'left' | 'right' | 'bilateral' | null
+      volume_ml: number | null
+      target_confirmed_imaging: boolean | null
+    }>
     pain_score_min: number | null
     pain_score_max: number | null
     diagnoses: Array<{ icd10_code: string | null; description: string }>

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useState, useEffect } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
 import { prpProcedureFormSchema, type PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
@@ -9,6 +9,8 @@ import { createPrpProcedure, updatePrpProcedure, type ProcedureDefaults } from '
 import { generateProcedureConsent } from '@/actions/procedure-consents'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import { toast } from 'sonner'
+import type { ProcedureSite } from '@/lib/procedures/sites-helpers'
+import { SitesEditor } from './sites-editor'
 import {
   Dialog,
   DialogContent,
@@ -66,7 +68,6 @@ const STATIC_PROCEDURE_DEFAULTS = {
     injection_volume_ml: 5,
     needle_gauge: '25-gauge spinal',
     guidance_method: 'ultrasound' as const,
-    target_confirmed_imaging: true,
   },
   post_procedure: {
     complications: 'none',
@@ -83,8 +84,9 @@ function scrollToSection(id: string) {
 export interface ProcedureInitialData {
   id: string
   procedure_date: string
-  injection_site: string | null
-  laterality: string | null
+  // sites jsonb is the structured source of truth; the row also still
+  // carries denormalized injection_site (text) for downstream readers.
+  sites: ProcedureSite[]
   diagnoses: unknown
   consent_obtained: boolean | null
   blood_draw_volume_ml: number | null
@@ -97,7 +99,6 @@ export interface ProcedureInitialData {
   injection_volume_ml: number | null
   needle_gauge: string | null
   guidance_method: string | null
-  target_confirmed_imaging: boolean | null
   complications: string | null
   supplies_used: string | null
   compression_bandage: boolean | null
@@ -160,12 +161,21 @@ export function RecordProcedureDialog({
     setGeneratingConsent(true)
     try {
       const values = form.getValues()
+      const sites = values.sites ?? []
+      const treatmentArea = sites.map((s) => s.label).join(', ') || undefined
+      const lateralitySet = new Set(
+        sites.map((s) => s.laterality).filter((l): l is 'left' | 'right' | 'bilateral' => l !== null),
+      )
+      const consentLaterality =
+        lateralitySet.size === 1
+          ? ([...lateralitySet][0] as 'left' | 'right' | 'bilateral')
+          : undefined
       const result = await generateProcedureConsent({
         caseId,
         procedureId: initialData?.id,
         override: {
-          treatmentArea: values.injection_site || undefined,
-          laterality: (values.laterality as 'left' | 'right' | 'bilateral' | undefined) || undefined,
+          treatmentArea,
+          laterality: consentLaterality,
         },
       })
       if ('error' in result && result.error) {
@@ -203,10 +213,7 @@ export function RecordProcedureDialog({
     ),
     defaultValues: {
       procedure_date: initialData?.procedure_date ?? format(new Date(), 'yyyy-MM-dd'),
-      injection_site: initialData?.injection_site ?? defaults?.injection_site ?? '',
-      laterality: (initialData?.laterality as 'left' | 'right' | 'bilateral' | undefined)
-        ?? (defaults?.laterality as 'left' | 'right' | 'bilateral' | undefined)
-        ?? undefined,
+      sites: initialData?.sites ?? defaults?.sites ?? [],
       // Pre-check ONLY high-evidence PM codes — those with BOTH
       // imaging_support === 'confirmed' AND exam_support === 'objective'.
       // Lower-evidence codes (subjective-only exam, no imaging cite) still
@@ -260,8 +267,6 @@ export function RecordProcedureDialog({
           ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.injection.needle_gauge),
         guidance_method: (initialData?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined)
           ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.injection.guidance_method),
-        target_confirmed_imaging: initialData?.target_confirmed_imaging
-          ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.injection.target_confirmed_imaging),
       },
       post_procedure: {
         complications: initialData?.complications
@@ -275,6 +280,26 @@ export function RecordProcedureDialog({
       plan_deviation_reason: initialData?.plan_deviation_reason ?? '',
     },
   })
+
+  // Auto-sync total injection volume from per-site values when every site
+  // has a volume_ml. Provider may still type a total directly when at
+  // least one site is null. The zod superRefine guarantees consistency
+  // when all sites are filled.
+  const watchedSites = useWatch({ control: form.control, name: 'sites' })
+  const allSitesHaveVolume =
+    !!watchedSites &&
+    watchedSites.length > 0 &&
+    watchedSites.every((s) => s.volume_ml !== null)
+  const computedTotal = allSitesHaveVolume
+    ? watchedSites!.reduce((a, s) => a + (s.volume_ml ?? 0), 0)
+    : null
+  useEffect(() => {
+    if (computedTotal !== null) {
+      form.setValue('injection.injection_volume_ml', computedTotal, {
+        shouldValidate: true,
+      })
+    }
+  }, [computedTotal, form])
 
   async function onSubmit(values: PrpProcedureFormValues) {
     const result = isEditing
@@ -326,58 +351,40 @@ export function RecordProcedureDialog({
                 Encounter Details
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="procedure_date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Procedure Date</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="date"
-                          min={procedureDefaults?.earliest_procedure_date ?? undefined}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="laterality"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Laterality</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="left">Left</SelectItem>
-                          <SelectItem value="right">Right</SelectItem>
-                          <SelectItem value="bilateral">Bilateral</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="procedure_date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Procedure Date</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        min={procedureDefaults?.earliest_procedure_date ?? undefined}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
-                name="injection_site"
+                name="sites"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Injection Site</FormLabel>
+                    <FormLabel>Sites *</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Knee, Shoulder" {...field} />
+                      <SitesEditor
+                        value={field.value ?? []}
+                        onChange={field.onChange}
+                        intakeSuggestions={(procedureDefaults?.sites ?? []).map((s) => s.label)}
+                      />
                     </FormControl>
+                    <FormDescription>
+                      Add each treated site. Per-site laterality, volume, and imaging confirmation are optional.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -601,18 +608,24 @@ export function RecordProcedureDialog({
                   name="injection.injection_volume_ml"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Injection Volume (mL) *</FormLabel>
+                      <FormLabel>
+                        Total Injection Volume (mL) {allSitesHaveVolume ? '(computed)' : '*'}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
                           step="0.1"
                           placeholder="mL"
+                          readOnly={allSitesHaveVolume}
                           value={field.value ?? ''}
                           onChange={(e) =>
                             field.onChange(e.target.value === '' ? null : Number(e.target.value))
                           }
                         />
                       </FormControl>
+                      {allSitesHaveVolume && (
+                        <FormDescription>Sum of per-site volumes.</FormDescription>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -633,52 +646,28 @@ export function RecordProcedureDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="injection.guidance_method"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Guidance Method *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="ultrasound">Ultrasound</SelectItem>
-                          <SelectItem value="fluoroscopy">Fluoroscopy</SelectItem>
-                          <SelectItem value="landmark">Landmark</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="injection.target_confirmed_imaging"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col justify-end pb-1">
-                      <div className="flex items-center gap-2">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value ?? false}
-                            onCheckedChange={(checked) => field.onChange(checked === true ? true : null)}
-                            id="target_confirmed_imaging"
-                          />
-                        </FormControl>
-                        <FormLabel htmlFor="target_confirmed_imaging" className="cursor-pointer font-normal">
-                          Target Confirmed on Imaging
-                        </FormLabel>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="injection.guidance_method"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Guidance Method *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="ultrasound">Ultrasound</SelectItem>
+                        <SelectItem value="fluoroscopy">Fluoroscopy</SelectItem>
+                        <SelectItem value="landmark">Landmark</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             <Separator />

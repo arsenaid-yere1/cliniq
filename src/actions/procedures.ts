@@ -7,6 +7,7 @@ import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sites-helpers'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -107,8 +108,10 @@ export async function createPrpProcedure(
       case_id: caseId,
       procedure_date: values.procedure_date,
       procedure_name: 'PRP Injection',
-      injection_site: values.injection_site,
-      laterality: values.laterality,
+      // sites jsonb is the structured source of truth; injection_site is
+      // a denormalized comma-joined string kept for downstream readers.
+      sites: values.sites,
+      injection_site: injectionSiteFromSites(values.sites),
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
       procedure_number: procedureNumber,
@@ -125,7 +128,6 @@ export async function createPrpProcedure(
       injection_volume_ml: values.injection.injection_volume_ml,
       needle_gauge: values.injection.needle_gauge || null,
       guidance_method: values.injection.guidance_method,
-      target_confirmed_imaging: values.injection.target_confirmed_imaging,
       // --- Story 4.2: Post-Procedure ---
       complications: values.post_procedure.complications,
       supplies_used: values.post_procedure.supplies_used || null,
@@ -298,8 +300,8 @@ export async function updatePrpProcedure(
     .from('procedures')
     .update({
       procedure_date: values.procedure_date,
-      injection_site: values.injection_site,
-      laterality: values.laterality,
+      sites: values.sites,
+      injection_site: injectionSiteFromSites(values.sites),
       diagnoses: values.diagnoses,
       consent_obtained: values.consent_obtained,
       // PRP Preparation
@@ -315,7 +317,6 @@ export async function updatePrpProcedure(
       injection_volume_ml: values.injection.injection_volume_ml,
       needle_gauge: values.injection.needle_gauge || null,
       guidance_method: values.injection.guidance_method,
-      target_confirmed_imaging: values.injection.target_confirmed_imaging,
       // Post-Procedure
       complications: values.post_procedure.complications,
       supplies_used: values.post_procedure.supplies_used || null,
@@ -385,8 +386,7 @@ export async function updatePrpProcedure(
 
 // Defaults for pre-populating new procedure dialog from Initial Visit data
 export interface ProcedureDefaults {
-  injection_site: string | null
-  laterality: 'left' | 'right' | 'bilateral' | null
+  sites: ProcedureSite[]
   vital_signs: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -442,40 +442,33 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
     ?? null
 
-  // Derive injection_site and laterality from all chief complaints with a
-  // non-empty body_region. Sites are comma-joined (deduped). Laterality is
-  // merged: all-same → that value; mixed left+right or any bilateral →
-  // bilateral; any null in the mix → null (ambiguous, provider picks).
-  let injection_site: string | null = null
-  let laterality: 'left' | 'right' | 'bilateral' | null = null
-
+  // Derive sites[] from all chief complaints with a non-empty body_region.
+  // One site per complaint; deduped by (label, laterality). volume_ml +
+  // target_confirmed_imaging start null — provider commits per-site at
+  // dialog time.
   const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
   const parsed = complaints
     .filter((c) => c.body_region && c.body_region.trim() !== '')
     .map((c) => parseBodyRegion(c.body_region))
     .filter((p) => p.injection_site !== '')
 
-  if (parsed.length > 0) {
-    const sites = Array.from(new Set(parsed.map((p) => p.injection_site)))
-    injection_site = sites.join(', ')
-
-    const lats = parsed.map((p) => p.laterality)
-    if (lats.some((l) => l === null)) {
-      laterality = null
-    } else {
-      const unique = new Set(lats) as Set<'left' | 'right' | 'bilateral'>
-      if (unique.size === 1) {
-        laterality = lats[0]
-      } else {
-        laterality = 'bilateral'
-      }
-    }
+  const seen = new Set<string>()
+  const sites: ProcedureSite[] = []
+  for (const p of parsed) {
+    const key = `${p.injection_site}|${p.laterality ?? 'null'}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    sites.push({
+      label: p.injection_site,
+      laterality: p.laterality,
+      volume_ml: null,
+      target_confirmed_imaging: null,
+    })
   }
 
   return {
     data: {
-      injection_site,
-      laterality,
+      sites,
       vital_signs: {
         bp_systolic: vitals?.bp_systolic ?? null,
         bp_diastolic: vitals?.bp_diastolic ?? null,

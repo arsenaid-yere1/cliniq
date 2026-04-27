@@ -40,9 +40,11 @@ export type PlanAlignment = {
   mismatches: PlanMismatch[]
 }
 
+import { lateralityFromSites, type ProcedureSite } from './sites-helpers'
+
 type PerformedInput = {
   injection_site: string | null
-  laterality: 'left' | 'right' | 'bilateral' | null
+  sites: ProcedureSite[]
   guidance_method: 'ultrasound' | 'fluoroscopy' | 'landmark' | null
 }
 
@@ -237,15 +239,21 @@ function computeMismatches(
       performed: performedRegion,
     })
   }
+  // Derive performed laterality from sites[]. 'mixed' is incomparable —
+  // treat as null so a multi-site mixed-laterality procedure does not fire
+  // a laterality mismatch against a single-laterality plan.
+  const performedLaterality = lateralityFromSites(performed.sites)
+  const comparablePerformedLat =
+    performedLaterality === 'mixed' ? null : performedLaterality
   if (
     planned.laterality &&
-    performed.laterality &&
-    planned.laterality !== performed.laterality
+    comparablePerformedLat &&
+    planned.laterality !== comparablePerformedLat
   ) {
     mismatches.push({
       field: 'laterality',
       planned: planned.laterality,
-      performed: performed.laterality,
+      performed: comparablePerformedLat,
     })
   }
   if (

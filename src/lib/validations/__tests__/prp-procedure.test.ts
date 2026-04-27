@@ -3,8 +3,14 @@ import { prpProcedureFormSchema } from '../prp-procedure'
 
 const validForm = {
   procedure_date: '2025-03-01',
-  injection_site: 'Right knee',
-  laterality: 'right' as const,
+  sites: [
+    {
+      label: 'Knee',
+      laterality: 'right' as const,
+      volume_ml: 5,
+      target_confirmed_imaging: true,
+    },
+  ],
   diagnoses: [
     { icd10_code: 'M17.11', description: 'Primary osteoarthritis, right knee' },
   ],
@@ -34,7 +40,6 @@ const validForm = {
     injection_volume_ml: 5,
     needle_gauge: '22G',
     guidance_method: 'ultrasound' as const,
-    target_confirmed_imaging: true,
   },
   post_procedure: {
     complications: 'None',
@@ -46,7 +51,9 @@ const validForm = {
 
 describe('prpProcedureFormSchema', () => {
   it('accepts valid complete form', () => {
-    expect(prpProcedureFormSchema().safeParse(validForm).success).toBe(true)
+    const result = prpProcedureFormSchema().safeParse(validForm)
+    if (!result.success) console.error(result.error)
+    expect(result.success).toBe(true)
   })
 
   // --- Required top-level fields ---
@@ -57,9 +64,18 @@ describe('prpProcedureFormSchema', () => {
     ).toBe(false)
   })
 
-  it('rejects empty injection_site', () => {
+  it('rejects empty sites array', () => {
     expect(
-      prpProcedureFormSchema().safeParse({ ...validForm, injection_site: '' }).success,
+      prpProcedureFormSchema().safeParse({ ...validForm, sites: [] }).success,
+    ).toBe(false)
+  })
+
+  it('rejects site with empty label', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [{ label: '', laterality: null, volume_ml: null, target_confirmed_imaging: null }],
+      }).success,
     ).toBe(false)
   })
 
@@ -69,20 +85,89 @@ describe('prpProcedureFormSchema', () => {
     ).toBe(false)
   })
 
-  // --- Laterality enum ---
+  // --- Site laterality enum ---
 
-  it('accepts all laterality values', () => {
+  it('accepts all laterality values per-site', () => {
     for (const val of ['left', 'right', 'bilateral']) {
       expect(
-        prpProcedureFormSchema().safeParse({ ...validForm, laterality: val }).success,
+        prpProcedureFormSchema().safeParse({
+          ...validForm,
+          sites: [{ label: 'Knee', laterality: val, volume_ml: 5, target_confirmed_imaging: true }],
+        }).success,
       ).toBe(true)
     }
   })
 
-  it('rejects invalid laterality', () => {
+  it('accepts site laterality as null', () => {
     expect(
-      prpProcedureFormSchema().safeParse({ ...validForm, laterality: 'both' }).success,
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [{ label: 'Knee', laterality: null, volume_ml: 5, target_confirmed_imaging: null }],
+      }).success,
+    ).toBe(true)
+  })
+
+  it('rejects invalid site laterality', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [{ label: 'Knee', laterality: 'both', volume_ml: 5, target_confirmed_imaging: null }],
+      }).success,
     ).toBe(false)
+  })
+
+  // --- Per-site volume sum check ---
+
+  it('accepts when all per-site volumes sum to total', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [
+          { label: 'L4-L5', laterality: null, volume_ml: 3, target_confirmed_imaging: null },
+          { label: 'L5-S1', laterality: null, volume_ml: 3, target_confirmed_imaging: null },
+        ],
+        injection: { ...validForm.injection, injection_volume_ml: 6 },
+      }).success,
+    ).toBe(true)
+  })
+
+  it('accepts within 0.1 mL float tolerance', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [
+          { label: 'L4-L5', laterality: null, volume_ml: 3.05, target_confirmed_imaging: null },
+          { label: 'L5-S1', laterality: null, volume_ml: 2.95, target_confirmed_imaging: null },
+        ],
+        injection: { ...validForm.injection, injection_volume_ml: 6 },
+      }).success,
+    ).toBe(true)
+  })
+
+  it('rejects when per-site sum mismatches total', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [
+          { label: 'L4-L5', laterality: null, volume_ml: 3, target_confirmed_imaging: null },
+          { label: 'L5-S1', laterality: null, volume_ml: 3, target_confirmed_imaging: null },
+        ],
+        injection: { ...validForm.injection, injection_volume_ml: 5 },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('skips sum check when any site volume is null (provider-entered total)', () => {
+    expect(
+      prpProcedureFormSchema().safeParse({
+        ...validForm,
+        sites: [
+          { label: 'L4-L5', laterality: null, volume_ml: 3, target_confirmed_imaging: null },
+          { label: 'L5-S1', laterality: null, volume_ml: null, target_confirmed_imaging: null },
+        ],
+        injection: { ...validForm.injection, injection_volume_ml: 6 },
+      }).success,
+    ).toBe(true)
   })
 
   // --- Diagnosis validation ---
@@ -226,10 +311,10 @@ describe('prpProcedureFormSchema', () => {
     }).success).toBe(false)
   })
 
-  it('accepts target_confirmed_imaging as null', () => {
+  it('accepts site target_confirmed_imaging as null', () => {
     expect(prpProcedureFormSchema().safeParse({
       ...validForm,
-      injection: { ...validForm.injection, target_confirmed_imaging: null },
+      sites: [{ label: 'Knee', laterality: 'right', volume_ml: 5, target_confirmed_imaging: null }],
     }).success).toBe(true)
   })
 

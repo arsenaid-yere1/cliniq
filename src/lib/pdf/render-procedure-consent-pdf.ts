@@ -3,6 +3,7 @@ import { ProcedureConsentPdf, type ProcedureConsentPdfData } from './procedure-c
 import { createClient } from '@/lib/supabase/server'
 import { format } from 'date-fns'
 import React from 'react'
+import { lateralityFromSites, parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 
 function getMimeType(path: string): string {
   if (path.endsWith('.png')) return 'image/png'
@@ -73,14 +74,18 @@ export async function renderProcedureConsentPdf(
   if (input.procedureId) {
     const { data: procData } = await supabase
       .from('procedures')
-      .select('injection_site, laterality, procedure_number')
+      .select('injection_site, sites, procedure_number')
       .eq('id', input.procedureId)
       .is('deleted_at', null)
       .maybeSingle()
     if (procData) {
+      const derivedLat = lateralityFromSites(parseSitesJsonb(procData.sites))
       procedureDefaults = {
         treatmentArea: procData.injection_site ?? undefined,
-        laterality: (procData.laterality as 'left' | 'right' | 'bilateral' | null) ?? undefined,
+        laterality:
+          derivedLat === 'left' || derivedLat === 'right' || derivedLat === 'bilateral'
+            ? derivedLat
+            : undefined,
         procedureNumber: procData.procedure_number ?? undefined,
       }
     }

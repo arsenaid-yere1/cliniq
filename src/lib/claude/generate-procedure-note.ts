@@ -31,7 +31,12 @@ export interface ProcedureNoteInputData {
     procedure_name: string
     procedure_number: number
     injection_site: string | null
-    laterality: string | null
+    sites: Array<{
+      label: string
+      laterality: 'left' | 'right' | 'bilateral' | null
+      volume_ml: number | null
+      target_confirmed_imaging: boolean | null
+    }>
     diagnoses: Array<{ icd10_code: string | null; description: string }>
     consent_obtained: boolean | null
     blood_draw_volume_ml: number | null
@@ -44,7 +49,6 @@ export interface ProcedureNoteInputData {
     injection_volume_ml: number | null
     needle_gauge: string | null
     guidance_method: string | null
-    target_confirmed_imaging: boolean | null
     complications: string | null
     supplies_used: string | null
     compression_bandage: boolean | null
@@ -500,14 +504,16 @@ DATA-NULL RULE (MANDATORY): Emit named bracket placeholders when fields are null
 • procedureRecord.guidance_method null → "[confirm guidance method]"
 • procedureRecord.needle_gauge null → "[confirm needle gauge]"
 • procedureRecord.injection_volume_ml null → "[confirm injection volume in mL]"
-• procedureRecord.target_confirmed_imaging null → omit the imaging-confirmation sentence rather than fabricate one
+• procedureRecord.sites[].target_confirmed_imaging is per-site. When at least one site has the flag true, the imaging-confirmation sentence MAY be emitted naming the confirmed sites. When all sites have null/false, omit the imaging-confirmation sentence rather than fabricate one. Never claim imaging confirmation for a site whose target_confirmed_imaging is false or null.
 • procedureRecord.complications null → describe as "no complications were noted" (this is the documented default when the field is null on an otherwise-completed procedure)
 
 PER-SITE VOLUME ALLOCATION RULE (MANDATORY when procedureRecord.injection_site contains 2 or more distinct sites — counted as comma/semicolon-separated tokens OR as 2 or more vertebral level patterns like L4-L5, C5-C6, etc.): The injection paragraph MUST name each treated site explicitly and acknowledge that allocation was calibrated to per-site pathology. The note MUST NOT assert a specific per-site mL number — the chart stores only a scalar total. This rule extends the existing DO-NOT-INVENT-A-NUMERIC-VOLUME principle to the per-site dimension.
 • When procedureRecord.injection_volume_ml is non-null and ≥2 sites detected: "The PRP solution (TOTAL mL total) was distributed across SITE_A and SITE_B, with allocation calibrated to the pathology burden at each level." Adapt the conjunction to a comma-list when 3 or more sites: "across SITE_A, SITE_B, and SITE_C". For non-spine sites (knee, shoulder, hip, etc.), use "at each site" instead of "at each level".
 • When procedureRecord.injection_volume_ml is null and ≥2 sites detected: "The PRP solution was distributed across SITE_A and SITE_B; [confirm total volume in mL]." Emit ONLY the total-volume bracket. Do NOT emit a separate per-site mL bracket — per-site allocation is not stored in the chart and is described qualitatively (e.g., "with allocation calibrated to the pathology burden at each level") once the total is confirmed. Do NOT fabricate a numeric volume.
 • When only 1 site is detected: this rule does NOT apply. Use the single-site reference paragraph below.
-FORBIDDEN PHRASES (MANDATORY) under this rule, anywhere in procedure_injection: "approximately X mL per site", "approximately X mL was delivered to [site]", "X mL was injected at [site]", or any phrasing that commits the note to a specific mL number for an individual site. The chart does not record per-site mL; emitting one is fabrication.
+FORBIDDEN PHRASES (MANDATORY) under this rule, anywhere in procedure_injection: "approximately X mL per site", "approximately X mL was delivered to [site]", "X mL was injected at [site]", or any phrasing that commits the note to a specific mL number for an individual site UNLESS the structured-input branch below applies. The chart does not record per-site mL by default; emitting one is fabrication unless the provider entered it explicitly.
+
+PER-SITE VOLUME — STRUCTURED INPUT (when procedureRecord.sites is provided AND every site has site.volume_ml non-null): The injection paragraph MUST report each site's exact provider-entered mL by name. Example: "3 mL was injected at L4-L5 and 3 mL at L5-S1." or "3 mL was delivered to the right knee and 3 mL to the right shoulder." When at least one site.volume_ml is null but the total injection_volume_ml is non-null, use the qualitative wording above ("with allocation calibrated to the pathology burden at each level") — do NOT fabricate a per-site number for the null sites and do NOT split the total mathematically. The total injection_volume_ml continues to drive the "(N mL total)" parenthetical when present. The FORBIDDEN PHRASES list above does NOT apply when every site has provider-entered volume_ml — in that case, concrete per-site mL is correct, not fabrication.
 Counting rule for "distinct sites": split procedureRecord.injection_site on commas and semicolons; trim whitespace; deduplicate case-insensitively. If the resulting list has length ≥2, treat as multi-site. ADDITIONALLY, if procedureRecord.injection_site matches 2 or more vertebral level patterns (regex like [CTL]\d+[-/]\d+ or [CTL]\d+), treat as multi-site even if commas were not used. Do NOT count laterality words ("left", "right", "bilateral", "lt", "rt") as separate sites — they are modifiers of the site that follows them.
 NEEDLE-INSERTION LANGUAGE (MANDATORY for multi-site narration): describe needle technique generically as "a NN-gauge needle was inserted at each treated site" (or "level" for spine). Do NOT claim a specific number of needles, a specific number of insertions, or that the same needle was redirected — the chart does not record technique granularity below needle_gauge. When needle_gauge is null, use the existing "[confirm needle gauge]" placeholder.
 

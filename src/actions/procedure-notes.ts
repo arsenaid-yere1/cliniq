@@ -19,6 +19,7 @@ import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-statu
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
 import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
+import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 
@@ -306,7 +307,7 @@ async function gatherProcedureNoteSourceData(
         procedure_name: proc.procedure_name,
         procedure_number: proc.procedure_number ?? 1,
         injection_site: proc.injection_site,
-        laterality: proc.laterality,
+        sites: parseSitesJsonb(proc.sites),
         diagnoses,
         consent_obtained: proc.consent_obtained,
         blood_draw_volume_ml: proc.blood_draw_volume_ml,
@@ -319,7 +320,6 @@ async function gatherProcedureNoteSourceData(
         injection_volume_ml: proc.injection_volume_ml,
         needle_gauge: proc.needle_gauge,
         guidance_method: proc.guidance_method,
-        target_confirmed_imaging: proc.target_confirmed_imaging,
         complications: proc.complications,
         supplies_used: proc.supplies_used,
         compression_bandage: proc.compression_bandage,
@@ -434,7 +434,7 @@ async function gatherProcedureNoteSourceData(
       planAlignment: computePlanAlignment({
         performed: {
           injection_site: proc.injection_site,
-          laterality: proc.laterality as 'left' | 'right' | 'bilateral' | null,
+          sites: parseSitesJsonb(proc.sites),
           guidance_method: proc.guidance_method as
             | 'ultrasound'
             | 'fluoroscopy'

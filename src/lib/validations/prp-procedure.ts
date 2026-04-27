@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { procedureSiteSchema } from '@/lib/procedures/sites-helpers'
 
 const diagnosisSchema = z.object({
   icd10_code: z.string().min(1, 'ICD-10 code is required'),
@@ -41,10 +42,10 @@ const anesthesiaSchema = z.object({
 })
 
 const injectionSchema = z.object({
-  injection_volume_ml: z.number().positive('Injection volume is required'),
+  injection_volume_ml: z.number().positive('Total injection volume is required'),
   needle_gauge: z.string().optional(),
   guidance_method: z.enum(['ultrasound', 'fluoroscopy', 'landmark']),
-  target_confirmed_imaging: z.boolean().nullable(),
+  // target_confirmed_imaging is now per-site on procedureSiteSchema
 })
 
 const postProcedureSchema = z.object({
@@ -56,7 +57,7 @@ const postProcedureSchema = z.object({
 
 export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) =>
   z.object({
-    // --- Story 4.1 fields (unchanged) ---
+    // --- Story 4.1 fields ---
     procedure_date: z
       .string()
       .min(1, 'Procedure date is required')
@@ -68,8 +69,7 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
           }`,
         }
       ),
-    injection_site: z.string().min(1, 'Injection site is required'),
-    laterality: z.enum(['left', 'right', 'bilateral']),
+    sites: z.array(procedureSiteSchema).min(1, 'At least one site is required'),
     diagnoses: z.array(diagnosisSchema).min(1, 'At least one diagnosis is required'),
     consent_obtained: z.boolean(),
     vital_signs: vitalSignsSchema,
@@ -79,9 +79,22 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
     injection: injectionSchema,
     post_procedure: postProcedureSchema,
     // Optional rationale entered by the provider when the performed
-    // technique diverges from the documented treatment plan. Consumed by
-    // the PLAN-COHERENCE RULE in procedure-note generation.
+    // technique diverges from the documented treatment plan.
     plan_deviation_reason: z.string().optional(),
+  }).superRefine((data, ctx) => {
+    // When every site has a volume_ml, sum must equal the total within
+    // 0.1 mL tolerance for float rounding.
+    const allHaveVolume = data.sites.every((s) => s.volume_ml !== null)
+    if (allHaveVolume) {
+      const sum = data.sites.reduce((a, s) => a + (s.volume_ml ?? 0), 0)
+      if (Math.abs(sum - data.injection.injection_volume_ml) > 0.1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Per-site volumes sum to ${sum.toFixed(1)} mL; total is ${data.injection.injection_volume_ml.toFixed(1)} mL. Adjust per-site values or the total.`,
+          path: ['injection', 'injection_volume_ml'],
+        })
+      }
+    }
   })
 
 export type PrpProcedureFormValues = z.infer<ReturnType<typeof prpProcedureFormSchema>>

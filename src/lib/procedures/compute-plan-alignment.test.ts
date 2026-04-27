@@ -31,7 +31,14 @@ describe('normalizeRegion', () => {
 describe('computePlanAlignment', () => {
   const performedLumbar = {
     injection_site: 'Lumbar L4-L5',
-    laterality: 'left' as const,
+    sites: [
+      {
+        label: 'L4-L5',
+        laterality: 'left' as 'left' | 'right' | 'bilateral' | null,
+        volume_ml: null,
+        target_confirmed_imaging: null,
+      },
+    ],
     guidance_method: 'ultrasound' as const,
   }
 
@@ -77,7 +84,17 @@ describe('computePlanAlignment', () => {
 
   it('returns deviation on laterality mismatch', () => {
     const result = computePlanAlignment({
-      performed: { ...performedLumbar, laterality: 'right' },
+      performed: {
+        ...performedLumbar,
+        sites: [
+          {
+            label: 'L4-L5',
+            laterality: 'right' as 'left' | 'right' | 'bilateral' | null,
+            volume_ml: null,
+            target_confirmed_imaging: null,
+          },
+        ],
+      },
       pmTreatmentPlan: [
         {
           description: 'Left-sided PRP injection',
@@ -215,5 +232,27 @@ describe('computePlanAlignment', () => {
     })
     // planned description has no laterality word → no mismatch on laterality
     expect(result.status).toBe('aligned')
+  })
+
+  it('treats mixed laterality across sites as incomparable (no laterality mismatch)', () => {
+    const result = computePlanAlignment({
+      performed: {
+        ...performedLumbar,
+        sites: [
+          { label: 'L4-L5', laterality: 'left', volume_ml: null, target_confirmed_imaging: null },
+          { label: 'L5-S1', laterality: 'right', volume_ml: null, target_confirmed_imaging: null },
+        ],
+      },
+      pmTreatmentPlan: [
+        {
+          description: 'Left-sided lumbar PRP injection',
+          type: 'injection',
+          body_region: 'lumbar',
+        },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    // Mixed laterality is meta-state — does not fire single-laterality mismatch
+    expect(result.mismatches.find((m) => m.field === 'laterality')).toBeUndefined()
   })
 })

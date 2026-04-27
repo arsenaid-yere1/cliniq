@@ -23,6 +23,7 @@ import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import { validateDischargeTrajectoryConsistency } from '@/lib/claude/pain-trajectory-validator'
+import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { buildPainObservations } from '@/lib/claude/pain-observations'
 
 // --- Helper: compute source data hash ---
@@ -61,7 +62,7 @@ async function gatherDischargeNoteSourceData(
       .single(),
     supabase
       .from('procedures')
-      .select('id, procedure_date, procedure_name, procedure_number, injection_site, laterality, diagnoses')
+      .select('id, procedure_date, procedure_name, procedure_number, injection_site, sites, diagnoses')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('procedure_date', { ascending: true }),
@@ -209,7 +210,7 @@ async function gatherDischargeNoteSourceData(
       procedure_name: p.procedure_name,
       procedure_number: p.procedure_number ?? 1,
       injection_site: p.injection_site,
-      laterality: p.laterality,
+      sites: parseSitesJsonb(p.sites),
       pain_score_min: v?.pain_score_min ?? null,
       pain_score_max: v?.pain_score_max ?? null,
       diagnoses: Array.isArray(p.diagnoses)

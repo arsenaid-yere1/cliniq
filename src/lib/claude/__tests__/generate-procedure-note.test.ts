@@ -20,7 +20,7 @@ const emptyInput: ProcedureNoteInputData = {
     procedure_name: 'PRP',
     procedure_number: 1,
     injection_site: null,
-    laterality: null,
+    sites: [],
     diagnoses: [],
     consent_obtained: null,
     blood_draw_volume_ml: null,
@@ -33,7 +33,6 @@ const emptyInput: ProcedureNoteInputData = {
     injection_volume_ml: null,
     needle_gauge: null,
     guidance_method: null,
-    target_confirmed_imaging: null,
     complications: null,
     supplies_used: null,
     compression_bandage: null,
@@ -1255,5 +1254,18 @@ describe('SYSTEM_PROMPT — per-site volume allocation', () => {
   it('preserves the existing single-site reference paragraph unchanged', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('The PRP solution (5 mL) was injected slowly into the joint to maximize distribution and tissue saturation.')
+  })
+
+  it('emits PER-SITE VOLUME — STRUCTURED INPUT branch enabling concrete per-site mL when provider entered values', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PER-SITE VOLUME — STRUCTURED INPUT')
+    expect(system).toContain('exact provider-entered mL by name')
+  })
+
+  it('STRUCTURED INPUT rule preserves null-volume fallback to qualitative wording', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('When at least one site.volume_ml is null')
+    expect(system).toContain('do NOT fabricate a per-site number')
+    expect(system).toContain('do NOT split the total mathematically')
   })
 })

@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       attorneys: {
@@ -2284,7 +2259,6 @@ export type Database = {
           injection_site: string | null
           injection_volume_ml: number | null
           kit_lot_number: string | null
-          laterality: string | null
           needle_gauge: string | null
           pain_rating: number | null
           patient_tolerance: string | null
@@ -2293,8 +2267,8 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number: number | null
+          sites: Json
           supplies_used: string | null
-          target_confirmed_imaging: boolean | null
           updated_at: string
           updated_by_user_id: string | null
         }
@@ -2317,7 +2291,6 @@ export type Database = {
           injection_site?: string | null
           injection_volume_ml?: number | null
           kit_lot_number?: string | null
-          laterality?: string | null
           needle_gauge?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
@@ -2326,8 +2299,8 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number?: number | null
+          sites?: Json
           supplies_used?: string | null
-          target_confirmed_imaging?: boolean | null
           updated_at?: string
           updated_by_user_id?: string | null
         }
@@ -2350,7 +2323,6 @@ export type Database = {
           injection_site?: string | null
           injection_volume_ml?: number | null
           kit_lot_number?: string | null
-          laterality?: string | null
           needle_gauge?: string | null
           pain_rating?: number | null
           patient_tolerance?: string | null
@@ -2359,8 +2331,8 @@ export type Database = {
           procedure_date?: string
           procedure_name?: string
           procedure_number?: number | null
+          sites?: Json
           supplies_used?: string | null
-          target_confirmed_imaging?: boolean | null
           updated_at?: string
           updated_by_user_id?: string | null
         }
@@ -3099,9 +3071,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

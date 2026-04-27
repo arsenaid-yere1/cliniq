@@ -110,7 +110,7 @@ describe('regenerateDischargeNoteSectionAction — dischargeVitals wiring', () =
       procedure_name: 'PRP',
       procedure_number: 1,
       injection_site: null,
-      laterality: null,
+      sites: [],
       diagnoses: [],
     }
     const procedureVitalsRow = {
