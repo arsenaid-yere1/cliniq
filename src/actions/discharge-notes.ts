@@ -1056,9 +1056,29 @@ export async function regenerateDischargeNoteSectionAction(
 
   if (fetchError || !note) return { error: 'No draft note found' }
 
-  // Gather fresh source data (preserve the note's existing visit_date)
+  // Gather fresh source data (preserve the note's existing visit_date).
+  // Thread the row's provider-entered discharge vitals through as
+  // `dischargeVitals` so the trajectory builder grounds the discharge
+  // endpoint on the entered value instead of falling through to the
+  // latest-procedure-minus-2 fabrication. Mirrors the assembly used by
+  // generateDischargeNote and getDischargePainTimeline.
   const visitDate = (note.visit_date as string | null) ?? new Date().toISOString().slice(0, 10)
-  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(supabase, caseId, visitDate)
+  const preservedVitals: DischargeNoteInputData['dischargeVitals'] = {
+    bp_systolic: note.bp_systolic,
+    bp_diastolic: note.bp_diastolic,
+    heart_rate: note.heart_rate,
+    respiratory_rate: note.respiratory_rate,
+    temperature_f: note.temperature_f,
+    spo2_percent: note.spo2_percent,
+    pain_score_min: note.pain_score_min,
+    pain_score_max: note.pain_score_max,
+  }
+  const { data: inputData, error: gatherError } = await gatherDischargeNoteSourceData(
+    supabase,
+    caseId,
+    visitDate,
+    preservedVitals,
+  )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
