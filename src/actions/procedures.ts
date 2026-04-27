@@ -8,6 +8,8 @@ import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-statu
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sites-helpers'
+import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
+import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -128,6 +130,9 @@ export async function createPrpProcedure(
       injection_volume_ml: values.injection.injection_volume_ml,
       needle_gauge: values.injection.needle_gauge || null,
       guidance_method: values.injection.guidance_method,
+      target_structure: values.injection.target_structure,
+      // C4: procedure_type — schema-only, hard-coded 'prp' until selector ships
+      procedure_type: 'prp',
       // --- Story 4.2: Post-Procedure ---
       complications: values.post_procedure.complications,
       supplies_used: values.post_procedure.supplies_used || null,
@@ -317,6 +322,7 @@ export async function updatePrpProcedure(
       injection_volume_ml: values.injection.injection_volume_ml,
       needle_gauge: values.injection.needle_gauge || null,
       guidance_method: values.injection.guidance_method,
+      target_structure: values.injection.target_structure,
       // Post-Procedure
       complications: values.post_procedure.complications,
       supplies_used: values.post_procedure.supplies_used || null,
@@ -385,6 +391,7 @@ export async function updatePrpProcedure(
 }
 
 // Defaults for pre-populating new procedure dialog from Initial Visit data
+// + per-anatomy procedure_defaults table lookup (B1).
 export interface ProcedureDefaults {
   sites: ProcedureSite[]
   vital_signs: {
@@ -398,6 +405,18 @@ export interface ProcedureDefaults {
     pain_score_max: number | null
   }
   earliest_procedure_date: string | null
+  // From procedure_defaults table when sites resolve to a single anatomy.
+  // Null when sites is empty or spans multiple anatomies.
+  needle_gauge: string | null
+  injection_volume_ml: number | null
+  anesthetic_agent: string | null
+  anesthetic_dose_ml: number | null
+  guidance_method: 'ultrasound' | 'fluoroscopy' | 'landmark' | null
+  activity_restriction_hrs: number | null
+  blood_draw_volume_ml: number | null
+  centrifuge_duration_min: number | null
+  prep_protocol: string | null
+  target_structure: string | null
 }
 
 export async function getProcedureDefaults(caseId: string): Promise<{ data: ProcedureDefaults }> {
@@ -466,6 +485,14 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     })
   }
 
+  // Look up per-anatomy procedure_defaults when sites resolve to a single
+  // anatomy. Multi-anatomy → leave defaults null so provider commits per
+  // site (the SitesEditor + per-site volume_ml carry that detail).
+  const anatomyKey = singleAnatomyFromSites(sites)
+  const anatomyDefaults = anatomyKey
+    ? await getProcedureDefaultsByAnatomy(anatomyKey, 'prp')
+    : null
+
   return {
     data: {
       sites,
@@ -480,6 +507,16 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
         pain_score_max: vitals?.pain_score_max ?? null,
       },
       earliest_procedure_date,
+      needle_gauge: anatomyDefaults?.needle_gauge ?? null,
+      injection_volume_ml: anatomyDefaults?.injection_volume_ml ?? null,
+      anesthetic_agent: anatomyDefaults?.anesthetic_agent ?? null,
+      anesthetic_dose_ml: anatomyDefaults?.anesthetic_dose_ml ?? null,
+      guidance_method: anatomyDefaults?.guidance_method ?? null,
+      activity_restriction_hrs: anatomyDefaults?.activity_restriction_hrs ?? null,
+      blood_draw_volume_ml: anatomyDefaults?.blood_draw_volume_ml ?? null,
+      centrifuge_duration_min: anatomyDefaults?.centrifuge_duration_min ?? null,
+      prep_protocol: anatomyDefaults?.prep_protocol ?? null,
+      target_structure: anatomyDefaults?.target_structure ?? null,
     },
   }
 }

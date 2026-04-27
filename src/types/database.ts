@@ -2061,6 +2061,69 @@ export type Database = {
           },
         ]
       }
+      procedure_defaults: {
+        Row: {
+          active: boolean
+          activity_restriction_hrs: number | null
+          anatomy_key: string
+          anesthetic_agent: string | null
+          anesthetic_dose_ml: number | null
+          blood_draw_volume_ml: number | null
+          centrifuge_duration_min: number | null
+          created_at: string
+          default_cpt_codes: string[]
+          guidance_method: string | null
+          id: string
+          injection_volume_ml: number | null
+          needle_gauge: string | null
+          notes: string | null
+          prep_protocol: string | null
+          procedure_type: string
+          target_structure: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          activity_restriction_hrs?: number | null
+          anatomy_key: string
+          anesthetic_agent?: string | null
+          anesthetic_dose_ml?: number | null
+          blood_draw_volume_ml?: number | null
+          centrifuge_duration_min?: number | null
+          created_at?: string
+          default_cpt_codes?: string[]
+          guidance_method?: string | null
+          id?: string
+          injection_volume_ml?: number | null
+          needle_gauge?: string | null
+          notes?: string | null
+          prep_protocol?: string | null
+          procedure_type: string
+          target_structure?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          activity_restriction_hrs?: number | null
+          anatomy_key?: string
+          anesthetic_agent?: string | null
+          anesthetic_dose_ml?: number | null
+          blood_draw_volume_ml?: number | null
+          centrifuge_duration_min?: number | null
+          created_at?: string
+          default_cpt_codes?: string[]
+          guidance_method?: string | null
+          id?: string
+          injection_volume_ml?: number | null
+          needle_gauge?: string | null
+          notes?: string | null
+          prep_protocol?: string | null
+          procedure_type?: string
+          target_structure?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       procedure_notes: {
         Row: {
           ai_model: string | null
@@ -2267,8 +2330,10 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number: number | null
+          procedure_type: string
           sites: Json
           supplies_used: string | null
+          target_structure: string | null
           updated_at: string
           updated_by_user_id: string | null
         }
@@ -2299,8 +2364,10 @@ export type Database = {
           procedure_date: string
           procedure_name: string
           procedure_number?: number | null
+          procedure_type?: string
           sites?: Json
           supplies_used?: string | null
+          target_structure?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
         }
@@ -2331,8 +2398,10 @@ export type Database = {
           procedure_date?: string
           procedure_name?: string
           procedure_number?: number | null
+          procedure_type?: string
           sites?: Json
           supplies_used?: string | null
+          target_structure?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
         }

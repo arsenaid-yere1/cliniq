@@ -40,6 +40,7 @@ const validForm = {
     injection_volume_ml: 5,
     needle_gauge: '22G',
     guidance_method: 'ultrasound' as const,
+    target_structure: null,
   },
   post_procedure: {
     complications: 'None',
@@ -346,5 +347,72 @@ describe('prpProcedureFormSchema', () => {
       ...validForm,
       post_procedure: { ...validForm.post_procedure, activity_restriction_hrs: 0 },
     }).success).toBe(false)
+  })
+
+  // --- target_structure (B2) ---
+
+  it('accepts target_structure as null', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      injection: { ...validForm.injection, target_structure: null },
+    }).success).toBe(true)
+  })
+
+  it('accepts all target_structure values', () => {
+    for (const val of [
+      'periarticular', 'facet_capsular', 'intradiscal', 'epidural',
+      'transforaminal', 'sacroiliac_adjacent', 'intra_articular',
+    ]) {
+      expect(prpProcedureFormSchema().safeParse({
+        ...validForm,
+        injection: { ...validForm.injection, target_structure: val },
+      }).success).toBe(true)
+    }
+  })
+
+  it('rejects invalid target_structure', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      injection: { ...validForm.injection, target_structure: 'made_up' },
+    }).success).toBe(false)
+  })
+
+  // --- C3 consent gate ---
+
+  it('accepts consent_obtained=true with empty plan_deviation_reason', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      consent_obtained: true,
+      plan_deviation_reason: '',
+    }).success).toBe(true)
+  })
+
+  it('rejects consent_obtained=false with empty plan_deviation_reason', () => {
+    const result = prpProcedureFormSchema().safeParse({
+      ...validForm,
+      consent_obtained: false,
+      plan_deviation_reason: '',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message)
+      expect(messages).toContain('Plan deviation reason required when consent is not obtained.')
+    }
+  })
+
+  it('rejects consent_obtained=false with whitespace-only plan_deviation_reason', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      consent_obtained: false,
+      plan_deviation_reason: '   \n  ',
+    }).success).toBe(false)
+  })
+
+  it('accepts consent_obtained=false with substantive plan_deviation_reason', () => {
+    expect(prpProcedureFormSchema().safeParse({
+      ...validForm,
+      consent_obtained: false,
+      plan_deviation_reason: 'Patient verbally consented; written consent pending file recovery.',
+    }).success).toBe(true)
   })
 })

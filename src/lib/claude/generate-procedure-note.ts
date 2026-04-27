@@ -49,6 +49,7 @@ export interface ProcedureNoteInputData {
     injection_volume_ml: number | null
     needle_gauge: string | null
     guidance_method: string | null
+    target_structure: string | null
     complications: string | null
     supplies_used: string | null
     compression_bandage: boolean | null
@@ -447,7 +448,17 @@ Reference (improvement-leaning — for improved): "Findings indicate cervical, t
 10. procedure_indication (~1-3 bullets):
 Bullet per injection site referencing specific imaging finding with measurements.
 
-TARGET-COHERENCE RULE (MANDATORY): The language describing what this injection treats must match the documented technique on procedureRecord.guidance_method. Do NOT describe the procedure as disc-directed or intradiscal unless guidance_method = "fluoroscopy" AND the injection_site explicitly names an intradiscal target.
+PROVIDER-COMMITTED TARGET STRUCTURE (when procedureRecord.target_structure is non-null): The injection-target language MUST use the provider-committed structure verbatim. Map values to narrative terms:
+• 'periarticular' → "periarticular"
+• 'facet_capsular' → "facet-capsular"
+• 'intradiscal' → "intradiscal"
+• 'epidural' → "epidural"
+• 'transforaminal' → "transforaminal"
+• 'sacroiliac_adjacent' → "sacroiliac-adjacent"
+• 'intra_articular' → "intra-articular"
+The guidance_method-driven branches below apply ONLY when target_structure is null. When target_structure is non-null, do NOT second-guess it via guidance_method — the provider has explicitly committed the technique language.
+
+TARGET-COHERENCE RULE (MANDATORY when procedureRecord.target_structure is null): The language describing what this injection treats must match the documented technique on procedureRecord.guidance_method. Do NOT describe the procedure as disc-directed or intradiscal unless guidance_method = "fluoroscopy" AND the injection_site explicitly names an intradiscal target.
 • When guidance_method = "ultrasound" OR guidance_method = "landmark" — describe targets as periarticular, facet-capsular, paraspinal musculoligamentous, or sacroiliac/sacroiliac-adjacent as appropriate to injection_site. Reference imaging findings as the clinical rationale, NOT as the structure being directly injected. Example: "PRP injection to periarticular and facet-capsular structures adjacent to the L5-S1 level, where imaging demonstrates a 3.2 mm disc protrusion with associated facet arthropathy."
 • When guidance_method = "fluoroscopy" — intradiscal / epidural / transforaminal language may be used only when supported by injection_site and documented in the chart.
 • When guidance_method is null — use neutral periarticular / paraspinal language and emit "[confirm guidance method]" inline rather than fabricating a technique.
@@ -457,6 +468,8 @@ AVOID in this section: "injection to promote disc healing", "disc-directed regen
 MULTI-LEVEL JUSTIFICATION RULE (MANDATORY when procedure_indication emits 2 or more level-bullets, OR when procedureRecord.injection_site names 2 or more spinal levels): Immediately after the bullet list, append one sentence justifying the multi-level intervention using concordance between imaging and symptom distribution. Defensible boilerplate: "Multi-level treatment was selected due to concordant multilevel MRI findings and diffuse symptom distribution." When mriExtractions documents pathology at only one of the treated levels, adapt: "Multi-level treatment was selected based on diffuse symptom distribution across the treated levels, with MRI concordance at [LEVEL]." Do NOT claim multilevel MRI concordance when mriExtractions does not support it. Single-level procedures (one bullet, one level in injection_site) do NOT require this sentence — omit it.
 
 PRIMARY PAIN GENERATOR RULE (MANDATORY when procedure_indication emits 2 or more level-bullets): After the multi-level justification sentence, identify a primary pain generator. Select the level with the largest or most severe disc pathology on mriExtractions (largest disc protrusion measurement, annular tear, most severe T2 signal change, documented nerve-root contact), OR the level that most concordantly reproduces the patient's symptoms on objective_physical_exam / pmExtraction findings. Required sentence: "Primary pain generator suspected at [LEVEL], with adjacent levels contributing." When evidence is ambiguous across the treated levels (e.g., mriExtractions does not distinguish severity and exam does not localize), use: "Pain generator distribution is diffuse across the treated levels without a clear primary level." Do NOT fabricate a primary level when evidence is insufficient.
+
+MULTI-SITE JUSTIFICATION RULE (MANDATORY when procedure_indication emits 2 or more bullets across DIFFERENT NON-SPINE sites — e.g. knee + shoulder, hip + sacroiliac): Immediately after the bullet list, append one sentence justifying the multi-site intervention. Defensible boilerplate: "Multi-site treatment was selected based on concordant pathology at each treated site and the patient's symptom distribution across regions." When mriExtractions or imaging documents pathology at only one of the treated sites, adapt: "Multi-site treatment was selected based on the patient's symptom distribution; imaging concordance is documented at [SITE]." Do NOT claim multi-site imaging concordance when the chart does not support it. This rule does NOT apply to spine multi-level procedures (those use MULTI-LEVEL JUSTIFICATION RULE above) or to single-site procedures.
 
 Reference (single-level): "• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with increased T2 signal extending to the right lateral recess and associated facet arthropathy, as the clinical rationale for intervention."
 Reference (multi-level, 2 bullets): "• PRP injection to periarticular and facet-capsular structures at L4-L5, where MRI demonstrates a 2.5 mm disc protrusion with mild facet arthropathy.\n• PRP injection to periarticular and facet-capsular structures at L5-S1, where MRI demonstrates a 3.2 mm disc protrusion with associated facet arthropathy.\nMulti-level treatment was selected due to concordant multilevel MRI findings and diffuse symptom distribution. Primary pain generator suspected at L5-S1, with adjacent levels contributing."

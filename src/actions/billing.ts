@@ -12,6 +12,9 @@ import { getServiceCatalogPriceMap, listServiceCatalog } from '@/actions/service
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
+import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
+import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 
 // Count distinct injection sites in a free-text string.
 // Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
@@ -253,7 +256,12 @@ export async function getInvoiceFormData(caseId: string) {
     })
   }
 
-  // 3. PRP procedure line items (CPT 0232T 86999 76942)
+  // 3. Procedure line items — CPT lookup per anatomy via procedure_defaults
+  // table (B1). Falls back to legacy hard-coded composite when sites do not
+  // resolve to a single seeded anatomy or when no row matches. Old invoices
+  // already-built keep their literal cpt_code; only newly-constructed line
+  // items consult the table.
+  const FALLBACK_CPT_CODES = ['0232T', '86999', '76942']
   for (const proc of procedures) {
     const typedProc = proc as {
       id: string
@@ -261,22 +269,36 @@ export async function getInvoiceFormData(caseId: string) {
       cpt_code: string | null
       procedure_name: string
       injection_site?: string | null
-      laterality?: string | null
+      sites?: unknown
+      procedure_type?: 'prp' | 'cortisone' | 'hyaluronic' | null
     }
-    // Build description with injection sites listed below the main description
-    const sites: string[] = []
-    if (typedProc.injection_site) sites.push(typedProc.injection_site)
-    if (typedProc.laterality) sites.push(`(${typedProc.laterality})`)
-    const description = 'PRP preparation and injection with US guided'
-      + (sites.length > 0 ? `\n${sites.join(' ')}` : '')
 
-    const unitPrice = (priceMap['0232T'] ?? 0) + (priceMap['86999'] ?? 0) + (priceMap['76942'] ?? 0)
+    const parsedSites = parseSitesJsonb(typedProc.sites)
+    const anatomyKey = singleAnatomyFromSites(parsedSites)
+    const procDefaults = anatomyKey
+      ? await getProcedureDefaultsByAnatomy(anatomyKey, typedProc.procedure_type ?? 'prp')
+      : null
+
+    const cptCodes =
+      procDefaults?.default_cpt_codes && procDefaults.default_cpt_codes.length > 0
+        ? procDefaults.default_cpt_codes
+        : FALLBACK_CPT_CODES
+
+    const sitesText: string[] = []
+    if (typedProc.injection_site) sitesText.push(typedProc.injection_site)
+    const baseDescription = anatomyKey
+      ? `PRP preparation and injection — ${anatomyKey.replace(/_/g, ' ')}`
+      : 'PRP preparation and injection with US guided'
+    const description =
+      baseDescription + (sitesText.length > 0 ? `\n${sitesText.join(' ')}` : '')
+
+    const unitPrice = cptCodes.reduce((sum, code) => sum + (priceMap[code] ?? 0), 0)
     const quantity = countInjectionSites(typedProc.injection_site)
 
     prePopulatedLineItems.push({
       procedure_id: typedProc.id,
       service_date: typedProc.procedure_date,
-      cpt_code: '0232T\n86999\n76942',
+      cpt_code: cptCodes.join('\n'),
       description,
       quantity,
       unit_price: unitPrice,

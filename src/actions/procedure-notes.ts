@@ -320,6 +320,7 @@ async function gatherProcedureNoteSourceData(
         injection_volume_ml: proc.injection_volume_ml,
         needle_gauge: proc.needle_gauge,
         guidance_method: proc.guidance_method,
+        target_structure: proc.target_structure,
         complications: proc.complications,
         supplies_used: proc.supplies_used,
         compression_bandage: proc.compression_bandage,

@@ -12,6 +12,11 @@ import { toast } from 'sonner'
 import type { ProcedureSite } from '@/lib/procedures/sites-helpers'
 import { SitesEditor } from './sites-editor'
 import {
+  NEEDLE_GAUGE_OPTIONS,
+  ANESTHETIC_AGENT_OPTIONS,
+  TARGET_STRUCTURE_OPTIONS,
+} from '@/lib/procedures/enum-constants'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -99,6 +104,7 @@ export interface ProcedureInitialData {
   injection_volume_ml: number | null
   needle_gauge: string | null
   guidance_method: string | null
+  target_structure: string | null
   complications: string | null
   supplies_used: string | null
   compression_bandage: boolean | null
@@ -243,30 +249,43 @@ export function RecordProcedureDialog({
         pain_score_min: initialData?._vitals?.pain_score_min ?? defaults?.vital_signs.pain_score_min ?? null,
         pain_score_max: initialData?._vitals?.pain_score_max ?? defaults?.vital_signs.pain_score_max ?? null,
       },
+      // Per-anatomy defaults (defaults?) take precedence over static
+      // fallback when the intake-derived sites resolve to a single anatomy.
+      // Multi-anatomy and unrecognized sites fall through to STATIC values.
       prp_preparation: {
         blood_draw_volume_ml: initialData?.blood_draw_volume_ml
+          ?? defaults?.blood_draw_volume_ml
           ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.prp_preparation.blood_draw_volume_ml),
         centrifuge_duration_min: initialData?.centrifuge_duration_min
+          ?? defaults?.centrifuge_duration_min
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.prp_preparation.centrifuge_duration_min),
         prep_protocol: initialData?.prep_protocol
+          ?? defaults?.prep_protocol
           ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.prp_preparation.prep_protocol),
         kit_lot_number: initialData?.kit_lot_number ?? '',
       },
       anesthesia: {
         anesthetic_agent: initialData?.anesthetic_agent
+          ?? defaults?.anesthetic_agent
           ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.anesthesia.anesthetic_agent),
         anesthetic_dose_ml: initialData?.anesthetic_dose_ml
+          ?? defaults?.anesthetic_dose_ml
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.anesthesia.anesthetic_dose_ml),
         patient_tolerance: (initialData?.patient_tolerance as 'tolerated_well' | 'adverse_reaction' | null)
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.anesthesia.patient_tolerance),
       },
       injection: {
         injection_volume_ml: initialData?.injection_volume_ml
+          ?? defaults?.injection_volume_ml
           ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.injection.injection_volume_ml),
         needle_gauge: initialData?.needle_gauge
+          ?? defaults?.needle_gauge
           ?? (isEditing ? '' : STATIC_PROCEDURE_DEFAULTS.injection.needle_gauge),
         guidance_method: (initialData?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined)
+          ?? (defaults?.guidance_method as 'ultrasound' | 'fluoroscopy' | 'landmark' | undefined)
           ?? (isEditing ? undefined : STATIC_PROCEDURE_DEFAULTS.injection.guidance_method),
+        target_structure: initialData?.target_structure
+          ?? (isEditing ? null : (defaults?.target_structure ?? null)),
       },
       post_procedure: {
         complications: initialData?.complications
@@ -275,6 +294,7 @@ export function RecordProcedureDialog({
         compression_bandage: initialData?.compression_bandage
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.post_procedure.compression_bandage),
         activity_restriction_hrs: initialData?.activity_restriction_hrs
+          ?? defaults?.activity_restriction_hrs
           ?? (isEditing ? null : STATIC_PROCEDURE_DEFAULTS.post_procedure.activity_restriction_hrs),
       },
       plan_deviation_reason: initialData?.plan_deviation_reason ?? '',
@@ -540,9 +560,18 @@ export function RecordProcedureDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Anesthetic Agent *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Lidocaine 1%" {...field} />
-                      </FormControl>
+                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select agent..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ANESTHETIC_AGENT_OPTIONS.map((a) => (
+                            <SelectItem key={a} value={a}>{a}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -637,9 +666,18 @@ export function RecordProcedureDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Needle Gauge</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. 25-gauge spinal" {...field} />
-                      </FormControl>
+                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select gauge..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {NEEDLE_GAUGE_OPTIONS.map((g) => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -664,6 +702,35 @@ export function RecordProcedureDialog({
                         <SelectItem value="landmark">Landmark</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="injection.target_structure"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Target Structure</FormLabel>
+                    <Select
+                      onValueChange={(v) => field.onChange(v === '' ? null : v)}
+                      value={field.value ?? ''}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {TARGET_STRUCTURE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Optional. When set, supersedes LLM inference of target language in the procedure note. Required for legally-sensitive distinctions (e.g. intradiscal vs. periarticular).
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

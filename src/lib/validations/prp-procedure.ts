@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import { procedureSiteSchema } from '@/lib/procedures/sites-helpers'
+import { TARGET_STRUCTURE_OPTIONS } from '@/lib/procedures/enum-constants'
+
+const targetStructureValues = TARGET_STRUCTURE_OPTIONS.map((o) => o.value) as [string, ...string[]]
 
 const diagnosisSchema = z.object({
   icd10_code: z.string().min(1, 'ICD-10 code is required'),
@@ -46,6 +49,9 @@ const injectionSchema = z.object({
   needle_gauge: z.string().optional(),
   guidance_method: z.enum(['ultrasound', 'fluoroscopy', 'landmark']),
   // target_confirmed_imaging is now per-site on procedureSiteSchema
+  // target_structure: provider-committed periarticular / intradiscal /
+  // etc. label that supersedes LLM inference in procedure-note generation.
+  target_structure: z.enum(targetStructureValues).nullable(),
 })
 
 const postProcedureSchema = z.object({
@@ -92,6 +98,20 @@ export const prpProcedureFormSchema = (opts?: { earliestDate?: string | null }) 
           code: z.ZodIssueCode.custom,
           message: `Per-site volumes sum to ${sum.toFixed(1)} mL; total is ${data.injection.injection_volume_ml.toFixed(1)} mL. Adjust per-site values or the total.`,
           path: ['injection', 'injection_volume_ml'],
+        })
+      }
+    }
+
+    // C3 consent gate: when consent is not obtained, plan_deviation_reason
+    // must explain why the procedure was performed anyway. Prevents silent
+    // submission of an unconsented procedure.
+    if (data.consent_obtained === false) {
+      const reason = (data.plan_deviation_reason ?? '').trim()
+      if (reason.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Plan deviation reason required when consent is not obtained.',
+          path: ['plan_deviation_reason'],
         })
       }
     }

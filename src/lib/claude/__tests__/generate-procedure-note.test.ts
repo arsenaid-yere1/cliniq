@@ -33,6 +33,7 @@ const emptyInput: ProcedureNoteInputData = {
     injection_volume_ml: null,
     needle_gauge: null,
     guidance_method: null,
+    target_structure: null,
     complications: null,
     supplies_used: null,
     compression_bandage: null,
@@ -1267,5 +1268,27 @@ describe('SYSTEM_PROMPT — per-site volume allocation', () => {
     expect(system).toContain('When at least one site.volume_ml is null')
     expect(system).toContain('do NOT fabricate a per-site number')
     expect(system).toContain('do NOT split the total mathematically')
+  })
+
+  it('emits PROVIDER-COMMITTED TARGET STRUCTURE rule mapping target_structure values to narrative terms', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('PROVIDER-COMMITTED TARGET STRUCTURE')
+    expect(system).toContain("'periarticular' → \"periarticular\"")
+    expect(system).toContain("'intradiscal' → \"intradiscal\"")
+    expect(system).toContain("'sacroiliac_adjacent' → \"sacroiliac-adjacent\"")
+    expect(system).toContain('do NOT second-guess it via guidance_method')
+  })
+
+  it('makes TARGET-COHERENCE RULE conditional on target_structure being null', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('TARGET-COHERENCE RULE (MANDATORY when procedureRecord.target_structure is null)')
+  })
+
+  it('emits MULTI-SITE JUSTIFICATION RULE for non-spine multi-site procedures', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('MULTI-SITE JUSTIFICATION RULE')
+    expect(system).toContain('DIFFERENT NON-SPINE sites')
+    expect(system).toContain('Multi-site treatment was selected based on concordant pathology at each treated site')
+    expect(system).toContain('does NOT apply to spine multi-level procedures')
   })
 })
