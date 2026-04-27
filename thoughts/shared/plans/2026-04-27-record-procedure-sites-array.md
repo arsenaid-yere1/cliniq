@@ -867,14 +867,14 @@ Add test cases: `capturePrompt(input)` with `procedureRecord.sites = [{label:'L4
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Migration applies cleanly: `npx supabase db reset` (local) or `npx supabase db push` (remote)
-- [ ] Type check passes: `npx tsc --noEmit`
-- [ ] Lint passes: `npm run lint`
-- [ ] All tests pass: `npx vitest run`
-- [ ] New tests for `sites-helpers.ts` pass: `npx vitest run src/lib/procedures/__tests__/sites-helpers.test.ts`
-- [ ] Updated `prp-procedure.test.ts` passes: `npx vitest run src/lib/validations/__tests__/prp-procedure.test.ts`
-- [ ] Updated `generate-procedure-note.test.ts` passes: `npx vitest run src/lib/claude/__tests__/generate-procedure-note.test.ts`
-- [ ] `compute-plan-alignment.test.ts` still green: `npx vitest run src/lib/procedures/compute-plan-alignment.test.ts`
+- [x] Migration applies cleanly: `npx supabase db reset` (local) or `npx supabase db push` (remote)
+- [x] Type check passes: `npx tsc --noEmit`
+- [x] Lint passes: `npm run lint`
+- [x] All tests pass: `npx vitest run` (891/891 passing)
+- [x] New tests for `sites-helpers.ts` pass
+- [x] Updated `prp-procedure.test.ts` passes (33/33)
+- [x] Updated `generate-procedure-note.test.ts` passes
+- [x] `compute-plan-alignment.test.ts` still green
 - [ ] Backfill verification SQL: `select count(*) from procedures where jsonb_array_length(sites) = 0 and deleted_at is null;` → 0
 - [ ] Backfill consistency SQL: `select count(*) from procedures where deleted_at is null and injection_site != (select string_agg(s->>'label', ', ') from jsonb_array_elements(sites) s);` shows zero rows where backfill produced label-only sites (note: actual check should account for laterality prefix in denormalized string for newly-edited rows; pre-edit rows have plain labels matching the original `injection_site`)
 
