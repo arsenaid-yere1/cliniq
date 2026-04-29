@@ -90,26 +90,58 @@ export function QcReviewPanel({
   isStale: boolean
 }) {
   const [isPending, startTransition] = useTransition()
+  // Optimistic local flag — flips on click so the panel shows the Reviewing
+  // card immediately. The server action awaits Claude (~30s) before
+  // returning, so without this the UI sits on the old completed state and
+  // shows zero feedback during the wait. router.refresh() at the end pulls
+  // fresh DB state which clears the flag implicitly because review is then
+  // either completed or failed.
+  const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const router = useRouter()
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
-  const handleRun = () => {
+  const runReview = (label: string, action: typeof runCaseQualityReview) => {
+    setOptimisticGenerating(true)
     startTransition(async () => {
-      const result = await runCaseQualityReview(caseId)
-      if (result.error) toast.error(result.error)
-      else toast.success('QC review started')
+      const result = await action(caseId)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success(label)
+      }
+      setOptimisticGenerating(false)
       router.refresh()
     })
   }
 
-  const handleRecheck = () => {
-    startTransition(async () => {
-      const result = await recheckCaseQualityReview(caseId)
-      if (result.error) toast.error(result.error)
-      else toast.success('QC review re-running')
-      router.refresh()
-    })
+  const handleRun = () => runReview('QC review started', runCaseQualityReview)
+  const handleRecheck = () =>
+    runReview('QC review re-running', recheckCaseQualityReview)
+
+  // Optimistic generating — flipped on the moment the user clicks
+  // Run/Recheck/Retry. Shown until the action returns and router.refresh()
+  // brings back the real row in either processing/completed/failed state.
+  if (optimisticGenerating) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Reviewing case…</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {review ? (
+            <GeneratingProgress
+              realtimeTable="case_quality_reviews"
+              noteId={review.id}
+              initialProgress={{ done: review.sections_done, total: review.sections_total }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Starting review…</p>
+          )}
+          <Skeleton className="mt-4 h-32" />
+        </CardContent>
+      </Card>
+    )
   }
 
   // Empty state
@@ -131,7 +163,7 @@ export function QcReviewPanel({
     )
   }
 
-  // Processing
+  // Processing (server-confirmed)
   if (review.generation_status === 'processing') {
     return (
       <Card>
