@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -89,6 +90,7 @@ export function QcReviewPanel({
   isStale: boolean
 }) {
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
@@ -97,6 +99,7 @@ export function QcReviewPanel({
       const result = await runCaseQualityReview(caseId)
       if (result.error) toast.error(result.error)
       else toast.success('QC review started')
+      router.refresh()
     })
   }
 
@@ -105,6 +108,7 @@ export function QcReviewPanel({
       const result = await recheckCaseQualityReview(caseId)
       if (result.error) toast.error(result.error)
       else toast.success('QC review re-running')
+      router.refresh()
     })
   }
 
@@ -314,6 +318,7 @@ function FindingCard({
   const [isPending, startTransition] = useTransition()
   const [editOpen, setEditOpen] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
+  const router = useRouter()
 
   const Icon = severityConfig[finding.severity].icon
   const status = override?.status ?? 'pending'
@@ -326,13 +331,19 @@ function FindingCard({
     startTransition(async () => {
       const r = await acknowledgeFinding(caseId, hash)
       if (r.error) toast.error(r.error)
-      else toast.success('Finding acknowledged')
+      else {
+        toast.success('Finding acknowledged')
+        router.refresh()
+      }
     })
   const handleClear = () =>
     startTransition(async () => {
       const r = await clearFindingOverride(caseId, hash)
       if (r.error) toast.error(r.error)
-      else toast.success('Override cleared')
+      else {
+        toast.success('Override cleared')
+        router.refresh()
+      }
     })
 
   const containerClass =

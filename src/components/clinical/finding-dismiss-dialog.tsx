@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -25,6 +26,7 @@ export function FindingDismissDialog({
 }) {
   const [reason, setReason] = useState('')
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   const onConfirm = () =>
     startTransition(async () => {
@@ -35,6 +37,7 @@ export function FindingDismissDialog({
       else {
         toast.success('Finding dismissed')
         onClose()
+        router.refresh()
       }
     })
 

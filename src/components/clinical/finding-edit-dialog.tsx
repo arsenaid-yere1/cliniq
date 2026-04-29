@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -34,6 +35,7 @@ export function FindingEditDialog({
   const [rationale, setRationale] = useState(initialValues.edited_rationale ?? '')
   const [toneHint, setToneHint] = useState(initialValues.edited_suggested_tone_hint ?? '')
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,6 +53,7 @@ export function FindingEditDialog({
       else {
         toast.success('Finding edited')
         onClose()
+        router.refresh()
       }
     })
   }
