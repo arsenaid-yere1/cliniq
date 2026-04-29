@@ -31,6 +31,7 @@ const navItems = [
   { label: 'Initial Visit', href: '/initial-visit', enabled: true },
   { label: 'Procedures', href: '/procedures', enabled: true },
   { label: 'Discharge', href: '/discharge', enabled: true },
+  { label: 'QC Review', href: '/qc', enabled: true },
   { label: 'Billing', href: '/billing', enabled: true },
   { label: 'Timeline', href: '/timeline', enabled: true },
 ]
