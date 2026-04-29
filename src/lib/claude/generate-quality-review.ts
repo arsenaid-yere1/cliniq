@@ -202,9 +202,8 @@ export async function generateQualityReviewFromData(
   error?: string
 }> {
   return callClaudeTool<QualityReviewResult>({
-    model: 'claude-opus-4-7[1m]',
+    model: 'claude-opus-4-7',
     maxTokens: 16000,
-    thinking: { type: 'enabled', budget_tokens: 8000 },
     system: SYSTEM_PROMPT,
     tools: [REVIEW_TOOL],
     toolName: 'generate_case_quality_review',

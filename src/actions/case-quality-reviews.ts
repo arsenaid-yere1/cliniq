@@ -352,7 +352,7 @@ export async function runCaseQualityReview(caseId: string) {
       findings: result.data.findings,
       summary: result.data.summary,
       overall_assessment: result.data.overall_assessment,
-      ai_model: 'claude-opus-4-7[1m]',
+      ai_model: 'claude-opus-4-7',
       raw_ai_response: result.rawResponse || null,
       generation_status: 'completed',
       generated_at: new Date().toISOString(),
