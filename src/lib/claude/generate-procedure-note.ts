@@ -8,6 +8,7 @@ import {
   procedureNoteSectionLabels,
 } from '@/lib/validations/procedure-note'
 import type { PainToneLabel, PainToneSignals, SeriesVolatility, ChiroProgress } from '@/lib/claude/pain-tone'
+import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -674,7 +675,7 @@ Match the "paintoneLabel". Use the guarded reference when paintoneLabel is "base
 Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
 Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on ongoing response to PRP therapy and adherence to the prescribed rehabilitation program." Do NOT write "completion of the injection series" or any variant implying a defined series endpoint — the chart does not store a planned series total (see SERIES-TOTAL RULE). Use "ongoing response" / "continued response" / "sustained response" framing instead.
 
-FORBIDDEN PHRASES (MANDATORY) in prognosis — do NOT use any of the following: "full recovery is expected", "complete resolution of symptoms", "definitive healing", "cure", "guaranteed improvement". Prognosis language must remain measured — "guarded" or "guarded-to-favorable" as documented in the references above.
+${forbiddenPrognosisPromptBlock()}
 
 20. clinician_disclaimer (~2-3 sentences):
 Standard procedure report disclaimer.

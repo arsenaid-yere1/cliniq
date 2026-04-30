@@ -4,6 +4,11 @@ import {
   qualityReviewResultSchema,
   type QualityReviewResult,
 } from '@/lib/validations/case-quality-review'
+import { FORBIDDEN_PROGNOSIS_PHRASES } from '@/lib/qc/forbidden-phrases'
+
+const FORBIDDEN_LIST_RENDERED = FORBIDDEN_PROGNOSIS_PHRASES.map(
+  (p) => `"${p}"`,
+).join(', ')
 
 // Input data shape — assembled by the action layer from all PI-workflow rows.
 export interface QualityReviewInputData {
@@ -115,7 +120,7 @@ WHAT TO CHECK
 7. Cross-note copy/paste. Verbatim sentence reuse across procedure notes (NO CLONE rule violation).
 8. Symptom resolution. Discharge diagnoses should not include codes whose symptoms the discharge subjective reports as resolved.
 9. Missing-vitals branch. If any procedure has missing pain vitals, the discharge MISSING-VITALS BRANCH must apply — flag if narrative cites numeric delta against missing anchor.
-10. Forbidden-phrase scan. "complete resolution", "full recovery", "regenerative capacity" in any prognosis section.
+10. Forbidden-phrase scan. ${FORBIDDEN_LIST_RENDERED} as clinical-claim language in any prognosis section (surfaced or raw_ai_response.prognosis).
 
 OVERALL ASSESSMENT
 - 'clean' = zero critical or warning findings.

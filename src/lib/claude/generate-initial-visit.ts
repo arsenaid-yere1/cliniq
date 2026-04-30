@@ -7,6 +7,7 @@ import {
   type InitialVisitSection,
 } from '@/lib/validations/initial-visit-note'
 import { sectionLabels } from '@/lib/validations/initial-visit-note'
+import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -240,7 +241,9 @@ Do NOT include PRP injection protocol. Do NOT include cost estimates. Do NOT col
 State that the patient was educated on: the biomechanics of their injury, the importance of diagnostic imaging for accurate diagnosis, red-flag symptoms to monitor (progressive neurological deficits, bowel/bladder changes, severe worsening), conservative care expectations, activity modification and ergonomic strategies, medication guidance, and the importance of compliance with the prescribed treatment program. End with "The patient verbalized understanding." Keep to ONE paragraph. Do NOT mention PRP or regenerative therapy education.
 
 14. PROGNOSIS (~2 sentences):
-"Prognosis is guarded but favorable given early clinical presentation and absence of neurological compromise. Outcome will depend on diagnostic imaging results, response to conservative treatment, and adherence to the prescribed rehabilitation program."`
+"Prognosis is guarded but favorable given early clinical presentation and absence of neurological compromise. Outcome will depend on diagnostic imaging results, response to conservative treatment, and adherence to the prescribed rehabilitation program."
+
+${forbiddenPrognosisPromptBlock()}`
 
 const PAIN_EVALUATION_VISIT_SECTIONS = `
 === VISIT TYPE: PAIN EVALUATION VISIT ===
@@ -344,7 +347,9 @@ The entire treatment plan should be approximately one full page.
 State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
 
 14. PROGNOSIS (~2 sentences):
-"Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.`
+"Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
+
+${forbiddenPrognosisPromptBlock()}`
 
 function buildSystemPrompt(visitType: NoteVisitType): string {
   const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS

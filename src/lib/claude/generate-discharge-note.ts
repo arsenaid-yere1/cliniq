@@ -9,6 +9,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import type { PainToneSignals, SeriesVolatility } from '@/lib/claude/pain-tone'
 import type { PainObservation } from '@/lib/claude/pain-observations'
+import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -453,6 +454,8 @@ Reference: "The patient received detailed education regarding long-term recovery
 11. prognosis (~2-3 sentences):
 Favorable prognosis. Meaningful and sustained improvement in pain control, mobility, and functional capacity. Tie the outlook to the demonstrated numeric pain reduction across the treatment course, ending at the discharge-visit reading (2 points below \`latestVitals.pain_score_max\` by default, floored at 0). With continued adherence to conservative management, further improvement and long-term symptom control anticipated.
 Reference: "The prognosis is favorable. The patient has demonstrated meaningful and sustained improvement in pain control — pain scores decreased from 7/10 at baseline to 1/10 at today's discharge evaluation — alongside restored mobility and functional capacity following PRP therapy. With continued adherence to conservative management strategies and ergonomic practices, further improvement and long-term symptom control are anticipated."
+
+${forbiddenPrognosisPromptBlock()}
 
 12. clinician_disclaimer (~2-3 sentences):
 Medical-legal disclaimer. Report prepared for documentation and continuity of care related exclusively to injuries sustained in the accident on [date]. Does not constitute comprehensive general medical exam. Only relevant symptoms addressed. Closing pleasantry and contact instruction.
