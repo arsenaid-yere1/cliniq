@@ -83,6 +83,19 @@ const REGION_SYNONYMS: Record<string, string> = {
 const VERTEBRAL_LEVEL_RE = /\b([CTL])\s*(\d{1,2})\s*[-–/]\s*(?:([CTLS])?\s*)?(\d{1,2})\b/gi
 const SIMPLE_LEVEL_RE = /\b([CTL])\s*(\d{1,2})\b/gi
 
+// Map a vertebral-level prefix letter (C/T/L/S) to a canonical spine region.
+// Used so a label like "C5-C6" or "L5-S1" classifies even when the label
+// carries no synonym keyword. Sacral prefix collapses to lumbar because the
+// only realistic sacral injection target in this pipeline is L-S transitional
+// (sacroiliac joint is a separate canonical region).
+function regionFromVertebralPrefix(prefix: string): string | null {
+  const p = prefix.toUpperCase()
+  if (p === 'C') return 'cervical'
+  if (p === 'T') return 'thoracic'
+  if (p === 'L' || p === 'S') return 'lumbar'
+  return null
+}
+
 export function normalizeRegion(raw: string | null | undefined): string | null {
   if (!raw) return null
   const cleaned = raw
@@ -96,7 +109,27 @@ export function normalizeRegion(raw: string | null | undefined): string | null {
   for (const [key, canonical] of Object.entries(REGION_SYNONYMS)) {
     if (cleaned.includes(key)) return canonical
   }
+  // Fall back to vertebral-level prefix (e.g. "c5-c6" → cervical, "l5-s1"
+  // → lumbar, "s1" → lumbar). Captures C/T/L/S level patterns.
+  const levelMatch = cleaned.match(/\b([ctls])\s*\d{1,2}\b/i)
+  if (levelMatch) {
+    const region = regionFromVertebralPrefix(levelMatch[1])
+    if (region) return region
+  }
   return cleaned
+}
+
+// Derive the set of canonical regions implied by a sites[] array. Every site
+// is normalized independently so a multi-region procedure (e.g. cervical +
+// lumbar PRP in one session) classifies as covering both regions, instead of
+// the legacy single-string injection_site collapsing into one bucket.
+export function regionsFromSites(sites: ProcedureSite[]): Set<string> {
+  const regions = new Set<string>()
+  for (const site of sites) {
+    const r = normalizeRegion(site.label)
+    if (r) regions.add(r)
+  }
+  return regions
 }
 
 function extractLevels(text: string): string[] {
@@ -202,19 +235,23 @@ function parseInitialVisitTreatmentPlan(
 
 // Pick the single best planned-procedure candidate for comparison against
 // the performed technique. Preference order:
-//   1. PM extraction candidate whose body_region matches the performed site
-//   2. Initial-visit candidate whose body_region matches
+//   1. PM extraction candidate whose body_region is in the performed region set
+//   2. Initial-visit candidate whose body_region is in the performed region set
 //   3. First PM extraction candidate
 //   4. First initial-visit candidate
 function selectBestCandidate(
   pmCandidates: PlannedProcedure[],
   ivCandidates: PlannedProcedure[],
-  performedRegion: string | null,
+  performedRegions: Set<string>,
 ): PlannedProcedure | null {
-  if (performedRegion) {
-    const pmMatch = pmCandidates.find((c) => c.body_region === performedRegion)
+  if (performedRegions.size > 0) {
+    const pmMatch = pmCandidates.find(
+      (c) => c.body_region && performedRegions.has(c.body_region),
+    )
     if (pmMatch) return pmMatch
-    const ivMatch = ivCandidates.find((c) => c.body_region === performedRegion)
+    const ivMatch = ivCandidates.find(
+      (c) => c.body_region && performedRegions.has(c.body_region),
+    )
     if (ivMatch) return ivMatch
   }
   if (pmCandidates.length > 0) return pmCandidates[0]
@@ -225,18 +262,19 @@ function selectBestCandidate(
 function computeMismatches(
   planned: PlannedProcedure,
   performed: PerformedInput,
-  performedRegion: string | null,
+  performedRegions: Set<string>,
+  allMatchingPlans: PlannedProcedure[],
 ): PlanMismatch[] {
   const mismatches: PlanMismatch[] = []
   if (
     planned.body_region &&
-    performedRegion &&
-    planned.body_region !== performedRegion
+    performedRegions.size > 0 &&
+    !performedRegions.has(planned.body_region)
   ) {
     mismatches.push({
       field: 'body_region',
       planned: planned.body_region,
-      performed: performedRegion,
+      performed: [...performedRegions].join(', '),
     })
   }
   // Derive performed laterality from sites[]. 'mixed' is incomparable —
@@ -267,22 +305,25 @@ function computeMismatches(
       performed: performed.guidance_method,
     })
   }
-  if (
-    planned.target_levels.length > 0 &&
-    performed.injection_site
-  ) {
+  // Target-level comparison uses the UNION of target_levels across all plan
+  // candidates whose body_region is in the performed region set. A multi-
+  // region procedure (e.g. cervical C5-C6 + lumbar L5-S1) draws levels from
+  // both the cervical and lumbar plan sentences and only flags genuine extras.
+  const plannedLevelsUnion = new Set<string>()
+  for (const cand of allMatchingPlans) {
+    for (const lvl of cand.target_levels) plannedLevelsUnion.add(lvl)
+  }
+  if (plannedLevelsUnion.size > 0 && performed.injection_site) {
     const performedLevels = extractLevels(performed.injection_site)
     if (performedLevels.length > 0) {
-      const missing = planned.target_levels.filter(
+      const missing = [...plannedLevelsUnion].filter(
         (l) => !performedLevels.includes(l),
       )
-      const extra = performedLevels.filter(
-        (l) => !planned.target_levels.includes(l),
-      )
+      const extra = performedLevels.filter((l) => !plannedLevelsUnion.has(l))
       if (missing.length > 0 || extra.length > 0) {
         mismatches.push({
           field: 'target_levels',
-          planned: planned.target_levels.join(', ') || null,
+          planned: [...plannedLevelsUnion].join(', ') || null,
           performed: performedLevels.join(', ') || null,
         })
       }
@@ -300,23 +341,33 @@ export function computePlanAlignment(input: {
   const ivCandidates = parseInitialVisitTreatmentPlan(
     input.initialVisitTreatmentPlan,
   )
-  const performedRegion = normalizeRegion(input.performed.injection_site)
+
+  // Performed regions = union of regions from sites[]. Falls back to the
+  // legacy injection_site string when sites[] is empty so existing rows
+  // without a sites array still classify.
+  const performedRegions =
+    input.performed.sites.length > 0
+      ? regionsFromSites(input.performed.sites)
+      : (() => {
+          const single = normalizeRegion(input.performed.injection_site)
+          return single ? new Set([single]) : new Set<string>()
+        })()
 
   if (pmCandidates.length === 0 && ivCandidates.length === 0) {
     return { status: 'no_plan_on_file', planned: null, mismatches: [] }
   }
 
-  const planned = selectBestCandidate(pmCandidates, ivCandidates, performedRegion)
+  const planned = selectBestCandidate(pmCandidates, ivCandidates, performedRegions)
   if (!planned) {
     return { status: 'no_plan_on_file', planned: null, mismatches: [] }
   }
 
-  // unplanned: plan exists on file, but no plan candidate shares the
-  // performed body region (and the performed region is known).
+  // unplanned: plan exists on file, but no plan candidate shares any of the
+  // performed body regions (and at least one performed region is known).
   const anyRegionMatch = [...pmCandidates, ...ivCandidates].some(
-    (c) => c.body_region && performedRegion && c.body_region === performedRegion,
+    (c) => c.body_region && performedRegions.has(c.body_region),
   )
-  if (performedRegion && !anyRegionMatch) {
+  if (performedRegions.size > 0 && !anyRegionMatch) {
     return {
       status: 'unplanned',
       planned,
@@ -324,13 +375,21 @@ export function computePlanAlignment(input: {
         {
           field: 'body_region',
           planned: planned.body_region,
-          performed: performedRegion,
+          performed: [...performedRegions].join(', '),
         },
       ],
     }
   }
 
-  const mismatches = computeMismatches(planned, input.performed, performedRegion)
+  const allMatchingPlans = [...pmCandidates, ...ivCandidates].filter(
+    (c) => c.body_region && performedRegions.has(c.body_region),
+  )
+  const mismatches = computeMismatches(
+    planned,
+    input.performed,
+    performedRegions,
+    allMatchingPlans.length > 0 ? allMatchingPlans : [planned],
+  )
   if (mismatches.length === 0) {
     return { status: 'aligned', planned, mismatches: [] }
   }

@@ -234,6 +234,57 @@ describe('computePlanAlignment', () => {
     expect(result.status).toBe('aligned')
   })
 
+  it('aligns multi-region procedure (cervical + lumbar) when IV plan names both', () => {
+    // Regression test for case ac41b1a7: bilateral C5-C6 + bilateral L5-S1
+    // procedure with IV plan calling out both cervical and lumbar PRP must
+    // classify as 'aligned', not 'unplanned'. Pre-fix the legacy
+    // injection_site string ("Bilateral C5-C6, Bilateral L5-S1") collapsed
+    // into a single unrecognised region and missed the plan match.
+    const result = computePlanAlignment({
+      performed: {
+        injection_site: 'Bilateral C5-C6, Bilateral L5-S1',
+        sites: [
+          { label: 'C5-C6', laterality: 'bilateral', volume_ml: 3, target_confirmed_imaging: true },
+          { label: 'L5-S1', laterality: 'bilateral', volume_ml: 3, target_confirmed_imaging: true },
+        ],
+        guidance_method: 'ultrasound',
+      },
+      pmTreatmentPlan: null,
+      initialVisitTreatmentPlan:
+        'Cervical Spine: Ultrasound-guided PRP injection at the C5-C6 level. Lumbar Spine: Ultrasound-guided PRP injection at the L5-S1 level.',
+    })
+    expect(result.status).toBe('aligned')
+    expect(result.mismatches).toEqual([])
+  })
+
+  it('flags unplanned when performed multi-region has no plan match', () => {
+    // Multi-region knee + shoulder procedure with only a lumbar plan should
+    // still classify as 'unplanned' — the union semantics require ANY
+    // performed region to match a plan, not all.
+    const result = computePlanAlignment({
+      performed: {
+        injection_site: 'Bilateral knee, Right shoulder',
+        sites: [
+          { label: 'Right Knee', laterality: 'right', volume_ml: 3, target_confirmed_imaging: true },
+          { label: 'Right Shoulder', laterality: 'right', volume_ml: 3, target_confirmed_imaging: true },
+        ],
+        guidance_method: 'ultrasound',
+      },
+      pmTreatmentPlan: [
+        { description: 'Lumbar PRP injection', type: 'injection', body_region: 'lumbar' },
+      ],
+      initialVisitTreatmentPlan: null,
+    })
+    expect(result.status).toBe('unplanned')
+  })
+
+  it('normalizeRegion maps vertebral level prefixes to canonical region', () => {
+    expect(normalizeRegion('C5-C6')).toBe('cervical')
+    expect(normalizeRegion('L5-S1')).toBe('lumbar')
+    expect(normalizeRegion('T12-L1')).toBe('thoracic')
+    expect(normalizeRegion('S1')).toBe('lumbar')
+  })
+
   it('treats mixed laterality across sites as incomparable (no laterality mismatch)', () => {
     const result = computePlanAlignment({
       performed: {
