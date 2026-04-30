@@ -139,6 +139,55 @@ describe('findingOverrideEntrySchema', () => {
     })
     expect(result.success).toBe(false)
   })
+
+  it("accepts 'resolved' status with resolved_at + resolution_source", () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...validEntry,
+      status: 'resolved',
+      resolved_at: '2026-04-30T12:01:00Z',
+      resolution_source: 'auto_recheck',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('parses entry without resolved_at / resolution_source as null defaults (backward-compat)', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      status: 'acknowledged',
+      dismissed_reason: null,
+      edited_message: null,
+      edited_rationale: null,
+      edited_suggested_tone_hint: null,
+      actor_user_id: VALID_USER_ID,
+      set_at: '2026-04-30T12:00:00Z',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.resolved_at).toBeNull()
+      expect(result.data.resolution_source).toBeNull()
+    }
+  })
+
+  it('rejects invalid resolution_source', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...validEntry,
+      status: 'resolved',
+      resolved_at: '2026-04-30T12:01:00Z',
+      resolution_source: 'wat',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts all 3 resolution_source values', () => {
+    for (const source of ['auto_recheck', 'manual_verify', 'manual_resolve'] as const) {
+      const result = findingOverrideEntrySchema.safeParse({
+        ...validEntry,
+        status: 'resolved',
+        resolved_at: '2026-04-30T12:01:00Z',
+        resolution_source: source,
+      })
+      expect(result.success).toBe(true)
+    }
+  })
 })
 
 describe('findingOverridesMapSchema', () => {

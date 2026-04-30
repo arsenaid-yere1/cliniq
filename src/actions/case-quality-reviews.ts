@@ -11,10 +11,12 @@ import {
 import {
   findingDismissFormSchema,
   findingEditFormSchema,
+  computeFindingHash,
   type FindingDismissFormValues,
   type FindingEditFormValues,
   type FindingOverrideEntry,
   type FindingOverridesMap,
+  type QualityFinding,
 } from '@/lib/validations/case-quality-review'
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
@@ -283,6 +285,20 @@ export async function runCaseQualityReview(caseId: string) {
     return { error: gatherError || 'Failed to gather source data' }
   }
 
+  // Capture prior overrides BEFORE soft-deleting the old row. Carry forward
+  // the provider's review work into the new row (acks/edits/dismisses
+  // preserved when the underlying finding still appears in the new run;
+  // auto-resolved when the finding goes away). Already-resolved entries
+  // remain resolved across the boundary.
+  const { data: prior } = await supabase
+    .from('case_quality_reviews')
+    .select('finding_overrides')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  const priorOverrides: FindingOverridesMap =
+    (prior?.finding_overrides as FindingOverridesMap) ?? {}
+
   // Soft-delete existing active row.
   await supabase
     .from('case_quality_reviews')
@@ -361,6 +377,39 @@ export async function runCaseQualityReview(caseId: string) {
       updated_by_user_id: user.id,
     })
     .eq('id', record.id)
+
+  // Carry-over merge. For every entry in priorOverrides:
+  //   - status='resolved' → preserve verbatim (resolution sticky across runs)
+  //   - finding hash present in new findings → preserve user's ack/edit/dismiss state
+  //   - finding hash absent → flip to 'resolved' with resolution_source='auto_recheck'
+  //     (finding the override targeted is gone — drift fixed)
+  const newFindingHashes = new Set<string>(
+    (result.data.findings ?? []).map((f) => computeFindingHash(f as QualityFinding)),
+  )
+  const mergedOverrides: FindingOverridesMap = {}
+  const now = new Date().toISOString()
+  for (const [hash, entry] of Object.entries(priorOverrides)) {
+    if (entry.status === 'resolved') {
+      mergedOverrides[hash] = entry
+      continue
+    }
+    if (newFindingHashes.has(hash)) {
+      mergedOverrides[hash] = entry
+    } else {
+      mergedOverrides[hash] = {
+        ...entry,
+        status: 'resolved',
+        resolved_at: now,
+        resolution_source: 'auto_recheck',
+      }
+    }
+  }
+  if (Object.keys(mergedOverrides).length > 0) {
+    await supabase
+      .from('case_quality_reviews')
+      .update({ finding_overrides: mergedOverrides })
+      .eq('id', record.id)
+  }
 
   revalidatePath(`/patients/${caseId}/qc`)
   return { data: { id: record.id } }
@@ -462,6 +511,8 @@ export async function acknowledgeFinding(caseId: string, findingHash: string) {
     edited_suggested_tone_hint: null,
     actor_user_id: user.id,
     set_at: new Date().toISOString(),
+    resolved_at: null,
+    resolution_source: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -505,6 +556,8 @@ export async function dismissFinding(
     edited_suggested_tone_hint: null,
     actor_user_id: user.id,
     set_at: new Date().toISOString(),
+    resolved_at: null,
+    resolution_source: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -548,6 +601,8 @@ export async function editFinding(
     edited_suggested_tone_hint: validated.data.edited_suggested_tone_hint,
     actor_user_id: user.id,
     set_at: new Date().toISOString(),
+    resolved_at: null,
+    resolution_source: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -584,6 +639,150 @@ export async function clearFindingOverride(caseId: string, findingHash: string) 
     .update({ finding_overrides: next, updated_by_user_id: user.id })
     .eq('id', loaded.data.id)
   if (error) return { error: 'Failed to clear override' }
+
+  revalidatePath(`/patients/${caseId}/qc`)
+  return { data: { success: true } }
+}
+
+// --- Resolution mutators ---
+// verifyFinding runs a deterministic check against persistent audit columns
+// kept current by existing regen paths. No recomputation of the underlying
+// rule is needed. Dispatch by `step`:
+//   - 'procedure' → procedure_notes.plan_alignment_status
+//   - 'discharge' → discharge_notes.raw_ai_response.trajectory_warnings
+//   - other steps → unsupported (provider uses Mark Resolved instead)
+
+export async function verifyFinding(caseId: string, findingHash: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const { data: row } = await supabase
+    .from('case_quality_reviews')
+    .select('id, findings, finding_overrides')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!row) return { error: 'No active review' }
+
+  const findings = (row.findings as QualityFinding[] | null) ?? []
+  const finding = findings.find((f) => computeFindingHash(f) === findingHash)
+  if (!finding) return { error: 'Finding not found in current review' }
+
+  let resolved = false
+  let reason: string | null = null
+
+  if (finding.step === 'procedure') {
+    if (!finding.note_id) {
+      return { error: 'Procedure finding missing note_id; use Mark Resolved instead' }
+    }
+    const { data: pn } = await supabase
+      .from('procedure_notes')
+      .select('plan_alignment_status')
+      .eq('id', finding.note_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!pn) {
+      reason = 'Procedure note no longer exists'
+    } else if (pn.plan_alignment_status === 'unplanned') {
+      reason = 'Plan alignment still flagged as unplanned'
+    } else {
+      resolved = true
+    }
+  } else if (finding.step === 'discharge') {
+    if (!finding.note_id) {
+      return { error: 'Discharge finding missing note_id; use Mark Resolved instead' }
+    }
+    const { data: dn } = await supabase
+      .from('discharge_notes')
+      .select('raw_ai_response')
+      .eq('id', finding.note_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!dn) {
+      reason = 'Discharge note no longer exists'
+    } else {
+      const raw = dn.raw_ai_response as { trajectory_warnings?: unknown } | null
+      const warnings = Array.isArray(raw?.trajectory_warnings)
+        ? (raw.trajectory_warnings as unknown[])
+        : []
+      if (warnings.length > 0) {
+        reason = 'Trajectory validator still emitting warnings'
+      } else {
+        resolved = true
+      }
+    }
+  } else {
+    return {
+      error: 'Verify not supported for this finding type — use Mark Resolved',
+    }
+  }
+
+  if (!resolved) {
+    return { data: { resolved: false, reason } }
+  }
+
+  const overrides = (row.finding_overrides as FindingOverridesMap | null) ?? {}
+  const existing = overrides[findingHash] ?? null
+  const resolvedEntry: FindingOverrideEntry = {
+    status: 'resolved',
+    dismissed_reason: existing?.dismissed_reason ?? null,
+    edited_message: existing?.edited_message ?? null,
+    edited_rationale: existing?.edited_rationale ?? null,
+    edited_suggested_tone_hint: existing?.edited_suggested_tone_hint ?? null,
+    actor_user_id: user.id,
+    set_at: existing?.set_at ?? new Date().toISOString(),
+    resolved_at: new Date().toISOString(),
+    resolution_source: 'manual_verify',
+  }
+  const updated: FindingOverridesMap = { ...overrides, [findingHash]: resolvedEntry }
+
+  const { error } = await supabase
+    .from('case_quality_reviews')
+    .update({ finding_overrides: updated, updated_by_user_id: user.id })
+    .eq('id', row.id)
+  if (error) return { error: 'Failed to mark finding resolved' }
+
+  revalidatePath(`/patients/${caseId}/qc`)
+  return { data: { resolved: true } }
+}
+
+export async function markFindingResolved(caseId: string, findingHash: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const loaded = await loadActiveReviewForOverride(supabase, caseId)
+  if (!loaded.data) return { error: loaded.error ?? 'No active review' }
+
+  const overrides = loaded.data.finding_overrides
+  const existing = overrides[findingHash] ?? null
+  const entry: FindingOverrideEntry = {
+    status: 'resolved',
+    dismissed_reason: existing?.dismissed_reason ?? null,
+    edited_message: existing?.edited_message ?? null,
+    edited_rationale: existing?.edited_rationale ?? null,
+    edited_suggested_tone_hint: existing?.edited_suggested_tone_hint ?? null,
+    actor_user_id: user.id,
+    set_at: existing?.set_at ?? new Date().toISOString(),
+    resolved_at: new Date().toISOString(),
+    resolution_source: 'manual_resolve',
+  }
+  const updated: FindingOverridesMap = { ...overrides, [findingHash]: entry }
+
+  const { error } = await supabase
+    .from('case_quality_reviews')
+    .update({ finding_overrides: updated, updated_by_user_id: user.id })
+    .eq('id', loaded.data.id)
+  if (error) return { error: 'Failed to mark finding resolved' }
 
   revalidatePath(`/patients/${caseId}/qc`)
   return { data: { success: true } }

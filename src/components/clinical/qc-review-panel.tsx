@@ -14,6 +14,8 @@ import {
   recheckCaseQualityReview,
   acknowledgeFinding,
   clearFindingOverride,
+  verifyFinding,
+  markFindingResolved,
 } from '@/actions/case-quality-reviews'
 import {
   qcSeverityValues,
@@ -23,12 +25,34 @@ import {
   type QcStep,
   type FindingOverridesMap,
   type FindingOverrideEntry,
+  type FindingResolutionSource,
 } from '@/lib/validations/case-quality-review'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
-import { AlertCircle, AlertTriangle, Info, RefreshCw, Check, X, Pencil, Undo2 } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  RefreshCw,
+  Check,
+  X,
+  Pencil,
+  Undo2,
+  CheckCircle2,
+} from 'lucide-react'
 import { FindingEditDialog } from './finding-edit-dialog'
 import { FindingDismissDialog } from './finding-dismiss-dialog'
+
+// Verify is supported only for steps where deterministic audit columns
+// exist: procedure (plan_alignment_status) and discharge (trajectory_warnings).
+// All other steps fall back to manual Mark Resolved.
+const VERIFIABLE_STEPS = new Set<QcStep>(['procedure', 'discharge'])
+
+const resolutionSourceLabels: Record<FindingResolutionSource, string> = {
+  auto_recheck: 'Auto-resolved on Recheck',
+  manual_verify: 'Verified',
+  manual_resolve: 'Marked resolved',
+}
 
 interface ReviewRow {
   id: string
@@ -211,6 +235,7 @@ export function QcReviewPanel({
   })
 
   const isDismissed = (o: FindingOverrideEntry | null) => o?.status === 'dismissed'
+  const isResolved = (o: FindingOverrideEntry | null) => o?.status === 'resolved'
 
   const grouped: Record<QcSeverity, typeof hydrated> = {
     critical: hydrated.filter((h) => h.finding.severity === 'critical'),
@@ -218,12 +243,20 @@ export function QcReviewPanel({
     info: hydrated.filter((h) => h.finding.severity === 'info'),
   }
 
+  // Active counts subtract both dismissed and resolved.
   const counts = {
-    critical: grouped.critical.filter((h) => !isDismissed(h.override)).length,
-    warning: grouped.warning.filter((h) => !isDismissed(h.override)).length,
-    info: grouped.info.filter((h) => !isDismissed(h.override)).length,
+    critical: grouped.critical.filter(
+      (h) => !isDismissed(h.override) && !isResolved(h.override),
+    ).length,
+    warning: grouped.warning.filter(
+      (h) => !isDismissed(h.override) && !isResolved(h.override),
+    ).length,
+    info: grouped.info.filter(
+      (h) => !isDismissed(h.override) && !isResolved(h.override),
+    ).length,
   }
   const dismissedCount = hydrated.filter((h) => isDismissed(h.override)).length
+  const resolvedCount = hydrated.filter((h) => isResolved(h.override)).length
 
   return (
     <div className="space-y-4">
@@ -265,9 +298,14 @@ export function QcReviewPanel({
                 Dismissed: <strong>{dismissedCount}</strong>
               </span>
             )}
+            {resolvedCount > 0 && (
+              <span className="text-muted-foreground">
+                Resolved: <strong>{resolvedCount}</strong>
+              </span>
+            )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Recheck wipes all overrides — fresh review starts clean.
+            Recheck preserves your review work; findings that go away are auto-resolved.
           </p>
         </CardContent>
       </Card>
@@ -278,7 +316,10 @@ export function QcReviewPanel({
         .map((sev) => {
           const items = grouped[sev]
           if (items.length === 0) return null
-          const active = items.filter((h) => !isDismissed(h.override))
+          const active = items.filter(
+            (h) => !isDismissed(h.override) && !isResolved(h.override),
+          )
+          const resolved = items.filter((h) => isResolved(h.override))
           const dismissed = items.filter((h) => isDismissed(h.override))
           return (
             <Card key={sev}>
@@ -298,6 +339,26 @@ export function QcReviewPanel({
                     isLocked={isLocked}
                   />
                 ))}
+
+                {resolved.length > 0 && (
+                  <details className="mt-2 rounded-md border border-dashed border-emerald-300 bg-emerald-50/50 p-2">
+                    <summary className="cursor-pointer text-xs text-emerald-700">
+                      Resolved ({resolved.length})
+                    </summary>
+                    <div className="mt-2 space-y-2">
+                      {resolved.map((h) => (
+                        <FindingCard
+                          key={h.hash}
+                          caseId={caseId}
+                          hash={h.hash}
+                          finding={h.finding}
+                          override={h.override}
+                          isLocked={isLocked}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                )}
 
                 {dismissed.length > 0 && (
                   <details className="mt-2 rounded-md border border-dashed p-2">
@@ -377,9 +438,34 @@ function FindingCard({
         router.refresh()
       }
     })
+  const handleVerify = () =>
+    startTransition(async () => {
+      const r = await verifyFinding(caseId, hash)
+      if (r.error) {
+        toast.error(r.error)
+      } else if (r.data && 'resolved' in r.data && r.data.resolved) {
+        toast.success('Finding verified and resolved')
+        router.refresh()
+      } else {
+        const reason =
+          r.data && 'reason' in r.data
+            ? (r.data.reason ?? 'Finding could not be verified')
+            : 'Finding could not be verified'
+        toast.warning(reason)
+      }
+    })
+  const handleMarkResolved = () =>
+    startTransition(async () => {
+      const r = await markFindingResolved(caseId, hash)
+      if (r.error) toast.error(r.error)
+      else {
+        toast.success('Finding marked resolved')
+        router.refresh()
+      }
+    })
 
   const containerClass =
-    status === 'dismissed'
+    status === 'dismissed' || status === 'resolved'
       ? 'flex items-start gap-3 rounded-md border p-3 opacity-60'
       : 'flex items-start gap-3 rounded-md border p-3'
 
@@ -396,7 +482,11 @@ function FindingCard({
             {status !== 'pending' && (
               <Badge
                 variant={status === 'dismissed' ? 'outline' : 'default'}
-                className="capitalize"
+                className={
+                  status === 'resolved'
+                    ? 'capitalize bg-emerald-600 text-white'
+                    : 'capitalize'
+                }
               >
                 {status}
               </Badge>
@@ -414,6 +504,16 @@ function FindingCard({
           {override?.status === 'dismissed' && override.dismissed_reason && (
             <p className="text-xs text-muted-foreground">
               Dismissed: {override.dismissed_reason}
+            </p>
+          )}
+          {override?.status === 'resolved' && (
+            <p className="flex items-center gap-1 text-xs text-emerald-700">
+              <CheckCircle2 className="h-3 w-3" />
+              {override.resolution_source
+                ? resolutionSourceLabels[override.resolution_source]
+                : 'Resolved'}
+              {override.resolved_at &&
+                ` · ${new Date(override.resolved_at).toLocaleDateString()}`}
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -447,9 +547,62 @@ function FindingCard({
                   <X className="mr-1 h-3 w-3" />
                   Dismiss
                 </Button>
+                {VERIFIABLE_STEPS.has(finding.step) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleVerify}
+                    disabled={isPending}
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Verify
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleMarkResolved}
+                  disabled={isPending}
+                >
+                  <Check className="mr-1 h-3 w-3" />
+                  Mark Resolved
+                </Button>
               </>
             )}
-            {!isLocked && status !== 'pending' && (
+            {!isLocked && (status === 'acknowledged' || status === 'edited') && (
+              <>
+                {VERIFIABLE_STEPS.has(finding.step) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleVerify}
+                    disabled={isPending}
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Verify
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleMarkResolved}
+                  disabled={isPending}
+                >
+                  <Check className="mr-1 h-3 w-3" />
+                  Mark Resolved
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleClear}
+                  disabled={isPending}
+                >
+                  <Undo2 className="mr-1 h-3 w-3" />
+                  Undo
+                </Button>
+              </>
+            )}
+            {!isLocked && status === 'dismissed' && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -460,6 +613,7 @@ function FindingCard({
                 Undo
               </Button>
             )}
+            {/* Resolved → read-only, no action buttons */}
           </div>
         </div>
       </div>

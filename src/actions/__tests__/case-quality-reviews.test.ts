@@ -43,6 +43,8 @@ import {
   dismissFinding,
   editFinding,
   clearFindingOverride,
+  verifyFinding,
+  markFindingResolved,
 } from '../case-quality-reviews'
 
 const VALID_CASE_ID = '11111111-1111-4111-8111-111111111111'
@@ -299,6 +301,46 @@ describe('override mutators', () => {
       case_quality_reviews: { data: null, error: null },
     })
     const result = await clearFindingOverride(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('No active review')
+  })
+})
+
+describe('verifyFinding', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('errors when not authenticated', async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null })
+    const result = await verifyFinding(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('Not authenticated')
+  })
+
+  it('errors when no active review', async () => {
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: { data: null, error: null },
+    })
+    const result = await verifyFinding(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('No active review')
+  })
+})
+
+describe('markFindingResolved', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('errors when not authenticated', async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null })
+    const result = await markFindingResolved(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('Not authenticated')
+  })
+
+  it('errors when no active review', async () => {
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: { data: null, error: null },
+    })
+    const result = await markFindingResolved(VALID_CASE_ID, HASH)
     expect(result.error).toBe('No active review')
   })
 })

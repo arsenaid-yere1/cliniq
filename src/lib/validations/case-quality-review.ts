@@ -48,8 +48,16 @@ export const findingOverrideStatusValues = [
   'acknowledged',
   'dismissed',
   'edited',
+  'resolved',
 ] as const
 export type FindingOverrideStatus = (typeof findingOverrideStatusValues)[number]
+
+export const findingResolutionSourceValues = [
+  'auto_recheck',
+  'manual_verify',
+  'manual_resolve',
+] as const
+export type FindingResolutionSource = (typeof findingResolutionSourceValues)[number]
 
 export const findingOverrideEntrySchema = z.object({
   status: z.enum(findingOverrideStatusValues),
@@ -59,6 +67,14 @@ export const findingOverrideEntrySchema = z.object({
   edited_suggested_tone_hint: z.string().nullable(),
   actor_user_id: z.string().uuid(),
   set_at: z.string(),
+  // Resolution metadata. Both null when status != 'resolved'. resolved_at
+  // captures the moment the entry flipped to resolved (auto via Recheck or
+  // manual via Verify / Mark Resolved). resolution_source distinguishes the
+  // three resolution paths so UI can label appropriately. Existing rows
+  // persisted before this change parse fine because both fields default to
+  // null when absent from the JSON payload.
+  resolved_at: z.string().nullable().default(null),
+  resolution_source: z.enum(findingResolutionSourceValues).nullable().default(null),
 })
 export type FindingOverrideEntry = z.infer<typeof findingOverrideEntrySchema>
 
