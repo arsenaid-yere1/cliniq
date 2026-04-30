@@ -9,6 +9,7 @@ import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sites-helpers'
 import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
+import { singleAnatomyFromDiagnoses } from '@/lib/procedures/diagnosis-anatomy'
 import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
 
 export async function getProcedureById(id: string) {
@@ -422,7 +423,7 @@ export interface ProcedureDefaults {
 export async function getProcedureDefaults(caseId: string): Promise<{ data: ProcedureDefaults }> {
   const supabase = await createClient()
 
-  const [vitalsRes, ivnRes] = await Promise.all([
+  const [vitalsRes, ivnRes, ivnDxRes, pmDxRes] = await Promise.all([
     supabase
       .from('vital_signs')
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
@@ -437,6 +438,25 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .select('provider_intake, visit_type, visit_date')
       .eq('case_id', caseId)
       .is('deleted_at', null),
+    // Diagnosis fallback: when sites do not resolve to a single anatomy,
+    // fall back to ICD-10 codes from the intake / PM extraction. IVN
+    // diagnoses are free text; PM extraction holds structured codes.
+    supabase
+      .from('initial_visit_notes')
+      .select('diagnoses, visit_type, status')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .in('status', ['draft', 'finalized'])
+      .not('diagnoses', 'is', null),
+    supabase
+      .from('pain_management_extractions')
+      .select('diagnoses, provider_overrides')
+      .eq('case_id', caseId)
+      .in('review_status', ['approved', 'edited'])
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const vitals = vitalsRes.data
@@ -485,10 +505,31 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     })
   }
 
-  // Look up per-anatomy procedure_defaults when sites resolve to a single
-  // anatomy. Multi-anatomy → leave defaults null so provider commits per
-  // site (the SitesEditor + per-site volume_ml carry that detail).
-  const anatomyKey = singleAnatomyFromSites(sites)
+  // Look up per-anatomy procedure_defaults. Resolution order:
+  //   1. sites[] — provider-explicit choice via intake body_region
+  //   2. diagnoses[] — falls back when sites empty / multi-anatomy
+  // Multi-anatomy in BOTH paths → leave defaults null so provider commits
+  // per-site (SitesEditor + per-site volume_ml carry that detail).
+  const sitesAnatomy = singleAnatomyFromSites(sites)
+  let anatomyKey: string | null = sitesAnatomy
+  if (!anatomyKey) {
+    type IvnDxRow = { diagnoses: string | null; visit_type: string }
+    const ivnDxRows = (ivnDxRes.data ?? []) as IvnDxRow[]
+    const preferredDxNote =
+      ivnDxRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.diagnoses)
+      ?? ivnDxRows.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
+      ?? null
+    const ivnParsedDx = parseIvnDiagnoses(preferredDxNote?.diagnoses)
+    const pmOverrides = pmDxRes.data?.provider_overrides as { diagnoses?: unknown } | null
+    const pmDxRaw = (pmOverrides?.diagnoses ?? pmDxRes.data?.diagnoses) as unknown
+    const pmDx = Array.isArray(pmDxRaw)
+      ? (pmDxRaw as Array<{ icd10_code: string | null }>).map((d) => ({
+          icd10_code: typeof d.icd10_code === 'string' ? d.icd10_code : null,
+        }))
+      : []
+    const allDx = [...ivnParsedDx, ...pmDx]
+    anatomyKey = singleAnatomyFromDiagnoses(allDx)
+  }
   const anatomyDefaults = anatomyKey
     ? await getProcedureDefaultsByAnatomy(anatomyKey, 'prp')
     : null
