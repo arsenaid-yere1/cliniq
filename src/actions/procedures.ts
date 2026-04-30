@@ -7,6 +7,7 @@ import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+import { rewriteDiagnosesForProcedure } from '@/lib/icd10/diagnosis-rewrite'
 import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sites-helpers'
 import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
 import { singleAnatomyFromDiagnoses } from '@/lib/procedures/diagnosis-anatomy'
@@ -103,6 +104,13 @@ export async function createPrpProcedure(
 
   const procedureNumber = (count ?? 0) + 1
 
+  // Apply deterministic A→D rewrite + V/W/X/Y strip per Filter (A)/(D).
+  // procedure_number=1 keeps A-suffix (intake encounter); ≥2 rewrites to D.
+  // External-cause codes are stripped on every procedure note.
+  const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
+    procedureNumber,
+  })
+
   // Insert procedure record
   const { data: procedure, error: procError } = await supabase
     .from('procedures')
@@ -115,7 +123,7 @@ export async function createPrpProcedure(
       // a denormalized comma-joined string kept for downstream readers.
       sites: values.sites,
       injection_site: injectionSiteFromSites(values.sites),
-      diagnoses: values.diagnoses,
+      diagnoses: rewrittenDiagnoses,
       consent_obtained: values.consent_obtained,
       procedure_number: procedureNumber,
       // --- Story 4.2: PRP Preparation ---
@@ -302,13 +310,27 @@ export async function updatePrpProcedure(
     }
   }
 
+  // Load procedure_number for the deterministic A→D rewrite path.
+  const { data: existingProc } = await supabase
+    .from('procedures')
+    .select('procedure_number')
+    .eq('id', procedureId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!existingProc) return { error: 'Procedure not found' }
+
+  const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
+    procedureNumber: existingProc.procedure_number,
+  })
+
   const { data: procedure, error: procError } = await supabase
     .from('procedures')
     .update({
       procedure_date: values.procedure_date,
       sites: values.sites,
       injection_site: injectionSiteFromSites(values.sites),
-      diagnoses: values.diagnoses,
+      diagnoses: rewrittenDiagnoses,
       consent_obtained: values.consent_obtained,
       // PRP Preparation
       blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,

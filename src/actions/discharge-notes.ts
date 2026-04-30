@@ -25,6 +25,43 @@ import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import { validateDischargeTrajectoryConsistency } from '@/lib/claude/pain-trajectory-validator'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { buildPainObservations } from '@/lib/claude/pain-observations'
+import {
+  rewriteDiagnosesForDischarge,
+  type DiagnosisItem,
+} from '@/lib/icd10/diagnosis-rewrite'
+import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+
+// --- Helper: assemble discharge diagnosis pool ---
+// Aggregates diagnoses from procedures.diagnoses + IVN.diagnoses (free-text)
+// + pmExtraction.diagnoses, runs them through rewriteDiagnosesForDischarge
+// (V/W/X/Y strip, A→D rewrite, M54.5 → M54.50), and dedupes by code.
+// Last-write-wins precedence: procedures > pm > ivn.
+function assembleDischargeDiagnosisPool(args: {
+  procedureDiagnoses: Array<{ icd10_code: string | null; description: string }>
+  pmDiagnoses: Array<{ icd10_code: string | null; description: string }>
+  ivnDiagnosesText: string | null
+}): DiagnosisItem[] {
+  const ivnParsed: DiagnosisItem[] = parseIvnDiagnoses(args.ivnDiagnosesText)
+  const proc: DiagnosisItem[] = args.procedureDiagnoses
+    .filter((d): d is { icd10_code: string; description: string } =>
+      typeof d.icd10_code === 'string' && d.icd10_code.length > 0,
+    )
+    .map((d) => ({ icd10_code: d.icd10_code, description: d.description }))
+  const pm: DiagnosisItem[] = args.pmDiagnoses
+    .filter((d): d is { icd10_code: string; description: string } =>
+      typeof d.icd10_code === 'string' && d.icd10_code.length > 0,
+    )
+    .map((d) => ({ icd10_code: d.icd10_code, description: d.description }))
+
+  // Order matters for last-write-wins dedupe: ivn first, pm second, procedures last.
+  const merged = [...ivnParsed, ...pm, ...proc]
+  const rewritten = rewriteDiagnosesForDischarge(merged)
+  const byCode = new Map<string, DiagnosisItem>()
+  for (const d of rewritten) {
+    byCode.set(d.icd10_code.trim().toUpperCase(), d)
+  }
+  return [...byCode.values()]
+}
 
 // --- Helper: compute source data hash ---
 
@@ -409,6 +446,28 @@ async function gatherDischargeNoteSourceData(
 
   const age = computeAgeAtDate(patient.date_of_birth, visitDate)
 
+  // Aggregate the discharge diagnosis pool from procedures + pm + ivn,
+  // run through deterministic rewriteDiagnosesForDischarge, dedupe by code.
+  // pmExtraction.diagnoses prefers the provider_overrides shape when present
+  // (matches the action-level pmExtraction merge below).
+  const pmOverridesEarly = pmRes.data?.provider_overrides as {
+    diagnoses?: unknown
+  } | null
+  const pmDiagnosesSource = pmOverridesEarly?.diagnoses ?? pmRes.data?.diagnoses
+  const pmDiagnosesArray: Array<{ icd10_code: string | null; description: string }> =
+    Array.isArray(pmDiagnosesSource)
+      ? (pmDiagnosesSource as Array<{ icd10_code: string | null; description: string }>)
+      : []
+  const procedureDiagnosesAggregate: Array<{
+    icd10_code: string | null
+    description: string
+  }> = procedures.flatMap((p) => p.diagnoses)
+  const diagnosisPool = assembleDischargeDiagnosisPool({
+    procedureDiagnoses: procedureDiagnosesAggregate,
+    pmDiagnoses: pmDiagnosesArray,
+    ivnDiagnosesText: ivNoteRes.data?.diagnoses ?? null,
+  })
+
   return {
     data: {
       patientInfo: {
@@ -425,6 +484,7 @@ async function gatherDischargeNoteSourceData(
       },
       visitDate,
       procedures,
+      diagnosisPool: diagnosisPool.length > 0 ? diagnosisPool : null,
       latestVitals,
       dischargeVitals,
       baselinePain,

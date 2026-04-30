@@ -17,6 +17,7 @@ const emptyInput: DischargeNoteInputData = {
   caseDetails: { case_number: 'C1', accident_date: null, accident_type: null },
   visitDate: '2026-04-16',
   procedures: [],
+  diagnosisPool: null,
   latestVitals: null,
   dischargeVitals: null,
   baselinePain: null,

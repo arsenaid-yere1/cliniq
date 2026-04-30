@@ -20,6 +20,12 @@ import {
 } from '@/lib/validations/case-quality-review'
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
+import {
+  validateExternalCauseChain,
+  validateSeventhCharacterIntegrity,
+  SECTION_QC_EXTERNAL_CAUSE_CHAIN,
+  SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
+} from '@/lib/qc/diagnosis-validators'
 
 function computeSourceHash(inputData: QualityReviewInputData): string {
   return createHash('sha256').update(JSON.stringify(inputData)).digest('hex')
@@ -362,10 +368,37 @@ export async function runCaseQualityReview(caseId: string) {
     return { error: result.error || 'Review generation failed' }
   }
 
+  // Deterministic post-LLM merge. Two TS validators emit hash-stable findings
+  // for ICD-10 external-cause-chain integrity + 7th-character integrity.
+  // Their findings always win the dedupe race against any LLM-paraphrased
+  // finding sharing the same hash, AND any LLM-emitted finding carrying our
+  // synthetic section_keys is dropped (LLM is not authorized to author those).
+  const deterministicFindings: QualityFinding[] = [
+    ...validateExternalCauseChain(inputData),
+    ...validateSeventhCharacterIntegrity(inputData),
+  ]
+  const deterministicHashes = new Set(
+    deterministicFindings.map((f) => computeFindingHash(f)),
+  )
+  const llmFindings: QualityFinding[] = (result.data.findings ?? []).filter(
+    (f) =>
+      !deterministicHashes.has(computeFindingHash(f as QualityFinding)) &&
+      f.section_key !== SECTION_QC_EXTERNAL_CAUSE_CHAIN &&
+      f.section_key !== SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
+  ) as QualityFinding[]
+  const mergedFindings: QualityFinding[] = [
+    ...deterministicFindings,
+    ...llmFindings,
+  ]
+
+  console.log(
+    `[qc] case=${caseId} llm_findings=${result.data.findings?.length ?? 0} deterministic=${deterministicFindings.length} merged=${mergedFindings.length}`,
+  )
+
   await supabase
     .from('case_quality_reviews')
     .update({
-      findings: result.data.findings,
+      findings: mergedFindings,
       summary: result.data.summary,
       overall_assessment: result.data.overall_assessment,
       ai_model: 'claude-opus-4-7',
@@ -384,7 +417,7 @@ export async function runCaseQualityReview(caseId: string) {
   //   - finding hash absent → flip to 'resolved' with resolution_source='auto_recheck'
   //     (finding the override targeted is gone — drift fixed)
   const newFindingHashes = new Set<string>(
-    (result.data.findings ?? []).map((f) => computeFindingHash(f as QualityFinding)),
+    mergedFindings.map((f) => computeFindingHash(f)),
   )
   const mergedOverrides: FindingOverridesMap = {}
   const now = new Date().toISOString()
@@ -676,7 +709,39 @@ export async function verifyFinding(caseId: string, findingHash: string) {
   let resolved = false
   let reason: string | null = null
 
-  if (finding.step === 'procedure') {
+  // Deterministic-validator dispatch — re-run the matching validator against
+  // fresh source data and check whether *this specific* finding hash is gone.
+  // Must precede the step-based branches because deterministic findings on
+  // step='procedure' / step='discharge' should hit the validator replay, not
+  // the plan_alignment_status / trajectory_warnings checks.
+  if (
+    finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN ||
+    finding.section_key === SECTION_QC_SEVENTH_CHARACTER_INTEGRITY
+  ) {
+    const fresh = await gatherSourceData(supabase, caseId)
+    if (fresh.error || !fresh.data) {
+      return { error: 'Failed to refresh source data for verify' }
+    }
+    const replays =
+      finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN
+        ? validateExternalCauseChain(fresh.data)
+        : validateSeventhCharacterIntegrity(fresh.data)
+    const stillPresent = replays.some(
+      (f) => computeFindingHash(f) === findingHash,
+    )
+    if (stillPresent) {
+      return {
+        data: {
+          resolved: false,
+          reason:
+            finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN
+              ? 'External cause code still present'
+              : '7th-character integrity violation still present',
+        },
+      }
+    }
+    resolved = true
+  } else if (finding.step === 'procedure') {
     if (!finding.note_id) {
       return { error: 'Procedure finding missing note_id; use Mark Resolved instead' }
     }

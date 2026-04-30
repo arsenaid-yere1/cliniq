@@ -106,7 +106,7 @@ OUTPUT CONTRACT
 - suggested_tone_hint is a short string the provider can paste into the editor's tone hint to drive a regen.
 
 WHAT TO CHECK
-1. Diagnosis progression. ICD-10 codes should evolve coherently across IV → pain-eval → procedure → discharge. Flag radiculopathy emerging without imaging support, M54.5 used without 5th-character specificity, "A"-suffix codes persisting at discharge.
+1. Diagnosis progression — flag radiculopathy emerging without imaging support. (External-cause-chain integrity and ICD-10 7th-character integrity are computed deterministically and merged in post-LLM; do NOT emit findings on those topics — they will be dropped via dedupe.)
 2. Pain trajectory consistency. Discharge subjective should narrate IV → procedure → discharge pain values monotonically against the deterministic arrow chain. Flag fabricated numbers, missing endpoint, paraphrased arrow chains. Read discharge.raw_ai_response.trajectory_warnings if present — it already lists trajectory drift; you must promote those into findings, not duplicate them.
 3. Plan continuity. IV treatment_plan → procedure procedure_indication / assessment_and_plan → discharge plan_and_recommendations should reference the same modalities and progress.
 4. Provider intake echo. If the IV provider_intake or PM provider_overrides set a chief complaint, downstream notes citing a different chief complaint = warning.

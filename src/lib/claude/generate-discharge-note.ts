@@ -43,6 +43,14 @@ export interface DischargeNoteInputData {
     pain_score_max: number | null
     diagnoses: Array<{ icd10_code: string | null; description: string }>
   }>
+  // Pre-filtered, deduped diagnosis pool for the discharge diagnoses section.
+  // Aggregated from procedures.diagnoses + IVN.diagnoses + pmExtraction.diagnoses,
+  // then run through rewriteDiagnosesForDischarge: V/W/X/Y stripped, A-suffix
+  // rewritten to D-suffix + descriptors flipped, M54.5 parent upgraded to M54.50.
+  // When non-null, the prompt's PRE-FILTERED DIAGNOSIS POOL block tells the LLM
+  // to emit these codes verbatim. Filter (A)/(D)/(F) blocks remain as fallback
+  // contract when this field is null.
+  diagnosisPool: Array<{ icd10_code: string; description: string }> | null
   latestVitals: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -400,6 +408,8 @@ Reference: "Motor strength is 5/5 throughout the upper and lower extremities. Se
 
 7. diagnoses (ICD-10 list):
 List all diagnoses with ICD-10 codes. One per line, format: "• CODE – Description". Pull from procedure diagnoses, case summary, and PM extraction.
+
+PRE-FILTERED DIAGNOSIS POOL: When \`diagnosisPool\` is non-null in the input, that array is the AUTHORITATIVE source for the diagnosis section. External-cause codes have already been stripped, A-suffix codes have been rewritten to D-suffix, and M54.5 parent has been upgraded to M54.50. Emit those codes verbatim — do NOT re-derive from procedure.diagnoses, pmExtraction.diagnoses, or caseSummary.suggested_diagnoses, and do NOT add codes back. Filters (B), (C), (E), (G) below still apply for clinical-judgment downgrades (myelopathy / radiculopathy / M79.1 redundancy / symptom resolution); Filters (A), (D), (F) are already enforced by the pool. When \`diagnosisPool\` is null, the legacy DIAGNOSTIC-SUPPORT RULE below applies in full.
 
 DIAGNOSTIC-SUPPORT RULE (MANDATORY): The discharge diagnosis list is a FILTERED output, not a copy of every code that appeared during the treatment course. Apply the filters below to every candidate code from procedure.diagnoses, case_summary.suggested_diagnoses, and pmExtraction.diagnoses. Omit any code that fails its filter. When a filter downgrades a code, substitute the downgrade below rather than leaving pathology unrepresented.
 
