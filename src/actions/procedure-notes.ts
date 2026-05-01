@@ -1055,11 +1055,23 @@ export async function regenerateProcedureNoteSectionAction(
     return { error: result.error || 'Section regeneration failed' }
   }
 
-  // Update only the target section
+  // Merge the regenerated section into raw_ai_response so the audit blob
+  // reflects what is actually surfaced. Without this merge, full-gen
+  // forbidden-phrase output (e.g. "Full recovery") persists in the raw
+  // layer indefinitely even after the provider regenerates the offending
+  // section — forcing a full-document regen just to clean the blob.
+  const rawResponse = note.raw_ai_response as Record<string, unknown> | null
+  const mergedRawResponse: Record<string, unknown> = {
+    ...(rawResponse ?? {}),
+    [section]: result.data,
+  }
+
+  // Update target section + audit blob.
   const { error: updateError } = await supabase
     .from('procedure_notes')
     .update({
       [section]: result.data,
+      raw_ai_response: mergedRawResponse,
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)

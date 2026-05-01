@@ -1236,12 +1236,32 @@ export async function regenerateDischargeNoteSectionAction(
     })
   }
 
+  // Merge the regenerated section into raw_ai_response.raw so the audit
+  // blob reflects what is actually surfaced. Refresh trajectory_warnings
+  // and the rest of the wrapper from the freshly-validated state.
+  const existingRaw = note.raw_ai_response as {
+    raw?: Record<string, unknown> | null
+  } | null
+  const mergedInnerRaw: Record<string, unknown> = {
+    ...((existingRaw?.raw as Record<string, unknown> | null) ?? {}),
+    [section]: result.data,
+  }
+  const wrappedRawResponse = {
+    raw: mergedInnerRaw,
+    trajectory_warnings: validation.warnings,
+    discharge_readings_found: validation.dischargeReadingsFound,
+    pain_trajectory_text: inputData.painTrajectoryText,
+    discharge_visit_pain_display: inputData.dischargeVisitPainDisplay,
+    discharge_visit_pain_estimated: inputData.dischargeVisitPainEstimated,
+  }
+
   // Update the target section AND refresh the persisted trajectory columns
   // so the audit trail matches the current source data.
   const { error: updateError } = await supabase
     .from('discharge_notes')
     .update({
       [section]: result.data,
+      raw_ai_response: wrappedRawResponse,
       discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
       discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
       discharge_pain_estimated: inputData.dischargeVisitPainEstimated,

@@ -869,10 +869,20 @@ export async function regenerateNoteSection(
     return { error: result.error || 'Section regeneration failed' }
   }
 
+  // Merge regenerated section into raw_ai_response so audit blob stays in
+  // sync with surfaced columns. Without this merge, forbidden-phrase output
+  // from full-gen persists in the raw layer indefinitely.
+  const rawResponse = note.raw_ai_response as Record<string, unknown> | null
+  const mergedRawResponse: Record<string, unknown> = {
+    ...(rawResponse ?? {}),
+    [section]: result.data,
+  }
+
   const { error: updateError } = await supabase
     .from('initial_visit_notes')
     .update({
       [section]: result.data,
+      raw_ai_response: mergedRawResponse,
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
