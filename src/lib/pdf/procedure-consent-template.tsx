@@ -1,4 +1,8 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
+import {
+  nsaidPostCareInstructionSentence,
+  nsaidScreeningContraindicationLabel,
+} from '@/lib/clinical/prp-protocol'
 
 export interface ProcedureConsentPdfData {
   clinicLogoBase64?: string
@@ -57,20 +61,20 @@ const BENEFITS_PARAGRAPH =
 const POST_CARE_INTRO =
   'Following your PRP injection, please observe the post-procedure instructions below to optimize healing and minimize risk of complications:'
 
-const POST_CARE_ITEMS = [
-  'Avoid NSAIDs (ibuprofen, naproxen, aspirin, etc.) for 4–6 weeks before and after the procedure, as they may interfere with the healing response.',
+export const POST_CARE_ITEMS = [
+  nsaidPostCareInstructionSentence(),
   'Do not apply ice to the injection site for at least 72 hours.',
   'Observe activity restrictions as directed by your provider; avoid strenuous activity involving the treated area for the recommended period.',
   'Attend all scheduled follow-up appointments and notify the clinic of any signs of infection, severe pain, or unexpected reactions.',
 ]
 
-const CONTRAINDICATION_ITEMS = [
+export const CONTRAINDICATION_ITEMS = [
   'Active infection at injection site',
   'Active cancer / chemotherapy / radiation',
   'Blood clotting disorder (thrombocytopenia, hemophilia)',
   'Anticoagulants (Eliquis, Xarelto, Coumadin, etc.)',
   'Antiplatelet drugs (Plavix, daily aspirin)',
-  'NSAIDs in past 7–10 days',
+  nsaidScreeningContraindicationLabel(),
   'Systemic corticosteroids in past 2 weeks',
   'Pregnancy',
   'Known allergy to local anesthetic',

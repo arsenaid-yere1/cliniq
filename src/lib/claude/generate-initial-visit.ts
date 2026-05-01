@@ -8,6 +8,9 @@ import {
 } from '@/lib/validations/initial-visit-note'
 import { sectionLabels } from '@/lib/validations/initial-visit-note'
 import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
+import { nsaidAvoidanceTreatmentPlanFragment } from '@/lib/clinical/prp-protocol'
+
+const NSAID_AVOIDANCE_FRAGMENT = nsaidAvoidanceTreatmentPlanFragment()
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -340,7 +343,7 @@ Cost estimate sub-section: If feeEstimate data is provided in the source data, u
 "• Practice/Surgery Center Fees: $\{practice_center_min\} – $\{practice_center_max\}"
 Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values are 0, omit the cost estimate sub-section entirely. If feeEstimate is null, use "[To be determined]" as placeholder.
 Para 3 — Supportive care and rehabilitation: In a single paragraph, outline the concurrent conservative management plan: (a) home exercise program emphasizing core stabilization, cervical/lumbar strengthening, and flexibility exercises for affected regions; (b) ergonomic modifications for work and daily activities to minimize biomechanical stress on injured structures; (c) continued physical therapy as tolerated to maintain functional gains.
-Para 4 — Medication management, monitoring, and escalation: In a single paragraph, cover: (a) medication guidance — the patient is advised to avoid NSAIDs for a specified window before and after each PRP injection to avoid inhibiting the platelet-mediated healing response, with acetaminophen permitted for breakthrough pain as needed; (b) monitoring plan — the patient will be re-evaluated after each injection session to assess pain levels, functional improvement, and treatment response; (c) escalation language — if the patient does not demonstrate adequate clinical improvement after completing the PRP series, further diagnostic workup and/or referral for advanced interventional or surgical consultation will be considered. Do NOT create separate sub-sections — keep it ALL in one flowing paragraph.
+Para 4 — Medication management, monitoring, and escalation: In a single paragraph, cover: (a) medication guidance — the patient is advised to ${NSAID_AVOIDANCE_FRAGMENT} to avoid inhibiting the platelet-mediated healing response, with acetaminophen permitted for breakthrough pain as needed; (b) monitoring plan — the patient will be re-evaluated after each injection session to assess pain levels, functional improvement, and treatment response; (c) escalation language — if the patient does not demonstrate adequate clinical improvement after completing the PRP series, further diagnostic workup and/or referral for advanced interventional or surgical consultation will be considered. Do NOT create separate sub-sections — keep it ALL in one flowing paragraph.
 The entire treatment plan should be approximately one full page.
 
 13. PATIENT EDUCATION (~1 paragraph):

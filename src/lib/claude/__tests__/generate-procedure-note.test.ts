@@ -10,6 +10,7 @@ import {
   type ProcedureNoteInputData,
 } from '@/lib/claude/generate-procedure-note'
 import { callClaudeTool } from '@/lib/claude/client'
+import { nsaidHeldPreProcedureClause } from '@/lib/clinical/prp-protocol'
 
 const emptyInput: ProcedureNoteInputData = {
   patientInfo: { first_name: 'A', last_name: 'B', date_of_birth: null, gender: null },
@@ -605,7 +606,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phase 11)', () => {
   it('subjective includes PRE-PROCEDURE SAFETY CHECKLIST directive with standard boilerplate', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('PRE-PROCEDURE SAFETY CHECKLIST (MANDATORY)')
-    expect(system).toContain('held NSAIDs for 5 days prior to the procedure per protocol')
+    expect(system).toContain(nsaidHeldPreProcedureClause())
     expect(system).toContain('denies fever, bleeding diathesis, recent anticoagulant use, or new neurological complaints')
     // Do NOT emit bracketed placeholders for these elements
     expect(system).toContain('Do NOT emit bracketed placeholders for these safety elements')
@@ -623,7 +624,9 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phase 11)', () => {
     // Count occurrences of the safety-clearance sentence stem — once per
     // reference example (baseline, improved/1-prior, stable, worsened,
     // improved/2+-prior) = 5 occurrences.
-    const matches = sBlock.match(/held NSAIDs for 5 days prior to the procedure per protocol/g) ?? []
+    const clause = nsaidHeldPreProcedureClause()
+    const escaped = clause.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const matches = sBlock.match(new RegExp(escaped, 'g')) ?? []
     expect(matches.length).toBeGreaterThanOrEqual(5)
   })
 
