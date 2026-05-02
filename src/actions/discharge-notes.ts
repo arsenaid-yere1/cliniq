@@ -22,7 +22,7 @@ import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
-import { validateDischargeTrajectoryConsistency } from '@/lib/claude/pain-trajectory-validator'
+import { refreshDischargeTrajectory } from '@/actions/discharge-notes-trajectory'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { buildPainObservations } from '@/lib/claude/pain-observations'
 import {
@@ -72,7 +72,7 @@ function computeSourceHash(inputData: DischargeNoteInputData): string {
 
 // --- Helper: gather all source data for note generation ---
 
-async function gatherDischargeNoteSourceData(
+export async function gatherDischargeNoteSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   visitDate: string,
@@ -788,93 +788,14 @@ export async function generateDischargeNote(
     return { error: result.error || 'Note generation failed' }
   }
 
-  // Write success — includes a post-generation numeric consistency check so
-  // LLM drift (fabricated pain numbers, missing endpoint in prose, Pain
-  // bullet mismatch) is captured in raw_ai_response for audit. Warnings are
-  // non-fatal today; they surface in logs and in the stored raw response.
   const data = result.data!
 
-  // Rebuild the trajectory shape needed by the validator from the
-  // deterministic fields already present on inputData. This keeps the
-  // validator call site pure and avoids re-running the builder.
-  const trajectoryForValidator = {
-    entries: [
-      ...(inputData.intakePain && (inputData.intakePain.pain_score_min != null || inputData.intakePain.pain_score_max != null)
-        ? [
-            {
-              date: inputData.intakePain.recorded_at,
-              label: 'initial evaluation',
-              min: inputData.intakePain.pain_score_min,
-              max: inputData.intakePain.pain_score_max,
-              source: 'intake' as const,
-              estimated: false,
-              dayOffset: null,
-            },
-          ]
-        : []),
-      ...inputData.procedures.map((p) => ({
-        date: p.procedure_date,
-        label: `procedure ${p.procedure_number}`,
-        min: p.pain_score_min,
-        max: p.pain_score_max,
-        source: 'procedure' as const,
-        estimated: false,
-        dayOffset: null,
-      })),
-      ...(inputData.dischargeVisitPainDisplay != null
-        ? [
-            {
-              date: null,
-              label: "today's discharge evaluation",
-              min: inputData.dischargePainEstimateMin,
-              max: inputData.dischargePainEstimateMax,
-              source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
-              estimated: inputData.dischargeVisitPainEstimated,
-              dayOffset: null,
-            },
-          ]
-        : []),
-    ],
-    arrowChain: inputData.painTrajectoryText ?? '',
-    baselineDisplay: inputData.baselinePainDisplay,
-    baselineSource: inputData.baselinePainSource,
-    intakePainDisplay: inputData.intakePainDisplay,
-    firstProcedurePainDisplay: inputData.firstProcedurePainDisplay,
-    dischargeDisplay: inputData.dischargeVisitPainDisplay,
-    dischargeEntry: inputData.dischargeVisitPainDisplay
-      ? {
-          date: null,
-          label: "today's discharge evaluation",
-          min: inputData.dischargePainEstimateMin,
-          max: inputData.dischargePainEstimateMax,
-          source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
-          estimated: inputData.dischargeVisitPainEstimated,
-          dayOffset: null,
-        }
-      : null,
-    dischargeEstimated: inputData.dischargeVisitPainEstimated,
-  }
-  const validation = validateDischargeTrajectoryConsistency(data, trajectoryForValidator)
-  if (validation.warnings.length > 0) {
-    console.warn('[discharge-note] trajectory validator warnings', {
-      caseId,
-      recordId: record.id,
-      warnings: validation.warnings,
-    })
-  }
-
-  // Wrap raw_ai_response to carry the validator output alongside the raw LLM
-  // payload. Readers downstream can still extract the original tool result
-  // from `.raw`.
-  const wrappedRawResponse = {
-    raw: result.rawResponse ?? null,
-    trajectory_warnings: validation.warnings,
-    discharge_readings_found: validation.dischargeReadingsFound,
-    pain_trajectory_text: inputData.painTrajectoryText,
-    discharge_visit_pain_display: inputData.dischargeVisitPainDisplay,
-    discharge_visit_pain_estimated: inputData.dischargeVisitPainEstimated,
-  }
-
+  // First write: section text + non-trajectory metadata (status, model,
+  // source hash). Trajectory columns + the validator-aware raw_ai_response
+  // wrapper are written in the second step by the shared refresh helper.
+  // Splitting these keeps the wrapper-assembly logic in exactly one place
+  // (refreshDischargeTrajectory) so future schema additions to the wrapper
+  // apply uniformly to generate, regen, and save paths.
   await supabase
     .from('discharge_notes')
     .update({
@@ -891,17 +812,24 @@ export async function generateDischargeNote(
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-opus-4-6',
-      raw_ai_response: wrappedRawResponse,
       status: 'draft',
       sections_done: DISCHARGE_NOTE_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
-      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
-      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
-      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
-      pain_trajectory_text: inputData.painTrajectoryText,
       updated_by_user_id: user.id,
     })
     .eq('id', record.id)
+
+  const refreshRes = await refreshDischargeTrajectory(caseId, record.id, {
+    inputData,
+    rawSectionsToMerge: result.rawResponse
+      ? (result.rawResponse as Record<string, unknown>)
+      : undefined,
+    userId: user.id,
+  })
+  if (refreshRes.error) {
+    revalidatePath(`/patients/${caseId}/discharge`)
+    return { error: refreshRes.error }
+  }
 
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { id: record.id } }
@@ -952,6 +880,22 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
     .eq('status', 'draft')
 
   if (error) return { error: 'Failed to save note' }
+
+  // Manual section edits can introduce off-chain pain values (e.g. a bare
+  // "5/10" in subjective when the deterministic chain only contains "2-5",
+  // "4-5", "3-5"). Run the shared refresh helper so trajectory_warnings +
+  // discharge_readings_found reflect the new text. Trajectory columns are
+  // also reasserted; on unchanged source data they settle to the same values.
+  const { data: row } = await supabase
+    .from('discharge_notes')
+    .select('id')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .eq('status', 'draft')
+    .maybeSingle()
+  if (row) {
+    await refreshDischargeTrajectory(caseId, row.id, { userId: user.id })
+  }
 
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { success: true } }
@@ -1155,122 +1099,24 @@ export async function regenerateDischargeNoteSectionAction(
     return { error: result.error || 'Section regeneration failed' }
   }
 
-  // Run the trajectory validator against the merged note: the freshly
-  // regenerated section plus the current content of the other sections.
-  // Regen can refresh the deterministic trajectory (new vitals entered, new
-  // procedure recorded, etc.), so both the note text and the audit columns
-  // are updated atomically here — otherwise a stale pain_trajectory_text
-  // can linger on the row while the regenerated section cites a newer arrow
-  // chain.
-  const mergedForValidation = {
-    ...(Object.fromEntries(
-      dischargeNoteSections.map((s) => [s, (note[s] as string | null) ?? '']),
-    ) as Record<DischargeNoteSection, string>),
-    [section]: result.data,
-  } as unknown as import('@/lib/validations/discharge-note').DischargeNoteResult
-
-  const trajectoryForValidator = {
-    entries: [
-      ...(inputData.intakePain && (inputData.intakePain.pain_score_min != null || inputData.intakePain.pain_score_max != null)
-        ? [
-            {
-              date: inputData.intakePain.recorded_at,
-              label: 'initial evaluation',
-              min: inputData.intakePain.pain_score_min,
-              max: inputData.intakePain.pain_score_max,
-              source: 'intake' as const,
-              estimated: false,
-              dayOffset: null,
-            },
-          ]
-        : []),
-      ...inputData.procedures.map((p) => ({
-        date: p.procedure_date,
-        label: `procedure ${p.procedure_number}`,
-        min: p.pain_score_min,
-        max: p.pain_score_max,
-        source: 'procedure' as const,
-        estimated: false,
-        dayOffset: null,
-      })),
-      ...(inputData.dischargeVisitPainDisplay != null
-        ? [
-            {
-              date: null,
-              label: "today's discharge evaluation",
-              min: inputData.dischargePainEstimateMin,
-              max: inputData.dischargePainEstimateMax,
-              source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
-              estimated: inputData.dischargeVisitPainEstimated,
-              dayOffset: null,
-            },
-          ]
-        : []),
-    ],
-    arrowChain: inputData.painTrajectoryText ?? '',
-    baselineDisplay: inputData.baselinePainDisplay,
-    baselineSource: inputData.baselinePainSource,
-    intakePainDisplay: inputData.intakePainDisplay,
-    firstProcedurePainDisplay: inputData.firstProcedurePainDisplay,
-    dischargeDisplay: inputData.dischargeVisitPainDisplay,
-    dischargeEntry: inputData.dischargeVisitPainDisplay
-      ? {
-          date: null,
-          label: "today's discharge evaluation",
-          min: inputData.dischargePainEstimateMin,
-          max: inputData.dischargePainEstimateMax,
-          source: (inputData.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals') as 'discharge_estimate' | 'discharge_vitals',
-          estimated: inputData.dischargeVisitPainEstimated,
-          dayOffset: null,
-        }
-      : null,
-    dischargeEstimated: inputData.dischargeVisitPainEstimated,
-  }
-  const validation = validateDischargeTrajectoryConsistency(mergedForValidation, trajectoryForValidator)
-  if (validation.warnings.length > 0) {
-    console.warn('[discharge-note] section-regen trajectory validator warnings', {
-      caseId,
-      recordId: note.id,
-      section,
-      warnings: validation.warnings,
-    })
-  }
-
-  // Merge the regenerated section into raw_ai_response.raw so the audit
-  // blob reflects what is actually surfaced. Refresh trajectory_warnings
-  // and the rest of the wrapper from the freshly-validated state.
-  const existingRaw = note.raw_ai_response as {
-    raw?: Record<string, unknown> | null
-  } | null
-  const mergedInnerRaw: Record<string, unknown> = {
-    ...((existingRaw?.raw as Record<string, unknown> | null) ?? {}),
-    [section]: result.data,
-  }
-  const wrappedRawResponse = {
-    raw: mergedInnerRaw,
-    trajectory_warnings: validation.warnings,
-    discharge_readings_found: validation.dischargeReadingsFound,
-    pain_trajectory_text: inputData.painTrajectoryText,
-    discharge_visit_pain_display: inputData.dischargeVisitPainDisplay,
-    discharge_visit_pain_estimated: inputData.dischargeVisitPainEstimated,
-  }
-
-  // Update the target section AND refresh the persisted trajectory columns
-  // so the audit trail matches the current source data.
-  const { error: updateError } = await supabase
+  // Two-step write: persist the regenerated section text, then call the
+  // shared refresh helper to revalidate against the merged note and rewrite
+  // both the trajectory columns and the raw_ai_response wrapper. The helper
+  // gathers source data internally (skipped when inputData is supplied) so
+  // generate, regen, and the save paths assemble the wrapper identically.
+  const { error: sectionUpdErr } = await supabase
     .from('discharge_notes')
-    .update({
-      [section]: result.data,
-      raw_ai_response: wrappedRawResponse,
-      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
-      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
-      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
-      pain_trajectory_text: inputData.painTrajectoryText,
-      updated_by_user_id: user.id,
-    })
+    .update({ [section]: result.data, updated_by_user_id: user.id })
     .eq('id', note.id)
+  if (sectionUpdErr) return { error: 'Failed to update section' }
 
-  if (updateError) return { error: 'Failed to update section' }
+  const refreshRes = await refreshDischargeTrajectory(caseId, note.id, {
+    inputData,
+    mergedSections: { [section]: result.data },
+    rawSectionsToMerge: { [section]: result.data },
+    userId: user.id,
+  })
+  if (refreshRes.error) return { error: refreshRes.error }
 
   revalidatePath(`/patients/${caseId}/discharge`)
   return { data: { content: result.data } }
@@ -1382,6 +1228,12 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
       })
       .eq('id', existing.id)
     if (error) return { error: 'Failed to save vitals' }
+    // Vitals change feeds the trajectory builder as dischargeVitals →
+    // pain_trajectory_text + discharge_pain_estimate_min/max + the validator
+    // wrapper need to be rebuilt so the row is internally consistent. The
+    // validator surfaces any narrative section still citing the old endpoint
+    // as a non-fatal warning; provider chooses whether to section-regen.
+    await refreshDischargeTrajectory(caseId, existing.id, { userId: user.id })
   } else {
     const { error } = await supabase
       .from('discharge_notes')
@@ -1393,6 +1245,8 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
         updated_by_user_id: user.id,
       })
     if (error) return { error: 'Failed to save vitals' }
+    // No refresh on insert — section text is empty so there is nothing for
+    // the validator to scan. Trajectory state is rebuilt at first generate.
   }
 
   revalidatePath(`/patients/${caseId}/discharge`)

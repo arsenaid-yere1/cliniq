@@ -331,3 +331,77 @@ export function buildDischargePainTrajectory(
     dischargeEstimated,
   }
 }
+
+// Reconstruct the validator-shape DischargePainTrajectory from the persisted
+// fields on DischargeNoteInputData (or from a freshly gathered inputData).
+// The validator only cares about entries' min/max/date plus the *Display
+// strings — labels and dayOffsets are unread, so generic values are fine.
+// Used by all four trajectory write paths (generate, regen, saveDischargeNote,
+// saveDischargeVitals) so the wrapper assembled into raw_ai_response is
+// identical across them.
+export interface ValidatorTrajectoryInput {
+  intakePain: { recorded_at: string | null; pain_score_min: number | null; pain_score_max: number | null } | null
+  procedures: Array<{ procedure_date: string; procedure_number?: number; pain_score_min: number | null; pain_score_max: number | null }>
+  dischargeVisitPainDisplay: string | null
+  dischargeVisitPainEstimated: boolean
+  dischargePainEstimateMin: number | null
+  dischargePainEstimateMax: number | null
+  painTrajectoryText: string | null
+  baselinePainDisplay: string | null
+  baselinePainSource: 'intake' | 'procedure' | null
+  intakePainDisplay: string | null
+  firstProcedurePainDisplay: string | null
+}
+
+export function buildTrajectoryForValidator(input: ValidatorTrajectoryInput): DischargePainTrajectory {
+  const dischargeEntry: TimelineEntry | null = input.dischargeVisitPainDisplay
+    ? {
+        date: null,
+        label: "today's discharge evaluation",
+        min: input.dischargePainEstimateMin,
+        max: input.dischargePainEstimateMax,
+        source: input.dischargeVisitPainEstimated ? 'discharge_estimate' : 'discharge_vitals',
+        estimated: input.dischargeVisitPainEstimated,
+        dayOffset: null,
+      }
+    : null
+
+  const intakeEntry: TimelineEntry | null =
+    input.intakePain && (input.intakePain.pain_score_min != null || input.intakePain.pain_score_max != null)
+      ? {
+          date: input.intakePain.recorded_at,
+          label: 'initial evaluation',
+          min: input.intakePain.pain_score_min,
+          max: input.intakePain.pain_score_max,
+          source: 'intake',
+          estimated: false,
+          dayOffset: null,
+        }
+      : null
+
+  const procEntries: TimelineEntry[] = input.procedures.map((p) => ({
+    date: p.procedure_date,
+    label: `procedure ${p.procedure_number ?? ''}`.trim(),
+    min: p.pain_score_min,
+    max: p.pain_score_max,
+    source: 'procedure',
+    estimated: false,
+    dayOffset: null,
+  }))
+
+  return {
+    entries: [
+      ...(intakeEntry ? [intakeEntry] : []),
+      ...procEntries,
+      ...(dischargeEntry ? [dischargeEntry] : []),
+    ],
+    arrowChain: input.painTrajectoryText ?? '',
+    baselineDisplay: input.baselinePainDisplay,
+    baselineSource: input.baselinePainSource,
+    intakePainDisplay: input.intakePainDisplay,
+    firstProcedurePainDisplay: input.firstProcedurePainDisplay,
+    dischargeDisplay: input.dischargeVisitPainDisplay,
+    dischargeEntry,
+    dischargeEstimated: input.dischargeVisitPainEstimated,
+  }
+}
