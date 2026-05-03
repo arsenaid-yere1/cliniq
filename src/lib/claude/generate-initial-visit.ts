@@ -166,11 +166,12 @@ Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airba
 Para 2: "The patient presents today for initial evaluation following the described incident. [He/She] reports ongoing pain and functional limitations affecting activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in daily activities, including self-care."
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
-3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
-Para 1: Symptom onset and progression since the accident — when symptoms began, which body regions were affected first, how they have evolved. Include any self-treatment (OTC medications such as Tylenol, Ibuprofen).
-Para 2: Functional impact — work status changes, activity limitations, sleep disturbance, and how daily life has been affected since the accident.
-Do NOT reference prior clinical encounters, treatment providers, or medical records (none exist). Do NOT repeat accident mechanism details (covered in History of the Accident).
-Reference tone: "Following the accident, the patient reports onset of neck pain, headaches, and low back pain within hours of the collision. She has been self-treating with over-the-counter Tylenol and Ibuprofen with minimal relief. The patient reports difficulty with prolonged sitting, standing, and sleeping due to pain."
+3. POST-ACCIDENT HISTORY (~2-3 short paragraphs, concise medical-legal history):
+Para 1 — Symptom onset and progression: Establish in neutral, factual language when symptoms began relative to the accident, which body regions were affected first, and how they have evolved. Anchor every event temporally to the accident (e.g., "within hours of the collision," "in the days following the accident").
+Para 2 — Self-treatment: Note any over-the-counter self-treatment by class or named OTC agent (e.g., "over-the-counter analgesics such as acetaminophen and ibuprofen") and the reported response. Do not attribute self-treatment to any provider.
+Para 3 — Functional limitations: State work status changes, activity restrictions, sleep disturbance, and impact on activities of daily living since the accident.
+Constraints: Use neutral, non-attributive language. Preserve timeline and symptoms from the source data. Do NOT introduce facts not present in the source data. Do NOT reference prior clinical encounters, treatment providers, clinics, or medical records (none exist at this initial visit). Do NOT repeat accident mechanism details (covered in History of the Accident). Do NOT include subjective characterizations of treatment quality.
+Reference tone: "Following the collision, the patient reports onset of neck pain, headaches, and low back pain within hours of the accident. Over-the-counter analgesics, including acetaminophen and ibuprofen, were used with minimal relief. Reported limitations include prolonged sitting, prolonged standing, and sleep disturbance attributed to ongoing pain."
 
 9. RADIOLOGICAL IMAGING FINDINGS:
 State what imaging has been ORDERED at this visit, NOT findings (no imaging results exist yet). Format as:
@@ -279,12 +280,12 @@ Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airba
 Para 2: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
-3. POST-ACCIDENT HISTORY (~2-3 short paragraphs):
-Para 1: Timeline of care sought after the accident — ER/urgent care visits, initial treatment providers (chiropractic, physical therapy), and referral chain leading to this evaluation. Use specific dates and provider types from the case summary treatment timeline.
-Para 2: How symptoms have evolved since the accident — which symptoms persisted, worsened, or improved over time. Include any medications prescribed post-accident.
-Para 3: Functional impact — work status changes, activity limitations, and how daily life has been affected since the accident.
-Use information from the case summary treatment timeline and symptom progression. Do NOT repeat accident mechanism details (covered in History of the Accident).
-Reference tone: "Following the collision, the patient presented to the emergency department where radiographs were obtained and she was prescribed muscle relaxants and pain medication. She subsequently initiated chiropractic care approximately one week post-accident and has continued conservative treatment. MRIs of the cervical and lumbar spine were obtained for further evaluation."
+3. POST-ACCIDENT HISTORY (~2-3 short paragraphs, concise medical-legal history):
+Para 1 — Chronology of care: Establish the timeline of care following the accident in neutral, factual language. Note ER/urgent care evaluation, imaging obtained, and the sequence of conservative care leading to this evaluation. Use dates or relative intervals (e.g., "approximately one week post-accident"). Do NOT name specific providers, clinics, prescribers, or facilities; refer to care by type only (e.g., "emergency department evaluation," "conservative care," "diagnostic imaging").
+Para 2 — Symptom evolution: Describe how symptoms have persisted, worsened, or improved since the accident. Include imaging by modality and region (e.g., "MRI of the cervical spine") and any post-accident medications by class (e.g., "muscle relaxants, analgesics"); do not attribute them to a named provider.
+Para 3 — Functional limitations: State work status changes, activity restrictions, and impact on activities of daily living since the accident.
+Constraints: Use neutral, non-attributive language. Anchor every event temporally to the accident to establish accident-related chronology. Preserve timeline, symptoms, and imaging from the case summary. Do NOT introduce facts not present in the case summary. Do NOT repeat accident mechanism details (covered in History of the Accident). Do NOT include subjective characterizations of provider competence or treatment quality.
+Reference tone: "Following the collision, the patient was evaluated in the emergency department, where radiographs were obtained and analgesic and muscle relaxant medications were prescribed. Approximately one week post-accident, conservative care was initiated and has continued. MRI of the cervical and lumbar spine was subsequently obtained for further evaluation. Cervical and lumbar symptoms have persisted despite ongoing conservative care, with reported limitations in lifting, prolonged sitting, and return to full work duties."
 
 9. RADIOLOGICAL IMAGING FINDINGS:
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
@@ -393,7 +394,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       post_accident_history: {
         type: 'string',
-        description: 'Post-accident treatment timeline, symptom evolution, and functional impact since the accident',
+        description: 'Concise medical-legal post-accident history: chronology of care, symptom evolution, imaging, and functional limitations since the accident, in neutral non-attributive language without specific provider, clinic, or facility names',
       },
       chief_complaint: {
         type: 'string',
