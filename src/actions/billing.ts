@@ -136,7 +136,7 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('discharge_notes')
-      .select('created_at, visit_date')
+      .select('created_at, visit_date, diagnoses')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -148,11 +148,12 @@ export async function getInvoiceFormData(caseId: string) {
 
   const providerProfile = providerProfileResult.data
 
-  // Derive diagnoses: prefer structured from procedures. If no procedure has structured
-  // diagnoses AND the case has no discharge note yet (treatment in progress), fall back
-  // to parsing ICD-10 codes from the Initial Visit Note's free-text `diagnoses` field.
-  // Once a discharge note exists, skip the IVN fallback so stale pre-treatment codes
-  // don't silently reappear on post-discharge invoices.
+  // Derive diagnoses precedence:
+  //  1. Procedure structured diagnoses (jsonb) — clinical encounter codes win.
+  //  2. Discharge Note free-text diagnoses — post-discharge authoritative list.
+  //     Discharge presence suppresses IVN even when its diagnoses field is empty,
+  //     so stale pre-treatment codes don't reappear on post-discharge invoices.
+  //  3. Initial Visit Note free-text diagnoses — pre-discharge working list.
   let diagnoses: Array<{ icd10_code: string | null; description: string }> = []
   const procedures = proceduresResult.data ?? []
   const procedureWithDiagnoses = procedures.find(
@@ -160,7 +161,9 @@ export async function getInvoiceFormData(caseId: string) {
   )
   if (procedureWithDiagnoses) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
-  } else if (!dischargeNoteResult.data) {
+  } else if (dischargeNoteResult.data) {
+    diagnoses = parseIvnDiagnoses(dischargeNoteResult.data.diagnoses)
+  } else {
     // Prefer pain_evaluation_visit (imaging-confirmed codes) over initial_visit (clinical impression).
     const visitNotesForDx = (initialVisitNotesResult.data ?? []) as Array<{
       visit_type: string
