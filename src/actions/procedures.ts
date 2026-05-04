@@ -431,7 +431,6 @@ export async function updatePrpProcedure(
 export interface ProcedureDefaults {
   sites: ProcedureSite[]
   suggested_sites_label: string | null
-  suggested_site_labels: string[]
   vital_signs: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -543,10 +542,10 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
   const pmCandidates = parsePmTreatmentPlan(pmTreatmentPlanRaw)
   const ivCandidates = parseInitialVisitTreatmentPlan(ivTreatmentPlanText)
   const suggestedSites = sitesFromPlan(pmCandidates, ivCandidates)
-  const suggested_site_labels = suggestedSites.map((s) => labelWithLaterality(s))
+  const suggestedLabels = suggestedSites.map((s) => labelWithLaterality(s))
   const suggested_sites_label =
-    suggested_site_labels.length > 0
-      ? `Suggested: ${suggested_site_labels.join(', ')}`
+    suggestedLabels.length > 0
+      ? `Suggested: ${suggestedLabels.join(', ')}`
       : null
 
   // Suppress preferredIvn unused-var warning when sites pre-fill is removed.
@@ -585,7 +584,6 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     data: {
       sites,
       suggested_sites_label,
-      suggested_site_labels,
       vital_signs: {
         bp_systolic: vitals?.bp_systolic ?? null,
         bp_diastolic: vitals?.bp_diastolic ?? null,

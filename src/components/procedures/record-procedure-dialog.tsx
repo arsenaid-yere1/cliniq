@@ -404,7 +404,7 @@ export function RecordProcedureDialog({
                       <SitesEditor
                         value={field.value ?? []}
                         onChange={field.onChange}
-                        intakeSuggestions={procedureDefaults?.suggested_site_labels ?? []}
+                        intakeSuggestions={[]}
                       />
                     </FormControl>
                     <FormDescription>
