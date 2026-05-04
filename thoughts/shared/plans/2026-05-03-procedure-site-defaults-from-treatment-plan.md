@@ -544,6 +544,20 @@ Negligible. The PM and IV queries already run; we only widen their `select` list
 
 None. Behavior change is per-call only; no persisted data shape changes. Existing procedures already saved with intake-derived sites are unaffected (this code only runs when populating a new dialog). If a provider opens "Record Procedure" on an existing case after this ships, they will see plan-derived defaults instead of intake-derived defaults — the previously-recorded procedures stay as they were saved.
 
+## Post-Implementation Addendum (2026-05-03)
+
+After Phase 3 shipped, the user requested a direction change: do **not** pre-fill `sites[]` from the plan. Instead, leave `sites: []` and surface the plan-derived suggestion as a hint label above the sites editor. Reasoning: pre-filling auto-populates fields the provider may not want (e.g., when `normalizeRegion` falls through and returns a full sentence as a body_region, the adapter would title-case a paragraph into a site label).
+
+Changes from the original plan:
+- `getProcedureDefaults` now always returns `sites: []`. Intake-body-region fallback is removed.
+- `ProcedureDefaults` gains two new fields:
+  - `suggested_sites_label: string | null` — formatted as `"Suggested: <Label>, <Label>"` using `labelWithLaterality`. Null when plan has no injection candidates.
+  - `suggested_site_labels: string[]` — raw array used to feed the existing `SitesEditor` `intakeSuggestions` combobox dropdown.
+- `record-procedure-dialog.tsx` renders `suggested_sites_label` as a `text-xs text-muted-foreground` paragraph between `<FormLabel>Sites *</FormLabel>` and `<SitesEditor>`. The dropdown quick-add suggestions still fed from plan-derived labels.
+- `parseBodyRegion` import removed from `procedures.ts` (no longer used).
+- `labelWithLaterality` added to the `sites-helpers` import list.
+- `sitesFromPlan` adapter, parser exports, and unit tests retained — used to build the suggestion labels.
+
 ## References
 
 - Research: `thoughts/shared/research/2026-04-26-prp-volume-multi-site-documentation.md` (note: research is stale — codebase already moved to `sites: ProcedureSite[]` array model; current `injection_site` text column is now derived via `injectionSiteFromSites(sites)` at [src/lib/procedures/sites-helpers.ts:39](src/lib/procedures/sites-helpers.ts#L39)).
