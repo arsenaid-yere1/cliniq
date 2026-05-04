@@ -395,11 +395,16 @@ export function RecordProcedureDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Sites *</FormLabel>
+                    {procedureDefaults?.suggested_sites_label && (
+                      <p className="text-xs text-muted-foreground">
+                        {procedureDefaults.suggested_sites_label}
+                      </p>
+                    )}
                     <FormControl>
                       <SitesEditor
                         value={field.value ?? []}
                         onChange={field.onChange}
-                        intakeSuggestions={(procedureDefaults?.sites ?? []).map((s) => s.label)}
+                        intakeSuggestions={procedureDefaults?.suggested_site_labels ?? []}
                       />
                     </FormControl>
                     <FormDescription>

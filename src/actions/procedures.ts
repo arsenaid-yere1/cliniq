@@ -3,12 +3,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
-import { parseBodyRegion } from '@/lib/procedures/parse-body-region'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import { rewriteDiagnosesForProcedure } from '@/lib/icd10/diagnosis-rewrite'
-import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sites-helpers'
+import {
+  injectionSiteFromSites,
+  labelWithLaterality,
+  type ProcedureSite,
+} from '@/lib/procedures/sites-helpers'
 import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
 import { singleAnatomyFromDiagnoses } from '@/lib/procedures/diagnosis-anatomy'
 import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
@@ -418,12 +421,17 @@ export async function updatePrpProcedure(
   return { data: procedure }
 }
 
-// Defaults for pre-populating new procedure dialog. sites[] comes from the
-// IV/PE treatment_plan (PM extraction jsonb + IV note narrative) when
-// available, falling back to intake chief_complaints when no plan is on
-// file. Other fields come from per-anatomy procedure_defaults table lookup.
+// Defaults for pre-populating new procedure dialog. sites[] is always empty
+// — the provider commits each site explicitly. suggested_sites_label is a
+// hint string derived from the IV/PE treatment_plan (PM jsonb + IV text)
+// shown above the sites editor when a plan with injection items is on file.
+// Other fields come from per-anatomy procedure_defaults table lookup, which
+// requires a single-anatomy resolution and therefore stays null until the
+// provider has added sites.
 export interface ProcedureDefaults {
   sites: ProcedureSite[]
+  suggested_sites_label: string | null
+  suggested_site_labels: string[]
   vital_signs: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -512,10 +520,12 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
     ?? null
 
-  // Derive sites[] from PM/IV treatment_plan; fall back to intake chief
-  // complaints when no plan is on file. PM-first, then IV; deduped by
-  // (label, laterality). volume_ml + target_confirmed_imaging start null —
-  // provider commits per-site at dialog time.
+  // sites[] is always empty — provider commits each site explicitly. We
+  // derive a hint string from PM/IV treatment_plan to surface above the
+  // sites editor as "Suggested: <Label>, <Label>" so the provider sees what
+  // the plan recommends without auto-populating fields they may not want.
+  const sites: ProcedureSite[] = []
+
   const preferredIvnPlan =
     ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.treatment_plan)
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.treatment_plan)
@@ -532,28 +542,15 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
 
   const pmCandidates = parsePmTreatmentPlan(pmTreatmentPlanRaw)
   const ivCandidates = parseInitialVisitTreatmentPlan(ivTreatmentPlanText)
-  const sites: ProcedureSite[] = sitesFromPlan(pmCandidates, ivCandidates)
+  const suggestedSites = sitesFromPlan(pmCandidates, ivCandidates)
+  const suggested_site_labels = suggestedSites.map((s) => labelWithLaterality(s))
+  const suggested_sites_label =
+    suggested_site_labels.length > 0
+      ? `Suggested: ${suggested_site_labels.join(', ')}`
+      : null
 
-  if (sites.length === 0) {
-    const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
-    const parsed = complaints
-      .filter((c) => c.body_region && c.body_region.trim() !== '')
-      .map((c) => parseBodyRegion(c.body_region))
-      .filter((p) => p.injection_site !== '')
-
-    const seen = new Set<string>()
-    for (const p of parsed) {
-      const key = `${p.injection_site}|${p.laterality ?? 'null'}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      sites.push({
-        label: p.injection_site,
-        laterality: p.laterality,
-        volume_ml: null,
-        target_confirmed_imaging: null,
-      })
-    }
-  }
+  // Suppress preferredIvn unused-var warning when sites pre-fill is removed.
+  void preferredIvn
 
   // Look up per-anatomy procedure_defaults. Resolution order:
   //   1. sites[] — provider-explicit choice via intake body_region
@@ -587,6 +584,8 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
   return {
     data: {
       sites,
+      suggested_sites_label,
+      suggested_site_labels,
       vital_signs: {
         bp_systolic: vitals?.bp_systolic ?? null,
         bp_diastolic: vitals?.bp_diastolic ?? null,
