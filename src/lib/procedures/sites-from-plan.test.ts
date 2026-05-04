@@ -105,11 +105,42 @@ describe('sitesFromPlan', () => {
     ])
   })
 
-  it('title-cases multi-word body_region', () => {
+  it('rejects free-text body_region that is not a canonical region', () => {
+    // normalizeRegion fall-through can return an entire sentence when no
+    // synonym/keyword/level matches. The adapter must drop those rather
+    // than emit a paragraph as a site label.
+    const result = sitesFromPlan(
+      [pm({ body_region: 'plan to proceed with prp injection at the lumbosacral junction' })],
+      [],
+    )
+    expect(result).toEqual([])
+  })
+
+  it('rejects multi-word body_region even when one word is canonical', () => {
+    // "sacroiliac joint" is not in the canonical set even though
+    // "sacroiliac" is — strict whitelist.
     const result = sitesFromPlan(
       [pm({ body_region: 'sacroiliac joint' })],
       [],
     )
-    expect(result[0].label).toBe('Sacroiliac Joint')
+    expect(result).toEqual([])
+  })
+
+  it('rejects target_levels entries that are not clean level codes', () => {
+    const result = sitesFromPlan(
+      [pm({ body_region: 'lumbar', target_levels: ['L4-L5', 'lumbar facet joints', 'L5-S1'] })],
+      [],
+    )
+    expect(result.map((s) => s.label)).toEqual(['L4-L5', 'L5-S1'])
+  })
+
+  it('accepts canonical region body_region case-insensitively', () => {
+    const result = sitesFromPlan(
+      [pm({ body_region: 'KNEE', laterality: 'left' })],
+      [],
+    )
+    expect(result).toEqual([
+      { label: 'Knee', laterality: 'left', volume_ml: null, target_confirmed_imaging: null },
+    ])
   })
 })
