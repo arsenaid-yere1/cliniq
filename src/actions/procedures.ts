@@ -12,6 +12,11 @@ import { injectionSiteFromSites, type ProcedureSite } from '@/lib/procedures/sit
 import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
 import { singleAnatomyFromDiagnoses } from '@/lib/procedures/diagnosis-anatomy'
 import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
+import {
+  parsePmTreatmentPlan,
+  parseInitialVisitTreatmentPlan,
+} from '@/lib/procedures/compute-plan-alignment'
+import { sitesFromPlan } from '@/lib/procedures/sites-from-plan'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -413,8 +418,10 @@ export async function updatePrpProcedure(
   return { data: procedure }
 }
 
-// Defaults for pre-populating new procedure dialog from Initial Visit data
-// + per-anatomy procedure_defaults table lookup (B1).
+// Defaults for pre-populating new procedure dialog. sites[] comes from the
+// IV/PE treatment_plan (PM extraction jsonb + IV note narrative) when
+// available, falling back to intake chief_complaints when no plan is on
+// file. Other fields come from per-anatomy procedure_defaults table lookup.
 export interface ProcedureDefaults {
   sites: ProcedureSite[]
   vital_signs: {
@@ -457,7 +464,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('provider_intake, visit_type, visit_date')
+      .select('provider_intake, visit_type, visit_date, treatment_plan, status')
       .eq('case_id', caseId)
       .is('deleted_at', null),
     // Diagnosis fallback: when sites do not resolve to a single anatomy,
@@ -472,7 +479,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .not('diagnoses', 'is', null),
     supabase
       .from('pain_management_extractions')
-      .select('diagnoses, provider_overrides')
+      .select('diagnoses, provider_overrides, treatment_plan')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -489,6 +496,8 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     visit_type: string
     visit_date: string | null
     provider_intake: { chief_complaints?: { complaints?: Array<{ body_region: string }> } } | null
+    treatment_plan: string | null
+    status: string
   }
   const ivnRows = (ivnRes.data ?? []) as IvnIntakeRow[]
 
@@ -503,28 +512,47 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.provider_intake)
     ?? null
 
-  // Derive sites[] from all chief complaints with a non-empty body_region.
-  // One site per complaint; deduped by (label, laterality). volume_ml +
-  // target_confirmed_imaging start null — provider commits per-site at
-  // dialog time.
-  const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
-  const parsed = complaints
-    .filter((c) => c.body_region && c.body_region.trim() !== '')
-    .map((c) => parseBodyRegion(c.body_region))
-    .filter((p) => p.injection_site !== '')
+  // Derive sites[] from PM/IV treatment_plan; fall back to intake chief
+  // complaints when no plan is on file. PM-first, then IV; deduped by
+  // (label, laterality). volume_ml + target_confirmed_imaging start null —
+  // provider commits per-site at dialog time.
+  const preferredIvnPlan =
+    ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.treatment_plan)
+    ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.treatment_plan)
+    ?? null
+  const ivTreatmentPlanText = preferredIvnPlan?.treatment_plan ?? null
 
-  const seen = new Set<string>()
-  const sites: ProcedureSite[] = []
-  for (const p of parsed) {
-    const key = `${p.injection_site}|${p.laterality ?? 'null'}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    sites.push({
-      label: p.injection_site,
-      laterality: p.laterality,
-      volume_ml: null,
-      target_confirmed_imaging: null,
-    })
+  // Prefer provider_overrides.treatment_plan when present (matches
+  // procedure-notes.ts), else raw column.
+  const pmOverridesTp = pmDxRes.data?.provider_overrides as
+    { treatment_plan?: unknown }
+    | null
+  const pmTreatmentPlanRaw =
+    (pmOverridesTp?.treatment_plan ?? pmDxRes.data?.treatment_plan) as unknown
+
+  const pmCandidates = parsePmTreatmentPlan(pmTreatmentPlanRaw)
+  const ivCandidates = parseInitialVisitTreatmentPlan(ivTreatmentPlanText)
+  const sites: ProcedureSite[] = sitesFromPlan(pmCandidates, ivCandidates)
+
+  if (sites.length === 0) {
+    const complaints = preferredIvn?.provider_intake?.chief_complaints?.complaints ?? []
+    const parsed = complaints
+      .filter((c) => c.body_region && c.body_region.trim() !== '')
+      .map((c) => parseBodyRegion(c.body_region))
+      .filter((p) => p.injection_site !== '')
+
+    const seen = new Set<string>()
+    for (const p of parsed) {
+      const key = `${p.injection_site}|${p.laterality ?? 'null'}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      sites.push({
+        label: p.injection_site,
+        laterality: p.laterality,
+        volume_ml: null,
+        target_confirmed_imaging: null,
+      })
+    }
   }
 
   // Look up per-anatomy procedure_defaults. Resolution order:

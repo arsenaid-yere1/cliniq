@@ -176,7 +176,7 @@ type PmPlanItem = {
   body_region?: string | null
 }
 
-function parsePmTreatmentPlan(
+export function parsePmTreatmentPlan(
   raw: unknown,
 ): PlannedProcedure[] {
   if (!Array.isArray(raw)) return []
@@ -209,7 +209,7 @@ function parsePmTreatmentPlan(
 // Parse the initial visit note treatment_plan narrative text. Free prose.
 // We look for sentences mentioning PRP/injection, and pull body region +
 // levels + guidance + laterality out of the sentence.
-function parseInitialVisitTreatmentPlan(
+export function parseInitialVisitTreatmentPlan(
   text: string | null | undefined,
 ): PlannedProcedure[] {
   if (!text || typeof text !== 'string') return []
