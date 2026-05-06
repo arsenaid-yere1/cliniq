@@ -675,7 +675,7 @@ SERIES-TOTAL RULE (MANDATORY) in patient_education: Do NOT commit the record to 
 
 19. prognosis (~2 sentences):
 Match the "paintoneLabel". Use the guarded reference when paintoneLabel is "baseline", "stable", or "worsened"; use the guarded-to-favorable reference when paintoneLabel is "improved".
-Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Full recovery depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
+Reference (guarded — for baseline/stable/worsened): "Due to the chronic nature of the injury, the prognosis is guarded. Meaningful and sustained symptom control depends on the patient's response to PRP therapy and adherence to the prescribed rehabilitation program."
 Reference (guarded-to-favorable — for improved): "Given the interim response to PRP therapy, the prognosis is guarded-to-favorable. Continued recovery depends on ongoing response to PRP therapy and adherence to the prescribed rehabilitation program." Do NOT write "completion of the injection series" or any variant implying a defined series endpoint — the chart does not store a planned series total (see SERIES-TOTAL RULE). Use "ongoing response" / "continued response" / "sustained response" framing instead.
 
 ${forbiddenPrognosisPromptBlock()}

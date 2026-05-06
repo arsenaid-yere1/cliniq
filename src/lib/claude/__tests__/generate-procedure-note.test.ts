@@ -271,7 +271,7 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phases 1-5)', () => {
   it('includes the anti-absolute-claim FORBIDDEN PHRASES block in prognosis', async () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('FORBIDDEN PHRASES (MANDATORY) in prognosis')
-    expect(system).toContain('full recovery is expected')
+    expect(system).toContain('full recovery')
     expect(system).toContain('guaranteed improvement')
   })
   it('no longer contains the "highly concentrated amount of growth factors" marketing phrase in the prp_prep reference', async () => {

@@ -1,10 +1,9 @@
-// Phrases the LLM must not emit as clinical claims about prognosis outcome
-// across all note types. Listed in claim-form (not bare substrings) so the
-// prompt rule does not collide with legitimate prose like "full recovery
-// depends on the patient's response..." which is part of an existing
-// reference template in the procedure-note prompt.
+// Phrases the LLM must not emit anywhere in any prognosis section across
+// all note types. Substrings are matched in case-insensitive prompt
+// instructions; `cure` is the only entry that requires word-boundary
+// framing because it collides with benign tokens (`cured`, `curettage`).
 export const FORBIDDEN_PROGNOSIS_PHRASES = [
-  'full recovery is expected',
+  'full recovery',
   'complete resolution of symptoms',
   'definitive healing',
   'guaranteed improvement',
@@ -17,5 +16,5 @@ export const FORBIDDEN_PROGNOSIS_PHRASES = [
 // across note types.
 export function forbiddenPrognosisPromptBlock(): string {
   const quoted = FORBIDDEN_PROGNOSIS_PHRASES.map((p) => `"${p}"`).join(', ')
-  return `FORBIDDEN PHRASES (MANDATORY) in prognosis — do NOT use any of the following as a clinical claim about expected outcome: ${quoted}. Prognosis language must remain measured. Use "guarded", "guarded-to-favorable", "favorable", "meaningful and sustained improvement", "anticipated long-term symptom control" instead.`
+  return `FORBIDDEN PHRASES (MANDATORY) in prognosis — do NOT use any of the following anywhere in the prognosis section: ${quoted}. Prognosis language must remain measured. Use "guarded", "guarded-to-favorable", "favorable", "meaningful and sustained improvement", "anticipated long-term symptom control" instead.`
 }
