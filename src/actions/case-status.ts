@@ -55,15 +55,16 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
 
   // Prerequisites: medical (visit) invoice required for pending_settlement and closed
   if (newStatus === 'pending_settlement' || newStatus === 'closed') {
-    const { data: medicalInvoice } = await supabase
+    const { data: medicalInvoices } = await supabase
       .from('invoices')
       .select('id')
       .eq('case_id', caseId)
       .eq('invoice_type', 'visit')
       .is('deleted_at', null)
-      .maybeSingle()
+      .neq('status', 'void')
+      .limit(1)
 
-    if (!medicalInvoice) {
+    if (!medicalInvoices || medicalInvoices.length === 0) {
       return { error: 'A medical invoice is required before changing to this status.' }
     }
   }
