@@ -231,18 +231,21 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
     return { error: `Cannot change status from ${CASE_STATUS_CONFIG[currentStatus].label} to ${CASE_STATUS_CONFIG[newStatus].label}` }
   }
 
-  // Prerequisites: medical (visit) invoice required for pending_settlement and closed
+  // Prerequisites: at least one non-void medical (visit) invoice required for pending_settlement and closed
   // (Originally required finalized discharge note; swapped 2026-04-22.)
+  // Use .limit(1) instead of .maybeSingle() — multiple visit invoices per case is valid
+  // (e.g. one issued + one void), and .maybeSingle() errors on >1 row. Void invoices excluded.
   if (newStatus === 'pending_settlement' || newStatus === 'closed') {
-    const { data: medicalInvoice } = await supabase
+    const { data: medicalInvoices } = await supabase
       .from('invoices')
       .select('id')
       .eq('case_id', caseId)
       .eq('invoice_type', 'visit')
       .is('deleted_at', null)
-      .maybeSingle()
+      .neq('status', 'void')
+      .limit(1)
 
-    if (!medicalInvoice) {
+    if (!medicalInvoices || medicalInvoices.length === 0) {
       return { error: 'A medical invoice is required before changing to this status.' }
     }
   }
