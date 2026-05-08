@@ -1042,6 +1042,7 @@ export async function unfinalizeDischargeNote(caseId: string) {
 export async function regenerateDischargeNoteSectionAction(
   caseId: string,
   section: DischargeNoteSection,
+  findingFix?: { message: string; rationale: string | null },
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1094,7 +1095,7 @@ export async function regenerateDischargeNoteSectionAction(
       .map((s) => [s, (note[s] as string | null) ?? '']),
   ) as Partial<Record<DischargeNoteSection, string>>
 
-  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections)
+  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections, findingFix)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }

@@ -16,10 +16,12 @@ import {
   clearFindingOverride,
   verifyFinding,
   markFindingResolved,
+  fixFinding,
 } from '@/actions/case-quality-reviews'
 import {
   qcSeverityValues,
   computeFindingHash,
+  findingFixEligibility,
   type QualityFinding,
   type QcSeverity,
   type QcStep,
@@ -39,6 +41,8 @@ import {
   Pencil,
   Undo2,
   CheckCircle2,
+  Wand2,
+  Loader2,
 } from 'lucide-react'
 import { FindingEditDialog } from './finding-edit-dialog'
 import { FindingDismissDialog } from './finding-dismiss-dialog'
@@ -463,6 +467,17 @@ function FindingCard({
         router.refresh()
       }
     })
+  const handleFix = () =>
+    startTransition(async () => {
+      const r = await fixFinding(caseId, hash)
+      if (r.error) toast.error(r.error)
+      else {
+        toast.success('Finding fix applied')
+        router.refresh()
+      }
+    })
+
+  const eligibility = findingFixEligibility(finding)
 
   const containerClass =
     status === 'dismissed' || status === 'resolved'
@@ -488,7 +503,7 @@ function FindingCard({
                     : 'capitalize'
                 }
               >
-                {status}
+                {status === 'fix_in_progress' ? 'Fixing' : status}
               </Badge>
             )}
           </div>
@@ -523,6 +538,12 @@ function FindingCard({
             >
               View in editor →
             </Link>
+            {status === 'fix_in_progress' && (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Applying fix and rechecking…
+              </span>
+            )}
             {!isLocked && status === 'pending' && (
               <>
                 <Button size="sm" variant="outline" onClick={handleAck} disabled={isPending}>
@@ -547,6 +568,27 @@ function FindingCard({
                   <X className="mr-1 h-3 w-3" />
                   Dismiss
                 </Button>
+                {eligibility.fixable ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleFix}
+                    disabled={isPending}
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    Fix with AI
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title={eligibility.reason}
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    Fix with AI
+                  </Button>
+                )}
                 {VERIFIABLE_STEPS.has(finding.step) && (
                   <Button
                     size="sm"
@@ -571,6 +613,17 @@ function FindingCard({
             )}
             {!isLocked && (status === 'acknowledged' || status === 'edited') && (
               <>
+                {eligibility.fixable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleFix}
+                    disabled={isPending}
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    Fix with AI
+                  </Button>
+                )}
                 {VERIFIABLE_STEPS.has(finding.step) && (
                   <Button
                     size="sm"

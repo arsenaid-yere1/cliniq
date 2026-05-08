@@ -64,6 +64,30 @@ describe('regenerateSection', () => {
     expect(opts.messages[0].content).toContain('OLD')
     expect(result.data).toBe('fresh')
   })
+
+  it('includes findingFix block in user message when provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'fresh' }, rawResponse: {} })
+    await regenerateSection(
+      emptyInput,
+      'initial_visit',
+      'introduction',
+      'OLD',
+      null,
+      undefined,
+      { message: 'Diagnoses missing 7th character', rationale: 'S13.4 needs A suffix' },
+    )
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('QC FINDING TO ADDRESS')
+    expect(opts.messages[0].content).toContain('Diagnoses missing 7th character')
+    expect(opts.messages[0].content).toContain('S13.4 needs A suffix')
+  })
+
+  it('omits findingFix block when not provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'fresh' }, rawResponse: {} })
+    await regenerateSection(emptyInput, 'initial_visit', 'introduction', 'OLD')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('QC FINDING TO ADDRESS')
+  })
 })
 
 describe('NUMERIC-ANCHOR for pain evaluation visit', () => {

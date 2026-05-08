@@ -12,6 +12,7 @@ import {
   findingDismissFormSchema,
   findingEditFormSchema,
   computeFindingHash,
+  findingFixEligibility,
   type FindingDismissFormValues,
   type FindingEditFormValues,
   type FindingOverrideEntry,
@@ -26,6 +27,12 @@ import {
   SECTION_QC_EXTERNAL_CAUSE_CHAIN,
   SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
 } from '@/lib/qc/diagnosis-validators'
+import { regenerateNoteSection } from '@/actions/initial-visit-notes'
+import { regenerateDischargeNoteSectionAction } from '@/actions/discharge-notes'
+import { regenerateProcedureNoteSectionAction } from '@/actions/procedure-notes'
+import type { InitialVisitSection } from '@/lib/validations/initial-visit-note'
+import type { DischargeNoteSection } from '@/lib/validations/discharge-note'
+import type { ProcedureNoteSection } from '@/lib/validations/procedure-note'
 
 function computeSourceHash(inputData: QualityReviewInputData): string {
   return createHash('sha256').update(JSON.stringify(inputData)).digest('hex')
@@ -546,6 +553,9 @@ export async function acknowledgeFinding(caseId: string, findingHash: string) {
     set_at: new Date().toISOString(),
     resolved_at: null,
     resolution_source: null,
+    fix_attempted_at: null,
+    fix_section_regenerated: null,
+    fix_recheck_result: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -591,6 +601,9 @@ export async function dismissFinding(
     set_at: new Date().toISOString(),
     resolved_at: null,
     resolution_source: null,
+    fix_attempted_at: null,
+    fix_section_regenerated: null,
+    fix_recheck_result: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -636,6 +649,9 @@ export async function editFinding(
     set_at: new Date().toISOString(),
     resolved_at: null,
     resolution_source: null,
+    fix_attempted_at: null,
+    fix_section_regenerated: null,
+    fix_recheck_result: null,
   }
   const updated: FindingOverridesMap = {
     ...loaded.data.finding_overrides,
@@ -803,6 +819,9 @@ export async function verifyFinding(caseId: string, findingHash: string) {
     set_at: existing?.set_at ?? new Date().toISOString(),
     resolved_at: new Date().toISOString(),
     resolution_source: 'manual_verify',
+    fix_attempted_at: existing?.fix_attempted_at ?? null,
+    fix_section_regenerated: existing?.fix_section_regenerated ?? null,
+    fix_recheck_result: existing?.fix_recheck_result ?? null,
   }
   const updated: FindingOverridesMap = { ...overrides, [findingHash]: resolvedEntry }
 
@@ -840,6 +859,9 @@ export async function markFindingResolved(caseId: string, findingHash: string) {
     set_at: existing?.set_at ?? new Date().toISOString(),
     resolved_at: new Date().toISOString(),
     resolution_source: 'manual_resolve',
+    fix_attempted_at: existing?.fix_attempted_at ?? null,
+    fix_section_regenerated: existing?.fix_section_regenerated ?? null,
+    fix_recheck_result: existing?.fix_recheck_result ?? null,
   }
   const updated: FindingOverridesMap = { ...overrides, [findingHash]: entry }
 
@@ -848,6 +870,187 @@ export async function markFindingResolved(caseId: string, findingHash: string) {
     .update({ finding_overrides: updated, updated_by_user_id: user.id })
     .eq('id', loaded.data.id)
   if (error) return { error: 'Failed to mark finding resolved' }
+
+  revalidatePath(`/patients/${caseId}/qc`)
+  return { data: { success: true } }
+}
+
+// --- Fix action ---
+// Auto-regenerate the affected note section with the finding's message and
+// rationale as a structured fix instruction, then run a full recheck.
+// Carry-over auto-resolves the finding hash if regen eliminated the issue.
+// On regen failure, the fix_in_progress override is cleared so the card
+// returns to pending.
+
+export async function fixFinding(caseId: string, findingHash: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const { data: row } = await supabase
+    .from('case_quality_reviews')
+    .select('id, findings, finding_overrides')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!row) return { error: 'No active review' }
+
+  const findings = (row.findings as QualityFinding[] | null) ?? []
+  const finding = findings.find((f) => computeFindingHash(f) === findingHash)
+  if (!finding) return { error: 'Finding not found in current review' }
+
+  const eligibility = findingFixEligibility(finding)
+  if (!eligibility.fixable) return { error: eligibility.reason }
+
+  const overrides = (row.finding_overrides as FindingOverridesMap | null) ?? {}
+  const existing = overrides[findingHash] ?? null
+  if (existing?.status === 'fix_in_progress') {
+    return { error: 'A fix is already in progress for this finding' }
+  }
+
+  // Stamp fix_in_progress before kicking off the regen so the UI can show
+  // a spinner across the round-trip.
+  const fixStartedAt = new Date().toISOString()
+  const inProgressEntry: FindingOverrideEntry = {
+    status: 'fix_in_progress',
+    dismissed_reason: existing?.dismissed_reason ?? null,
+    edited_message: existing?.edited_message ?? null,
+    edited_rationale: existing?.edited_rationale ?? null,
+    edited_suggested_tone_hint: existing?.edited_suggested_tone_hint ?? null,
+    actor_user_id: user.id,
+    set_at: fixStartedAt,
+    resolved_at: null,
+    resolution_source: null,
+    fix_attempted_at: fixStartedAt,
+    fix_section_regenerated: finding.section_key,
+    fix_recheck_result: null,
+  }
+  const beforeRegen: FindingOverridesMap = {
+    ...overrides,
+    [findingHash]: inProgressEntry,
+  }
+  const { error: lockError } = await supabase
+    .from('case_quality_reviews')
+    .update({ finding_overrides: beforeRegen, updated_by_user_id: user.id })
+    .eq('id', row.id)
+  if (lockError) return { error: 'Failed to acquire fix lock' }
+  revalidatePath(`/patients/${caseId}/qc`)
+
+  const findingFix = { message: finding.message, rationale: finding.rationale }
+
+  // Dispatch by step. section_key is guaranteed real (eligibility gate).
+  let regenError: string | null = null
+  if (finding.step === 'initial_visit' || finding.step === 'pain_evaluation') {
+    const visitType =
+      finding.step === 'initial_visit' ? 'initial_visit' : 'pain_evaluation_visit'
+    const res = await regenerateNoteSection(
+      caseId,
+      visitType,
+      finding.section_key as InitialVisitSection,
+      findingFix,
+    )
+    if ('error' in res && res.error) regenError = res.error
+  } else if (finding.step === 'discharge') {
+    const res = await regenerateDischargeNoteSectionAction(
+      caseId,
+      finding.section_key as DischargeNoteSection,
+      findingFix,
+    )
+    if ('error' in res && res.error) regenError = res.error
+  } else if (finding.step === 'procedure') {
+    // procedure_id is non-null per eligibility gate.
+    const res = await regenerateProcedureNoteSectionAction(
+      finding.procedure_id as string,
+      caseId,
+      finding.section_key as ProcedureNoteSection,
+      findingFix,
+    )
+    if ('error' in res && res.error) regenError = res.error
+  } else {
+    regenError = 'Unsupported step for fix'
+  }
+
+  if (regenError) {
+    // Clear fix_in_progress override so the card returns to pending.
+    const cleared = { ...beforeRegen }
+    delete cleared[findingHash]
+    await supabase
+      .from('case_quality_reviews')
+      .update({ finding_overrides: cleared, updated_by_user_id: user.id })
+      .eq('id', row.id)
+    revalidatePath(`/patients/${caseId}/qc`)
+    return { error: regenError }
+  }
+
+  // Regen succeeded. Run full recheck. Carry-over flips disappeared findings
+  // to 'resolved' + 'auto_recheck'. The fix_in_progress entry is preserved
+  // verbatim by carry-over when the hash survives — we post-process below
+  // to convert lingering fix_in_progress to pending and stamp audit.
+  const recheck = await runCaseQualityReview(caseId)
+  if (recheck.error) {
+    // Regen already happened. Clear fix_in_progress on whichever active row
+    // exists now (the row id may have changed if recheck partially ran).
+    const { data: latest } = await supabase
+      .from('case_quality_reviews')
+      .select('id, finding_overrides')
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (latest) {
+      const next = {
+        ...((latest.finding_overrides as FindingOverridesMap | null) ?? {}),
+      }
+      delete next[findingHash]
+      await supabase
+        .from('case_quality_reviews')
+        .update({ finding_overrides: next })
+        .eq('id', latest.id)
+    }
+    revalidatePath(`/patients/${caseId}/qc`)
+    return { error: 'Fix applied but recheck failed — run manual Recheck' }
+  }
+
+  // Post-recheck cleanup. Read the new active review row.
+  const { data: post } = await supabase
+    .from('case_quality_reviews')
+    .select('id, findings, finding_overrides')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (post) {
+    const postOverrides = (post.finding_overrides as FindingOverridesMap | null) ?? {}
+    const postFindings = (post.findings as QualityFinding[] | null) ?? []
+    const stillPresent = postFindings.some(
+      (f) => computeFindingHash(f) === findingHash,
+    )
+    const next = { ...postOverrides }
+    if (stillPresent) {
+      // Hash survived recheck → fix did not eliminate the issue. Clear the
+      // fix_in_progress override so the card returns to pending and the
+      // provider can retry or escalate.
+      delete next[findingHash]
+    } else {
+      // Hash gone → carry-over wrote 'resolved' + 'auto_recheck'. Stamp
+      // fix_recheck_result on the carried entry so audit reflects this fix.
+      const carried = postOverrides[findingHash]
+      if (carried?.status === 'resolved') {
+        next[findingHash] = {
+          ...carried,
+          fix_attempted_at: fixStartedAt,
+          fix_section_regenerated: finding.section_key,
+          fix_recheck_result: 'resolved',
+        }
+      }
+    }
+    await supabase
+      .from('case_quality_reviews')
+      .update({ finding_overrides: next, updated_by_user_id: user.id })
+      .eq('id', post.id)
+  }
 
   revalidatePath(`/patients/${caseId}/qc`)
   return { data: { success: true } }

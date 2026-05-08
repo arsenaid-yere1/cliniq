@@ -85,6 +85,25 @@ describe('regenerateProcedureNoteSection', () => {
     expect(opts.messages[0].content).toContain('OLD')
     expect(result.data).toBe('fresh')
   })
+
+  it('includes findingFix block when provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'prognosis', 'OLD', null, undefined, {
+      message: 'Prognosis contains forbidden phrase',
+      rationale: 'Drop "Full recovery" wording',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('QC FINDING TO ADDRESS')
+    expect(opts.messages[0].content).toContain('Prognosis contains forbidden phrase')
+    expect(opts.messages[0].content).toContain('Drop "Full recovery" wording')
+  })
+
+  it('omits findingFix block when not provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateProcedureNoteSection(emptyInput, 'prognosis', 'OLD')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('QC FINDING TO ADDRESS')
+  })
 })
 
 describe('tone hint', () => {

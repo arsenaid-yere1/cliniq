@@ -1019,6 +1019,7 @@ export async function regenerateProcedureNoteSectionAction(
   procedureId: string,
   caseId: string,
   section: ProcedureNoteSection,
+  findingFix?: { message: string; rationale: string | null },
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1050,7 +1051,7 @@ export async function regenerateProcedureNoteSectionAction(
       .map((s) => [s, (note[s] as string | null) ?? '']),
   ) as Partial<Record<ProcedureNoteSection, string>>
 
-  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections)
+  const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections, findingFix)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }

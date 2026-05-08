@@ -799,6 +799,7 @@ export async function regenerateProcedureNoteSection(
   currentContent: string,
   toneHint?: string | null,
   otherSections?: Partial<Record<ProcedureNoteSection, string>>,
+  findingFix?: { message: string; rationale: string | null },
 ): Promise<{ data?: string; error?: string }> {
   const sectionLabel = procedureNoteSectionLabels[section]
 
@@ -814,7 +815,15 @@ export async function regenerateProcedureNoteSection(
     }
   }
 
-  let userMessage = `Regenerate the "${sectionLabel}" section of the PRP Procedure Note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(inputData, null, 2)}`
+  let findingFixBlock = ''
+  if (findingFix) {
+    findingFixBlock = `\n\nQC FINDING TO ADDRESS (rewrite this section to resolve the finding below; do not introduce other changes):\nFinding: ${findingFix.message}`
+    if (findingFix.rationale?.trim()) {
+      findingFixBlock += `\nRationale: ${findingFix.rationale.trim()}`
+    }
+  }
+
+  let userMessage = `Regenerate the "${sectionLabel}" section of the PRP Procedure Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(inputData, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }

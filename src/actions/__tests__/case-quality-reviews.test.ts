@@ -36,6 +36,17 @@ vi.mock('@/lib/claude/generate-quality-review', async () => {
 
 // ---- SUT ----
 
+// Section-regen action mocks — fixFinding routes to these.
+vi.mock('@/actions/initial-visit-notes', () => ({
+  regenerateNoteSection: vi.fn(),
+}))
+vi.mock('@/actions/discharge-notes', () => ({
+  regenerateDischargeNoteSectionAction: vi.fn(),
+}))
+vi.mock('@/actions/procedure-notes', () => ({
+  regenerateProcedureNoteSectionAction: vi.fn(),
+}))
+
 import {
   runCaseQualityReview,
   checkQualityReviewStaleness,
@@ -45,7 +56,9 @@ import {
   clearFindingOverride,
   verifyFinding,
   markFindingResolved,
+  fixFinding,
 } from '../case-quality-reviews'
+import { computeFindingHash, type QualityFinding } from '@/lib/validations/case-quality-review'
 
 const VALID_CASE_ID = '11111111-1111-4111-8111-111111111111'
 const VALID_USER_ID = 'test-user-id'
@@ -342,5 +355,168 @@ describe('markFindingResolved', () => {
     })
     const result = await markFindingResolved(VALID_CASE_ID, HASH)
     expect(result.error).toBe('No active review')
+  })
+})
+
+describe('fixFinding', () => {
+  const VALID_NOTE_ID = '11111111-1111-4111-8111-111111111111'
+  const VALID_PROC_ID = '22222222-2222-4222-8222-222222222222'
+
+  function makeAiFinding(overrides: Partial<QualityFinding> = {}): QualityFinding {
+    return {
+      severity: 'warning',
+      step: 'discharge',
+      note_id: VALID_NOTE_ID,
+      procedure_id: null,
+      section_key: 'subjective',
+      message: 'Pain trajectory drift',
+      rationale: 'subjective cites 4/10 but trajectory shows 5/10',
+      suggested_tone_hint: null,
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('errors when not authenticated', async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null })
+    const result = await fixFinding(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('Not authenticated')
+  })
+
+  it('errors when no active review', async () => {
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: { data: null, error: null },
+    })
+    const result = await fixFinding(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('No active review')
+  })
+
+  it('errors when finding hash not in current review', async () => {
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [], finding_overrides: {} },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, HASH)
+    expect(result.error).toBe('Finding not found in current review')
+  })
+
+  it('rejects ineligible cross_step finding', async () => {
+    const finding = makeAiFinding({
+      step: 'cross_step',
+      note_id: null,
+      section_key: null,
+    })
+    const hash = computeFindingHash(finding)
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [finding], finding_overrides: {} },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, hash)
+    expect(result.error).toMatch(/cross-step/i)
+  })
+
+  it('rejects ineligible deterministic synthetic-section finding', async () => {
+    const finding = makeAiFinding({
+      section_key: '_qc_external_cause_chain',
+    })
+    const hash = computeFindingHash(finding)
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [finding], finding_overrides: {} },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, hash)
+    expect(result.error).toMatch(/deterministic/i)
+  })
+
+  it('rejects procedure finding missing procedure_id', async () => {
+    const finding = makeAiFinding({
+      step: 'procedure',
+      note_id: VALID_NOTE_ID,
+      procedure_id: null,
+    })
+    const hash = computeFindingHash(finding)
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [finding], finding_overrides: {} },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, hash)
+    expect(result.error).toMatch(/procedure_id/i)
+  })
+
+  it('rejects concurrent fix already in progress', async () => {
+    const finding = makeAiFinding()
+    const hash = computeFindingHash(finding)
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: {
+          id: 'review-1',
+          findings: [finding],
+          finding_overrides: {
+            [hash]: {
+              status: 'fix_in_progress',
+              dismissed_reason: null,
+              edited_message: null,
+              edited_rationale: null,
+              edited_suggested_tone_hint: null,
+              actor_user_id: VALID_USER_ID,
+              set_at: '2026-05-07T00:00:00Z',
+              resolved_at: null,
+              resolution_source: null,
+              fix_attempted_at: '2026-05-07T00:00:00Z',
+              fix_section_regenerated: 'subjective',
+              fix_recheck_result: null,
+            },
+          },
+        },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, hash)
+    expect(result.error).toMatch(/already in progress/)
+  })
+
+  it('accepts eligible procedure finding (validates dispatch path runs)', async () => {
+    // Dispatch reaches regenerateProcedureNoteSectionAction mock which is
+    // configured to error so we exercise the failure-cleanup path without
+    // mocking the full recheck downstream.
+    const { regenerateProcedureNoteSectionAction } = await import(
+      '@/actions/procedure-notes'
+    )
+    ;(regenerateProcedureNoteSectionAction as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      error: 'No draft note found',
+    })
+
+    const finding = makeAiFinding({
+      step: 'procedure',
+      note_id: VALID_NOTE_ID,
+      procedure_id: VALID_PROC_ID,
+      section_key: 'subjective',
+    })
+    const hash = computeFindingHash(finding)
+    mockTableResults(mockSupabase, {
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [finding], finding_overrides: {} },
+        error: null,
+      },
+    })
+    const result = await fixFinding(VALID_CASE_ID, hash)
+    expect(result.error).toBe('No draft note found')
+    expect(regenerateProcedureNoteSectionAction).toHaveBeenCalledWith(
+      VALID_PROC_ID,
+      VALID_CASE_ID,
+      'subjective',
+      { message: finding.message, rationale: finding.rationale },
+    )
   })
 })

@@ -642,6 +642,7 @@ export async function regenerateSection(
   currentContent: string,
   toneHint?: string | null,
   otherSections?: Partial<Record<InitialVisitSection, string>>,
+  findingFix?: { message: string; rationale: string | null },
 ): Promise<{ data?: string; error?: string }> {
   const systemPrompt = buildSystemPrompt(visitType)
   const sectionLabel = sectionLabels[section]
@@ -661,7 +662,15 @@ export async function regenerateSection(
     }
   }
 
-  let userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
+  let findingFixBlock = ''
+  if (findingFix) {
+    findingFixBlock = `\n\nQC FINDING TO ADDRESS (rewrite this section to resolve the finding below; do not introduce other changes):\nFinding: ${findingFix.message}`
+    if (findingFix.rationale?.trim()) {
+      findingFixBlock += `\nRationale: ${findingFix.rationale.trim()}`
+    }
+  }
+
+  let userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }

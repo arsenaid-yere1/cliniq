@@ -7,6 +7,7 @@ import {
   findingEditFormSchema,
   findingDismissFormSchema,
   computeFindingHash,
+  findingFixEligibility,
   qcSeverityValues,
   qcStepValues,
   type QualityFinding,
@@ -278,5 +279,143 @@ describe('computeFindingHash', () => {
     const f = makeFinding()
     const hashes = Array.from({ length: 5 }, () => computeFindingHash(f))
     expect(new Set(hashes).size).toBe(1)
+  })
+})
+
+describe('findingOverrideEntrySchema fix-action audit fields', () => {
+  const baseEntry = {
+    status: 'fix_in_progress' as const,
+    dismissed_reason: null,
+    edited_message: null,
+    edited_rationale: null,
+    edited_suggested_tone_hint: null,
+    actor_user_id: VALID_USER_ID,
+    set_at: '2026-05-07T12:00:00Z',
+  }
+
+  it("accepts 'fix_in_progress' status", () => {
+    const result = findingOverrideEntrySchema.safeParse(baseEntry)
+    expect(result.success).toBe(true)
+  })
+
+  it('parses entry without fix_* fields as null defaults (backward-compat)', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...baseEntry,
+      status: 'acknowledged',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.fix_attempted_at).toBeNull()
+      expect(result.data.fix_section_regenerated).toBeNull()
+      expect(result.data.fix_recheck_result).toBeNull()
+    }
+  })
+
+  it('accepts populated fix_* fields with fix_recheck_result=resolved', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...baseEntry,
+      status: 'resolved',
+      resolved_at: '2026-05-07T12:01:00Z',
+      resolution_source: 'auto_recheck',
+      fix_attempted_at: '2026-05-07T12:00:30Z',
+      fix_section_regenerated: 'subjective',
+      fix_recheck_result: 'resolved',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts fix_recheck_result=still_present', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...baseEntry,
+      fix_attempted_at: '2026-05-07T12:00:30Z',
+      fix_section_regenerated: 'diagnoses',
+      fix_recheck_result: 'still_present',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects invalid fix_recheck_result', () => {
+    const result = findingOverrideEntrySchema.safeParse({
+      ...baseEntry,
+      fix_recheck_result: 'maybe',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('findingFixEligibility', () => {
+  it('returns fixable for an AI finding on a note section', () => {
+    const result = findingFixEligibility(makeFinding())
+    expect(result.fixable).toBe(true)
+  })
+
+  it('rejects cross_step findings', () => {
+    const result = findingFixEligibility(
+      makeFinding({ step: 'cross_step', note_id: null, section_key: null }),
+    )
+    expect(result.fixable).toBe(false)
+    if (!result.fixable) {
+      expect(result.reason).toMatch(/cross-step/i)
+    }
+  })
+
+  it('rejects case_summary findings', () => {
+    const result = findingFixEligibility(makeFinding({ step: 'case_summary' }))
+    expect(result.fixable).toBe(false)
+  })
+
+  it('rejects findings with null section_key', () => {
+    const result = findingFixEligibility(makeFinding({ section_key: null }))
+    expect(result.fixable).toBe(false)
+    if (!result.fixable) {
+      expect(result.reason).toMatch(/section/i)
+    }
+  })
+
+  it('rejects deterministic synthetic section findings', () => {
+    const externalCause = findingFixEligibility(
+      makeFinding({ section_key: '_qc_external_cause_chain' }),
+    )
+    expect(externalCause.fixable).toBe(false)
+    const seventhChar = findingFixEligibility(
+      makeFinding({ section_key: '_qc_seventh_character_integrity' }),
+    )
+    expect(seventhChar.fixable).toBe(false)
+  })
+
+  it('rejects procedure findings missing procedure_id', () => {
+    const result = findingFixEligibility(
+      makeFinding({ step: 'procedure', procedure_id: null, section_key: 'subjective' }),
+    )
+    expect(result.fixable).toBe(false)
+    if (!result.fixable) {
+      expect(result.reason).toMatch(/procedure_id/i)
+    }
+  })
+
+  it('accepts procedure findings with procedure_id', () => {
+    const result = findingFixEligibility(
+      makeFinding({ step: 'procedure', procedure_id: VALID_PROC_ID, section_key: 'subjective' }),
+    )
+    expect(result.fixable).toBe(true)
+  })
+
+  it('rejects non-procedure findings missing note_id', () => {
+    const result = findingFixEligibility(
+      makeFinding({ step: 'discharge', note_id: null, section_key: 'subjective' }),
+    )
+    expect(result.fixable).toBe(false)
+    if (!result.fixable) {
+      expect(result.reason).toMatch(/note_id/i)
+    }
+  })
+
+  it('accepts initial_visit and pain_evaluation findings', () => {
+    expect(
+      findingFixEligibility(makeFinding({ step: 'initial_visit' })).fixable,
+    ).toBe(true)
+    expect(
+      findingFixEligibility(makeFinding({ step: 'pain_evaluation' })).fixable,
+    ).toBe(true)
   })
 })

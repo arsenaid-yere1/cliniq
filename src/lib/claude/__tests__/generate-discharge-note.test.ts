@@ -78,6 +78,25 @@ describe('regenerateDischargeNoteSection', () => {
     const result = await regenerateDischargeNoteSection(emptyInput, 'subjective', 'old')
     expect(result.data).toBe('fresh text')
   })
+
+  it('includes findingFix block when provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateDischargeNoteSection(emptyInput, 'subjective', 'old', null, undefined, {
+      message: 'Pain trajectory drift',
+      rationale: 'subjective cites 4/10 but trajectory shows 5/10',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('QC FINDING TO ADDRESS')
+    expect(opts.messages[0].content).toContain('Pain trajectory drift')
+    expect(opts.messages[0].content).toContain('subjective cites 4/10 but trajectory shows 5/10')
+  })
+
+  it('omits findingFix block when not provided', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: 'x' }, rawResponse: {} })
+    await regenerateDischargeNoteSection(emptyInput, 'subjective', 'old')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).not.toContain('QC FINDING TO ADDRESS')
+  })
 })
 
 describe('tone hint', () => {

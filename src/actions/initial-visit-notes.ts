@@ -799,6 +799,7 @@ export async function regenerateNoteSection(
   caseId: string,
   visitType: NoteVisitType,
   section: InitialVisitSection,
+  findingFix?: { message: string; rationale: string | null },
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -864,7 +865,7 @@ export async function regenerateNoteSection(
   }
 
   const toneHint = (note.tone_hint as string | null) ?? null
-  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, toneHint, otherSections)
+  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, toneHint, otherSections, findingFix)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
