@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -125,9 +125,39 @@ export function QcReviewPanel({
   // fresh DB state which clears the flag implicitly because review is then
   // either completed or failed.
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
+  // Per-finding optimistic fix flag. Mirrors `optimisticGenerating` but
+  // scoped to a specific finding hash. fixFinding takes ~40s end-to-end
+  // (regen + full recheck); without this the FindingCard shows no feedback
+  // until the action returns. Cleared by the action's onSuccess/onError.
+  const [optimisticFixingHashes, setOptimisticFixingHashes] = useState<Set<string>>(new Set())
   const router = useRouter()
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+
+  // Poll the server component tree while a fix is in flight so the recheck's
+  // mid-flight DB transitions (new review row, new findings, carry-over
+  // overrides) surface without waiting for the action to return. Mirrors the
+  // GeneratingProgress polling pattern.
+  useEffect(() => {
+    if (optimisticFixingHashes.size === 0) return
+    const id = setInterval(() => router.refresh(), 3000)
+    return () => clearInterval(id)
+  }, [optimisticFixingHashes, router])
+
+  const beginFix = (hash: string) => {
+    setOptimisticFixingHashes((prev) => {
+      const next = new Set(prev)
+      next.add(hash)
+      return next
+    })
+  }
+  const endFix = (hash: string) => {
+    setOptimisticFixingHashes((prev) => {
+      const next = new Set(prev)
+      next.delete(hash)
+      return next
+    })
+  }
 
   const runReview = (label: string, action: typeof runCaseQualityReview) => {
     setOptimisticGenerating(true)
@@ -341,6 +371,9 @@ export function QcReviewPanel({
                     finding={h.finding}
                     override={h.override}
                     isLocked={isLocked}
+                    optimisticFixing={optimisticFixingHashes.has(h.hash)}
+                    onFixStart={beginFix}
+                    onFixEnd={endFix}
                   />
                 ))}
 
@@ -405,12 +438,18 @@ function FindingCard({
   finding,
   override,
   isLocked,
+  optimisticFixing = false,
+  onFixStart,
+  onFixEnd,
 }: {
   caseId: string
   hash: string
   finding: QualityFinding
   override: FindingOverrideEntry | null
   isLocked: boolean
+  optimisticFixing?: boolean
+  onFixStart?: (hash: string) => void
+  onFixEnd?: (hash: string) => void
 }) {
   const [isPending, startTransition] = useTransition()
   const [editOpen, setEditOpen] = useState(false)
@@ -418,7 +457,12 @@ function FindingCard({
   const router = useRouter()
 
   const Icon = severityConfig[finding.severity].icon
-  const status = override?.status ?? 'pending'
+  // Optimistic flag wins: while the fix server action is in flight (or the
+  // panel-level poll is catching up), force the spinner state regardless of
+  // whatever finding_overrides looks like in the server-rendered prop.
+  const status = optimisticFixing
+    ? 'fix_in_progress'
+    : (override?.status ?? 'pending')
   const displayMessage = override?.edited_message ?? finding.message
   const displayRationale = override?.edited_rationale ?? finding.rationale
   const displayToneHint =
@@ -467,15 +511,19 @@ function FindingCard({
         router.refresh()
       }
     })
-  const handleFix = () =>
+  const handleFix = () => {
+    onFixStart?.(hash)
     startTransition(async () => {
-      const r = await fixFinding(caseId, hash)
-      if (r.error) toast.error(r.error)
-      else {
-        toast.success('Finding fix applied')
+      try {
+        const r = await fixFinding(caseId, hash)
+        if (r.error) toast.error(r.error)
+        else toast.success('Finding fix applied')
+      } finally {
+        onFixEnd?.(hash)
         router.refresh()
       }
     })
+  }
 
   const eligibility = findingFixEligibility(finding)
 
