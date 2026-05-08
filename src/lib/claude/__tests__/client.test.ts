@@ -127,6 +127,56 @@ describe('callClaudeTool', () => {
     expect(stub._create).toHaveBeenCalledTimes(3)
   })
 
+  it('falls back to fallbackModel when primary exhausts retryable errors', async () => {
+    const stub = createMockAnthropic()
+    stub._create
+      // 3 failures on primary
+      .mockRejectedValueOnce(makeApiError(529))
+      .mockRejectedValueOnce(makeApiError(529))
+      .mockRejectedValueOnce(makeApiError(529))
+      // success on fallback
+      .mockResolvedValueOnce(mockToolUseResponse({ toolName: 't2', input: { value: 'fallback-ok' } }))
+
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = await callClaudeTool({
+      ...baseOpts({
+        model: 'claude-opus-4-7',
+        fallbackModel: 'claude-sonnet-4-6',
+      }),
+      _client: stub,
+    })
+    expect(result.data).toEqual({ value: 'fallback-ok' })
+    expect(stub._create).toHaveBeenCalledTimes(4)
+    // Confirm primary tried first, fallback last.
+    expect(stub._create.mock.calls[0][0].model).toBe('claude-opus-4-7')
+    expect(stub._create.mock.calls[3][0].model).toBe('claude-sonnet-4-6')
+    consoleWarnSpy.mockRestore()
+  })
+
+  it('does not fall back on non-retryable errors', async () => {
+    const stub = createMockAnthropic()
+    stub._create.mockRejectedValueOnce(makeApiError(400, 'bad request'))
+
+    const result = await callClaudeTool({
+      ...baseOpts({
+        model: 'claude-opus-4-7',
+        fallbackModel: 'claude-sonnet-4-6',
+      }),
+      _client: stub,
+    })
+    expect(result.error).toBeDefined()
+    expect(stub._create).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fall back when no fallbackModel is set', async () => {
+    const stub = createMockAnthropic()
+    stub._create.mockRejectedValue(makeApiError(529))
+
+    const result = await callClaudeTool({ ...baseOpts(), _client: stub })
+    expect(result.error).toBeDefined()
+    expect(stub._create).toHaveBeenCalledTimes(3)
+  })
+
   it('passes thinking through when provided', async () => {
     const stub = createMockAnthropic()
     stub._create.mockResolvedValue(mockToolUseResponse({ toolName: 't2', input: { value: 'ok' } }))

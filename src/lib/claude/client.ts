@@ -10,6 +10,11 @@ export type ClaudeMessage = Anthropic.Messages.MessageParam
 
 export interface CallClaudeToolOptions<TOutput> {
   model: `claude-${string}`
+  // Optional fallback model invoked once if `model` exhausts API retries
+  // with a retryable error (overloaded_error / 529, 5xx, network reset).
+  // Used for soft degradation under Anthropic capacity pressure: caller
+  // typically passes a Sonnet model when primary is Opus.
+  fallbackModel?: `claude-${string}`
   system: string
   tools: Anthropic.Tool[]
   toolName: string
@@ -54,6 +59,38 @@ const MAX_BACKOFF_MS = 15000
 export async function callClaudeTool<TOutput>(
   opts: CallClaudeToolOptions<TOutput>,
 ): Promise<CallClaudeToolResult<TOutput>> {
+  const primary = await callClaudeToolForModel(opts, opts.model)
+  if (
+    primary.error &&
+    opts.fallbackModel &&
+    primary._retryableExhaust
+  ) {
+    console.warn(
+      `[claude] primary model ${opts.model} exhausted retries (${primary.error}); falling back to ${opts.fallbackModel}`,
+    )
+    const fallback = await callClaudeToolForModel(opts, opts.fallbackModel)
+    return stripInternal(fallback)
+  }
+  return stripInternal(primary)
+}
+
+type InternalResult<TOutput> = CallClaudeToolResult<TOutput> & {
+  _retryableExhaust?: boolean
+}
+
+function stripInternal<TOutput>(
+  r: InternalResult<TOutput>,
+): CallClaudeToolResult<TOutput> {
+  // Drop the internal flag before returning to callers.
+  const { _retryableExhaust: _drop, ...rest } = r
+  void _drop
+  return rest as CallClaudeToolResult<TOutput>
+}
+
+async function callClaudeToolForModel<TOutput>(
+  opts: CallClaudeToolOptions<TOutput>,
+  model: `claude-${string}`,
+): Promise<InternalResult<TOutput>> {
   const client = opts._client ?? anthropic
 
   let zodAttempt = 0
@@ -67,7 +104,7 @@ export async function callClaudeTool<TOutput>(
     while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
         const stream = client.messages.stream({
-          model: opts.model,
+          model,
           max_tokens: opts.maxTokens,
           ...(opts.thinking ? { thinking: opts.thinking } : {}),
           system: opts.system,
@@ -92,8 +129,14 @@ export async function callClaudeTool<TOutput>(
         break
       } catch (err) {
         lastApiError = err
-        if (!isRetryableApiError(err) || apiAttempt === API_RETRY_ATTEMPTS) {
+        const retryable = isRetryableApiError(err)
+        if (!retryable) {
           return { error: extractErrorMessage(err) }
+        }
+        if (apiAttempt === API_RETRY_ATTEMPTS) {
+          // Signal retryable exhaustion so the caller can swap to the
+          // fallback model. Non-retryable errors return without the flag.
+          return { error: extractErrorMessage(err), _retryableExhaust: true }
         }
         await sleep(computeBackoffMs(apiAttempt))
         apiAttempt += 1
@@ -101,10 +144,13 @@ export async function callClaudeTool<TOutput>(
     }
 
     if (!apiResponse) {
-      return { error: extractErrorMessage(lastApiError) }
+      return {
+        error: extractErrorMessage(lastApiError),
+        _retryableExhaust: isRetryableApiError(lastApiError),
+      }
     }
 
-    logUsage(opts.model, apiResponse.usage)
+    logUsage(model, apiResponse.usage)
 
     if (apiResponse.stop_reason === 'max_tokens') {
       return {

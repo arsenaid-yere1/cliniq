@@ -208,6 +208,7 @@ export async function generateQualityReviewFromData(
 }> {
   return callClaudeTool<QualityReviewResult>({
     model: 'claude-opus-4-7',
+    fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 16000,
     system: SYSTEM_PROMPT,
     tools: [REVIEW_TOOL],

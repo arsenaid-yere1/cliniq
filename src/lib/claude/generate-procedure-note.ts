@@ -830,6 +830,7 @@ export async function regenerateProcedureNoteSection(
 
   const result = await callClaudeTool<{ content: string }>({
     model: 'claude-opus-4-6',
+    fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
     system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
     tools: [SECTION_REGEN_TOOL],
