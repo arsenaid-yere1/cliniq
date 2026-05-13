@@ -7,8 +7,8 @@ repository: cliniq
 topic: "Case-level chain-aware QC reviewer agent (A2)"
 tags: [plan, qc, claude-agent, case-quality-review, opus-4-7, provider-overrides]
 status: ready
-last_updated: 2026-04-29
-last_updated_note: "Added provider-override layer: per-finding ack/dismiss/edit via sidecar finding_overrides jsonb, cleared on regen."
+last_updated: 2026-05-13
+last_updated_note: "Disable Initial Visit checks for pain-management-entry cases: gather computes painManagementStart flag (no IV row, only pain_eval row); system prompt reroutes chain origin to pain_evaluation and skips IV-anchored rules + the 'missing IV → incomplete' assessment."
 ---
 
 # Case Quality Review Agent Implementation Plan
@@ -351,6 +351,10 @@ export interface QualityReviewInputData {
     prognosis: string | null
     raw_ai_response: unknown
   } | null
+  // True when the case begins with a pain_evaluation_visit and has NO
+  // initial_visit row. In that case the QC reviewer must treat pain_eval as
+  // the chain origin and skip every initial_visit-anchored check.
+  painManagementStart: boolean
   procedureNotes: Array<{
     id: string
     procedure_id: string
@@ -406,13 +410,21 @@ OUTPUT CONTRACT
 - Severity tiers: 'critical' = blocks defensible documentation; 'warning' = inconsistency or missing rationale; 'info' = stylistic / minor.
 - suggested_tone_hint is a short string the provider can paste into the editor's tone hint to drive a regen.
 
+CHAIN-ORIGIN BRANCH
+- If input field painManagementStart === true: the case has NO initial_visit row; the chain origin is the pain_evaluation note.
+  - DO NOT emit any finding with step='initial_visit'.
+  - DO NOT flag the missing initial_visit as a problem — it is intentional for pain-management-entry cases.
+  - For every continuity rule below that names "IV" as the upstream anchor, substitute pain_evaluation as the upstream anchor.
+  - overall_assessment='incomplete' must NOT trip solely on missing IV when painManagementStart=true; only trip if pain_evaluation, procedures, or discharge are missing.
+- Otherwise (painManagementStart === false): apply all checks below as written, with initial_visit as the chain origin.
+
 WHAT TO CHECK
-1. Diagnosis progression. ICD-10 codes should evolve coherently across IV → pain-eval → procedure → discharge. Flag radiculopathy emerging without imaging support, M54.5 used without 5th-character specificity, "A"-suffix codes persisting at discharge.
-2. Pain trajectory consistency. Discharge subjective should narrate IV → procedure → discharge pain values monotonically against the deterministic arrow chain. Flag fabricated numbers, missing endpoint, paraphrased arrow chains. Read discharge.raw_ai_response.trajectory_warnings if present — it already lists trajectory drift; you must promote those into findings, not duplicate them.
-3. Plan continuity. IV treatment_plan → procedure procedure_indication / assessment_and_plan → discharge plan_and_recommendations should reference the same modalities and progress.
-4. Provider intake echo. If the IV provider_intake or PM provider_overrides set a chief complaint, downstream notes citing a different chief complaint = warning.
+1. Diagnosis progression. ICD-10 codes should evolve coherently across [origin] → procedure → discharge (and through pain-eval if present and not the origin). Flag radiculopathy emerging without imaging support, M54.5 used without 5th-character specificity, "A"-suffix codes persisting at discharge.
+2. Pain trajectory consistency. Discharge subjective should narrate [origin] → procedure → discharge pain values monotonically against the deterministic arrow chain. Flag fabricated numbers, missing endpoint, paraphrased arrow chains. Read discharge.raw_ai_response.trajectory_warnings if present — it already lists trajectory drift; you must promote those into findings, not duplicate them.
+3. Plan continuity. [origin] treatment_plan → procedure procedure_indication / assessment_and_plan → discharge plan_and_recommendations should reference the same modalities and progress.
+4. Provider intake echo. If the origin note's provider_intake or PM provider_overrides set a chief complaint, downstream notes citing a different chief complaint = warning.
 5. Procedure plan alignment. Any procedure with plan_alignment_status='unplanned' must show acknowledgement language in assessment_and_plan. Flag if missing.
-6. Pain-evaluation NUMERIC-ANCHOR. If pain-evaluation note exists, it must reference a numeric pain anchor against the prior IV. Flag if anchor missing.
+6. Pain-evaluation NUMERIC-ANCHOR. Only when painManagementStart=false AND a pain-evaluation note exists: it must reference a numeric pain anchor against the prior IV. Flag if anchor missing. Skip entirely when painManagementStart=true (pain-eval IS the origin — no upstream IV to anchor against).
 7. Cross-note copy/paste. Verbatim sentence reuse across procedure notes (NO CLONE rule violation).
 8. Symptom resolution. Discharge diagnoses should not include codes whose symptoms the discharge subjective reports as resolved.
 9. Missing-vitals branch. If any procedure has missing pain vitals, the discharge MISSING-VITALS BRANCH must apply — flag if narrative cites numeric delta against missing anchor.
@@ -422,7 +434,9 @@ OVERALL ASSESSMENT
 - 'clean' = zero critical or warning findings.
 - 'minor_issues' = info or warning only.
 - 'major_issues' = at least one critical.
-- 'incomplete' = required notes are missing (no IV, no procedures, no discharge).
+- 'incomplete' = required notes are missing.
+  - When painManagementStart=false: missing IV, procedures, or discharge → incomplete.
+  - When painManagementStart=true: missing pain_evaluation, procedures, or discharge → incomplete. Missing IV is EXPECTED, never 'incomplete'.
 
 DO NOT
 - Fabricate note_ids. Use only ids present in input.
@@ -611,6 +625,9 @@ async function gatherSourceData(
   const ivRows = ivRes.data ?? []
   const initialVisit = ivRows.find((r) => r.visit_type === 'initial_visit') ?? null
   const painEval = ivRows.find((r) => r.visit_type === 'pain_evaluation_visit') ?? null
+  // Pain-management-entry case: no initial_visit row, only a pain_evaluation row.
+  // Reviewer must skip every initial_visit-anchored check.
+  const painManagementStart = initialVisit === null && painEval !== null
 
   // Procedure-vitals lookup so each procedure note carries its pain numbers.
   const procIds = (procedureNotesRes.data ?? []).map((n) => n.procedure_id)
@@ -703,6 +720,7 @@ async function gatherSourceData(
             raw_ai_response: painEval.raw_ai_response,
           }
         : null,
+      painManagementStart,
       procedureNotes,
       dischargeNote: dischargeRes.data
         ? {
@@ -1057,6 +1075,7 @@ export async function clearFindingOverride(caseId: string, findingHash: string) 
 - [ ] Soft-delete + re-insert: running twice in succession leaves exactly one active row (the second).
 - [ ] Concurrent run rejected with 23505 → user-facing "already in progress" message.
 - [ ] Locked case blocks all override mutators (case_status='closed' returns the standard `assertCaseNotClosed` error).
+- [ ] PM-entry case: a case whose only visit row is `pain_evaluation_visit` (no `initial_visit` row) returns `painManagementStart=true` from gather; the AI output contains zero findings with `step='initial_visit'`; `overall_assessment` is not `'incomplete'` purely because IV is missing.
 
 **Implementation Note**: Pause for manual confirmation before Phase 4.
 
@@ -1743,6 +1762,10 @@ Cases:
 - `runCaseQualityReview` — generator failure: failure update writes `generation_status: 'failed'`, `generation_error` set, `raw_ai_response` set.
 - `runCaseQualityReview` — concurrent insert: 23505 surfaces user-facing message.
 - `runCaseQualityReview` — regen wipes overrides: seed an existing row with `finding_overrides = { hash1: {...} }`, run again, assert the new row's `finding_overrides` is `'{}'`.
+- `gatherSourceData` — pain-management-entry case: seed only a `pain_evaluation_visit` row (no `initial_visit` row), assert `painManagementStart === true` and `initialVisitNote === null` and `painEvaluationNote !== null` in returned input.
+- `gatherSourceData` — IV-entry case: seed only an `initial_visit` row, assert `painManagementStart === false` and `painEvaluationNote === null`.
+- `gatherSourceData` — both visit rows present: assert `painManagementStart === false` (IV row takes precedence as origin).
+- `gatherSourceData` — neither IV nor pain-eval row: assert `painManagementStart === false` (no origin yet; reviewer will emit 'incomplete').
 - `checkQualityReviewStaleness` — no row → `{ isStale: false }`.
 - `checkQualityReviewStaleness` — hash matches → `{ isStale: false }`.
 - `checkQualityReviewStaleness` — hash differs → `{ isStale: true }`.
@@ -1806,6 +1829,7 @@ Cases:
 9. Edit the discharge note (change a section), save draft, return to QC tab; confirm "Stale" badge appears.
 10. Click "Recheck"; confirm new review row replaces the old (only one active in DB) and `finding_overrides` is empty (`{}` in psql or zero badges in UI).
 11. Lock the case (set `case_status='closed'`). Confirm Run, Recheck, Acknowledge, Edit, Dismiss, Undo buttons all disabled.
+12. PM-entry case: open a case whose first/only visit is a `pain_evaluation_visit` (no `initial_visit` row). Click "Run Review". Confirm the resulting findings list contains zero entries with the "Initial Visit" step badge, and the summary does not flag the missing IV.
 
 ## Performance Considerations
 
