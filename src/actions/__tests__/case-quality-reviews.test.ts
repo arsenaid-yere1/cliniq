@@ -250,6 +250,139 @@ describe('runCaseQualityReview', () => {
   })
 })
 
+describe('gatherSourceData — painManagementStart flag', () => {
+  // Each test stubs initial_visit_notes with different visit_type rows and
+  // asserts the generator received the expected painManagementStart value.
+  // Generator is mocked, so we inspect generateMock.mock.calls[0][0].
+
+  function runFromTableSetup(initialVisitRows: Array<{
+    id: string
+    visit_type: string
+    visit_date: string | null
+    status: string
+    diagnoses: string | null
+    chief_complaint: string | null
+    physical_exam: string | null
+    treatment_plan: string | null
+    medical_necessity?: string | null
+    prognosis: string | null
+    raw_ai_response: unknown
+  }>) {
+    const tables = defaultTableResults()
+    tables.initial_visit_notes = { data: initialVisitRows, error: null }
+    mockSupabase.from.mockImplementation((table: string) => {
+      const data = tables[table]?.data ?? null
+      const error = tables[table]?.error ?? null
+      const count = tables[table]?.count
+      const localBuilder = {
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
+        upsert: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue(
+          table === 'case_quality_reviews'
+            ? { data: { id: 'review-1' }, error: null }
+            : { data, error, count },
+        ),
+        maybeSingle: vi.fn().mockResolvedValue({ data, error, count }),
+        then: (resolve: (value: { data: unknown; error: unknown; count?: number }) => void) => {
+          resolve({ data, error, count })
+          return localBuilder
+        },
+      }
+      return localBuilder
+    })
+  }
+
+  function makeIvRow(visitType: 'initial_visit' | 'pain_evaluation_visit') {
+    return {
+      id: `${visitType}-id`,
+      visit_type: visitType,
+      visit_date: '2026-02-01',
+      status: 'finalized',
+      diagnoses: null,
+      chief_complaint: null,
+      physical_exam: null,
+      treatment_plan: null,
+      medical_necessity: null,
+      prognosis: null,
+      raw_ai_response: null,
+    }
+  }
+
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+    generateMock.mockReset()
+    generateMock.mockResolvedValue({
+      data: { findings: [], summary: null, overall_assessment: 'clean' },
+      rawResponse: { ok: true },
+    })
+  })
+
+  it('painManagementStart=true when only pain_evaluation_visit row present', async () => {
+    runFromTableSetup([makeIvRow('pain_evaluation_visit')])
+    const result = await runCaseQualityReview(VALID_CASE_ID)
+    expect(result.error).toBeUndefined()
+    expect(generateMock).toHaveBeenCalledTimes(1)
+    const inputData = generateMock.mock.calls[0][0] as {
+      painManagementStart: boolean
+      initialVisitNote: unknown
+      painEvaluationNote: unknown
+    }
+    expect(inputData.painManagementStart).toBe(true)
+    expect(inputData.initialVisitNote).toBeNull()
+    expect(inputData.painEvaluationNote).not.toBeNull()
+  })
+
+  it('painManagementStart=false when only initial_visit row present', async () => {
+    runFromTableSetup([makeIvRow('initial_visit')])
+    const result = await runCaseQualityReview(VALID_CASE_ID)
+    expect(result.error).toBeUndefined()
+    const inputData = generateMock.mock.calls[0][0] as {
+      painManagementStart: boolean
+      initialVisitNote: unknown
+      painEvaluationNote: unknown
+    }
+    expect(inputData.painManagementStart).toBe(false)
+    expect(inputData.initialVisitNote).not.toBeNull()
+    expect(inputData.painEvaluationNote).toBeNull()
+  })
+
+  it('painManagementStart=false when both visit rows present', async () => {
+    runFromTableSetup([
+      makeIvRow('initial_visit'),
+      makeIvRow('pain_evaluation_visit'),
+    ])
+    const result = await runCaseQualityReview(VALID_CASE_ID)
+    expect(result.error).toBeUndefined()
+    const inputData = generateMock.mock.calls[0][0] as {
+      painManagementStart: boolean
+    }
+    expect(inputData.painManagementStart).toBe(false)
+  })
+
+  it('painManagementStart=false when neither visit row present', async () => {
+    runFromTableSetup([])
+    const result = await runCaseQualityReview(VALID_CASE_ID)
+    expect(result.error).toBeUndefined()
+    const inputData = generateMock.mock.calls[0][0] as {
+      painManagementStart: boolean
+      initialVisitNote: unknown
+      painEvaluationNote: unknown
+    }
+    expect(inputData.painManagementStart).toBe(false)
+    expect(inputData.initialVisitNote).toBeNull()
+    expect(inputData.painEvaluationNote).toBeNull()
+  })
+})
+
 describe('checkQualityReviewStaleness', () => {
   beforeEach(() => {
     mockSupabase = createMockSupabase()

@@ -54,6 +54,10 @@ export interface QualityReviewInputData {
     prognosis: string | null
     raw_ai_response: unknown
   } | null
+  // True when the case begins with a pain_evaluation_visit and has NO
+  // initial_visit row. Reviewer must skip every initial_visit-anchored check
+  // and treat pain_evaluation as the chain origin.
+  painManagementStart: boolean
   procedureNotes: Array<{
     id: string
     procedure_id: string
@@ -110,13 +114,21 @@ OUTPUT CONTRACT
 - Severity tiers: 'critical' = blocks defensible documentation; 'warning' = inconsistency or missing rationale; 'info' = stylistic / minor.
 - suggested_tone_hint is a short string the provider can paste into the editor's tone hint to drive a regen.
 
+CHAIN-ORIGIN BRANCH
+- If input field painManagementStart === true: the case has NO initial_visit row; the chain origin is the pain_evaluation note.
+  - DO NOT emit any finding with step='initial_visit'.
+  - DO NOT flag the missing initial_visit as a problem — it is intentional for pain-management-entry cases.
+  - For every continuity rule below that names "IV" as the upstream anchor, substitute pain_evaluation as the upstream anchor.
+  - overall_assessment='incomplete' must NOT trip solely on missing IV when painManagementStart=true; only trip if pain_evaluation, procedures, or discharge are missing.
+- Otherwise (painManagementStart === false): apply all checks below as written, with initial_visit as the chain origin.
+
 WHAT TO CHECK
 1. Diagnosis progression — flag radiculopathy emerging without imaging support. (External-cause-chain integrity and ICD-10 7th-character integrity are computed deterministically and merged in post-LLM; do NOT emit findings on those topics — they will be dropped via dedupe.)
-2. Pain trajectory consistency. Discharge subjective should narrate IV → procedure → discharge pain values monotonically against the deterministic arrow chain. Flag fabricated numbers, missing endpoint, paraphrased arrow chains. Read discharge.raw_ai_response.trajectory_warnings if present — it already lists trajectory drift; you must promote those into findings, not duplicate them.
-3. Plan continuity. IV treatment_plan → procedure procedure_indication / assessment_and_plan → discharge plan_and_recommendations should reference the same modalities and progress.
-4. Provider intake echo. If the IV provider_intake or PM provider_overrides set a chief complaint, downstream notes citing a different chief complaint = warning.
+2. Pain trajectory consistency. Discharge subjective should narrate [origin] → procedure → discharge pain values monotonically against the deterministic arrow chain. Flag fabricated numbers, missing endpoint, paraphrased arrow chains. Read discharge.raw_ai_response.trajectory_warnings if present — it already lists trajectory drift; you must promote those into findings, not duplicate them.
+3. Plan continuity. [origin] treatment_plan → procedure procedure_indication / assessment_and_plan → discharge plan_and_recommendations should reference the same modalities and progress.
+4. Provider intake echo. If the origin note's provider_intake or PM provider_overrides set a chief complaint, downstream notes citing a different chief complaint = warning.
 5. Procedure plan alignment. Any procedure with plan_alignment_status='unplanned' must show acknowledgement language in assessment_and_plan. Flag if missing.
-6. Pain-evaluation NUMERIC-ANCHOR. If pain-evaluation note exists, it must reference a numeric pain anchor against the prior IV. Flag if anchor missing.
+6. Pain-evaluation NUMERIC-ANCHOR. Only when painManagementStart=false AND a pain-evaluation note exists: it must reference a numeric pain anchor against the prior IV. Flag if anchor missing. Skip entirely when painManagementStart=true (pain-eval IS the origin — no upstream IV to anchor against).
 7. Cross-note copy/paste. Verbatim sentence reuse across procedure notes (NO CLONE rule violation).
 8. Symptom resolution. Discharge diagnoses should not include codes whose symptoms the discharge subjective reports as resolved.
 9. Missing-vitals branch. If any procedure has missing pain vitals, the discharge MISSING-VITALS BRANCH must apply — flag if narrative cites numeric delta against missing anchor.
@@ -126,7 +138,9 @@ OVERALL ASSESSMENT
 - 'clean' = zero critical or warning findings.
 - 'minor_issues' = info or warning only.
 - 'major_issues' = at least one critical.
-- 'incomplete' = required notes are missing (no IV, no procedures, no discharge).
+- 'incomplete' = required notes are missing.
+  - When painManagementStart=false: missing IV, procedures, or discharge → incomplete.
+  - When painManagementStart=true: missing pain_evaluation, procedures, or discharge → incomplete. Missing IV is EXPECTED, never 'incomplete'.
 
 DO NOT
 - Fabricate note_ids. Use only ids present in input.

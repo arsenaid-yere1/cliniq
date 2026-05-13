@@ -154,6 +154,9 @@ async function gatherSourceData(
   const ivRows = ivRes.data ?? []
   const initialVisit = ivRows.find((r) => r.visit_type === 'initial_visit') ?? null
   const painEval = ivRows.find((r) => r.visit_type === 'pain_evaluation_visit') ?? null
+  // Pain-management-entry case: no initial_visit row, only a pain_evaluation row.
+  // Reviewer must skip every initial_visit-anchored check.
+  const painManagementStart = initialVisit === null && painEval !== null
 
   // Procedure-vitals lookup so each procedure note carries its pain numbers.
   const procIds = (procedureNotesRes.data ?? []).map((n) => n.procedure_id)
@@ -252,6 +255,7 @@ async function gatherSourceData(
             raw_ai_response: painEval.raw_ai_response,
           }
         : null,
+      painManagementStart,
       procedureNotes,
       dischargeNote: dischargeRes.data
         ? {

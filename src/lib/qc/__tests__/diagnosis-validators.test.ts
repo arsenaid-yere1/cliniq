@@ -35,6 +35,7 @@ function baseInput(
     caseSummary: null,
     initialVisitNote: null,
     painEvaluationNote: null,
+    painManagementStart: false,
     procedureNotes: [],
     dischargeNote: null,
     extractionsSummary: {
