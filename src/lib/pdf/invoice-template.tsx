@@ -280,7 +280,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
         {/* Payee */}
         {(data.payeeName || data.payeeAddress) && (
           <Text style={styles.payeeText}>
-            Please make the check: {data.payeeName}{data.payeeAddress ? `, ${data.payeeAddress}` : ''}
+            Please make the check payable to: {data.payeeName}{data.payeeAddress ? `, ${data.payeeAddress}` : ''}
           </Text>
         )}
 
