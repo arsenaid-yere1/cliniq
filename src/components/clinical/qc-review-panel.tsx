@@ -22,6 +22,7 @@ import {
   qcSeverityValues,
   computeFindingHash,
   findingFixEligibility,
+  getFindingScore,
   type QualityFinding,
   type QcSeverity,
   type QcStep,
@@ -292,6 +293,21 @@ export function QcReviewPanel({
   const dismissedCount = hydrated.filter((h) => isDismissed(h.override)).length
   const resolvedCount = hydrated.filter((h) => isResolved(h.override)).length
 
+  // Total score = sum of `score` across findings that still count as open.
+  // Dismissed entries are excluded (provider judged them non-issues).
+  // Resolved entries are excluded (provider or auto-recheck cleared them).
+  // Acknowledged + edited entries still count — issue stands, provider has just seen it.
+  const totalScore = hydrated
+    .filter((h) => !isDismissed(h.override) && !isResolved(h.override))
+    .reduce((sum, h) => sum + getFindingScore(h.finding), 0)
+
+  // Sort each severity group descending by score so the heaviest finding renders first.
+  for (const sev of qcSeverityValues) {
+    grouped[sev].sort(
+      (a, b) => getFindingScore(b.finding) - getFindingScore(a.finding),
+    )
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -317,7 +333,13 @@ export function QcReviewPanel({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span
+              className="rounded-md bg-muted px-2 py-1"
+              title="Sum of clinical-impact scores across open findings"
+            >
+              Total score: <strong>{totalScore}</strong>
+            </span>
             <span>
               Critical: <strong>{counts.critical}</strong>
             </span>
@@ -339,7 +361,7 @@ export function QcReviewPanel({
             )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Recheck preserves your review work; findings that go away are auto-resolved.
+            Higher score = more clinical impact. Dismissed and resolved findings excluded. Recheck preserves your review work; findings that go away are auto-resolved.
           </p>
         </CardContent>
       </Card>
@@ -542,6 +564,12 @@ function FindingCard({
             {finding.section_key && (
               <Badge variant="secondary">{finding.section_key}</Badge>
             )}
+            <Badge
+              variant="outline"
+              title="Clinical-impact score (1-10). Tier bands: critical 7-10, warning 4-6, info 1-3."
+            >
+              Score {getFindingScore(finding)}
+            </Badge>
             {status !== 'pending' && (
               <Badge
                 variant={status === 'dismissed' ? 'outline' : 'default'}

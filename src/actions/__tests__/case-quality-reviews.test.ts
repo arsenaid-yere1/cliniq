@@ -505,6 +505,7 @@ describe('fixFinding', () => {
       message: 'Pain trajectory drift',
       rationale: 'subjective cites 4/10 but trajectory shows 5/10',
       suggested_tone_hint: null,
+      score: 5,
       ...overrides,
     }
   }

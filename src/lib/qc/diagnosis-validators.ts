@@ -1,5 +1,17 @@
-import type { QualityFinding } from '@/lib/validations/case-quality-review'
+import {
+  defaultScoreForSeverity,
+  type QualityFinding,
+} from '@/lib/validations/case-quality-review'
 import type { QualityReviewInputData } from '@/lib/claude/generate-quality-review'
+
+// Deterministic validators emit findings without picking a per-violation
+// numeric score; they always sit at the severity-tier default. Provider can
+// edit-up via the UI override if a particular violation deserves emphasis.
+function withDefaultScore(
+  finding: Omit<QualityFinding, 'score'>,
+): QualityFinding {
+  return { ...finding, score: defaultScoreForSeverity(finding.severity) }
+}
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import {
   isExternalCauseCode,
@@ -50,7 +62,7 @@ export function validateExternalCauseChain(
       c.toUpperCase().startsWith(expectation.prefix),
     )
     if (!hasExpected) {
-      findings.push({
+      findings.push(withDefaultScore({
         severity: 'warning',
         step: 'initial_visit',
         note_id: input.initialVisitNote.id,
@@ -60,7 +72,7 @@ export function validateExternalCauseChain(
         rationale:
           'Initial-visit note must carry the accident-type-matched V/W external cause code per coding policy.',
         suggested_tone_hint: `Add ${expectation.example} to the diagnosis list as the final entry.`,
-      })
+      }))
     }
   }
 
@@ -68,7 +80,7 @@ export function validateExternalCauseChain(
     const candidateCodes = diagnosesFromProcedure({ diagnoses: pn.diagnoses })
     const offending = findExternalCauseCodes(candidateCodes)
     for (const code of offending) {
-      findings.push({
+      findings.push(withDefaultScore({
         severity: 'critical',
         step: 'procedure',
         note_id: pn.id,
@@ -78,7 +90,7 @@ export function validateExternalCauseChain(
         rationale:
           'External-cause codes establish causation and belong in the initial-visit note only. Their presence on procedure notes reads as aggressive billing and is a defensibility liability at deposition.',
         suggested_tone_hint: `Regenerate the procedure note diagnoses; the note prompt's Filter (A) requires omitting ${code}.`,
-      })
+      }))
     }
   }
 
@@ -88,7 +100,7 @@ export function validateExternalCauseChain(
     )
     const offending = findExternalCauseCodes(dcCodes)
     for (const code of offending) {
-      findings.push({
+      findings.push(withDefaultScore({
         severity: 'critical',
         step: 'discharge',
         note_id: input.dischargeNote.id,
@@ -98,7 +110,7 @@ export function validateExternalCauseChain(
         rationale:
           'External-cause codes belong in the initial-visit note only. Their presence on the discharge note reads as aggressive billing and is a defensibility liability at deposition.',
         suggested_tone_hint: `Regenerate the discharge diagnoses; Filter (A) requires omitting ${code}.`,
-      })
+      }))
     }
   }
 
@@ -122,7 +134,7 @@ export function validateSeventhCharacterIntegrity(
     for (const { icd10_code } of dcParsed) {
       if (isExternalCauseCode(icd10_code)) continue
       if (isInitialEncounterSuffix(icd10_code)) {
-        findings.push({
+        findings.push(withDefaultScore({
           severity: 'critical',
           step: 'discharge',
           note_id: input.dischargeNote.id,
@@ -132,10 +144,10 @@ export function validateSeventhCharacterIntegrity(
           rationale:
             'Discharge encounters are subsequent (D) or sequela (S). Initial-encounter (A) codes at discharge contradict the encounter context and will be flagged on coding review.',
           suggested_tone_hint: `Regenerate discharge diagnoses; Filter (D) requires replacing ${icd10_code} with the D- or S-suffix variant.`,
-        })
+        }))
       }
       if (isM545Parent(icd10_code)) {
-        findings.push({
+        findings.push(withDefaultScore({
           severity: 'warning',
           step: 'discharge',
           note_id: input.dischargeNote.id,
@@ -146,7 +158,7 @@ export function validateSeventhCharacterIntegrity(
             'M54.5 is a non-billable parent. Always pick a 5th-character subcode (.50 default, .51 vertebrogenic, .59 other) per Filter (F).',
           suggested_tone_hint:
             'Regenerate discharge diagnoses with M54.50 (default).',
-        })
+        }))
       }
     }
   }
@@ -156,7 +168,7 @@ export function validateSeventhCharacterIntegrity(
     for (const code of candidateCodes) {
       if (isExternalCauseCode(code)) continue
       if (isM545Parent(code)) {
-        findings.push({
+        findings.push(withDefaultScore({
           severity: 'warning',
           step: 'procedure',
           note_id: pn.id,
@@ -165,10 +177,10 @@ export function validateSeventhCharacterIntegrity(
           message: `M54.5 parent code on procedure note ${pn.procedure_number} — emit M54.50/.51/.59 5th-character subcode`,
           rationale: 'M54.5 is a non-billable parent.',
           suggested_tone_hint: 'Regenerate procedure note diagnoses with M54.50.',
-        })
+        }))
       }
       if (pn.procedure_number >= 2 && isInitialEncounterSuffix(code)) {
-        findings.push({
+        findings.push(withDefaultScore({
           severity: 'warning',
           step: 'procedure',
           note_id: pn.id,
@@ -178,7 +190,7 @@ export function validateSeventhCharacterIntegrity(
           rationale:
             'Procedure notes after the first visit are subsequent encounters. A-suffix codes here contradict the encounter context.',
           suggested_tone_hint: `Regenerate procedure note diagnoses; Filter (D) prefers the D-suffix variant of ${code}.`,
-        })
+        }))
       }
     }
   }
@@ -188,7 +200,7 @@ export function validateSeventhCharacterIntegrity(
     for (const { icd10_code } of ivParsed) {
       if (isExternalCauseCode(icd10_code)) continue
       if (isM545Parent(icd10_code)) {
-        findings.push({
+        findings.push(withDefaultScore({
           severity: 'warning',
           step: 'initial_visit',
           note_id: input.initialVisitNote.id,
@@ -197,7 +209,7 @@ export function validateSeventhCharacterIntegrity(
           message: `M54.5 parent code at initial visit — emit M54.50/.51/.59 5th-character subcode`,
           rationale: 'M54.5 is a non-billable parent.',
           suggested_tone_hint: 'Regenerate IV diagnoses with M54.50.',
-        })
+        }))
       }
     }
   }

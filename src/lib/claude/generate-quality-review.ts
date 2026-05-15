@@ -1,7 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { callClaudeTool } from './client'
 import {
+  defaultScoreForSeverity,
+  qcSeverityValues,
   qualityReviewResultSchema,
+  type QcSeverity,
   type QualityReviewResult,
 } from '@/lib/validations/case-quality-review'
 import { FORBIDDEN_PROGNOSIS_PHRASES } from '@/lib/qc/forbidden-phrases'
@@ -112,6 +115,11 @@ OUTPUT CONTRACT
 - procedure_id is required when step='procedure'.
 - note_id is null only when the finding spans multiple notes (cross_step).
 - Severity tiers: 'critical' = blocks defensible documentation; 'warning' = inconsistency or missing rationale; 'info' = stylistic / minor.
+- score: integer 1-10 capturing clinical-impact weight. MUST stay inside the severity tier's band:
+  - critical: 7-10 (10 = chart-breaking, 7 = serious but recoverable).
+  - warning: 4-6 (6 = clear inconsistency, 4 = mild drift).
+  - info: 1-3 (3 = noticeable polish miss, 1 = trivial).
+  Use score for ranking inside a tier and to drive the case-level Total Score (sum of non-dismissed scores).
 - suggested_tone_hint is a short string the provider can paste into the editor's tone hint to drive a regen.
 
 CHAIN-ORIGIN BRANCH
@@ -167,6 +175,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
             'message',
             'rationale',
             'suggested_tone_hint',
+            'score',
           ],
           properties: {
             severity: { type: 'string', enum: ['info', 'warning', 'critical'] },
@@ -187,6 +196,13 @@ const REVIEW_TOOL: Anthropic.Tool = {
             message: { type: 'string' },
             rationale: { type: ['string', 'null'] },
             suggested_tone_hint: { type: ['string', 'null'] },
+            score: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 10,
+              description:
+                'Clinical-impact weight. Tier-anchored: critical 7-10, warning 4-6, info 1-3.',
+            },
           },
         },
       },
@@ -210,6 +226,37 @@ function normalizeNullableString(value: unknown): string | null {
     return value === 'null' || value === '' ? null : value
   }
   return String(value)
+}
+
+// Score-tier bands. Mirror the rubric in SYSTEM_PROMPT.
+const SCORE_BANDS: Record<QcSeverity, { min: number; max: number }> = {
+  critical: { min: 7, max: 10 },
+  warning: { min: 4, max: 6 },
+  info: { min: 1, max: 3 },
+}
+
+// Normalize the score: coerce strings → number, drop NaN, clamp into the
+// severity band, fall back to the tier default when missing. The model
+// occasionally emits a score outside its tier; clamping keeps Total Score
+// math monotonic without rejecting the whole finding.
+function normalizeScore(rawSeverity: unknown, rawScore: unknown): number {
+  const severity = (
+    qcSeverityValues as readonly string[]
+  ).includes(rawSeverity as string)
+    ? (rawSeverity as QcSeverity)
+    : 'info'
+  const band = SCORE_BANDS[severity]
+  const parsed =
+    typeof rawScore === 'number'
+      ? rawScore
+      : typeof rawScore === 'string'
+        ? Number.parseFloat(rawScore)
+        : NaN
+  if (!Number.isFinite(parsed)) return defaultScoreForSeverity(severity)
+  const rounded = Math.round(parsed)
+  if (rounded < band.min) return band.min
+  if (rounded > band.max) return band.max
+  return rounded
 }
 
 export async function generateQualityReviewFromData(
@@ -248,6 +295,7 @@ export async function generateQualityReviewFromData(
         message: typeof f.message === 'string' ? f.message : String(f.message ?? ''),
         rationale: normalizeNullableString(f.rationale),
         suggested_tone_hint: normalizeNullableString(f.suggested_tone_hint),
+        score: normalizeScore(f.severity, f.score),
       }))
 
       const normalized = {

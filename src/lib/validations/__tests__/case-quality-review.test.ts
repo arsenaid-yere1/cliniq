@@ -8,6 +8,8 @@ import {
   findingDismissFormSchema,
   computeFindingHash,
   findingFixEligibility,
+  defaultScoreForSeverity,
+  getFindingScore,
   qcSeverityValues,
   qcStepValues,
   type QualityFinding,
@@ -19,8 +21,9 @@ const VALID_PROC_ID = '22222222-2222-4222-8222-222222222222'
 const VALID_USER_ID = '33333333-3333-4333-8333-333333333333'
 
 function makeFinding(overrides: Partial<QualityFinding> = {}): QualityFinding {
+  const severity = overrides.severity ?? 'warning'
   return {
-    severity: 'warning',
+    severity,
     step: 'discharge',
     note_id: VALID_NOTE_ID,
     procedure_id: null,
@@ -28,6 +31,7 @@ function makeFinding(overrides: Partial<QualityFinding> = {}): QualityFinding {
     message: 'Pain trajectory drift detected',
     rationale: 'subjective cites 4/10 but trajectory shows 5/10',
     suggested_tone_hint: 'Cite the exact discharge value from objective_vitals',
+    score: defaultScoreForSeverity(severity),
     ...overrides,
   }
 }
@@ -104,6 +108,73 @@ describe('qualityReviewResultSchema', () => {
       overall_assessment: 'fine',
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('qualityFindingSchema score field', () => {
+  it('accepts integer scores 1 through 10', () => {
+    for (const score of [1, 3, 5, 7, 10]) {
+      const result = qualityFindingSchema.safeParse(makeFinding({ score }))
+      expect(result.success).toBe(true)
+    }
+  })
+
+  it('rejects score below 1', () => {
+    const result = qualityFindingSchema.safeParse(makeFinding({ score: 0 }))
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects score above 10', () => {
+    const result = qualityFindingSchema.safeParse(makeFinding({ score: 11 }))
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects non-integer score', () => {
+    const result = qualityFindingSchema.safeParse(makeFinding({ score: 5.5 }))
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects negative score', () => {
+    const result = qualityFindingSchema.safeParse(makeFinding({ score: -1 }))
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects missing score field', () => {
+    const finding = makeFinding()
+    const withoutScore = { ...finding } as Partial<QualityFinding>
+    delete withoutScore.score
+    const result = qualityFindingSchema.safeParse(withoutScore)
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('defaultScoreForSeverity', () => {
+  it('returns tier-anchored defaults', () => {
+    expect(defaultScoreForSeverity('critical')).toBe(8)
+    expect(defaultScoreForSeverity('warning')).toBe(5)
+    expect(defaultScoreForSeverity('info')).toBe(2)
+  })
+})
+
+describe('getFindingScore', () => {
+  it('returns the finding score when present', () => {
+    const finding = makeFinding({ severity: 'critical', score: 9 })
+    expect(getFindingScore(finding)).toBe(9)
+  })
+
+  it('falls back to severity default when score is missing (legacy row)', () => {
+    const legacy = {
+      severity: 'critical' as const,
+    }
+    expect(getFindingScore(legacy)).toBe(8)
+  })
+
+  it('falls back when score is null (legacy row)', () => {
+    const legacy = {
+      severity: 'warning' as const,
+      score: null,
+    }
+    expect(getFindingScore(legacy)).toBe(5)
   })
 })
 

@@ -32,6 +32,10 @@ export const qualityFindingSchema = z.object({
   message: z.string().min(1),
   rationale: z.string().nullable(),
   suggested_tone_hint: z.string().nullable(),
+  // Clinical-impact weight. Severity tier governs color/grouping; score governs
+  // intra-tier ranking and the case-level Total Score. Tier-anchored bands
+  // enforced via the system prompt: critical 7-10, warning 4-6, info 1-3.
+  score: z.number().int().min(1).max(10),
 })
 export type QualityFinding = z.infer<typeof qualityFindingSchema>
 
@@ -101,6 +105,28 @@ export const findingDismissFormSchema = z.object({
   dismissed_reason: z.string().nullable(),
 })
 export type FindingDismissFormValues = z.infer<typeof findingDismissFormSchema>
+
+// Tier-anchored default for legacy findings persisted before the score field
+// shipped. New AI emissions are required to include score (schema enforces).
+export function defaultScoreForSeverity(severity: QcSeverity): number {
+  switch (severity) {
+    case 'critical':
+      return 8
+    case 'warning':
+      return 5
+    case 'info':
+      return 2
+  }
+}
+
+// Reads the finding's score, falling back to the severity-tier default when
+// reading legacy rows that pre-date the score field.
+export function getFindingScore(
+  finding: Pick<QualityFinding, 'severity'> & { score?: number | null },
+): number {
+  if (typeof finding.score === 'number') return finding.score
+  return defaultScoreForSeverity(finding.severity)
+}
 
 // Stable hash for a finding — used as the key into FindingOverridesMap.
 // Inputs are exactly the fields a regen would re-emit identically when the
