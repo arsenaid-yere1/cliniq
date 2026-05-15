@@ -8,7 +8,7 @@ topic: "Case-level chain-aware QC reviewer agent (A2)"
 tags: [plan, qc, claude-agent, case-quality-review, opus-4-7, provider-overrides]
 status: ready
 last_updated: 2026-05-13
-last_updated_note: "Disable Initial Visit checks for pain-management-entry cases: gather computes painManagementStart flag (no IV row, only pain_eval row); system prompt reroutes chain origin to pain_evaluation and skips IV-anchored rules + the 'missing IV → incomplete' assessment."
+last_updated_note: "Add per-finding clinical-impact score (1-10) emitted by the model, tier-anchored to severity (critical 7-10 / warning 4-6 / info 1-3). UI surfaces a Total Score chip in the header (sum of non-dismissed scores; dismissed excluded, ack/edited counted) and a per-card Score badge; intra-severity sort descending by score. No DDL change — score rides inside the findings jsonb. Earlier change: disable Initial Visit checks for pain-management-entry cases via painManagementStart flag."
 ---
 
 # Case Quality Review Agent Implementation Plan
@@ -205,6 +205,10 @@ export const qualityFindingSchema = z.object({
   message: z.string().min(1),
   rationale: z.string().nullable(),
   suggested_tone_hint: z.string().nullable(),
+  // Clinical-impact weight emitted by the model. Severity tier governs color/grouping;
+  // score governs intra-tier ranking and the aggregate Total Score in the header.
+  // Tier-anchored rubric enforced in the system prompt: critical 7-10, warning 4-6, info 1-3.
+  score: z.number().int().min(1).max(10),
 })
 export type QualityFinding = z.infer<typeof qualityFindingSchema>
 
@@ -408,6 +412,11 @@ OUTPUT CONTRACT
 - procedure_id is required when step='procedure'.
 - note_id is null only when the finding spans multiple notes (cross_step).
 - Severity tiers: 'critical' = blocks defensible documentation; 'warning' = inconsistency or missing rationale; 'info' = stylistic / minor.
+- score: integer 1-10 capturing clinical-impact weight. MUST stay inside the severity tier's band:
+  - critical: 7-10 (10 = chart-breaking, 7 = serious but recoverable).
+  - warning: 4-6 (6 = clear inconsistency, 4 = mild drift).
+  - info: 1-3 (3 = noticeable polish miss, 1 = trivial).
+  Use score for ranking inside a tier and to drive the case-level Total Score (sum of non-dismissed scores).
 - suggested_tone_hint is a short string the provider can paste into the editor's tone hint to drive a regen.
 
 CHAIN-ORIGIN BRANCH
@@ -454,7 +463,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
         type: 'array',
         items: {
           type: 'object',
-          required: ['severity', 'step', 'note_id', 'procedure_id', 'section_key', 'message', 'rationale', 'suggested_tone_hint'],
+          required: ['severity', 'step', 'note_id', 'procedure_id', 'section_key', 'message', 'rationale', 'suggested_tone_hint', 'score'],
           properties: {
             severity: { type: 'string', enum: ['info', 'warning', 'critical'] },
             step: { type: 'string', enum: ['initial_visit', 'pain_evaluation', 'procedure', 'discharge', 'case_summary', 'cross_step'] },
@@ -464,6 +473,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
             message: { type: 'string' },
             rationale: { type: ['string', 'null'] },
             suggested_tone_hint: { type: ['string', 'null'] },
+            score: { type: 'integer', minimum: 1, maximum: 10, description: 'Clinical-impact weight. Must match severity tier: critical 7-10, warning 4-6, info 1-3.' },
           },
         },
       },
@@ -1332,6 +1342,18 @@ export function QcReviewPanel({
   }
   const dismissedCount = hydrated.filter((h) => isDismissed(h.override)).length
 
+  // Total score = sum of `score` across non-dismissed findings.
+  // Dismissed entries are excluded (they are "not actually an issue").
+  // Acknowledged + edited entries still count — provider has seen them but issue stands.
+  const totalScore = hydrated
+    .filter((h) => !isDismissed(h.override))
+    .reduce((sum, h) => sum + h.finding.score, 0)
+
+  // Sort each severity group descending by score so the heaviest finding renders first.
+  for (const sev of qcSeverityValues) {
+    grouped[sev].sort((a, b) => b.finding.score - a.finding.score)
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -1353,7 +1375,10 @@ export function QcReviewPanel({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span className="rounded-md bg-muted px-2 py-1">
+              Total score: <strong>{totalScore}</strong>
+            </span>
             <span>Critical: <strong>{counts.critical}</strong></span>
             <span>Warning: <strong>{counts.warning}</strong></span>
             <span>Info: <strong>{counts.info}</strong></span>
@@ -1364,7 +1389,7 @@ export function QcReviewPanel({
             )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Recheck wipes all overrides — fresh review starts clean.
+            Higher score = more clinical impact. Dismissed findings excluded. Recheck wipes all overrides — fresh review starts clean.
           </p>
         </CardContent>
       </Card>
@@ -1483,6 +1508,9 @@ function FindingCard({
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <Badge variant="outline">{stepLabels[finding.step]}</Badge>
             {finding.section_key && <Badge variant="secondary">{finding.section_key}</Badge>}
+            <Badge variant="outline" title="Clinical-impact score (1-10)">
+              Score {finding.score}
+            </Badge>
             {status !== 'pending' && (
               <Badge
                 variant={status === 'dismissed' ? 'outline' : 'default'}
@@ -1730,7 +1758,10 @@ export function FindingDismissDialog({
 - [ ] `/patients/[caseId]/qc` loads with empty state and "Run Review" button.
 - [ ] Click "Run Review" → spinner button → progress bar appears with realtime ticks.
 - [ ] After ~30-60s the panel switches to "completed" state with grouped findings.
-- [ ] Each finding card shows severity icon, step badge, section badge, message, rationale, suggested tone hint, and a "View in editor →" link.
+- [ ] Each finding card shows severity icon, step badge, section badge, score badge (`Score N` 1-10), message, rationale, suggested tone hint, and a "View in editor →" link.
+- [ ] Header shows `Total score: <N>` chip = sum of non-dismissed finding scores. Dismissing a finding decrements the total; undoing dismissal restores it. Acknowledging or editing does NOT change the total.
+- [ ] Within each severity group, findings render in descending score order (highest first).
+- [ ] All emitted scores stay inside their severity band: critical 7-10, warning 4-6, info 1-3. (Spot-check 5+ findings.)
 - [ ] Clicking the link navigates to the correct editor URL (procedure note URL contains procedure_id when applicable).
 - [ ] Editing any finalized note then returning to QC tab shows "Stale" badge.
 - [ ] Locked-case statuses disable Run, Recheck, Acknowledge, Edit, Dismiss, Undo buttons.
@@ -1779,6 +1810,13 @@ Cases:
 - `clearFindingOverride` — removes the hash key cleanly; other entries preserved.
 - Override mutators — concurrent calls last-write-wins (no row-lock; document this in test as acceptable behavior).
 
+#### 5.3 Panel Score Aggregation Tests (optional, if `qc-review-panel` has a unit-testable selector)
+- Total score = sum of non-dismissed `score` values; acknowledged + edited entries counted, dismissed entries excluded.
+- Empty findings → total 0.
+- All findings dismissed → total 0.
+- Mixed (1 critical=10 active, 1 warning=5 dismissed, 1 info=2 acked) → total 12.
+- Intra-severity sort: within `critical`, findings render descending by `score` (10 before 7).
+
 #### 5.2 Validation Tests
 **File**: `src/lib/validations/__tests__/case-quality-review.test.ts` (new)
 **Changes**: Zod parse tests.
@@ -1789,6 +1827,8 @@ Cases:
 - Invalid step rejected.
 - `note_id` non-uuid rejected.
 - Empty `findings[]` accepted (clean review).
+- `score` accepts integers 1-10; rejects 0, 11, negative, and non-integer (e.g. 5.5).
+- `score` missing from finding → zod rejection (field required).
 - `findingOverrideEntrySchema` accepts all 3 status values; rejects `'pending'` (sentinel = absence of entry).
 - `findingOverridesMapSchema` accepts empty `{}`, accepts multiple entries, rejects entries missing required fields.
 - `findingEditFormSchema` rejects empty `edited_message`.
