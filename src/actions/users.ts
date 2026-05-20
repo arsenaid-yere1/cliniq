@@ -65,9 +65,16 @@ export async function inviteUser(formData: InviteUserFormValues) {
   if (updErr) return { error: updErr.message }
 
   // Generate one-time recovery link the inviter can share manually.
+  // redirectTo overrides Supabase SITE_URL so dev/prod hosts resolve correctly.
+  // type=recovery is used since user already exists (createUser above) and
+  // generateLink does not support 'invite' for already-confirmed users.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
     type: 'recovery',
     email: parsed.data.email,
+    options: appUrl
+      ? { redirectTo: `${appUrl}/auth/callback?type=recovery` }
+      : undefined,
   })
   if (linkErr) return { error: linkErr.message }
 

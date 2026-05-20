@@ -33,14 +33,22 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const isLoginPage = request.nextUrl.pathname === '/login'
+  const pathname = request.nextUrl.pathname
+  const isLoginPage = pathname === '/login'
+  const isPublicAuthRoute =
+    isLoginPage ||
+    pathname.startsWith('/auth/callback') ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password'
 
-  if (!user && !isLoginPage) {
+  if (!user && !isPublicAuthRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
+  // Authenticated user on /login → bounce. Allow /reset-password even when
+  // signed in (recovery flow temporarily authenticates the user).
   if (user && isLoginPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/patients'
