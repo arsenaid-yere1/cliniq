@@ -125,6 +125,97 @@ export type Database = {
         }
         Relationships: []
       }
+      case_quality_reviews: {
+        Row: {
+          ai_model: string | null
+          case_id: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          finding_overrides: Json
+          findings: Json
+          generated_at: string | null
+          generation_attempts: number
+          generation_error: string | null
+          generation_status: string
+          id: string
+          overall_assessment: string | null
+          raw_ai_response: Json | null
+          sections_done: number
+          sections_total: number
+          source_data_hash: string | null
+          summary: string | null
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          case_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          finding_overrides?: Json
+          findings?: Json
+          generated_at?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          generation_status?: string
+          id?: string
+          overall_assessment?: string | null
+          raw_ai_response?: Json | null
+          sections_done?: number
+          sections_total?: number
+          source_data_hash?: string | null
+          summary?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          finding_overrides?: Json
+          findings?: Json
+          generated_at?: string | null
+          generation_attempts?: number
+          generation_error?: string | null
+          generation_status?: string
+          id?: string
+          overall_assessment?: string | null
+          raw_ai_response?: Json | null
+          sections_done?: number
+          sections_total?: number
+          source_data_hash?: string | null
+          summary?: string | null
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_quality_reviews_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_quality_reviews_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_quality_reviews_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       case_status_history: {
         Row: {
           case_id: string
@@ -2752,6 +2843,7 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          is_active: boolean
           role: string
           updated_at: string
         }
@@ -2760,6 +2852,7 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          is_active?: boolean
           role?: string
           updated_at?: string
         }
@@ -2768,6 +2861,7 @@ export type Database = {
           email?: string
           full_name?: string
           id?: string
+          is_active?: boolean
           role?: string
           updated_at?: string
         }

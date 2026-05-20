@@ -7,6 +7,8 @@ import { ClinicLogoUpload } from './clinic-logo-upload'
 import { AppearanceForm } from './appearance-form'
 import { PricingCatalogForm } from './pricing-catalog-form'
 import { FeeEstimateForm } from './fee-estimate-form'
+import { UserList } from './user-list'
+import type { UserListItem } from '@/actions/users'
 import type { Database } from '@/types/database'
 
 type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
@@ -29,9 +31,12 @@ interface SettingsTabsProps {
   serviceCatalog: ServiceCatalogItem[]
   feeEstimateConfig: FeeEstimateConfigItem[]
   providerProfiles: ProviderProfile[]
+  users: UserListItem[]
+  currentUserId: string | null
+  isAdmin: boolean
 }
 
-export function SettingsTabs({ clinicSettings, serviceCatalog, feeEstimateConfig, providerProfiles }: SettingsTabsProps) {
+export function SettingsTabs({ clinicSettings, serviceCatalog, feeEstimateConfig, providerProfiles, users, currentUserId, isAdmin }: SettingsTabsProps) {
   return (
     <Tabs defaultValue="clinic-info" className="space-y-6">
       <TabsList>
@@ -41,6 +46,7 @@ export function SettingsTabs({ clinicSettings, serviceCatalog, feeEstimateConfig
         <TabsTrigger value="pricing">Pricing</TabsTrigger>
         <TabsTrigger value="fee-estimates">Fee Estimates</TabsTrigger>
         <TabsTrigger value="appearance">Appearance</TabsTrigger>
+        {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="clinic-info">
@@ -66,6 +72,12 @@ export function SettingsTabs({ clinicSettings, serviceCatalog, feeEstimateConfig
       <TabsContent value="appearance">
         <AppearanceForm />
       </TabsContent>
+
+      {isAdmin && currentUserId && (
+        <TabsContent value="users">
+          <UserList users={users} currentUserId={currentUserId} />
+        </TabsContent>
+      )}
     </Tabs>
   )
 }
