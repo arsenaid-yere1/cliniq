@@ -44,24 +44,38 @@ export async function inviteUser(formData: InviteUserFormValues) {
   }
 
   const admin = createAdminClient()
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
-    data: { full_name: parsed.data.full_name },
+
+  // Create user without sending email. email_confirm=true marks as verified so
+  // the recovery link can be redeemed immediately.
+  const tempPassword = crypto.randomUUID() + crypto.randomUUID()
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email: parsed.data.email,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: { full_name: parsed.data.full_name },
   })
+  if (createErr) return { error: createErr.message }
+  if (!created.user) return { error: 'User creation returned no user' }
 
-  if (error) return { error: error.message }
+  // handle_new_user trigger inserted public.users row with role='staff'.
+  // Patch role + full_name.
+  const patch: { role?: Role; full_name?: string } = { full_name: parsed.data.full_name }
+  if (parsed.data.role !== 'staff') patch.role = parsed.data.role
+  const { error: updErr } = await admin.from('users').update(patch).eq('id', created.user.id)
+  if (updErr) return { error: updErr.message }
 
-  // handle_new_user trigger created public.users row with role='staff'.
-  // Patch role + full_name if needed.
-  if (data.user) {
-    const patch: { role?: Role; full_name?: string } = {}
-    if (parsed.data.role !== 'staff') patch.role = parsed.data.role
-    patch.full_name = parsed.data.full_name
-    const { error: updErr } = await admin.from('users').update(patch).eq('id', data.user.id)
-    if (updErr) return { error: updErr.message }
-  }
+  // Generate one-time recovery link the inviter can share manually.
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: parsed.data.email,
+  })
+  if (linkErr) return { error: linkErr.message }
+
+  const link = linkData.properties?.action_link
+  if (!link) return { error: 'No action_link returned' }
 
   revalidatePath('/settings')
-  return { success: true }
+  return { success: true, link, email: parsed.data.email }
 }
 
 export async function updateUserRole(userId: string, role: Role) {
