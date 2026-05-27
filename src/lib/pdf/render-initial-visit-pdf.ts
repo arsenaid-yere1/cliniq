@@ -117,7 +117,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
   ].filter(Boolean).join(', ')
 
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
-  const patientDob = patient?.date_of_birth ? new Date(patient.date_of_birth) : null
+  const patientDob = patient?.date_of_birth ? new Date(patient.date_of_birth + 'T00:00:00') : null
   const visitAnchor = pickVisitAnchor(
     null,
     input.note.visit_date as string | null | undefined,
@@ -139,7 +139,7 @@ export async function renderInitialVisitPdf(input: RenderPdfInput): Promise<Buff
       input.note.visit_date as string | null | undefined,
       input.note.finalized_at as string | null | undefined,
     ),
-    dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date), 'MM/dd/yyyy') : '—',
+    dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '—',
     reasonForVisit: formatReasonForVisit(
       caseData?.accident_type as string | null | undefined,
       input.note.visit_type as 'initial_visit' | 'pain_evaluation_visit' | null | undefined,

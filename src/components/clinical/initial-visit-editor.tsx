@@ -1945,14 +1945,14 @@ function FinalizedView({
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
     : null
   const dob = caseData?.patient.date_of_birth
-    ? format(new Date(caseData.patient.date_of_birth), 'MM/dd/yyyy')
+    ? format(new Date(caseData.patient.date_of_birth + 'T00:00:00'), 'MM/dd/yyyy')
     : null
   const age = computeAgeAtDate(
     caseData?.patient.date_of_birth,
     pickVisitAnchor(null, note.visit_date, note.finalized_at),
   )
   const accidentDate = caseData?.accident_date
-    ? format(new Date(caseData.accident_date), 'MM/dd/yyyy')
+    ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy')
     : null
 
   return (
