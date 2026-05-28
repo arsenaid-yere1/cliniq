@@ -53,6 +53,18 @@ describe('callClaudeTool', () => {
     expect(call.system).toBe('You are a test system prompt.')
   })
 
+  it('sends system as a cache-controlled text block when cacheSystem is true', async () => {
+    const stub = createMockAnthropic()
+    stub._create.mockResolvedValue(mockToolUseResponse({ toolName: 't2', input: { value: 'ok' } }))
+
+    await callClaudeTool({ ...baseOpts({ cacheSystem: true }), _client: stub })
+
+    const call = stub._create.mock.calls[0][0]
+    expect(call.system).toEqual([
+      { type: 'text', text: 'You are a test system prompt.', cache_control: { type: 'ephemeral' } },
+    ])
+  })
+
   it('returns {data} on success when parse succeeds first try', async () => {
     const stub = createMockAnthropic()
     stub._create.mockResolvedValue(mockToolUseResponse({ toolName: 't2', input: { value: 'hello' } }))
@@ -224,6 +236,8 @@ describe('callClaudeTool', () => {
       model: 'claude-sonnet-4-6',
       input_tokens: 10,
       output_tokens: 20,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
     })
   })
 

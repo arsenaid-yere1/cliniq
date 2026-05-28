@@ -25,6 +25,13 @@ const emptyInput: DischargeNoteInputData = {
   overallPainTrend: 'baseline',
   painTrendSignals: { vsBaseline: 'baseline', vsPrevious: null },
   seriesVolatility: 'insufficient_data',
+  narrativeDirective: {
+    tone: 'baseline',
+    reference_sentence: 'This is the baseline encounter for series comparison; no prior pain anchor is available.',
+    must_acknowledge: [],
+    forbidden_phrases: [],
+    plan_directive: null,
+  },
   painTrajectoryText: null,
   dischargeVisitPainDisplay: null,
   dischargeVisitPainEstimated: false,
@@ -148,7 +155,7 @@ describe('cross-section awareness', () => {
     expect(opts.messages[0].content).toContain('OTHER SECTIONS CURRENTLY PRESENT')
     expect(opts.messages[0].content).toContain('existing assessment text')
     expect(opts.messages[0].content).toContain('existing prognosis')
-    expect(opts.system).toContain('Avoid duplicating content that already appears')
+    expect(opts.messages[0].content).toContain('Avoid duplicating content that already appears')
   })
 
   it('excludes the target section from the other-sections block', async () => {
@@ -170,7 +177,7 @@ describe('cross-section awareness', () => {
     })
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.messages[0].content).not.toContain('OTHER SECTIONS CURRENTLY PRESENT')
-    expect(opts.system).not.toContain('Avoid duplicating content that already appears')
+    expect(opts.messages[0].content).not.toContain('Avoid duplicating content that already appears')
   })
 })
 

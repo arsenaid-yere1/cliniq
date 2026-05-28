@@ -48,6 +48,14 @@ const emptyInput: ProcedureNoteInputData = {
   paintoneSignals: { vsBaseline: 'baseline', vsPrevious: null },
   seriesVolatility: 'insufficient_data',
   chiroProgress: null,
+  painObservations: [],
+  narrativeDirective: {
+    tone: 'baseline',
+    reference_sentence: 'This is the baseline encounter for series comparison; no prior pain anchor is available.',
+    must_acknowledge: [],
+    forbidden_phrases: [],
+    plan_directive: { status: 'no_plan_on_file', required_sentence: null, forbidden_phrases: [] },
+  },
   caseSummary: null,
   pmExtraction: null,
   pmSupplementaryDiagnoses: [],
@@ -155,7 +163,7 @@ describe('cross-section awareness', () => {
     expect(opts.messages[0].content).toContain('OTHER SECTIONS CURRENTLY PRESENT')
     expect(opts.messages[0].content).toContain('existing assessment text')
     expect(opts.messages[0].content).toContain('existing prognosis')
-    expect(opts.system).toContain('Avoid duplicating content that already appears')
+    expect(opts.messages[0].content).toContain('Avoid duplicating content that already appears')
   })
 
   it('excludes the target section from the other-sections block', async () => {
