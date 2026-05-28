@@ -13,6 +13,7 @@ import {
 } from '@/lib/validations/discharge-note'
 import type { DischargeNoteInputData } from '@/lib/claude/generate-discharge-note'
 import { gatherDischargeNoteSourceData } from '@/actions/discharge-notes'
+import { validateNarrative } from '@/lib/qc/narrative-validator'
 
 interface RefreshOptions {
   // When supplied, validator runs against this merged shape (for the regen
@@ -99,9 +100,23 @@ export async function refreshDischargeTrajectory(
     ...((existingRaw?.raw as Record<string, unknown> | null) ?? {}),
     ...(opts.rawSectionsToMerge ?? {}),
   }
+  const narrativeWarnings = validateNarrative(sectionTextSources, {
+    duplicateScope: [
+      'subjective',
+      'objective_general',
+      'objective_cervical',
+      'objective_lumbar',
+      'objective_neurological',
+      'assessment',
+      'plan_and_recommendations',
+      'patient_education',
+      'prognosis',
+    ],
+  })
   const wrappedRawResponse = {
     raw: mergedInnerRaw,
     trajectory_warnings: validation.warnings,
+    narrative_warnings: narrativeWarnings,
     discharge_readings_found: validation.dischargeReadingsFound,
     pain_trajectory_text: inputData.painTrajectoryText,
     discharge_visit_pain_display: inputData.dischargeVisitPainDisplay,
@@ -128,6 +143,13 @@ export async function refreshDischargeTrajectory(
       caseId,
       noteId,
       warnings: validation.warnings,
+    })
+  }
+  if (narrativeWarnings.length > 0) {
+    console.warn('[discharge-note] narrative warnings', {
+      caseId,
+      noteId,
+      count: narrativeWarnings.length,
     })
   }
 

@@ -16,6 +16,11 @@ export interface CallClaudeToolOptions<TOutput> {
   // typically passes a Sonnet model when primary is Opus.
   fallbackModel?: `claude-${string}`
   system: string
+  // When true, the system prompt is sent as a cache-controlled block so
+  // repeated calls within the 5-minute TTL hit the prompt cache. Saves ~80%
+  // input tokens and ~40% TTFB on warm cache. Safe to enable whenever the
+  // system prompt is a stable module constant.
+  cacheSystem?: boolean
   tools: Anthropic.Tool[]
   toolName: string
   toolChoice?: Anthropic.Messages.ToolChoice
@@ -103,11 +108,15 @@ async function callClaudeToolForModel<TOutput>(
 
     while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
+        const systemParam: Anthropic.Messages.MessageCreateParams['system'] =
+          opts.cacheSystem
+            ? [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }]
+            : opts.system
         const stream = client.messages.stream({
           model,
           max_tokens: opts.maxTokens,
           ...(opts.thinking ? { thinking: opts.thinking } : {}),
-          system: opts.system,
+          system: systemParam,
           tools: opts.tools,
           tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
           messages: opts.messages,
@@ -222,5 +231,7 @@ function logUsage(model: string, usage: Anthropic.Messages.Usage) {
     model,
     input_tokens: usage.input_tokens,
     output_tokens: usage.output_tokens,
+    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
   })
 }

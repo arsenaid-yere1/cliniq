@@ -26,6 +26,7 @@ import {
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
+import { validateNarrative } from '@/lib/qc/narrative-validator'
 
 // --- Helper: compute source data hash ---
 
@@ -502,6 +503,45 @@ export async function generateInitialVisitNote(
   }
 
   const data = result.data!
+  const narrativeWarnings = validateNarrative(
+    {
+      introduction: data.introduction,
+      history_of_accident: data.history_of_accident,
+      post_accident_history: data.post_accident_history,
+      chief_complaint: data.chief_complaint,
+      past_medical_history: data.past_medical_history,
+      social_history: data.social_history,
+      review_of_systems: data.review_of_systems,
+      physical_exam: data.physical_exam,
+      imaging_findings: data.imaging_findings,
+      medical_necessity: data.medical_necessity,
+      diagnoses: data.diagnoses,
+      treatment_plan: data.treatment_plan,
+      patient_education: data.patient_education,
+      prognosis: data.prognosis,
+      time_complexity_attestation: data.time_complexity_attestation,
+      clinician_disclaimer: data.clinician_disclaimer,
+    },
+    {
+      duplicateScope: [
+        'introduction',
+        'history_of_accident',
+        'post_accident_history',
+        'chief_complaint',
+        'physical_exam',
+        'medical_necessity',
+        'treatment_plan',
+        'patient_education',
+        'prognosis',
+      ],
+    },
+  )
+  if (narrativeWarnings.length > 0) {
+    console.warn('[initial-visit-notes] narrative warnings', {
+      recordId,
+      count: narrativeWarnings.length,
+    })
+  }
   await supabase
     .from('initial_visit_notes')
     .update({
@@ -522,7 +562,7 @@ export async function generateInitialVisitNote(
       time_complexity_attestation: data.time_complexity_attestation,
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-opus-4-6',
-      raw_ai_response: result.rawResponse || null,
+      raw_ai_response: { raw: result.rawResponse ?? null, narrative_warnings: narrativeWarnings },
       status: 'draft',
       sections_done: INITIAL_VISIT_SECTIONS_TOTAL,
       source_data_hash: sourceHash,

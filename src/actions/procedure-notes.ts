@@ -18,6 +18,9 @@ import {
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, deriveChiroProgress, type PainToneContext } from '@/lib/claude/pain-tone'
+import { buildPainObservations } from '@/lib/claude/pain-observations'
+import { validateNarrative } from '@/lib/qc/narrative-validator'
+import { resolveProcedureNarrativeDirective } from '@/lib/claude/narrative-directive'
 import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
@@ -49,6 +52,7 @@ async function gatherProcedureNoteSourceData(
     chiroRes,
     intakeVitalsRes,
     caseSummaryRes,
+    ptRes,
   ] = await Promise.all([
     supabase
       .from('procedures')
@@ -71,7 +75,7 @@ async function gatherProcedureNoteSourceData(
       .single(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides, updated_at')
+      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides, updated_at, created_at')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -109,7 +113,7 @@ async function gatherProcedureNoteSourceData(
       .from('chiro_extractions')
       .select('functional_outcomes')
       .eq('case_id', caseId)
-      .eq('review_status', 'approved')
+      .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -133,6 +137,18 @@ async function gatherProcedureNoteSourceData(
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited'])
       .eq('generation_status', 'completed')
+      .maybeSingle(),
+    // PT extraction — most recent approved/edited row, used as a supplementary
+    // pain observation source for the subjective narrative. Matches discharge
+    // note pattern at gatherDischargeNoteSourceData.
+    supabase
+      .from('pt_extractions')
+      .select('pain_ratings, evaluation_date, created_at')
+      .eq('case_id', caseId)
+      .in('review_status', ['approved', 'edited'])
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -288,6 +304,31 @@ async function gatherProcedureNoteSourceData(
     paintoneVsPrevious = computePainToneLabel(null, null, 'prior_missing_vitals')
   }
 
+  const seriesVolatility = computeSeriesVolatility(
+    priorProcedureRows.map((p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null),
+  )
+  const planAlignment = computePlanAlignment({
+    performed: {
+      injection_site: proc.injection_site,
+      sites: parseSitesJsonb(proc.sites),
+      guidance_method: proc.guidance_method as
+        | 'ultrasound'
+        | 'fluoroscopy'
+        | 'landmark'
+        | null,
+    },
+    pmTreatmentPlan: pmRes.data
+      ? ((pmRes.data.provider_overrides as { treatment_plan?: unknown } | null)
+          ?.treatment_plan ?? pmRes.data.treatment_plan)
+      : null,
+    initialVisitTreatmentPlan: ivNoteRes.data?.treatment_plan ?? null,
+  })
+  const narrativeDirective = resolveProcedureNarrativeDirective({
+    paintoneSignals: { vsBaseline: paintoneVsBaseline, vsPrevious: paintoneVsPrevious },
+    seriesVolatility,
+    planAlignment,
+  })
+
   return {
     data: {
       patientInfo: {
@@ -361,10 +402,30 @@ async function gatherProcedureNoteSourceData(
       // Volatility over the completed prior procedures (chronological).
       // Current procedure is not in the series yet. When fewer than 2 priors
       // exist or any pain_score_max is null, label is 'insufficient_data'.
-      seriesVolatility: computeSeriesVolatility(
-        priorProcedureRows.map((p) => priorVitalsByProcedureId.get(p.id)?.pain_score_max ?? null),
-      ),
+      seriesVolatility,
+      narrativeDirective,
       chiroProgress: deriveChiroProgress(chiroRes.data?.functional_outcomes),
+      // Supplementary pain observations merged from PT, PM, and chiro sources.
+      // Cited in the subjective narrative only when 2+ observations exist —
+      // see PAIN OBSERVATIONS block in the procedure-note system prompt.
+      painObservations: buildPainObservations({
+        ptExtraction: ptRes.data
+          ? {
+              pain_ratings: ptRes.data.pain_ratings,
+              evaluation_date: ptRes.data.evaluation_date as string | null,
+              created_at: ptRes.data.created_at as string | null,
+            }
+          : null,
+        pmExtraction: pmRes.data
+          ? {
+              chief_complaints: pmRes.data.chief_complaints,
+              created_at: pmRes.data.created_at as string | null,
+            }
+          : null,
+        chiroExtraction: chiroRes.data
+          ? { functional_outcomes: chiroRes.data.functional_outcomes }
+          : null,
+      }),
       caseSummary: caseSummaryRes.data
         ? {
             chief_complaint: caseSummaryRes.data.chief_complaint ?? null,
@@ -432,22 +493,7 @@ async function gatherProcedureNoteSourceData(
             treatment_plan: ivNoteRes.data.treatment_plan ?? null,
           }
         : null,
-      planAlignment: computePlanAlignment({
-        performed: {
-          injection_site: proc.injection_site,
-          sites: parseSitesJsonb(proc.sites),
-          guidance_method: proc.guidance_method as
-            | 'ultrasound'
-            | 'fluoroscopy'
-            | 'landmark'
-            | null,
-        },
-        pmTreatmentPlan: pmRes.data
-          ? ((pmRes.data.provider_overrides as { treatment_plan?: unknown } | null)
-              ?.treatment_plan ?? pmRes.data.treatment_plan)
-          : null,
-        initialVisitTreatmentPlan: ivNoteRes.data?.treatment_plan ?? null,
-      }),
+      planAlignment,
       priorProcedureNotes: priorProcedureRows
         .filter((p) => priorNotesByProcedureId.has(p.id))
         .map((p) => {
@@ -692,6 +738,28 @@ export async function generateProcedureNote(
 
   // Write success
   const data = result.data!
+  const narrativeWarnings = validateNarrative(data as unknown as Record<string, string | null>, {
+    duplicateScope: [
+      'subjective',
+      'objective_physical_exam',
+      'assessment_summary',
+      'procedure_indication',
+      'procedure_preparation',
+      'procedure_prp_prep',
+      'procedure_injection',
+      'procedure_post_care',
+      'procedure_followup',
+      'assessment_and_plan',
+      'patient_education',
+      'prognosis',
+    ],
+  })
+  if (narrativeWarnings.length > 0) {
+    console.warn('[procedure-notes] narrative warnings', {
+      recordId,
+      count: narrativeWarnings.length,
+    })
+  }
   await supabase
     .from('procedure_notes')
     .update({
@@ -716,7 +784,7 @@ export async function generateProcedureNote(
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-opus-4-6',
-      raw_ai_response: result.rawResponse || null,
+      raw_ai_response: { raw: result.rawResponse ?? null, narrative_warnings: narrativeWarnings },
       status: 'draft',
       sections_done: PROCEDURE_NOTE_SECTIONS_TOTAL,
       source_data_hash: sourceHash,

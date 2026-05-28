@@ -21,6 +21,7 @@ import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-statu
 import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
+import { resolveDischargeNarrativeDirective } from '@/lib/claude/narrative-directive'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import { refreshDischargeTrajectory } from '@/actions/discharge-notes-trajectory'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
@@ -393,6 +394,12 @@ export async function gatherDischargeNoteSourceData(
     procedures.map((p) => p.pain_score_max),
   )
 
+  const narrativeDirective = resolveDischargeNarrativeDirective({
+    vsBaseline: painTrendSignals.vsBaseline,
+    vsPrevious: painTrendSignals.vsPrevious,
+    seriesVolatility,
+  })
+
   // Deterministic pain trajectory — Phase 1 precision fix. The LLM used to
   // assemble the arrow chain and apply the -2 rule in prose; we now compute
   // both in TS and instruct the prompt to render the resulting strings
@@ -498,6 +505,7 @@ export async function gatherDischargeNoteSourceData(
       overallPainTrend: foldedOverallPainTrend,
       painTrendSignals,
       seriesVolatility,
+      narrativeDirective,
       painTrajectoryText: painTrajectory.arrowChain || null,
       dischargeVisitPainDisplay: painTrajectory.dischargeDisplay,
       dischargeVisitPainEstimated: painTrajectory.dischargeEstimated,

@@ -9,7 +9,10 @@ import {
 } from '@/lib/validations/discharge-note'
 import type { PainToneSignals, SeriesVolatility } from '@/lib/claude/pain-tone'
 import type { PainObservation } from '@/lib/claude/pain-observations'
+import type { NarrativeDirective } from '@/lib/claude/narrative-directive'
 import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
+import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
+import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -117,6 +120,13 @@ export interface DischargeNoteInputData {
   // and vsPrevious='improved' but seriesVolatility='mixed_with_regression'.
   // Prompt branch requires acknowledging the variability.
   seriesVolatility: SeriesVolatility
+  /**
+   * Pre-resolved narrative directive — collapses the discharge paintone ×
+   * volatility matrix into a single { tone, must_acknowledge,
+   * forbidden_phrases } object the LLM applies directly. plan_directive is
+   * always null for discharge.
+   */
+  narrativeDirective: NarrativeDirective
   // Deterministic pain-trajectory payload (Phase 1 precision fix).
   // painTrajectoryText: TS-assembled arrow chain + endpoint sentence. When
   //   non-null, the LLM MUST render it verbatim inside `subjective` and reuse
@@ -209,7 +219,8 @@ export interface DischargeNoteInputData {
   }
 }
 
-const SYSTEM_PROMPT = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate a Final PRP Follow-Up and Discharge Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
+const SYSTEM_PROMPT = `${voiceCharterPromptBlock()}
+You are a clinical documentation specialist for a personal injury pain management clinic. Generate a Final PRP Follow-Up and Discharge Visit note that precisely matches the clinic's standard document format in tone, length, and structure.
 
 This document is for medical-legal documentation and continuity of care related exclusively to injuries sustained in a motor vehicle accident or other personal injury event. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
 
@@ -360,6 +371,17 @@ When seriesVolatility == "monotone_improved", the standard favorable framing app
 When seriesVolatility == "insufficient_data", fall back to the PAIN TRAJECTORY rules without citing volatility.
 
 This rule takes precedence over monotone-framing elsewhere in the prompt. The rule does NOT override the -2 default rule, the FINAL-INTERVAL REGRESSION OVERRIDE, or the BASELINE DATA-GAP OVERRIDE — those govern the numeric pain endpoint and qualitative anchors separately.
+
+=== NARRATIVE DIRECTIVE (MANDATORY) ===
+
+The narrativeDirective field is the pre-resolved cell of the paintone × series-volatility matrix for this discharge. Apply it directly:
+
+• narrativeDirective.tone — drives voice across subjective, assessment, and prognosis. Match the tone of the reference_sentence.
+• narrativeDirective.must_acknowledge — every phrase listed here MUST appear (in any wording that captures the meaning) in either subjective or assessment.
+• narrativeDirective.forbidden_phrases — supplements the global forbidden list. Do NOT use any of these note-wide.
+• narrativeDirective.reference_sentence — a calibrated example of the desired tone. Do NOT copy verbatim; paraphrase to fit the patient's specifics.
+
+The PAIN TONE MATRIX and SERIES VOLATILITY blocks above remain in effect as fallback routing. If the directive and the matrix appear to conflict, the directive wins. Numeric trajectory rules (DETERMINISTIC PAIN TRAJECTORY, the -2 default, FINAL-INTERVAL REGRESSION OVERRIDE, BASELINE DATA-GAP OVERRIDE) always supersede the directive.
 
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 
@@ -514,7 +536,8 @@ export async function generateDischargeNoteFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  let userMessage = `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(inputData, null, 2)}`
+  const curated = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `Generate a Final PRP Follow-Up and Discharge Visit note from the following aggregated case data.\n\n${JSON.stringify(curated, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -523,6 +546,7 @@ export async function generateDischargeNoteFromData(
     model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
+    cacheSystem: true,
     tools: [DISCHARGE_NOTE_TOOL],
     toolName: 'generate_discharge_note',
     messages: [{ role: 'user', content: userMessage }],
@@ -583,7 +607,8 @@ export async function regenerateDischargeNoteSection(
     }
   }
 
-  let userMessage = `Regenerate the "${sectionLabel}" section of the Discharge Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull aggregated case data:\n${JSON.stringify(inputData, null, 2)}`
+  const curatedRegen = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `${systemSuffix}\n\nRegenerate the "${sectionLabel}" section of the Discharge Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull aggregated case data:\n${JSON.stringify(curatedRegen, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -592,7 +617,8 @@ export async function regenerateDischargeNoteSection(
     model: 'claude-opus-4-6',
     fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
-    system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
+    system: SYSTEM_PROMPT,
+    cacheSystem: true,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
     messages: [{ role: 'user', content: userMessage }],

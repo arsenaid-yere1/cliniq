@@ -8,6 +8,8 @@ import {
 } from '@/lib/validations/initial-visit-note'
 import { sectionLabels } from '@/lib/validations/initial-visit-note'
 import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
+import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
+import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
 import { nsaidAvoidanceTreatmentPlanFragment } from '@/lib/clinical/prp-protocol'
 
 const NSAID_AVOIDANCE_FRAGMENT = nsaidAvoidanceTreatmentPlanFragment()
@@ -357,7 +359,7 @@ ${forbiddenPrognosisPromptBlock()}`
 
 function buildSystemPrompt(visitType: NoteVisitType): string {
   const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS
-  return `${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}`
+  return `${voiceCharterPromptBlock()}\n${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}`
 }
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
@@ -596,7 +598,8 @@ export async function generateInitialVisitFromData(
   const visitLabel = visitType === 'initial_visit'
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
     : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
-  let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(inputData, null, 2)}`
+  const curated = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(curated, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -605,6 +608,7 @@ export async function generateInitialVisitFromData(
     model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: systemPrompt,
+    cacheSystem: true,
     tools: [INITIAL_VISIT_TOOL],
     toolName: 'generate_initial_visit_note',
     messages: [{ role: 'user', content: userMessage }],
@@ -670,7 +674,8 @@ export async function regenerateSection(
     }
   }
 
-  let userMessage = `Regenerate the "${sectionLabel}" section of the Initial Visit note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(inputData, null, 2)}`
+  const curatedRegen = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `${systemSuffix}\n\nRegenerate the "${sectionLabel}" section of the Initial Visit note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case data:\n${JSON.stringify(curatedRegen, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -679,7 +684,8 @@ export async function regenerateSection(
     model: 'claude-opus-4-6',
     fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
-    system: `${systemPrompt}\n\n${systemSuffix}`,
+    system: systemPrompt,
+    cacheSystem: true,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
     messages: [{ role: 'user', content: userMessage }],

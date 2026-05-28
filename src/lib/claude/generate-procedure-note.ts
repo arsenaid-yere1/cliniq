@@ -8,7 +8,11 @@ import {
   procedureNoteSectionLabels,
 } from '@/lib/validations/procedure-note'
 import type { PainToneLabel, PainToneSignals, SeriesVolatility, ChiroProgress } from '@/lib/claude/pain-tone'
+import type { PainObservation } from '@/lib/claude/pain-observations'
+import type { NarrativeDirective } from '@/lib/claude/narrative-directive'
 import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
+import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
+import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
 import { nsaidHeldPreProcedureClause } from '@/lib/clinical/prp-protocol'
 
 const NSAID_HELD_CLAUSE = nsaidHeldPreProcedureClause()
@@ -106,6 +110,22 @@ export interface ProcedureNoteInputData {
   seriesVolatility: SeriesVolatility
   chiroProgress: ChiroProgress
   /**
+   * Supplementary pain observations merged from PT, PM, and chiro sources.
+   * Sorted chronologically (dated entries first). Cited in the subjective
+   * narrative ONLY when 2+ observations exist — they enrich context but do
+   * NOT override paintoneLabel / paintoneSignals (the deterministic
+   * series-baseline and per-session signals remain authoritative).
+   */
+  painObservations: PainObservation[]
+  /**
+   * Pre-resolved narrative directive — collapses the paintone × volatility ×
+   * plan-coherence matrix into a single { tone, must_acknowledge,
+   * forbidden_phrases, plan_directive } object the LLM applies directly.
+   * The existing matrix blocks in the system prompt remain as a safety net
+   * if the model misses the directive.
+   */
+  narrativeDirective: NarrativeDirective
+  /**
    * Cross-source clinical synthesis (case_summaries row). Supplies
    * pre-computed `suggested_diagnoses` entries with `confidence` and
    * `downgrade_to` fields consumed by the DOWNGRADE-TO HONOR RULE in the
@@ -198,7 +218,8 @@ export interface ProcedureNoteInputData {
   }
 }
 
-const SYSTEM_PROMPT = `You are a clinical documentation specialist for a personal injury pain management clinic. Generate a PRP Procedure Note that precisely matches the clinic's standard document format in tone, length, and structure.
+const SYSTEM_PROMPT = `${voiceCharterPromptBlock()}
+You are a clinical documentation specialist for a personal injury pain management clinic. Generate a PRP Procedure Note that precisely matches the clinic's standard document format in tone, length, and structure.
 
 This document is for medical-legal assessment and documentation for a personal injury case. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
 
@@ -332,6 +353,29 @@ Interaction with other rules:
 • PLAN-COHERENCE is independent of TARGET-COHERENCE RULE. TARGET-COHERENCE governs whether the prose describing the target matches procedureRecord.guidance_method (internal to this encounter). PLAN-COHERENCE governs whether the performed procedure matches what was previously planned (across documents). Both rules must be satisfied.
 • PLAN-COHERENCE does NOT override the DIAGNOSTIC-SUPPORT RULE. Diagnosis filtering happens independently. Do NOT retain a diagnosis code in the final list merely because it appeared in the planned treatment description.
 • The plan-continuity sentence belongs in procedure_indication (for "aligned" / "unplanned") and assessment_and_plan (for "deviation" and recap of "unplanned"). Do NOT add plan-continuity language to procedure_prp_prep, procedure_anesthesia, procedure_injection, procedure_post_care, or procedure_followup.
+
+=== NARRATIVE DIRECTIVE (MANDATORY) ===
+
+The narrativeDirective field is the pre-resolved cell of the paintone × series-volatility × plan-coherence matrix. Apply it directly:
+
+• narrativeDirective.tone — drives voice across subjective, assessment_summary, procedure_followup, and prognosis. Match the tone of the reference_sentence.
+• narrativeDirective.must_acknowledge — every phrase listed here MUST appear (in any wording that captures the meaning) in either subjective or assessment_summary. These are non-optional disclosures.
+• narrativeDirective.forbidden_phrases — supplements the global forbidden list. Do NOT use any of these note-wide.
+• narrativeDirective.plan_directive (when non-null) governs procedure_indication and assessment_and_plan continuity language. When required_sentence is non-null, it must appear in procedure_indication (or assessment_and_plan for deviation/unplanned cases).
+• narrativeDirective.reference_sentence is a calibrated example of the desired tone. Do NOT copy it verbatim — paraphrase to fit the patient's specifics.
+
+The PAIN TONE MATRIX and PLAN-COHERENCE RULE blocks above remain in effect as fallback routing. If the directive and the matrix appear to conflict, the directive wins.
+
+=== SUPPLEMENTARY PAIN OBSERVATIONS (CONDITIONAL) ===
+
+The painObservations array carries pain ratings drawn from PT, PM, and chiro source documents. Each entry has { date, source, label, min, max, scale, context }. Use them to enrich the subjective narrative ONLY when 2+ observations are present.
+
+Rules:
+• Cite supplementary observations ONLY in the subjective second paragraph. Do NOT use them in objective_vitals, assessment_summary, procedure_indication, procedure_injection, procedure_post_care, procedure_followup, assessment_and_plan, patient_education, or prognosis.
+• Supplementary observations DO NOT replace vitalSigns.pain_score_max or any of the paintone signals. The deterministic series-baseline (paintoneLabel) and per-session (paintoneSignals.vsPrevious) comparisons remain the authoritative pain narrative drivers.
+• Preserve scale strings verbatim — if a PT entry is rendered on a VAS/100 scale, do NOT silently convert it to NRS/10.
+• When the context field is non-null (e.g., "at rest 3/10; with activity 7/10"), include that detail in the narrative. The context field is the highest-fidelity description available.
+• When painObservations.length is less than 2, omit supplementary references entirely. One stray observation is not enough to ground a comparison.
 
 === PROVIDER TONE/DIRECTION HINT (CONDITIONAL) ===
 
@@ -754,7 +798,8 @@ export async function generateProcedureNoteFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  let userMessage = `Generate a comprehensive PRP Procedure Note from the following case and procedure data.\n\n${JSON.stringify(inputData, null, 2)}`
+  const curated = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `Generate a comprehensive PRP Procedure Note from the following case and procedure data.\n\n${JSON.stringify(curated, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -763,6 +808,7 @@ export async function generateProcedureNoteFromData(
     model: 'claude-opus-4-6',
     maxTokens: 16384,
     system: SYSTEM_PROMPT,
+    cacheSystem: true,
     tools: [PROCEDURE_NOTE_TOOL],
     toolName: 'generate_procedure_note',
     messages: [{ role: 'user', content: userMessage }],
@@ -823,7 +869,8 @@ export async function regenerateProcedureNoteSection(
     }
   }
 
-  let userMessage = `Regenerate the "${sectionLabel}" section of the PRP Procedure Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(inputData, null, 2)}`
+  const curatedRegen = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
+  let userMessage = `${systemSuffix}\n\nRegenerate the "${sectionLabel}" section of the PRP Procedure Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(curatedRegen, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -832,7 +879,8 @@ export async function regenerateProcedureNoteSection(
     model: 'claude-opus-4-6',
     fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
-    system: `${SYSTEM_PROMPT}\n\n${systemSuffix}`,
+    system: SYSTEM_PROMPT,
+    cacheSystem: true,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
     messages: [{ role: 'user', content: userMessage }],
