@@ -136,7 +136,7 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('discharge_notes')
-      .select('created_at, visit_date, diagnoses')
+      .select('created_at, visit_date, diagnoses, status')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -149,20 +149,33 @@ export async function getInvoiceFormData(caseId: string) {
   const providerProfile = providerProfileResult.data
 
   // Derive diagnoses precedence:
-  //  1. Procedure structured diagnoses (jsonb) — clinical encounter codes win.
-  //  2. Discharge Note free-text diagnoses — post-discharge authoritative list.
-  //     Discharge presence suppresses IVN even when its diagnoses field is empty,
-  //     so stale pre-treatment codes don't reappear on post-discharge invoices.
-  //  3. Initial Visit Note free-text diagnoses — pre-discharge working list.
+  //  1. Finalized Discharge Note free-text diagnoses — post-treatment
+  //     authoritative list (A→D suffix rewrites and downgrades have already
+  //     been applied). When a discharge is committed it is the medico-legal
+  //     final word, so it supersedes procedure jsonb (which still holds the
+  //     pre-discharge "initial encounter" snapshots from earlier visits).
+  //  2. Procedure structured diagnoses (jsonb) — clinical encounter codes
+  //     used while treatment is ongoing or when discharge is still in draft.
+  //  3. Draft Discharge Note free-text diagnoses — supersedes IVN so stale
+  //     pre-treatment codes don't reappear post-discharge.
+  //  4. Initial Visit Note free-text diagnoses — pre-discharge working list.
   let diagnoses: Array<{ icd10_code: string | null; description: string }> = []
   const procedures = proceduresResult.data ?? []
+  const dischargeNote = dischargeNoteResult.data as
+    | { diagnoses: string | null; status: string | null }
+    | null
   const procedureWithDiagnoses = procedures.find(
     (p: { diagnoses?: unknown }) => Array.isArray(p.diagnoses) && (p.diagnoses as unknown[]).length > 0
   )
-  if (procedureWithDiagnoses) {
+  const dischargeIsFinalized = dischargeNote?.status === 'finalized'
+  const dischargeDiagnoses = dischargeNote ? parseIvnDiagnoses(dischargeNote.diagnoses) : []
+
+  if (dischargeIsFinalized && dischargeDiagnoses.length > 0) {
+    diagnoses = dischargeDiagnoses
+  } else if (procedureWithDiagnoses) {
     diagnoses = procedureWithDiagnoses.diagnoses as typeof diagnoses
-  } else if (dischargeNoteResult.data) {
-    diagnoses = parseIvnDiagnoses(dischargeNoteResult.data.diagnoses)
+  } else if (dischargeNote) {
+    diagnoses = dischargeDiagnoses
   } else {
     // Prefer pain_evaluation_visit (imaging-confirmed codes) over initial_visit (clinical impression).
     const visitNotesForDx = (initialVisitNotesResult.data ?? []) as Array<{
