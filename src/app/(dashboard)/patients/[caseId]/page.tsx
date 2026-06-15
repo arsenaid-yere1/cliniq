@@ -7,6 +7,7 @@ import { CaseOverview } from '@/components/patients/case-overview'
 import { CaseStatCards } from '@/components/cases/case-stat-cards'
 import { CaseRecentActivity } from '@/components/cases/case-recent-activity'
 import { CaseSummaryCard } from '@/components/clinical/case-summary-card'
+import { getCurrentUserWithRole } from '@/lib/auth/require-role'
 
 export default async function CaseDashboardPage({
   params,
@@ -14,13 +15,15 @@ export default async function CaseDashboardPage({
   params: Promise<{ caseId: string }>
 }) {
   const { caseId } = await params
-  const [caseResult, statsResult, timelineResult, summaryResult, stalenessResult] = await Promise.all([
+  const [caseResult, statsResult, timelineResult, summaryResult, stalenessResult, me] = await Promise.all([
     getPatientCase(caseId),
     getCaseDashboardStats(caseId),
     getTimelineEvents(caseId),
     getCaseSummary(caseId),
     checkSummaryStaleness(caseId),
+    getCurrentUserWithRole(),
   ])
+  const isAdmin = me?.role === 'admin'
 
   if (caseResult.error || !caseResult.data) {
     notFound()
@@ -29,7 +32,7 @@ export default async function CaseDashboardPage({
   return (
     <div className="space-y-6">
       <CaseStatCards stats={statsResult.data} />
-      <CaseOverview caseData={caseResult.data} />
+      <CaseOverview caseData={caseResult.data} isAdmin={isAdmin} />
       <CaseSummaryCard
         caseId={caseId}
         summary={summaryResult.data ?? null}

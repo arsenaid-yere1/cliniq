@@ -43,7 +43,7 @@ function patientDefaults(existing?: ExistingPatientSummary) {
   }
 }
 
-export function PatientWizard({ existingPatient }: { existingPatient?: ExistingPatientSummary } = {}) {
+export function PatientWizard({ existingPatient, isAdmin = false }: { existingPatient?: ExistingPatientSummary; isAdmin?: boolean } = {}) {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -68,6 +68,7 @@ export function PatientWizard({ existingPatient }: { existingPatient?: ExistingP
       attorney_id: '',
       assigned_provider_id: '',
       lien_on_file: false,
+      case_status: 'intake',
     },
     mode: 'onBlur',
   })
@@ -183,7 +184,7 @@ export function PatientWizard({ existingPatient }: { existingPatient?: ExistingP
             onUseExistingPatient={handleUseExistingPatient}
           />
         )}
-        {currentStep === 1 && <WizardStepDetails goToStep={goToStep} />}
+        {currentStep === 1 && <WizardStepDetails goToStep={goToStep} isAdmin={isAdmin} />}
         {currentStep === 2 && <WizardStepReview goToStep={goToStep} />}
       </FormProvider>
 

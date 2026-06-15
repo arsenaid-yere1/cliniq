@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getCurrentUserWithRole } from '@/lib/auth/require-role'
 import {
   createPatientCaseInputSchema,
   type CreatePatientCaseInput,
@@ -41,6 +42,13 @@ export async function createPatientCase(data: CreatePatientCaseInput) {
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  // Admin-only: allow creating a case at a non-intake status
+  const me = await getCurrentUserWithRole()
+  const requestedStatus = parsed.data.case_status ?? 'intake'
+  if (requestedStatus !== 'intake' && me?.role !== 'admin') {
+    return { error: 'Only an administrator can create a case at a non-intake status.' }
+  }
 
   let patientId: string
 
@@ -103,7 +111,11 @@ export async function createPatientCase(data: CreatePatientCaseInput) {
       accident_type: accident_type || null,
       accident_description: accident_description || null,
       lien_on_file: lien_on_file ?? false,
-      case_status: 'intake',
+      case_status: requestedStatus,
+      case_close_date:
+        requestedStatus === 'closed' || requestedStatus === 'archived'
+          ? new Date().toISOString().split('T')[0]
+          : null,
       created_by_user_id: user?.id,
       updated_by_user_id: user?.id,
     })
@@ -117,7 +129,7 @@ export async function createPatientCase(data: CreatePatientCaseInput) {
   // Insert initial status history
   await supabase.from('case_status_history').insert({
     case_id: caseRecord.id,
-    new_status: 'intake',
+    new_status: requestedStatus,
     changed_by_user_id: user?.id,
   })
 
@@ -189,6 +201,7 @@ export async function listPatients() {
     const activeCount = cases.filter((c) =>
       ['intake', 'active', 'pending_settlement'].includes(c.case_status)
     ).length
+    const pendingImagingCount = cases.filter((c) => c.case_status === 'pending_imaging').length
     const balanceTotal = cases.reduce((sum, c) => sum + Number(c.balance_due ?? 0), 0)
     const lastActivity = cases
       .map((c) => c.updated_at)
@@ -208,6 +221,7 @@ export async function listPatients() {
       phone_primary: row.phone_primary,
       case_count: cases.length,
       active_case_count: activeCount,
+      pending_imaging_case_count: pendingImagingCount,
       balance_total: balanceTotal,
       last_activity: lastActivity,
       last_accident_date: lastAccident,

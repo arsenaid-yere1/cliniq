@@ -1,4 +1,4 @@
-export const CASE_STATUSES = ['intake', 'active', 'pending_settlement', 'closed', 'archived'] as const
+export const CASE_STATUSES = ['intake', 'pending_imaging', 'active', 'pending_settlement', 'closed', 'archived'] as const
 export type CaseStatus = (typeof CASE_STATUSES)[number]
 
 export const CASE_STATUS_CONFIG: Record<CaseStatus, {
@@ -7,6 +7,7 @@ export const CASE_STATUS_CONFIG: Record<CaseStatus, {
   variant: 'default' | 'secondary' | 'outline'
 }> = {
   intake:             { label: 'Intake',             color: 'bg-blue-100 text-blue-800 border-blue-200',     variant: 'default' },
+  pending_imaging:    { label: 'Pending Imaging',    color: 'bg-purple-100 text-purple-800 border-purple-200', variant: 'secondary' },
   active:             { label: 'Active',             color: 'bg-green-100 text-green-800 border-green-200',  variant: 'default' },
   pending_settlement: { label: 'Pending Settlement', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', variant: 'secondary' },
   closed:             { label: 'Closed',             color: 'bg-gray-100 text-gray-800 border-gray-200',     variant: 'secondary' },
@@ -14,8 +15,9 @@ export const CASE_STATUS_CONFIG: Record<CaseStatus, {
 }
 
 export const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
-  intake:             ['active', 'closed'],
-  active:             ['pending_settlement', 'closed'],
+  intake:             ['pending_imaging', 'active', 'closed'],
+  pending_imaging:    ['active', 'closed'],
+  active:             ['pending_imaging', 'pending_settlement', 'closed'],
   pending_settlement: ['closed', 'active'],
   closed:             ['active', 'archived'],
   archived:           ['closed'],

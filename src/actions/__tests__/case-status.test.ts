@@ -14,10 +14,16 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() => mockSupabase),
 }))
 
+const mockGetCurrentUserWithRole = vi.fn()
+vi.mock('@/lib/auth/require-role', () => ({
+  getCurrentUserWithRole: () => mockGetCurrentUserWithRole(),
+}))
+
 // ---- SUT ----
 
 import {
   assertCaseNotClosed,
+  assertCaseWritable,
   updateCaseStatus,
   autoAdvanceFromIntake,
   closeCase,
@@ -76,6 +82,7 @@ describe('assertCaseNotClosed', () => {
 describe('updateCaseStatus', () => {
   beforeEach(() => {
     mockSupabase = createMockSupabase()
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'staff' })
   })
 
   it('returns error when user is not authenticated', async () => {
@@ -186,6 +193,93 @@ describe('updateCaseStatus', () => {
 
     const result = await updateCaseStatus(TEST_CASE_ID, 'active')
     expect(result.error).toBe('Failed to update case status')
+  })
+
+  it('admin override performs an otherwise-illegal transition (archived → active)', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'admin' })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') {
+        return createMockQueryBuilder({ data: { case_status: 'archived' }, error: null })
+      }
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    // archived normally only allows → closed
+    const result = await updateCaseStatus(TEST_CASE_ID, 'active', undefined, { override: true })
+    expect(result).toEqual({ data: { success: true } })
+  })
+
+  it('admin override skips the medical-invoice prerequisite for closed', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'admin' })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') {
+        return createMockQueryBuilder({ data: { case_status: 'active' }, error: null })
+      }
+      // invoices returns nothing — would normally block closed
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    const result = await updateCaseStatus(TEST_CASE_ID, 'closed', undefined, { override: true })
+    expect(result).toEqual({ data: { success: true } })
+  })
+
+  it('ignores override flag for a non-admin (still blocked)', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'staff' })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') {
+        return createMockQueryBuilder({ data: { case_status: 'archived' }, error: null })
+      }
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    const result = await updateCaseStatus(TEST_CASE_ID, 'active', undefined, { override: true })
+    expect(result.error).toContain('Cannot change status')
+  })
+
+  it('allows intake → pending_imaging without invoice', async () => {
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'cases') {
+        return createMockQueryBuilder({ data: { case_status: 'intake' }, error: null })
+      }
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    const result = await updateCaseStatus(TEST_CASE_ID, 'pending_imaging')
+    expect(result).toEqual({ data: { success: true } })
+  })
+})
+
+describe('assertCaseWritable', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'staff' })
+  })
+
+  it('bypasses the lock for an admin when allowLockedForAdmin is set', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'admin' })
+    mockTableResults(mockSupabase, {
+      cases: { data: { case_status: 'closed' }, error: null },
+    })
+    const result = await assertCaseWritable(mockSupabase as never, TEST_CASE_ID, { allowLockedForAdmin: true })
+    expect(result.error).toBeNull()
+  })
+
+  it('still blocks a non-admin on a locked case even with allowLockedForAdmin', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'staff' })
+    mockTableResults(mockSupabase, {
+      cases: { data: { case_status: 'closed' }, error: null },
+    })
+    const result = await assertCaseWritable(mockSupabase as never, TEST_CASE_ID, { allowLockedForAdmin: true })
+    expect(result.error).toContain('locked')
+  })
+
+  it('blocks a locked case when allowLockedForAdmin is not set (default)', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: TEST_USER_ID, role: 'admin' })
+    mockTableResults(mockSupabase, {
+      cases: { data: { case_status: 'closed' }, error: null },
+    })
+    const result = await assertCaseWritable(mockSupabase as never, TEST_CASE_ID)
+    expect(result.error).toContain('locked')
   })
 })
 

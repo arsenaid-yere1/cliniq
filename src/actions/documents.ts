@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
-import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
+import { assertCaseNotClosed, assertCaseWritable, autoAdvanceFromIntake } from '@/actions/case-status'
 
 export async function listDocuments(caseId: string, filters?: {
   search?: string
@@ -93,7 +93,7 @@ export async function getDocumentCount(caseId: string) {
   return { count: count ?? 0 }
 }
 
-export async function getUploadSession(data: DocumentUploadMeta) {
+export async function getUploadSession(data: DocumentUploadMeta, options?: { allowLocked?: boolean }) {
   const parsed = documentUploadMetaSchema.safeParse(data)
   if (!parsed.success) {
     return { error: parsed.error.flatten().fieldErrors }
@@ -112,7 +112,9 @@ export async function getUploadSession(data: DocumentUploadMeta) {
 
   if (caseError || !caseData) return { error: 'Case not found' }
 
-  const closedCheck = await assertCaseNotClosed(supabase, parsed.data.caseId)
+  const closedCheck = await assertCaseWritable(supabase, parsed.data.caseId, {
+    allowLockedForAdmin: options?.allowLocked,
+  })
   if (closedCheck.error) return { error: closedCheck.error }
 
   const sanitized = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -133,12 +135,14 @@ export async function saveDocumentMetadata(input: {
   filePath: string
   fileSizeBytes: number
   mimeType: string
-}) {
+}, options?: { allowLocked?: boolean }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const closedCheck = await assertCaseNotClosed(supabase, input.caseId)
+  const closedCheck = await assertCaseWritable(supabase, input.caseId, {
+    allowLockedForAdmin: options?.allowLocked,
+  })
   if (closedCheck.error) return { error: closedCheck.error }
 
   await autoAdvanceFromIntake(supabase, input.caseId, user.id)

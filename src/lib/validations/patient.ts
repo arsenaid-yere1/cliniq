@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CASE_STATUSES } from '@/lib/constants/case-status'
 
 export const patientIdentitySchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
@@ -22,6 +23,7 @@ export const patientDetailsSchema = z.object({
   attorney_id: z.string().uuid('Attorney is required'),
   assigned_provider_id: z.string().uuid('Assigned provider is required'),
   lien_on_file: z.boolean(),
+  case_status: z.enum(CASE_STATUSES).optional(), // admin-only; defaults to 'intake' server-side
 })
 
 export const createPatientCaseSchema = patientIdentitySchema.merge(patientDetailsSchema)

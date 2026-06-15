@@ -11,6 +11,7 @@ describe('CASE_STATUSES', () => {
   it('contains all expected statuses', () => {
     expect(CASE_STATUSES).toEqual([
       'intake',
+      'pending_imaging',
       'active',
       'pending_settlement',
       'closed',
@@ -46,12 +47,16 @@ describe('CASE_STATUS_TRANSITIONS', () => {
     }
   })
 
-  it('intake can transition to active or closed', () => {
-    expect(CASE_STATUS_TRANSITIONS.intake).toEqual(['active', 'closed'])
+  it('intake can transition to pending_imaging, active or closed', () => {
+    expect(CASE_STATUS_TRANSITIONS.intake).toEqual(['pending_imaging', 'active', 'closed'])
   })
 
-  it('active can transition to pending_settlement or closed', () => {
-    expect(CASE_STATUS_TRANSITIONS.active).toEqual(['pending_settlement', 'closed'])
+  it('active can transition to pending_imaging, pending_settlement or closed', () => {
+    expect(CASE_STATUS_TRANSITIONS.active).toEqual(['pending_imaging', 'pending_settlement', 'closed'])
+  })
+
+  it('pending_imaging can transition to active or closed', () => {
+    expect(CASE_STATUS_TRANSITIONS.pending_imaging).toEqual(['active', 'closed'])
   })
 
   it('pending_settlement can transition to closed or back to active', () => {
@@ -87,5 +92,6 @@ describe('LOCKED_STATUSES', () => {
   it('does not include editable statuses', () => {
     expect(LOCKED_STATUSES).not.toContain('intake')
     expect(LOCKED_STATUSES).not.toContain('active')
+    expect(LOCKED_STATUSES).not.toContain('pending_imaging')
   })
 })

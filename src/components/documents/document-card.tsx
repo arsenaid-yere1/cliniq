@@ -27,7 +27,12 @@ const docTypeLabels: Record<string, string> = {
   ct_scan: 'CT Scan',
   x_ray: 'X-Ray',
   generated: 'Generated',
+  initial_visit: 'Initial Visit',
+  procedure: 'Procedure',
+  discharge: 'Discharge',
+  invoice: 'Invoice',
   lien_agreement: 'Lien Agreement',
+  procedure_consent: 'Procedure Consent',
   other: 'Other',
 }
 
@@ -40,7 +45,12 @@ const docTypeColors: Record<string, string> = {
   ct_scan: 'bg-amber-100 text-amber-800 border-amber-200',
   x_ray: 'bg-sky-100 text-sky-800 border-sky-200',
   generated: 'bg-green-100 text-green-800 border-green-200',
+  initial_visit: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  procedure: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  discharge: 'bg-lime-100 text-lime-800 border-lime-200',
+  invoice: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   lien_agreement: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+  procedure_consent: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
   other: 'bg-gray-100 text-gray-800 border-gray-200',
 }
 
@@ -62,6 +72,10 @@ const docTypeFilenameLabels: Record<string, string> = {
   orthopedic_report: 'OrthopedicReport',
   ct_scan: 'CTScan',
   x_ray: 'XRay',
+  initial_visit: 'InitialVisit',
+  procedure: 'Procedure',
+  discharge: 'Discharge',
+  invoice: 'Invoice',
   lien_agreement: 'LienAgreement',
   procedure_consent: 'ProcedureConsent',
 }

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { getCurrentUserWithRole } from '@/lib/auth/require-role'
 import { LOCKED_STATUSES, CASE_STATUS_TRANSITIONS, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 
 // --- Shared guard: call at top of every write action ---
@@ -24,12 +25,35 @@ export async function assertCaseNotClosed(
   return { error: null }
 }
 
+// --- Lock guard with optional admin bypass ---
+
+export async function assertCaseWritable(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+  options?: { allowLockedForAdmin?: boolean },
+): Promise<{ error: string | null }> {
+  if (options?.allowLockedForAdmin) {
+    const me = await getCurrentUserWithRole()
+    if (me?.role === 'admin') return { error: null }
+  }
+  return assertCaseNotClosed(supabase, caseId)
+}
+
 // --- Unified status change ---
 
-export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, notes?: string) {
+export async function updateCaseStatus(
+  caseId: string,
+  newStatus: CaseStatus,
+  notes?: string,
+  options?: { override?: boolean },
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  // Admin-only: bypass transition rules + prerequisites
+  const me = await getCurrentUserWithRole()
+  const isAdminOverride = !!options?.override && me?.role === 'admin'
 
   // Fetch current status
   const { data: caseData } = await supabase
@@ -47,14 +71,17 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
     return { error: `Case is already ${CASE_STATUS_CONFIG[newStatus].label}` }
   }
 
-  // Validate transition
-  const allowed = CASE_STATUS_TRANSITIONS[currentStatus]
-  if (!allowed?.includes(newStatus)) {
-    return { error: `Cannot change status from ${CASE_STATUS_CONFIG[currentStatus].label} to ${CASE_STATUS_CONFIG[newStatus].label}` }
+  // Validate transition (skipped for admin override)
+  if (!isAdminOverride) {
+    const allowed = CASE_STATUS_TRANSITIONS[currentStatus]
+    if (!allowed?.includes(newStatus)) {
+      return { error: `Cannot change status from ${CASE_STATUS_CONFIG[currentStatus].label} to ${CASE_STATUS_CONFIG[newStatus].label}` }
+    }
   }
 
   // Prerequisites: medical (visit) invoice required for pending_settlement and closed
-  if (newStatus === 'pending_settlement' || newStatus === 'closed') {
+  // (skipped for admin override)
+  if (!isAdminOverride && (newStatus === 'pending_settlement' || newStatus === 'closed')) {
     const { data: medicalInvoices } = await supabase
       .from('invoices')
       .select('id')
@@ -90,12 +117,15 @@ export async function updateCaseStatus(caseId: string, newStatus: CaseStatus, no
   if (updateError) return { error: 'Failed to update case status' }
 
   // Insert history
+  const historyNotes = isAdminOverride
+    ? [notes, 'admin override'].filter(Boolean).join(' — ')
+    : (notes ?? null)
   await supabase.from('case_status_history').insert({
     case_id: caseId,
     previous_status: currentStatus,
     new_status: newStatus,
     changed_by_user_id: user.id,
-    notes: notes ?? null,
+    notes: historyNotes,
   })
 
   revalidatePath(`/patients/${caseId}`)

@@ -14,6 +14,11 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(() => mockSupabase),
 }))
 
+const mockGetCurrentUserWithRole = vi.fn()
+vi.mock('@/lib/auth/require-role', () => ({
+  getCurrentUserWithRole: () => mockGetCurrentUserWithRole(),
+}))
+
 // ---- SUT ----
 
 import {
@@ -64,6 +69,7 @@ describe('checkDuplicatePatient', () => {
 describe('createPatientCase', () => {
   beforeEach(() => {
     mockSupabase = createMockSupabase()
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: 'u1', role: 'staff' })
   })
 
   it('returns validation errors for missing required fields', async () => {
@@ -96,6 +102,57 @@ describe('createPatientCase', () => {
 
     const result = await createPatientCase(validPatientCaseData as never)
     expect(result.data).toEqual(caseRecord)
+  })
+
+  it('rejects a non-admin requesting a non-intake status', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: 'u1', role: 'staff' })
+    const result = await createPatientCase({ ...validPatientCaseData, case_status: 'active' } as never)
+    expect(result.error).toBe('Only an administrator can create a case at a non-intake status.')
+  })
+
+  it('allows an admin to create a case at a non-intake status', async () => {
+    mockGetCurrentUserWithRole.mockResolvedValue({ id: 'u1', role: 'admin' })
+    const caseRecord = { id: TEST_CASE_ID, patient_id: TEST_PATIENT_ID, case_number: 'PI-2026-0009', case_status: 'active' }
+    let casesInsertPayload: Record<string, unknown> | null = null
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'patients') return createMockQueryBuilder({ data: { id: TEST_PATIENT_ID }, error: null })
+      if (table === 'cases') {
+        const builder = createMockQueryBuilder({ data: caseRecord, error: null })
+        const origInsert = builder.insert as Mock
+        ;(builder.insert as Mock) = vi.fn((payload: Record<string, unknown>) => {
+          casesInsertPayload = payload
+          return origInsert(payload)
+        })
+        return builder
+      }
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    const result = await createPatientCase({ ...validPatientCaseData, case_status: 'active' } as never)
+    expect(result.data).toEqual(caseRecord)
+    expect(casesInsertPayload).toMatchObject({ case_status: 'active' })
+  })
+
+  it('defaults to intake when case_status omitted', async () => {
+    const caseRecord = { id: TEST_CASE_ID, patient_id: TEST_PATIENT_ID, case_number: 'PI-2026-0010' }
+    let casesInsertPayload: Record<string, unknown> | null = null
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'patients') return createMockQueryBuilder({ data: { id: TEST_PATIENT_ID }, error: null })
+      if (table === 'cases') {
+        const builder = createMockQueryBuilder({ data: caseRecord, error: null })
+        const origInsert = builder.insert as Mock
+        ;(builder.insert as Mock) = vi.fn((payload: Record<string, unknown>) => {
+          casesInsertPayload = payload
+          return origInsert(payload)
+        })
+        return builder
+      }
+      return createMockQueryBuilder({ data: null, error: null })
+    })
+
+    const result = await createPatientCase(validPatientCaseData as never)
+    expect(result.data).toEqual(caseRecord)
+    expect(casesInsertPayload).toMatchObject({ case_status: 'intake' })
   })
 
   it('returns error when patient insert fails', async () => {

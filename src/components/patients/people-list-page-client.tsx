@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import { CASE_STATUS_CONFIG } from '@/lib/constants/case-status'
 
 interface PatientRow {
   id: string
@@ -29,6 +30,7 @@ interface PatientRow {
   phone_primary: string | null
   case_count: number
   active_case_count: number
+  pending_imaging_case_count: number
   balance_total: number
   last_activity: string | null
   last_accident_date: string | null
@@ -68,6 +70,18 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
           {row.original.active_case_count} / {row.original.case_count}
         </Badge>
       ),
+    },
+    {
+      accessorKey: 'pending_imaging_case_count',
+      header: 'Pending Imaging',
+      cell: ({ row }) =>
+        row.original.pending_imaging_case_count > 0 ? (
+          <Badge variant="secondary" className={CASE_STATUS_CONFIG.pending_imaging.color}>
+            {row.original.pending_imaging_case_count}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
     },
     {
       accessorKey: 'balance_total',

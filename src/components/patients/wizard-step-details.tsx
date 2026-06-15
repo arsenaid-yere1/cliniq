@@ -16,9 +16,10 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { AttorneySelect } from '@/components/attorneys/attorney-select'
 import { ProviderSelect } from '@/components/providers/provider-select'
+import { CASE_STATUSES, CASE_STATUS_CONFIG } from '@/lib/constants/case-status'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => void }) {
+export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (step: number) => void; isAdmin?: boolean }) {
   const form = useFormContext<CreatePatientCaseValues>()
 
   return (
@@ -131,6 +132,33 @@ export function WizardStepDetails({ goToStep }: { goToStep: (step: number) => vo
       <div>
         <h3 className="text-lg font-medium">Case Details</h3>
         <div className="mt-4 space-y-4">
+          {isAdmin && (
+            <FormField
+              control={form.control}
+              name="case_status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Case Status (admin)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value ?? 'intake'}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {CASE_STATUSES.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {CASE_STATUS_CONFIG[status].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
           <FormField
             control={form.control}
             name="accident_date"

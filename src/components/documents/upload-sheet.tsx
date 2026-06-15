@@ -41,9 +41,10 @@ interface UploadSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUploadComplete?: () => void
+  isAdmin?: boolean
 }
 
-export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: UploadSheetProps) {
+export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete, isAdmin = false }: UploadSheetProps) {
   const [files, setFiles] = useState<StagedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
 
@@ -118,7 +119,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
           fileSize: stagedFile.file.size,
           mimeType: stagedFile.file.type as typeof ALLOWED_MIME_TYPES[number],
           documentType: stagedFile.documentType,
-        })
+        }, { allowLocked: isAdmin })
 
         if ('error' in sessionResult && sessionResult.error) {
           const errMsg = typeof sessionResult.error === 'string'
@@ -151,7 +152,7 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
           filePath: storagePath,
           fileSizeBytes: stagedFile.file.size,
           mimeType: stagedFile.file.type,
-        })
+        }, { allowLocked: isAdmin })
 
         if ('error' in metaResult && metaResult.error) {
           updateFile(stagedFile.id, { status: 'error', error: metaResult.error as string })
@@ -393,6 +394,14 @@ export function UploadSheet({ caseId, open, onOpenChange, onUploadComplete }: Up
                       <SelectItem value="x_ray">X-Ray Report</SelectItem>
                       <SelectItem value="lien_agreement">Lien Agreement (Signed)</SelectItem>
                       <SelectItem value="procedure_consent">Procedure Consent (Signed)</SelectItem>
+                      {isAdmin && (
+                        <>
+                          <SelectItem value="initial_visit">Initial Visit (Historical)</SelectItem>
+                          <SelectItem value="procedure">Procedure (Historical)</SelectItem>
+                          <SelectItem value="discharge">Discharge (Historical)</SelectItem>
+                          <SelectItem value="invoice">Invoice (Historical)</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 )}

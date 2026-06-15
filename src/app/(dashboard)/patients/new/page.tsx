@@ -1,5 +1,6 @@
 import { PatientWizard, type ExistingPatientSummary } from '@/components/patients/patient-wizard'
 import { getPatientForNewCase } from '@/actions/patients'
+import { getCurrentUserWithRole } from '@/lib/auth/require-role'
 
 export default async function NewPatientPage({
   searchParams,
@@ -7,6 +8,9 @@ export default async function NewPatientPage({
   searchParams: Promise<{ patientId?: string }>
 }) {
   const { patientId } = await searchParams
+
+  const me = await getCurrentUserWithRole()
+  const isAdmin = me?.role === 'admin'
 
   let existingPatient: ExistingPatientSummary | undefined
   if (patientId) {
@@ -21,7 +25,7 @@ export default async function NewPatientPage({
       <h1 className="text-2xl font-bold">
         {existingPatient ? 'New Case' : 'New Patient Case'}
       </h1>
-      <PatientWizard existingPatient={existingPatient} />
+      <PatientWizard existingPatient={existingPatient} isAdmin={isAdmin} />
     </div>
   )
 }

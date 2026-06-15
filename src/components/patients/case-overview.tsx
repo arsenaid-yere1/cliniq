@@ -47,6 +47,7 @@ interface CaseOverviewProps {
       firm_name: string | null
     } | null
   }
+  isAdmin?: boolean
 }
 
 const accidentTypeLabels: Record<string, string> = {
@@ -70,7 +71,7 @@ const quickActions = [
   { label: 'Create Invoice', icon: Receipt, href: 'billing' },
 ]
 
-export function CaseOverview({ caseData }: CaseOverviewProps) {
+export function CaseOverview({ caseData, isAdmin = false }: CaseOverviewProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [generatingLien, setGeneratingLien] = useState(false)
   const [generatingConsent, setGeneratingConsent] = useState(false)
@@ -176,7 +177,7 @@ export function CaseOverview({ caseData }: CaseOverviewProps) {
                 </Button>
               )
             })}
-            <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} />
+            <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} isAdmin={isAdmin} />
             <Button
               variant="outline"
               onClick={handleGenerateLien}

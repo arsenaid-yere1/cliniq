@@ -23,7 +23,13 @@ const docTypeOptions = [
   { value: 'ct_scan', label: 'CT Scan Report' },
   { value: 'x_ray', label: 'X-Ray Report' },
   { value: 'generated', label: 'Generated' },
+  { value: 'initial_visit', label: 'Initial Visit' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'discharge', label: 'Discharge' },
+  { value: 'invoice', label: 'Invoice' },
   { value: 'lien_agreement', label: 'Lien Agreement' },
+  { value: 'procedure_consent', label: 'Procedure Consent' },
+  { value: 'other', label: 'Other' },
 ]
 
 const statusOptions = [
@@ -51,9 +57,10 @@ interface DocumentListProps {
   documents: Document[]
   caseId: string
   patientLastName: string | null
+  isAdmin?: boolean
 }
 
-export function DocumentList({ documents: initialDocuments, caseId, patientLastName }: DocumentListProps) {
+export function DocumentList({ documents: initialDocuments, caseId, patientLastName, isAdmin = false }: DocumentListProps) {
   const [documents, setDocuments] = useState(initialDocuments)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -62,6 +69,8 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
   const [status, setStatus] = useState('all')
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+  // Admins can upload to a locked case (the server re-checks the role).
+  const uploadDisabled = isLocked && !isAdmin
 
   const refreshDocuments = useCallback(async () => {
     const { data } = await listDocuments(caseId)
@@ -109,7 +118,7 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
             className="pl-9"
           />
         </div>
-        <Button onClick={() => setUploadOpen(true)} disabled={isLocked}>
+        <Button onClick={() => setUploadOpen(true)} disabled={uploadDisabled}>
           <Upload className="h-4 w-4 mr-2" />
           Upload Document
         </Button>
@@ -175,7 +184,7 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
         </div>
       )}
 
-      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={refreshDocuments} />
+      <UploadSheet caseId={caseId} open={uploadOpen} onOpenChange={setUploadOpen} onUploadComplete={refreshDocuments} isAdmin={isAdmin} />
     </div>
   )
 }
