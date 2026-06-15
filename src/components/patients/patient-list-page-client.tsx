@@ -24,11 +24,10 @@ interface PatientCase {
 
 export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
   const [globalFilter, setGlobalFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all_active')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
 
   const filteredCases = cases.filter((c) => {
     if (statusFilter === 'all') return true
-    if (statusFilter === 'all_active') return c.case_status !== 'archived'
     return c.case_status === statusFilter
   })
 
@@ -51,7 +50,6 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all_active">All Active</SelectItem>
               <SelectItem value="all">All Statuses</SelectItem>
               {(Object.entries(CASE_STATUS_CONFIG) as [CaseStatus, typeof CASE_STATUS_CONFIG[CaseStatus]][]).map(
                 ([key, config]) => (
