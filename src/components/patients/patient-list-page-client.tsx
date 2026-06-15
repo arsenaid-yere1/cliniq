@@ -27,7 +27,8 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
   const filteredCases = cases.filter((c) => {
-    if (statusFilter === 'all') return true
+    // "All Statuses" excludes archived; pick the Archived option explicitly to see them.
+    if (statusFilter === 'all') return c.case_status !== 'archived'
     return c.case_status === statusFilter
   })
 
