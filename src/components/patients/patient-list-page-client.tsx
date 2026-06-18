@@ -15,21 +15,45 @@ interface PatientCase {
   case_status: string
   accident_date: string | null
   created_at: string
+  attorney_id: string | null
   patient: {
     id: string
     first_name: string
     last_name: string
   } | null
+  attorney: {
+    id: string
+    first_name: string
+    last_name: string
+    firm_name: string | null
+  } | null
+}
+
+function attorneyLabel(a: NonNullable<PatientCase['attorney']>) {
+  const name = `${a.last_name}, ${a.first_name}`
+  return a.firm_name ? `${name} — ${a.firm_name}` : name
 }
 
 export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
   const [globalFilter, setGlobalFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [attorneyFilter, setAttorneyFilter] = useState<string>('all')
+
+  // Distinct attorneys present in the case list, sorted by label.
+  const attorneys = Array.from(
+    new Map(
+      cases
+        .map((c) => c.attorney)
+        .filter((a): a is NonNullable<PatientCase['attorney']> => a !== null)
+        .map((a) => [a.id, a] as const)
+    ).values()
+  ).sort((a, b) => attorneyLabel(a).localeCompare(attorneyLabel(b)))
 
   const filteredCases = cases.filter((c) => {
     // "All Statuses" excludes archived; pick the Archived option explicitly to see them.
-    if (statusFilter === 'all') return c.case_status !== 'archived'
-    return c.case_status === statusFilter
+    const statusOk = statusFilter === 'all' ? c.case_status !== 'archived' : c.case_status === statusFilter
+    const attorneyOk = attorneyFilter === 'all' || c.attorney_id === attorneyFilter
+    return statusOk && attorneyOk
   })
 
   return (
@@ -57,6 +81,17 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
                   <SelectItem key={key} value={key}>{config.label}</SelectItem>
                 )
               )}
+            </SelectContent>
+          </Select>
+          <Select value={attorneyFilter} onValueChange={setAttorneyFilter}>
+            <SelectTrigger className="w-[240px]">
+              <SelectValue placeholder="Filter by attorney" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Attorneys</SelectItem>
+              {attorneys.map((a) => (
+                <SelectItem key={a.id} value={a.id}>{attorneyLabel(a)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

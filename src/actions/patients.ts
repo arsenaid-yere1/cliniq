@@ -267,7 +267,9 @@ export async function listPatientCases(search?: string) {
       case_status,
       accident_date,
       created_at,
-      patient:patients(id, first_name, last_name)
+      attorney_id,
+      patient:patients(id, first_name, last_name),
+      attorney:attorneys(id, first_name, last_name, firm_name)
     `)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -288,6 +290,7 @@ export async function listPatientCases(search?: string) {
   const normalized = (data ?? []).map((row) => ({
     ...row,
     patient: Array.isArray(row.patient) ? row.patient[0] ?? null : row.patient,
+    attorney: Array.isArray(row.attorney) ? row.attorney[0] ?? null : row.attorney,
   }))
 
   return { data: normalized }
