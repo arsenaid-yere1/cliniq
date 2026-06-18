@@ -53,17 +53,26 @@ array for FK relations), matching the existing `patient` normalization.
   (`attorney_id === attorneyFilter`).
 - Add "All Attorneys" `<Select>` dropdown mirroring the status filter pattern.
 
+### 3. `src/components/patients/patient-list-page-client.tsx` — filter persistence
+All three filters (search, status, attorney) persist to `sessionStorage` under
+`patient-cases-filters`. State is lazily initialized from storage on mount and
+written on every change via `useEffect`. Survives navigating into a case and
+back, and a page reload within the session. Wrapped in try/catch for private
+mode / quota; on failure filters simply don't persist.
+
 ## Behavior notes
 - Dropdown shows only attorneys present in current cases (deduped, label-sorted).
 - Cases with no attorney are hidden when a specific attorney is selected; visible
   under "All Attorneys".
 - Multiple attorneys at the same firm appear as separate rows (filter is by id).
+- A persisted attorney id no longer present in the cases set matches nothing
+  until the user re-selects — harmless, no error.
 
 ## Verification
 - `npx tsc --noEmit` — clean.
 
 ## Out of scope
-- URL-persisted filter state.
+- URL-persisted / shareable filter state (uses sessionStorage instead).
 - Server-side filtering / pagination.
 - Normalizing firms into a canonical entity.
 

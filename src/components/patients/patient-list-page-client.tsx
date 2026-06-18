@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -34,10 +34,34 @@ function attorneyLabel(a: NonNullable<PatientCase['attorney']>) {
   return a.firm_name ? `${name} — ${a.firm_name}` : name
 }
 
+// Persist filter selections across navigation (e.g. viewing a case and going back).
+const FILTER_STORAGE_KEY = 'patient-cases-filters'
+
+function loadFilters() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(FILTER_STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as { search?: string; status?: string; attorney?: string }) : null
+  } catch {
+    return null
+  }
+}
+
 export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
-  const [globalFilter, setGlobalFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [attorneyFilter, setAttorneyFilter] = useState<string>('all')
+  const [globalFilter, setGlobalFilter] = useState(() => loadFilters()?.search ?? '')
+  const [statusFilter, setStatusFilter] = useState<string>(() => loadFilters()?.status ?? 'all')
+  const [attorneyFilter, setAttorneyFilter] = useState<string>(() => loadFilters()?.attorney ?? 'all')
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify({ search: globalFilter, status: statusFilter, attorney: attorneyFilter })
+      )
+    } catch {
+      // sessionStorage unavailable (private mode / quota) — filters just won't persist.
+    }
+  }, [globalFilter, statusFilter, attorneyFilter])
 
   // Distinct attorneys present in the case list, sorted by label.
   const attorneys = Array.from(
