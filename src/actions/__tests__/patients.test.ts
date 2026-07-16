@@ -315,6 +315,47 @@ describe('listPatientCases', () => {
     expect(result.data[0].patient).toEqual({ id: TEST_PATIENT_ID, first_name: 'John', last_name: 'Doe' })
   })
 
+  it('derives discharge_visit_date from the active (non-deleted) discharge note', async () => {
+    const rawData = [
+      {
+        id: TEST_CASE_ID,
+        case_number: 'PI-2026-0001',
+        case_status: 'active',
+        patient: [{ id: TEST_PATIENT_ID, first_name: 'John', last_name: 'Doe' }],
+        discharge_notes: [
+          { visit_date: '2026-07-01', deleted_at: '2026-06-30T00:00:00Z' }, // soft-deleted, ignored
+          { visit_date: '2026-07-10', deleted_at: null }, // active
+        ],
+      },
+    ]
+    mockTableResults(mockSupabase, {
+      cases: { data: rawData, error: null },
+    })
+
+    const result = await listPatientCases()
+    expect(result.data[0].discharge_visit_date).toBe('2026-07-10')
+    // Raw child array is not leaked on the returned shape.
+    expect((result.data[0] as Record<string, unknown>).discharge_notes).toBeUndefined()
+  })
+
+  it('sets discharge_visit_date to null when there is no active discharge note', async () => {
+    const rawData = [
+      {
+        id: TEST_CASE_ID,
+        case_number: 'PI-2026-0001',
+        case_status: 'active',
+        patient: [{ id: TEST_PATIENT_ID, first_name: 'John', last_name: 'Doe' }],
+        discharge_notes: [{ visit_date: '2026-07-01', deleted_at: '2026-06-30T00:00:00Z' }],
+      },
+    ]
+    mockTableResults(mockSupabase, {
+      cases: { data: rawData, error: null },
+    })
+
+    const result = await listPatientCases()
+    expect(result.data[0].discharge_visit_date).toBeNull()
+  })
+
   it('returns empty array on error', async () => {
     mockTableResults(mockSupabase, {
       cases: { data: null, error: { message: 'timeout' } },

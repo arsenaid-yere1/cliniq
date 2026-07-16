@@ -269,7 +269,8 @@ export async function listPatientCases(search?: string) {
       created_at,
       attorney_id,
       patient:patients(id, first_name, last_name),
-      attorney:attorneys(id, first_name, last_name, firm_name)
+      attorney:attorneys(id, first_name, last_name, firm_name),
+      discharge_notes(visit_date, deleted_at)
     `)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -287,11 +288,21 @@ export async function listPatientCases(search?: string) {
   }
 
   // Normalize patient from array to single object (Supabase returns array for relations)
-  const normalized = (data ?? []).map((row) => ({
-    ...row,
-    patient: Array.isArray(row.patient) ? row.patient[0] ?? null : row.patient,
-    attorney: Array.isArray(row.attorney) ? row.attorney[0] ?? null : row.attorney,
-  }))
+  const normalized = (data ?? []).map((row) => {
+    // Embedded discharge_notes come back as an array including soft-deleted rows.
+    // The unique-active index guarantees at most one non-deleted note per case.
+    const activeDischarge = (Array.isArray(row.discharge_notes) ? row.discharge_notes : []).find(
+      (d) => d.deleted_at === null
+    )
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- strip raw child array from returned shape
+    const { discharge_notes: _discharge_notes, ...rest } = row
+    return {
+      ...rest,
+      patient: Array.isArray(row.patient) ? row.patient[0] ?? null : row.patient,
+      attorney: Array.isArray(row.attorney) ? row.attorney[0] ?? null : row.attorney,
+      discharge_visit_date: activeDischarge?.visit_date ?? null,
+    }
+  })
 
   return { data: normalized }
 }

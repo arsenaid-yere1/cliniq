@@ -15,6 +15,7 @@ interface PatientCase {
   case_status: string
   accident_date: string | null
   created_at: string
+  discharge_visit_date: string | null
   attorney_id: string | null
   patient: {
     id: string

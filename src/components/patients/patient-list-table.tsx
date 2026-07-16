@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
+import { computeDocumentDueDate, DUE_STATUS_CONFIG } from '@/lib/cases/document-due-date'
 import {
   Table,
   TableBody,
@@ -26,6 +27,7 @@ interface PatientCase {
   case_status: string
   accident_date: string | null
   created_at: string
+  discharge_visit_date: string | null
   patient: {
     id: string
     first_name: string
@@ -89,6 +91,21 @@ export function PatientListTable({
       cell: ({ getValue }) => {
         const date = getValue() as string
         return format(new Date(date), 'MM/dd/yyyy')
+      },
+    },
+    {
+      id: 'due_date',
+      header: 'Due Date',
+      cell: ({ row }) => {
+        const due = computeDocumentDueDate(row.original.discharge_visit_date)
+        if (!due) return <span className="text-muted-foreground">—</span>
+        const config = DUE_STATUS_CONFIG[due.status]
+        return (
+          <div className="flex items-center gap-2">
+            <span>{format(due.dueDate, 'MM/dd/yyyy')}</span>
+            <Badge variant="outline" className={config.color}>{config.label}</Badge>
+          </div>
+        )
       },
     },
   ]
