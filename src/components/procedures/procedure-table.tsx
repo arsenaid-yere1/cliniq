@@ -173,8 +173,12 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
               <Button>Record Procedure</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setCreateType('prp')}>PRP Injection</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setCreateType('botox')}>Therapeutic BOTOX</DropdownMenuItem>
+              {/* Defer state change to the next tick so the dropdown finishes
+                  closing (and releases focus) before the dialog mounts — otherwise
+                  Radix's close-auto-focus / outside-pointer handling dismisses the
+                  just-opened dialog immediately. */}
+              <DropdownMenuItem onSelect={() => setTimeout(() => setCreateType('prp'), 0)}>PRP Injection</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTimeout(() => setCreateType('botox'), 0)}>Therapeutic BOTOX</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
