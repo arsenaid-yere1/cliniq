@@ -4,7 +4,21 @@ import { z } from 'zod'
 
 // Single shared client for the whole app — reuses HTTP keep-alive, one
 // place to wire beta headers later if needed.
-export const anthropic = new Anthropic()
+//
+// timeout: hard per-request wall-clock cap (ms). Without it, a stalled stream
+// (connection stays open, completion event never arrives) leaves
+// `stream.finalMessage()` awaiting indefinitely — the request appears to hang
+// (e.g. generating a pain-evaluation note, the largest payload). A finite
+// timeout converts that into a thrown error that flows into the existing
+// retryable-error path (retry + backoff, then fallback model). 4 minutes is
+// generous for a 16k-token tool generation while still bounding the hang.
+// maxRetries: 0 — retries are handled explicitly in callClaudeToolForModel;
+// leaving the SDK's own retries on would multiply the wall-clock (timeout ×
+// (maxRetries + 1)) on a stall.
+export const anthropic = new Anthropic({
+  timeout: 4 * 60 * 1000,
+  maxRetries: 0,
+})
 
 export type ClaudeMessage = Anthropic.Messages.MessageParam
 
@@ -190,6 +204,10 @@ async function callClaudeToolForModel<TOutput>(
 }
 
 function isRetryableApiError(err: unknown): boolean {
+  // Request timeout (APIConnectionTimeoutError) and connection failures are
+  // APIError subclasses with an undefined status — treat them as retryable so
+  // a stalled stream retries and then falls back rather than failing outright.
+  if (err instanceof Anthropic.APIConnectionError) return true
   if (err instanceof Anthropic.APIError) {
     const s = err.status
     return s === 429 || s === 529 || (s !== undefined && s >= 500 && s < 600)
@@ -200,7 +218,8 @@ function isRetryableApiError(err: unknown): boolean {
       msg.includes('econnreset') ||
       msg.includes('etimedout') ||
       msg.includes('fetch failed') ||
-      msg.includes('socket hang up')
+      msg.includes('socket hang up') ||
+      msg.includes('timed out')
     )
   }
   return false
