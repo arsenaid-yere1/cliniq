@@ -37,6 +37,7 @@ export interface ProcedureNoteInputData {
   procedureRecord: {
     procedure_date: string
     procedure_name: string
+    procedure_type: string
     procedure_number: number
     injection_site: string | null
     sites: Array<{
@@ -44,9 +45,22 @@ export interface ProcedureNoteInputData {
       laterality: 'left' | 'right' | 'bilateral' | null
       volume_ml: number | null
       target_confirmed_imaging: boolean | null
+      points?: number | null
+      units?: number | null
     }>
     diagnoses: Array<{ icd10_code: string | null; description: string }>
     consent_obtained: boolean | null
+    // BOTOX product/vial/units block (null for non-botox procedures).
+    botox_dosing: {
+      product_name?: string
+      ndc?: string
+      lot_number?: string
+      expiration?: string
+      reconstitution_units?: number
+      reconstitution_diluent_ml?: number
+      units_administered?: number
+      units_discarded?: number
+    } | null
     blood_draw_volume_ml: number | null
     centrifuge_duration_min: number | null
     prep_protocol: string | null
@@ -789,6 +803,56 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
  */
 export const PROCEDURE_NOTE_SECTIONS_TOTAL = 20
 
+// ---------------------------------------------------------------------------
+// BOTOX prompt override.
+// The base SYSTEM_PROMPT is PRP-specific. For procedure_type='botox' we append
+// this override block AFTER the base prompt; it explicitly supersedes the PRP
+// wording for the sections that differ (chemodenervation framing, product/vial
+// narration in the procedure_prp_prep slot, ~3-month follow-up, neuromodulator
+// education/prognosis). Later instructions win, and this block says so. The
+// section KEY set is unchanged — procedure_prp_prep holds the BOTOX Product &
+// Preparation / Injection Map content.
+// ---------------------------------------------------------------------------
+const BOTOX_PROMPT_OVERRIDE = `
+
+=== THERAPEUTIC BOTOX OVERRIDE (procedure_type = 'botox') — THIS BLOCK SUPERSEDES ALL PRP-SPECIFIC WORDING ABOVE ===
+
+This is a Therapeutic BOTOX (onabotulinumtoxinA) intramuscular chemodenervation procedure, NOT a PRP injection. Everywhere the instructions above assume PRP (blood draw, centrifuge, platelet-rich plasma, "regenerative"), disregard that and follow the rules here instead. The document title concept is "Therapeutic BOTOX Procedure Note".
+
+GLOBAL BOTOX FRAMING:
+• The treatment is intramuscular onabotulinumtoxinA for a documented therapeutic (often off-label, e.g. TMJ/masticatory or cervical) indication. State the off-label nature when the indication is off-label; do NOT frame it as cosmetic.
+• There is NO blood draw, NO centrifuge, NO platelet-rich plasma, NO "regenerative" mechanism. Do NOT emit any PRP prep language or the PRP FORBIDDEN-PHRASES reference — those do not apply.
+• Dosing is by UNITS per muscle. The unit dose is controlling; approximate volumes are secondary.
+• This is a single therapeutic administration, not a numbered "injection series". Do NOT apply PRP series/NO-CLONE framing or "additional PRP injections" language.
+
+SECTION OVERRIDES:
+
+11. procedure_preparation (Consent + Skin Preparation):
+Replace the PRP ALTERNATIVES-DISCUSSED reference. Document that written informed consent was obtained after discussion of the (off-label where applicable) therapeutic use, expected benefits, reasonable alternatives, and material risks. BOTOX risks to name: pain, bruising, bleeding, infection, asymmetry, chewing weakness (for masticatory targets), smile changes, dysphagia, and unintended toxin spread. Then describe skin preparation (e.g. cleansing the planned injection sites with 70% isopropyl alcohol and allowing to dry). Do NOT use PRP prone-positioning/betadine-drape boilerplate unless the payload documents it.
+
+12. procedure_prp_prep — REPURPOSED as "Product and Preparation" + "Injection Map and Vial Reconciliation":
+Do NOT write PRP prep content. Instead narrate, from procedureRecord.botox_dosing and procedureRecord.sites:
+• PRODUCT AND PREPARATION: product_name, NDC, lot_number, expiration, reconstitution (reconstitution_units in reconstitution_diluent_ml of preservative-free 0.9% sodium chloride, with the resulting concentration), and needle (procedureRecord.needle_gauge).
+• INJECTION MAP AND VIAL RECONCILIATION: a per-muscle breakdown from sites[] (label, laterality/side, points, units, approximate volume), then totals: units_administered administered and units_discarded discarded, reconciling to reconstitution_units total vial. State that administered + discarded equals the full vial.
+DATA-NULL RULE: when a botox_dosing field is null, emit a bracket placeholder (e.g. "[confirm lot number]") rather than fabricating; omit lot/NDC entirely if absent rather than inventing.
+
+13. procedure_anesthesia: BOTOX is typically administered without separate local anesthesia. When anesthetic fields are null, OMIT this section's content (return a brief "Not applicable — no separate anesthesia was administered." statement) rather than emitting bracket placeholders.
+
+14. procedure_injection: Describe intramuscular administration with the stated needle to the mapped muscles per the injection map (points per muscle, units per muscle). Unit-based, not volume-based. No ultrasound/fluoroscopy guidance unless the payload documents it.
+
+16. procedure_followup: Neuromodulator effect is temporary (typical onset ~3–7 days, peak ~2 weeks, duration ~3 months). Frame follow-up as reassessment of the treated symptoms over the documented course; do NOT use "additional PRP injections" or "planned injection series" language.
+
+18. patient_education: Educate on the therapeutic (off-label where applicable) use, expected time course, temporary nature of the effect, and the discussed risks. Do NOT use any "PRP", "regenerative", "tissue regeneration", or growth-factor language.
+
+19. prognosis: Frame in terms of response to the therapeutic BOTOX treatment for the documented indication.
+
+All other sections (subjective, history, ROS, objective, assessment_summary, procedure_indication, assessment_and_plan, clinician_disclaimer) follow the general rules above but with BOTOX-accurate wording (no PRP references).
+`
+
+export function systemPromptForProcedureType(procedureType: string | null | undefined): string {
+  return procedureType === 'botox' ? SYSTEM_PROMPT + BOTOX_PROMPT_OVERRIDE : SYSTEM_PROMPT
+}
+
 export async function generateProcedureNoteFromData(
   inputData: ProcedureNoteInputData,
   toneHint?: string | null,
@@ -798,8 +862,10 @@ export async function generateProcedureNoteFromData(
   rawResponse?: unknown
   error?: string
 }> {
+  const isBotox = inputData.procedureRecord.procedure_type === 'botox'
+  const noteLabel = isBotox ? 'Therapeutic BOTOX Procedure Note' : 'PRP Procedure Note'
   const curated = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
-  let userMessage = `Generate a comprehensive PRP Procedure Note from the following case and procedure data.\n\n${JSON.stringify(curated, null, 2)}`
+  let userMessage = `Generate a comprehensive ${noteLabel} from the following case and procedure data.\n\n${JSON.stringify(curated, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -807,7 +873,7 @@ export async function generateProcedureNoteFromData(
   return callClaudeTool<ProcedureNoteResult>({
     model: 'claude-opus-4-6',
     maxTokens: 16384,
-    system: SYSTEM_PROMPT,
+    system: systemPromptForProcedureType(inputData.procedureRecord.procedure_type),
     cacheSystem: true,
     tools: [PROCEDURE_NOTE_TOOL],
     toolName: 'generate_procedure_note',
@@ -869,8 +935,12 @@ export async function regenerateProcedureNoteSection(
     }
   }
 
+  const regenNoteLabel =
+    inputData.procedureRecord.procedure_type === 'botox'
+      ? 'Therapeutic BOTOX Procedure Note'
+      : 'PRP Procedure Note'
   const curatedRegen = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
-  let userMessage = `${systemSuffix}\n\nRegenerate the "${sectionLabel}" section of the PRP Procedure Note.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(curatedRegen, null, 2)}`
+  let userMessage = `${systemSuffix}\n\nRegenerate the "${sectionLabel}" section of the ${regenNoteLabel}.${findingFixBlock}\n\nCurrent content of this section:\n${currentContent}${otherSectionsBlock}\n\nFull case and procedure data:\n${JSON.stringify(curatedRegen, null, 2)}`
   if (toneHint?.trim()) {
     userMessage += `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
   }
@@ -879,7 +949,7 @@ export async function regenerateProcedureNoteSection(
     model: 'claude-opus-4-6',
     fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: systemPromptForProcedureType(inputData.procedureRecord.procedure_type),
     cacheSystem: true,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',

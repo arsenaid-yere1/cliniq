@@ -43,7 +43,7 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
   // Fetch procedure record
   const { data: procedure } = await supabase
     .from('procedures')
-    .select('procedure_date, procedure_name, procedure_number, injection_site, sites, diagnoses')
+    .select('procedure_date, procedure_name, procedure_type, procedure_number, injection_site, sites, diagnoses')
     .eq('id', input.procedureId)
     .is('deleted_at', null)
     .single()
@@ -105,10 +105,12 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
 
   const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null; gender: string | null } | undefined
 
-  // Assemble procedure name string
+  // Assemble procedure name string. Fallback depends on procedure type.
+  const procedureTypeFallback =
+    procedure?.procedure_type === 'botox' ? 'Therapeutic BOTOX Injection' : 'PRP Injection'
   const procedureName = procedure?.injection_site
     ? `${procedure.procedure_name} \u2013 ${procedure.injection_site}`
-    : procedure?.procedure_name || 'PRP Injection'
+    : procedure?.procedure_name || procedureTypeFallback
 
   const pdfData: ProcedureNotePdfData = {
     clinicName: clinicSettings?.clinic_name || undefined,
@@ -124,6 +126,7 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
       : format(new Date(), 'MM/dd/yyyy'),
     dateOfInjury: caseData?.accident_date ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy') : '\u2014',
     procedureName,
+    procedureType: procedure?.procedure_type ?? undefined,
     procedureNumber: procedure?.procedure_number ?? 1,
     injectionSite: procedure?.injection_site || '\u2014',
     laterality: lateralityFromSites(parseSitesJsonb(procedure?.sites)) ?? '\u2014',

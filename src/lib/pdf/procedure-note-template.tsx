@@ -15,6 +15,7 @@ export interface ProcedureNotePdfData {
   dateOfVisit: string
   dateOfInjury: string
   procedureName: string
+  procedureType?: string
   procedureNumber: number
   injectionSite: string
   laterality: string
@@ -196,18 +197,26 @@ export function ProcedureNotePdf({ data }: { data: ProcedureNotePdfData }) {
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Visit:</Text><Text>{data.dateOfVisit}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Date of Injury:</Text><Text>{data.dateOfInjury}</Text></View>
           <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Procedure:</Text><Text>{data.procedureName}</Text></View>
-          <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Injection #:</Text><Text>{ordinal(data.procedureNumber)} Injection</Text></View>
+          {/* BOTOX is a single therapeutic administration, not a numbered PRP series. */}
+          {data.procedureType !== 'botox' && (
+            <View style={styles.patientInfoRow}><Text style={styles.patientLabel}>Injection #:</Text><Text>{ordinal(data.procedureNumber)} Injection</Text></View>
+          )}
         </View>
 
         <View style={styles.separator} />
 
-        {/* Sections */}
+        {/* Sections. For BOTOX, slot 12 (procedure_prp_prep) is relabeled as the
+            Product & Preparation / Injection Map section; the key stays fixed. */}
         {sectionEntries.map(([key, label]) => {
           const content = data[key] as string | null
           if (!content) return null
+          const displayLabel =
+            data.procedureType === 'botox' && key === 'procedure_prp_prep'
+              ? 'Procedure — Product & Preparation / Injection Map'
+              : label
           return (
             <View key={key}>
-              <Text style={styles.sectionHeading} minPresenceAhead={40}>{label}</Text>
+              <Text style={styles.sectionHeading} minPresenceAhead={40}>{displayLabel}</Text>
               <SectionBody content={content} />
             </View>
           )

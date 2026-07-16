@@ -7,8 +7,10 @@ vi.mock('@/lib/claude/client', () => ({
 import {
   generateProcedureNoteFromData,
   regenerateProcedureNoteSection,
+  systemPromptForProcedureType,
   type ProcedureNoteInputData,
 } from '@/lib/claude/generate-procedure-note'
+import { procedureNoteSectionLabelsFor } from '@/lib/validations/procedure-note'
 import { callClaudeTool } from '@/lib/claude/client'
 import { nsaidHeldPreProcedureClause } from '@/lib/clinical/prp-protocol'
 
@@ -19,11 +21,13 @@ const emptyInput: ProcedureNoteInputData = {
   procedureRecord: {
     procedure_date: '2026-04-16',
     procedure_name: 'PRP',
+    procedure_type: 'prp',
     procedure_number: 1,
     injection_site: null,
     sites: [],
     diagnoses: [],
     consent_obtained: null,
+    botox_dosing: null,
     blood_draw_volume_ml: null,
     centrifuge_duration_min: null,
     prep_protocol: null,
@@ -1320,5 +1324,58 @@ describe('SYSTEM_PROMPT — per-site volume allocation', () => {
     expect(system).toContain('DIFFERENT NON-SPINE sites')
     expect(system).toContain('Multi-site treatment was selected based on concordant pathology at each treated site')
     expect(system).toContain('does NOT apply to spine multi-level procedures')
+  })
+})
+
+describe('BOTOX procedure-type wiring', () => {
+  it('appends the BOTOX override for procedure_type=botox', () => {
+    const system = systemPromptForProcedureType('botox')
+    expect(system).toContain('THERAPEUTIC BOTOX OVERRIDE')
+    expect(system).toContain('onabotulinumtoxinA')
+    expect(system).toContain('Injection Map and Vial Reconciliation')
+    expect(system).toContain('units_administered')
+  })
+
+  it('leaves the base (PRP) prompt unchanged for prp / default', () => {
+    const prp = systemPromptForProcedureType('prp')
+    const def = systemPromptForProcedureType(null)
+    expect(prp).not.toContain('THERAPEUTIC BOTOX OVERRIDE')
+    expect(def).not.toContain('THERAPEUTIC BOTOX OVERRIDE')
+    expect(prp).toBe(def)
+  })
+
+  it('passes the botox override as system prompt when generating a botox note', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    const botoxInput: ProcedureNoteInputData = {
+      ...emptyInput,
+      procedureRecord: {
+        ...emptyInput.procedureRecord,
+        procedure_type: 'botox',
+        procedure_name: 'Therapeutic BOTOX Injection',
+        botox_dosing: {
+          product_name: 'BOTOX Cosmetic (onabotulinumtoxinA)',
+          reconstitution_units: 100,
+          reconstitution_diluent_ml: 3,
+          units_administered: 60,
+          units_discarded: 40,
+        },
+      },
+    }
+    await generateProcedureNoteFromData(botoxInput)
+    const call = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    expect(call.system).toContain('THERAPEUTIC BOTOX OVERRIDE')
+    expect(call.messages[0].content).toContain('Therapeutic BOTOX Procedure Note')
+  })
+})
+
+describe('procedureNoteSectionLabelsFor', () => {
+  it('relabels only slot 12 for botox, keys unchanged', () => {
+    const botox = procedureNoteSectionLabelsFor('botox')
+    const prp = procedureNoteSectionLabelsFor('prp')
+    expect(botox.procedure_prp_prep).toBe('Procedure — Product & Preparation / Injection Map')
+    expect(prp.procedure_prp_prep).toBe('Procedure — PRP Preparation')
+    // every other label identical
+    expect(botox.subjective).toBe(prp.subjective)
+    expect(Object.keys(botox)).toEqual(Object.keys(prp))
   })
 })

@@ -2399,6 +2399,7 @@ export type Database = {
           anesthetic_agent: string | null
           anesthetic_dose_ml: number | null
           blood_draw_volume_ml: number | null
+          botox_dosing: Json | null
           case_id: string
           centrifuge_duration_min: number | null
           complications: string | null
@@ -2433,6 +2434,7 @@ export type Database = {
           anesthetic_agent?: string | null
           anesthetic_dose_ml?: number | null
           blood_draw_volume_ml?: number | null
+          botox_dosing?: Json | null
           case_id: string
           centrifuge_duration_min?: number | null
           complications?: string | null
@@ -2467,6 +2469,7 @@ export type Database = {
           anesthetic_agent?: string | null
           anesthetic_dose_ml?: number | null
           blood_draw_volume_ml?: number | null
+          botox_dosing?: Json | null
           case_id?: string
           centrifuge_duration_min?: number | null
           complications?: string | null

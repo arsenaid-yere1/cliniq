@@ -48,6 +48,22 @@ export const procedureNoteSectionLabels: Record<ProcedureNoteSection, string> = 
   clinician_disclaimer:    'Clinician Disclaimer',
 }
 
+// Type-aware section labels. The KEY set never changes (keeps schemas, editor,
+// PDF field set, and QC section-cast stable); only slot 12's display label
+// differs per procedure type. PRP/default keeps the existing labels; BOTOX
+// repurposes procedure_prp_prep as the Product & Preparation / Injection Map slot.
+export function procedureNoteSectionLabelsFor(
+  procedureType: string | null | undefined,
+): Record<ProcedureNoteSection, string> {
+  if (procedureType === 'botox') {
+    return {
+      ...procedureNoteSectionLabels,
+      procedure_prp_prep: 'Procedure — Product & Preparation / Injection Map',
+    }
+  }
+  return procedureNoteSectionLabels
+}
+
 // AI output schema (validates Claude tool output)
 export const procedureNoteResultSchema = z.object({
   subjective:              z.string(),

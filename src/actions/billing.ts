@@ -15,6 +15,7 @@ import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
 import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
+import { computeBotoxDrugLineItems, computeBotoxFacilityLineItem, type BotoxDosing } from '@/lib/billing/botox-lines'
 
 // Count distinct injection sites in a free-text string.
 // Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
@@ -278,6 +279,16 @@ export async function getInvoiceFormData(caseId: string) {
   // already-built keep their literal cpt_code; only newly-constructed line
   // items consult the table.
   const FALLBACK_CPT_CODES = ['0232T', '86999', '76942']
+  // BOTOX billing codes. Per-unit drug/admin ($/U) and a flat facility fee are
+  // read from the service catalog by these codes; fall back to defaults when
+  // the catalog has no entry.
+  const BOTOX_UNIT_CODE = 'BOTOX-UNIT'
+  const BOTOX_FACILITY_CODE = 'BOTOX-FACILITY'
+  const BOTOX_UNIT_PRICE_FALLBACK = 15
+  const BOTOX_FACILITY_PRICE_FALLBACK = 200
+  const botoxUnitPrice = priceMap[BOTOX_UNIT_CODE] || BOTOX_UNIT_PRICE_FALLBACK
+  const botoxFacilityPrice = priceMap[BOTOX_FACILITY_CODE] || BOTOX_FACILITY_PRICE_FALLBACK
+
   for (const proc of procedures) {
     const typedProc = proc as {
       id: string
@@ -286,7 +297,24 @@ export async function getInvoiceFormData(caseId: string) {
       procedure_name: string
       injection_site?: string | null
       sites?: unknown
-      procedure_type?: 'prp' | 'cortisone' | 'hyaluronic' | null
+      procedure_type?: 'prp' | 'cortisone' | 'hyaluronic' | 'botox' | null
+      botox_dosing?: unknown
+    }
+
+    // BOTOX: per-unit administration line + separate waste line (JW-style),
+    // reconciling to the reconstituted vial. No PRP CPT composite.
+    if (typedProc.procedure_type === 'botox') {
+      prePopulatedLineItems.push(
+        ...computeBotoxDrugLineItems({
+          procedureId: typedProc.id,
+          procedureDate: typedProc.procedure_date,
+          injectionSite: typedProc.injection_site,
+          dosing: (typedProc.botox_dosing ?? null) as BotoxDosing | null,
+          unitCode: BOTOX_UNIT_CODE,
+          unitPrice: botoxUnitPrice,
+        }),
+      )
+      continue
     }
 
     const parsedSites = parseSitesJsonb(typedProc.sites)
@@ -332,6 +360,16 @@ export async function getInvoiceFormData(caseId: string) {
     const typedProc = proc as {
       id: string
       procedure_date: string
+      procedure_type?: 'prp' | 'cortisone' | 'hyaluronic' | 'botox' | null
+    }
+    // BOTOX: flat procedure-room/site utilization fee (distinct from the PRP MSU).
+    if (typedProc.procedure_type === 'botox') {
+      return computeBotoxFacilityLineItem({
+        procedureId: typedProc.id,
+        procedureDate: typedProc.procedure_date,
+        facilityCode: BOTOX_FACILITY_CODE,
+        facilityPrice: botoxFacilityPrice,
+      })
     }
     return {
       procedure_id: typedProc.id,
