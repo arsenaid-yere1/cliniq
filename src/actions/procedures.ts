@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { PrpProcedureFormValues } from '@/lib/validations/prp-procedure'
+import type { BotoxProcedureFormValues } from '@/lib/validations/botox-procedure'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
 import { normalizeIcd10Code, validateIcd10Code } from '@/lib/icd10/validation'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
@@ -360,6 +361,226 @@ export async function updatePrpProcedure(
       compression_bandage: values.post_procedure.compression_bandage,
       activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
       // Plan-vs-performed rationale (optional)
+      plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', procedureId)
+    .select()
+    .single()
+
+  if (procError || !procedure) return { error: procError?.message ?? 'Failed to update procedure' }
+
+  // Upsert vital signs
+  const vs = values.vital_signs
+  const hasVitals = Object.values(vs).some((v) => v !== null && v !== undefined)
+
+  const { data: existingVitals } = await supabase
+    .from('vital_signs')
+    .select('id')
+    .eq('procedure_id', procedureId)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle()
+
+  if (hasVitals) {
+    if (existingVitals) {
+      await supabase
+        .from('vital_signs')
+        .update({
+          bp_systolic: vs.bp_systolic,
+          bp_diastolic: vs.bp_diastolic,
+          heart_rate: vs.heart_rate,
+          respiratory_rate: vs.respiratory_rate,
+          temperature_f: vs.temperature_f,
+          spo2_percent: vs.spo2_percent,
+          pain_score_min: vs.pain_score_min,
+          pain_score_max: vs.pain_score_max,
+          updated_by_user_id: user.id,
+        })
+        .eq('id', existingVitals.id)
+    } else {
+      await supabase
+        .from('vital_signs')
+        .insert({
+          case_id: caseId,
+          procedure_id: procedureId,
+          bp_systolic: vs.bp_systolic,
+          bp_diastolic: vs.bp_diastolic,
+          heart_rate: vs.heart_rate,
+          respiratory_rate: vs.respiratory_rate,
+          temperature_f: vs.temperature_f,
+          spo2_percent: vs.spo2_percent,
+          pain_score_min: vs.pain_score_min,
+          pain_score_max: vs.pain_score_max,
+          created_by_user_id: user.id,
+          updated_by_user_id: user.id,
+        })
+    }
+  }
+
+  revalidatePath(`/patients/${caseId}/procedures`)
+  return { data: procedure }
+}
+
+// ---------------------------------------------------------------------------
+// Therapeutic BOTOX (onabotulinumtoxinA) procedures.
+// Separate write path from PRP: writes procedure_type='botox', botox_dosing
+// jsonb, and per-muscle points/units on sites. Shares the auth/case-guard/
+// IVN-floor/diagnosis-rewrite/vitals machinery. PRP columns are left null.
+// ---------------------------------------------------------------------------
+
+export async function createBotoxProcedure(
+  caseId: string,
+  values: BotoxProcedureFormValues
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
+  const { data: ivnRows } = await supabase
+    .from('initial_visit_notes')
+    .select('visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .not('visit_date', 'is', null)
+
+  const floorDate = (ivnRows ?? [])
+    .map((r) => r.visit_date as string)
+    .sort()
+    .at(-1) ?? null
+
+  if (floorDate && values.procedure_date < floorDate) {
+    return {
+      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
+    }
+  }
+
+  await autoAdvanceFromIntake(supabase, caseId, user.id)
+
+  const { count } = await supabase
+    .from('procedures')
+    .select('*', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+
+  const procedureNumber = (count ?? 0) + 1
+
+  const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
+    procedureNumber,
+  })
+
+  const { data: procedure, error: procError } = await supabase
+    .from('procedures')
+    .insert({
+      case_id: caseId,
+      procedure_date: values.procedure_date,
+      procedure_name: 'Therapeutic BOTOX Injection',
+      procedure_type: 'botox',
+      // sites carry per-muscle points/units; injection_site is the denormalized string.
+      sites: values.sites,
+      injection_site: injectionSiteFromSites(values.sites),
+      diagnoses: rewrittenDiagnoses,
+      consent_obtained: values.consent_obtained,
+      procedure_number: procedureNumber,
+      // BOTOX product/vial/units block.
+      botox_dosing: values.botox_dosing,
+      needle_gauge: values.needle_gauge || null,
+      complications: values.complications || null,
+      plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
+      created_by_user_id: user.id,
+      updated_by_user_id: user.id,
+    })
+    .select()
+    .single()
+
+  if (procError || !procedure) return { error: procError?.message ?? 'Failed to create procedure' }
+
+  // Insert vital signs record (optional for BOTOX — all-null is skipped)
+  const vs = values.vital_signs
+  const hasVitals = Object.values(vs).some((v) => v !== null && v !== undefined)
+  if (hasVitals) {
+    const { error: vsError } = await supabase
+      .from('vital_signs')
+      .insert({
+        case_id: caseId,
+        procedure_id: procedure.id,
+        bp_systolic: vs.bp_systolic,
+        bp_diastolic: vs.bp_diastolic,
+        heart_rate: vs.heart_rate,
+        respiratory_rate: vs.respiratory_rate,
+        temperature_f: vs.temperature_f,
+        spo2_percent: vs.spo2_percent,
+        pain_score_min: vs.pain_score_min,
+        pain_score_max: vs.pain_score_max,
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+
+    if (vsError) return { error: vsError.message }
+  }
+
+  revalidatePath(`/patients/${caseId}/procedures`)
+  return { data: procedure }
+}
+
+export async function updateBotoxProcedure(
+  procedureId: string,
+  caseId: string,
+  values: BotoxProcedureFormValues
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+
+  const { data: ivnRows } = await supabase
+    .from('initial_visit_notes')
+    .select('visit_date')
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .not('visit_date', 'is', null)
+
+  const floorDate = (ivnRows ?? [])
+    .map((r) => r.visit_date as string)
+    .sort()
+    .at(-1) ?? null
+
+  if (floorDate && values.procedure_date < floorDate) {
+    return {
+      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
+    }
+  }
+
+  const { data: existingProc } = await supabase
+    .from('procedures')
+    .select('procedure_number')
+    .eq('id', procedureId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!existingProc) return { error: 'Procedure not found' }
+
+  const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
+    procedureNumber: existingProc.procedure_number,
+  })
+
+  const { data: procedure, error: procError } = await supabase
+    .from('procedures')
+    .update({
+      procedure_date: values.procedure_date,
+      sites: values.sites,
+      injection_site: injectionSiteFromSites(values.sites),
+      diagnoses: rewrittenDiagnoses,
+      consent_obtained: values.consent_obtained,
+      botox_dosing: values.botox_dosing,
+      needle_gauge: values.needle_gauge || null,
+      complications: values.complications || null,
       plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
       updated_by_user_id: user.id,
     })

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export interface ProcedureDefaultsRow {
   anatomy_key: string
-  procedure_type: 'prp' | 'cortisone' | 'hyaluronic'
+  procedure_type: 'prp' | 'cortisone' | 'hyaluronic' | 'botox'
   needle_gauge: string | null
   injection_volume_ml: number | null
   anesthetic_agent: string | null
@@ -20,7 +20,7 @@ export interface ProcedureDefaultsRow {
 
 export async function getProcedureDefaultsByAnatomy(
   anatomyKey: string,
-  procedureType: 'prp' | 'cortisone' | 'hyaluronic' = 'prp',
+  procedureType: 'prp' | 'cortisone' | 'hyaluronic' | 'botox' = 'prp',
 ): Promise<ProcedureDefaultsRow | null> {
   const supabase = await createClient()
   const { data } = await supabase

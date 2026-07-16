@@ -5,6 +5,9 @@ export const procedureSiteSchema = z.object({
   laterality: z.enum(['left', 'right', 'bilateral']).nullable(),
   volume_ml: z.number().positive().nullable(),
   target_confirmed_imaging: z.boolean().nullable(),
+  // BOTOX per-muscle dosing (optional/nullable — absent on PRP/cortisone/hyaluronic sites).
+  points: z.number().int().positive().nullable().optional(),
+  units: z.number().positive().nullable().optional(),
 })
 
 export type ProcedureSite = z.infer<typeof procedureSiteSchema>
@@ -72,6 +75,20 @@ export function sitesFromLegacyString(
     volume_ml: null,
     target_confirmed_imaging: null,
   }))
+}
+
+// Denormalize: derive total BOTOX units administered from per-site units.
+// Returns the sum when every site has a units value, else the explicit total
+// (caller supplies it — e.g. provider-entered units_administered).
+export function totalUnitsFromSites(
+  sites: ProcedureSite[],
+  fallbackTotal: number | null,
+): number | null {
+  if (sites.length === 0) return fallbackTotal
+  if (sites.every((s) => s.units != null)) {
+    return sites.reduce((acc, s) => acc + (s.units ?? 0), 0)
+  }
+  return fallbackTotal
 }
 
 // Read a procedures.sites jsonb value safely. Returns [] when shape is

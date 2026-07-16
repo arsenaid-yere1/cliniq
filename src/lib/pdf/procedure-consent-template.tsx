@@ -18,6 +18,9 @@ export interface ProcedureConsentPdfData {
 
   providerLine: string
 
+  // Discriminator: 'prp' (default) | 'botox'. Selects the consent body.
+  procedureType?: string
+
   // Procedure-specific (optional — when launched from procedure dialog)
   treatmentArea?: string
   laterality?: 'left' | 'right' | 'bilateral'
@@ -105,7 +108,163 @@ const ordinal = (n: number) => {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
+// Clinic header + patient identity block, shared by both consent variants.
+function ConsentHeader({ data }: { data: ProcedureConsentPdfData }) {
+  return (
+    <>
+      <View style={styles.clinicHeader}>
+        {data.clinicLogoBase64 && <Image src={data.clinicLogoBase64} style={styles.logo} />}
+        {data.clinicAddress && <Text style={styles.clinicAddress}>{data.clinicAddress}</Text>}
+        {data.clinicPhone && data.clinicFax && (
+          <Text style={styles.clinicDetail}>Tel: {data.clinicPhone}    Fax: {data.clinicFax}</Text>
+        )}
+        {data.clinicPhone && !data.clinicFax && (
+          <Text style={styles.clinicDetail}>Tel: {data.clinicPhone}</Text>
+        )}
+        {!data.clinicPhone && data.clinicFax && (
+          <Text style={styles.clinicDetail}>Fax: {data.clinicFax}</Text>
+        )}
+      </View>
+    </>
+  )
+}
+
+function ConsentIdentity({ data }: { data: ProcedureConsentPdfData }) {
+  return (
+    <>
+      <View style={styles.fieldRowSpaced}>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Patient Name: </Text>
+          <Text style={styles.fieldValue}>{data.patientName}</Text>
+        </View>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Date of Birth: </Text>
+          <Text style={styles.fieldValue}>{data.dateOfBirth}</Text>
+        </View>
+      </View>
+      <View style={styles.fieldRowSpaced}>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Case Number: </Text>
+          <Text style={styles.fieldValue}>{data.caseNumber}</Text>
+        </View>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Date of Service: </Text>
+          <Text style={styles.fieldValue}>{data.dateOfService}</Text>
+        </View>
+      </View>
+      <View style={styles.fieldRow}>
+        <Text style={styles.fieldLabel}>Provider: </Text>
+        <Text style={styles.fieldValue}>{data.providerLine}</Text>
+      </View>
+    </>
+  )
+}
+
+function SignatureBlock() {
+  return (
+    <View style={styles.signatureSection}>
+      <View style={styles.signatureRow}>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.signatureLabel}>PATIENT SIGNATURE</Text>
+          <Text style={styles.signatureLine}> </Text>
+        </View>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.dateLabel}>DATE</Text>
+          <Text style={styles.dateLine}> </Text>
+        </View>
+      </View>
+      <View style={styles.signatureRow}>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.signatureLabel}>PRINTED NAME</Text>
+          <Text style={styles.signatureLine}> </Text>
+        </View>
+      </View>
+      <View style={styles.signatureRow}>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.signatureLabel}>PROVIDER SIGNATURE</Text>
+          <Text style={styles.signatureLine}> </Text>
+        </View>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.dateLabel}>DATE</Text>
+          <Text style={styles.dateLine}> </Text>
+        </View>
+      </View>
+      <View style={styles.signatureRow}>
+        <View style={styles.signatureBlock}>
+          <Text style={styles.signatureLabel}>CREDENTIALS</Text>
+          <Text style={styles.signatureLine}> </Text>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+// BOTOX consent body. Legal content (description, risks, contraindications,
+// alternatives) is CLINIC-SUPPLIED and must be transcribed verbatim by the
+// clinic's counsel — NOT authored here. Structural scaffold + placeholders only.
+function BotoxConsentPdf({ data }: { data: ProcedureConsentPdfData }) {
+  return (
+    <Document>
+      <Page size="LETTER" style={styles.page} wrap>
+        <ConsentHeader data={data} />
+        <Text style={styles.title}>INFORMED CONSENT FOR THERAPEUTIC BOTOX (onabotulinumtoxinA) INJECTION</Text>
+        <ConsentIdentity data={data} />
+
+        <Text style={styles.sectionHeading}>PROCEDURE DESCRIPTION</Text>
+        {/* TODO(clinic): supply the verbatim BOTOX procedure description (intramuscular
+            onabotulinumtoxinA chemodenervation; off-label therapeutic indication where applicable). */}
+        <Text style={styles.paragraph}>
+          [TODO(clinic): insert the approved Therapeutic BOTOX procedure description.]
+        </Text>
+
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Treatment Area: </Text>
+          <Text style={styles.fieldValue}>
+            {data.treatmentArea ? data.treatmentArea : '________________________'}
+          </Text>
+        </View>
+        <View style={styles.fieldRow}>
+          <Text style={styles.fieldLabel}>Laterality: </Text>
+          <Text style={styles.fieldValue}>
+            {data.laterality ? lateralityLabel(data.laterality) : '________________'}
+          </Text>
+        </View>
+
+        <Text style={styles.sectionHeading}>RISKS</Text>
+        {/* TODO(clinic): supply verbatim BOTOX risk list (e.g. pain, bruising, bleeding,
+            infection, asymmetry, chewing weakness, smile changes, dysphagia, unintended
+            toxin spread / distant effects per FDA boxed warning). */}
+        <Text style={styles.paragraph}>
+          [TODO(clinic): insert the approved Therapeutic BOTOX risk disclosures.]
+        </Text>
+
+        <Text style={styles.sectionHeading}>CONTRAINDICATIONS</Text>
+        {/* TODO(clinic): supply verbatim BOTOX contraindication checklist (e.g. neuromuscular
+            disorders — myasthenia gravis, ALS, Lambert-Eaton; aminoglycoside use; infection at
+            injection site; pregnancy/lactation; known hypersensitivity). */}
+        <Text style={styles.paragraph}>
+          [TODO(clinic): insert the approved Therapeutic BOTOX contraindication list.]
+        </Text>
+
+        <Text style={styles.sectionHeading}>BENEFITS &amp; ALTERNATIVES</Text>
+        {/* TODO(clinic): supply verbatim benefits/alternatives, including the off-label
+            therapeutic-use statement where applicable. */}
+        <Text style={styles.paragraph}>
+          [TODO(clinic): insert the approved Therapeutic BOTOX benefits and alternatives.]
+        </Text>
+
+        <Text style={styles.ackLine}>{'☐'}  I acknowledge I have read and understood the above.</Text>
+
+        <SignatureBlock />
+      </Page>
+    </Document>
+  )
+}
+
 export function ProcedureConsentPdf({ data }: { data: ProcedureConsentPdfData }) {
+  if (data.procedureType === 'botox') {
+    return <BotoxConsentPdf data={data} />
+  }
   return (
     <Document>
       <Page size="LETTER" style={styles.page} wrap>

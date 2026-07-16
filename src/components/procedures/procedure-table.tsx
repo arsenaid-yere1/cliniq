@@ -38,6 +38,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { RecordProcedureDialog, type ProcedureInitialData } from './record-procedure-dialog'
+import { RecordBotoxDialog } from './record-botox-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { deleteProcedure, getProcedureById, type ProcedureDefaults } from '@/actions/procedures'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
@@ -127,6 +134,7 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [editingProcedure, setEditingProcedure] = useState<ProcedureInitialData | null>(null)
+  const [createType, setCreateType] = useState<'prp' | 'botox' | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
@@ -159,10 +167,59 @@ export function ProcedureTable({ procedures, caseId, diagnosisSuggestions, noteS
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        {!isLocked && <RecordProcedureDialog caseId={caseId} diagnosisSuggestions={diagnosisSuggestions} procedureDefaults={procedureDefaults} patientLastName={patientLastName} />}
+        {!isLocked && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>Record Procedure</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* Defer state change to the next tick so the dropdown finishes
+                  closing (and releases focus) before the dialog mounts — otherwise
+                  Radix's close-auto-focus / outside-pointer handling dismisses the
+                  just-opened dialog immediately. */}
+              <DropdownMenuItem onSelect={() => setTimeout(() => setCreateType('prp'), 0)}>PRP Injection</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTimeout(() => setCreateType('botox'), 0)}>Therapeutic BOTOX</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
-      {editingProcedure && (
+      {/* Create — PRP */}
+      {createType === 'prp' && (
+        <RecordProcedureDialog
+          caseId={caseId}
+          diagnosisSuggestions={diagnosisSuggestions}
+          procedureDefaults={procedureDefaults}
+          patientLastName={patientLastName}
+          open={true}
+          onOpenChange={(open) => { if (!open) setCreateType(null) }}
+        />
+      )}
+
+      {/* Create — BOTOX */}
+      {createType === 'botox' && (
+        <RecordBotoxDialog
+          caseId={caseId}
+          diagnosisSuggestions={diagnosisSuggestions}
+          procedureDefaults={procedureDefaults}
+          patientLastName={patientLastName}
+          open={true}
+          onOpenChange={(open) => { if (!open) setCreateType(null) }}
+        />
+      )}
+
+      {/* Edit — route by procedure_type */}
+      {editingProcedure && editingProcedure.procedure_type === 'botox' && (
+        <RecordBotoxDialog
+          caseId={caseId}
+          diagnosisSuggestions={diagnosisSuggestions}
+          initialData={editingProcedure}
+          patientLastName={patientLastName}
+          open={true}
+          onOpenChange={(open) => { if (!open) setEditingProcedure(null) }}
+        />
+      )}
+      {editingProcedure && editingProcedure.procedure_type !== 'botox' && (
         <RecordProcedureDialog
           caseId={caseId}
           diagnosisSuggestions={diagnosisSuggestions}

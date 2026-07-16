@@ -89,6 +89,11 @@ function scrollToSection(id: string) {
 export interface ProcedureInitialData {
   id: string
   procedure_date: string
+  // Discriminator: 'prp' | 'cortisone' | 'hyaluronic' | 'botox'. Drives which
+  // record dialog the table opens for editing.
+  procedure_type?: string
+  // BOTOX product/vial/units block (null for non-botox rows).
+  botox_dosing?: unknown
   // sites jsonb is the structured source of truth; the row also still
   // carries denormalized injection_site (text) for downstream readers.
   sites: ProcedureSite[]
@@ -339,7 +344,7 @@ export function RecordProcedureDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {!isEditing && (
+      {!isEditing && controlledOpen === undefined && (
         <DialogTrigger asChild>
           <Button>Record Procedure</Button>
         </DialogTrigger>

@@ -346,11 +346,13 @@ async function gatherProcedureNoteSourceData(
       procedureRecord: {
         procedure_date: proc.procedure_date,
         procedure_name: proc.procedure_name,
+        procedure_type: proc.procedure_type,
         procedure_number: proc.procedure_number ?? 1,
         injection_site: proc.injection_site,
         sites: parseSitesJsonb(proc.sites),
         diagnoses,
         consent_obtained: proc.consent_obtained,
+        botox_dosing: proc.botox_dosing,
         blood_draw_volume_ml: proc.blood_draw_volume_ml,
         centrifuge_duration_min: proc.centrifuge_duration_min,
         prep_protocol: proc.prep_protocol,

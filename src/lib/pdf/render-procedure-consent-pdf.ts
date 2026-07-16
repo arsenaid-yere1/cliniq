@@ -71,14 +71,16 @@ export async function renderProcedureConsentPdf(
     laterality?: 'left' | 'right' | 'bilateral'
     procedureNumber?: number
   } = {}
+  let procedureType: string | undefined
   if (input.procedureId) {
     const { data: procData } = await supabase
       .from('procedures')
-      .select('injection_site, sites, procedure_number')
+      .select('injection_site, sites, procedure_number, procedure_type')
       .eq('id', input.procedureId)
       .is('deleted_at', null)
       .maybeSingle()
     if (procData) {
+      procedureType = procData.procedure_type ?? undefined
       const derivedLat = lateralityFromSites(parseSitesJsonb(procData.sites))
       procedureDefaults = {
         treatmentArea: procData.injection_site ?? undefined,
@@ -165,6 +167,7 @@ export async function renderProcedureConsentPdf(
 
     providerLine,
 
+    procedureType,
     treatmentArea,
     laterality,
     procedureNumber,

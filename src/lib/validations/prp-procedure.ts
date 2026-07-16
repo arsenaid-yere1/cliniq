@@ -4,12 +4,12 @@ import { TARGET_STRUCTURE_OPTIONS } from '@/lib/procedures/enum-constants'
 
 const targetStructureValues = TARGET_STRUCTURE_OPTIONS.map((o) => o.value) as [string, ...string[]]
 
-const diagnosisSchema = z.object({
+export const diagnosisSchema = z.object({
   icd10_code: z.string().min(1, 'ICD-10 code is required'),
   description: z.string().min(1, 'Description is required'),
 })
 
-const vitalSignsSchema = z
+export const vitalSignsSchema = z
   .object({
     bp_systolic: z.number().int().min(1).max(300).nullable(),
     bp_diastolic: z.number().int().min(1).max(200).nullable(),
