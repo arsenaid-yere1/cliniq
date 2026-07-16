@@ -97,6 +97,11 @@ export function PatientListTable({
       id: 'due_date',
       header: 'Due Date',
       cell: ({ row }) => {
+        // Due labels only apply to active cases; other statuses (intake, pending_*,
+        // closed, archived) don't carry a document-to-lawyer deadline.
+        if (row.original.case_status !== 'active') {
+          return <span className="text-muted-foreground">—</span>
+        }
         const due = computeDocumentDueDate(row.original.discharge_visit_date)
         if (!due) return <span className="text-muted-foreground">—</span>
         const config = DUE_STATUS_CONFIG[due.status]
