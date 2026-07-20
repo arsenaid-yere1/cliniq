@@ -58,9 +58,7 @@ NO REPETITION: DO NOT repeat information that appears in earlier sections. Each 
 
 NO UNNECESSARY BRACKETS: "[Provider to confirm]" / "[unknown]" / "[not provided]" / similar bracketed placeholders are BANNED in narrative sections (Social History, Past Medical History, Chief Complaint, Review of Systems, Physical Exam prose, Assessment, Plan, Prognosis, Clinician Disclaimer). If data is absent, either use the documented standard fallback phrase for that section (e.g. the Social History "Denies the use of alcohol, tobacco, and/or drugs." default) OR OMIT the field entirely. The ONLY places brackets are permitted:
   • Vital-sign values when the specific vital is not provided: use "[XX]" for the missing number (and ONLY the number — do not wrap the entire bullet).
-  • ROM "actual" values when the per-movement measurement is null: use "[XX]" for the actual number only.
   • Diagnosis descriptions when an ICD-10 code is present but the description text cannot be derived.
-If romData is provided in the source data, use the actual values for each region's range of motion using the format: "• {movement}: Normal {normal}° / Actual {actual}° / Pain: {Yes|No}". For any movement where actual is null, use "[XX]" for the actual value only. If romData is null entirely, do NOT include any ROM measurements or RANGE OF MOTION sub-headings — omit ROM from the note completely.
 
 SCOPE: DO NOT expand beyond the scope of the original template. If the patient only has cervical and lumbar complaints, do not add shoulder or thoracic exam unless the source data specifically contains findings for those regions.
 
@@ -68,7 +66,6 @@ SCOPE: DO NOT expand beyond the scope of the original template. If the patient o
 
 • Use "• " (unicode bullet) for bullet points. NEVER use "- ", "* ", or markdown syntax.
 • Use ALL CAPS sub-headings with colon (e.g., "VITAL SIGNS:") for sub-sections. NEVER use "###" or "**bold**".
-• For ROM data, use "• Flexion: Normal 50° / Actual 40° / Pain: Yes" format. NEVER use pipe tables.
 • No "---" horizontal rules, no "**bold**" markers.
 • Use plain line breaks between paragraphs.
 • DATE FORMAT: every date cited in the narrative MUST be in MM/DD/YYYY format (e.g. "10/13/2025", "03/12/2025"). Do NOT use long-form ("October 13, 2025"), short-form ("Oct 13, 2025"), or ISO ("2025-10-13"). Applies to accident date, visit date, DOB when cited in prose, imaging dates, and every other calendar reference in the generated note.
@@ -123,11 +120,10 @@ Reference: "• General: Reports sleep disturbance.\n• Musculoskeletal: Ongoin
 8. PHYSICAL EXAMINATION (structured by affected region only):
 Start with "VITAL SIGNS:" sub-heading + bullets. If vital signs data is provided in the source data (vitalSigns object), use the actual values: Blood Pressure as {bp_systolic}/{bp_diastolic} mmHg, Heart Rate as {heart_rate} bpm, Respiratory Rate as {respiratory_rate} breaths/min, Temperature as {temperature_f}°F, SpO2 as {spo2_percent}%, Pain Score as {pain_score_min}-{pain_score_max}/10 (do NOT add "Numeric Rating Scale", "NRS", or any scale label — just the number and "/10"). If pain_score_min equals pain_score_max, display as a single value (e.g., "7/10"). If only one is provided, display that single value. For any individual vital sign that is null, use "[XX]" as placeholder. If vitalSigns is null entirely, use "[XX]" for all vitals.
 Then "GENERAL:" appearance statement (1-2 sentences).
-Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels, and optionally a "RANGE OF MOTION:" sub-heading with "• " bullet per movement (only if ROM data is provided).
-If ROM data (romData) is provided in the source data, render actual measurements for each region under the "RANGE OF MOTION:" sub-heading. Use the provided normal/actual/pain values directly. If romData is null, do NOT include any RANGE OF MOTION sub-heading or ROM measurements — omit ROM from the physical exam entirely.
+Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels.
+DO NOT include any "RANGE OF MOTION:" sub-heading or range-of-motion measurements in the physical exam.
 DO NOT include orthopedic testing (e.g., Spurling's test, Kemp's test, straight leg raise, foraminal compression) in the physical exam.
 DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
-Reference ROM format: "• Flexion: Normal 60° / Actual 60° / Pain: No\n• Extension: Normal 50° / Actual 35° / Pain: Yes"
 End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentences) summarizing motor strength, sensation, and deep tendon reflexes for upper and lower extremities. Example: "Upper and lower extremities demonstrate normal motor strength bilaterally. Sensation is intact to light touch throughout all dermatomes. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do a dermatome-by-dermatome breakdown and do NOT mention Babinski sign.
 
 10. DIAGNOSES (simple bullet list):
@@ -257,13 +253,13 @@ This patient has completed a course of conservative treatment and has imaging re
 
 === PRIOR VISIT REFERENCE (READ-ONLY) ===
 
-If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings, vitals, or ROM values into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
+If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings or vitals into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
 
 1. History of the Accident (Para 3): Reference the prior visit's documented findings and conservative care outcome. For the initial evaluation date, use priorVisitData.visit_date if it is non-null; otherwise fall back to priorVisitData.finalized_at. Format the date as MM/DD/YYYY (e.g., "03/20/2026"). Example: "Since the initial evaluation on [priorVisitData.visit_date ?? priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
 
 2. Post-Accident History: Describe the continuum of care from initial presentation to today. Reference priorVisitData.treatment_plan for what was recommended and summarize adherence/outcome based on the CURRENT visit's providerIntake.
 
-3. Physical Examination: Do NOT restate prior exam findings as current findings. Current findings come from the CURRENT visit's providerIntake.exam_findings. You MAY add one brief comparative sentence at the end of each region: "Compared to the initial evaluation, cervical ROM has [improved/worsened/remained unchanged]." Use priorVisitData.rom_data and priorVisitData.physical_exam for the comparison basis only.
+3. Physical Examination: Do NOT restate prior exam findings as current findings. Current findings come from the CURRENT visit's providerIntake.exam_findings. You MAY add one brief comparative sentence at the end of each region: "Compared to the initial evaluation, cervical examination findings have [improved/worsened/remained unchanged]." Use priorVisitData.physical_exam for the comparison basis only.
 
 4. Medical Necessity: Cite that conservative care was documented and attempted at the initial visit (reference priorVisitData.treatment_plan) and has failed to produce adequate relief, supporting the escalation to interventional treatment.
 
@@ -416,7 +412,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       physical_exam: {
         type: 'string',
-        description: 'Vital signs, musculoskeletal exam, ROM (if provided), and neurological findings by region',
+        description: 'Vital signs, musculoskeletal exam, and neurological findings by region',
       },
       imaging_findings: {
         type: 'string',
@@ -508,15 +504,6 @@ export interface InitialVisitInputData {
     pain_score_min: number | null
     pain_score_max: number | null
   } | null
-  romData: Array<{
-    region: string
-    movements: Array<{
-      movement: string
-      normal: number | null
-      actual: number | null
-      pain: boolean
-    }>
-  }> | null
   feeEstimate: {
     professional_min: number
     professional_max: number
@@ -543,7 +530,6 @@ export interface InitialVisitInputData {
     treatment_plan: string | null
     prognosis: string | null
     provider_intake: unknown | null
-    rom_data: unknown | null
     visit_date: string | null
     finalized_at: string | null
     // Pain vitals captured at or before the prior initial visit's finalization.

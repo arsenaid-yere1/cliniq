@@ -15,12 +15,10 @@ import {
 import {
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
-  initialVisitRomSchema,
   providerIntakeSchema,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
   type InitialVisitVitalsValues,
-  type InitialVisitRomValues,
   type ProviderIntakeValues,
 } from '@/lib/validations/initial-visit-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
@@ -56,7 +54,7 @@ function mapVisitDateOrderError(err: PgError): string | null {
 
 // --- Helper: gather source data for note generation ---
 //
-// `visitType` is required: it determines which intake/ROM row is loaded,
+// `visitType` is required: it determines which intake row is loaded,
 // and — only for pain_evaluation_visit — triggers an additional read of the
 // finalized Initial Visit row (if one exists) as read-only reference data.
 
@@ -64,19 +62,18 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   visitType: NoteVisitType,
-  romData?: InitialVisitRomValues | null,
   visitDateOverride?: string | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
-  // provider-intake + ROM + vitals — no MRI/CT/PM data leaks into the prompt.
+  // provider-intake + vitals — no MRI/CT/PM data leaks into the prompt.
   const loadImagingContext = visitType === 'pain_evaluation_visit'
 
   const priorVisitQuery = loadImagingContext
     ? supabase
         .from('initial_visit_notes')
         .select(
-          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, rom_data, visit_date, finalized_at',
+          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, visit_date, finalized_at',
         )
         .eq('case_id', caseId)
         .eq('visit_type', 'initial_visit')
@@ -257,7 +254,6 @@ async function gatherSourceData(
         treatment_plan: (priorVisitRow.treatment_plan as string | null) ?? null,
         prognosis: (priorVisitRow.prognosis as string | null) ?? null,
         provider_intake: priorVisitRow.provider_intake ?? null,
-        rom_data: priorVisitRow.rom_data ?? null,
         visit_date: (priorVisitRow.visit_date as string | null) ?? null,
         finalized_at: priorVisitFinalizedAt,
         vitalSigns: priorVisitVitalSigns,
@@ -312,7 +308,6 @@ async function gatherSourceData(
         npi_number: providerRes.data?.npi_number ?? null,
       },
       vitalSigns: vitalsRes.data ?? null,
-      romData: romData ?? null,
       feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
         ? feeEstimateTotals
         : null,
@@ -347,23 +342,21 @@ export async function generateInitialVisitNote(
   // live row per pair, so the other visit type's row is never touched.
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('id, rom_data, provider_intake, visit_date, tone_hint')
+    .select('id, provider_intake, visit_date, tone_hint')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
-  const preservedRom = existingNote?.rom_data as InitialVisitRomValues | null
   const today = new Date().toISOString().slice(0, 10)
   const normalizedVisitDate = visitDate?.trim() ? visitDate.trim() : null
   const effectiveVisitDate = normalizedVisitDate ?? existingNote?.visit_date ?? today
 
-  // Gather source data (include ROM)
+  // Gather source data
   const { data: inputData, error: gatherError } = await gatherSourceData(
     supabase,
     caseId,
     visitType,
-    preservedRom,
     effectiveVisitDate,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
@@ -797,7 +790,7 @@ export async function resetInitialVisitNote(caseId: string, visitType: NoteVisit
   }
 
   // In-place update: null all AI-generated fields. Preserve provider_intake,
-  // rom_data, visit_type, and visit_date.
+  // visit_type, and visit_date.
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
@@ -859,13 +852,11 @@ export async function regenerateNoteSection(
 
   if (fetchError || !note) return { error: 'No draft note found' }
 
-  const noteRom = note.rom_data as InitialVisitRomValues | null
   const noteVisitDate = (note.visit_date as string | null | undefined) ?? null
   const { data: inputData, error: gatherError } = await gatherSourceData(
     supabase,
     caseId,
     visitType,
-    noteRom,
     noteVisitDate,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
@@ -1030,85 +1021,6 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
       })
 
     if (error) return { error: 'Failed to save vitals' }
-  }
-
-  revalidatePath(`/patients/${caseId}`)
-  return { data: { success: true } }
-}
-
-// --- Get ROM data, scoped per visit type ---
-
-export async function getInitialVisitRom(caseId: string, visitType: NoteVisitType) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const { data, error } = await supabase
-    .from('initial_visit_notes')
-    .select('rom_data')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  if (error) return { error: 'Failed to fetch ROM data' }
-
-  return { data: (data?.rom_data as InitialVisitRomValues | null) ?? null }
-}
-
-// --- Save ROM data, scoped per visit type ---
-
-export async function saveInitialVisitRom(
-  caseId: string,
-  visitType: NoteVisitType,
-  romData: InitialVisitRomValues | null,
-) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const closedCheck = await assertCaseNotClosed(supabase, caseId)
-  if (closedCheck.error) return { error: closedCheck.error }
-
-  let validatedData: InitialVisitRomValues | null = null
-  if (romData !== null) {
-    const validated = initialVisitRomSchema.safeParse(romData)
-    if (!validated.success) return { error: 'Invalid ROM data' }
-    validatedData = validated.data
-  }
-
-  const { data: existing } = await supabase
-    .from('initial_visit_notes')
-    .select('id')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .maybeSingle()
-
-  if (existing) {
-    const { error } = await supabase
-      .from('initial_visit_notes')
-      .update({
-        rom_data: validatedData as unknown as Record<string, unknown> | null,
-        updated_by_user_id: user.id,
-      })
-      .eq('id', existing.id)
-
-    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update ROM data' }
-  } else if (validatedData !== null) {
-    const { error } = await supabase
-      .from('initial_visit_notes')
-      .insert({
-        case_id: caseId,
-        visit_type: visitType,
-        status: 'draft',
-        rom_data: validatedData as unknown as Record<string, unknown>,
-        visit_date: new Date().toISOString().slice(0, 10),
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-
-    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save ROM data' }
   }
 
   revalidatePath(`/patients/${caseId}`)

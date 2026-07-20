@@ -5,10 +5,6 @@ import {
   initialVisitNoteResultSchema,
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
-  romMovementSchema,
-  romRegionSchema,
-  initialVisitRomSchema,
-  defaultRomData,
 } from '../initial-visit-note'
 
 const validNoteData: Record<string, string> = {}
@@ -128,106 +124,5 @@ describe('initialVisitVitalsSchema', () => {
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, temperature_f: 111 }).success).toBe(false)
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, spo2_percent: -1 }).success).toBe(false)
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, spo2_percent: 101 }).success).toBe(false)
-  })
-})
-
-describe('romMovementSchema', () => {
-  it('accepts valid movement', () => {
-    expect(romMovementSchema.safeParse({
-      movement: 'Flexion', normal: 60, actual: 45, pain: true,
-    }).success).toBe(true)
-  })
-
-  it('rejects empty movement', () => {
-    expect(romMovementSchema.safeParse({
-      movement: '', normal: 60, actual: null, pain: false,
-    }).success).toBe(false)
-  })
-
-  it('accepts null normal and actual', () => {
-    expect(romMovementSchema.safeParse({
-      movement: 'Flexion', normal: null, actual: null, pain: false,
-    }).success).toBe(true)
-  })
-
-  it('accepts boundary values 0 and 360', () => {
-    expect(romMovementSchema.safeParse({
-      movement: 'Flexion', normal: 0, actual: 360, pain: false,
-    }).success).toBe(true)
-  })
-
-  it('rejects out-of-range normal/actual', () => {
-    expect(romMovementSchema.safeParse({
-      movement: 'Flexion', normal: -1, actual: null, pain: false,
-    }).success).toBe(false)
-    expect(romMovementSchema.safeParse({
-      movement: 'Flexion', normal: null, actual: 361, pain: false,
-    }).success).toBe(false)
-  })
-})
-
-describe('romRegionSchema', () => {
-  it('accepts valid region with movements', () => {
-    expect(romRegionSchema.safeParse({
-      region: 'Cervical Spine',
-      movements: [{ movement: 'Flexion', normal: 60, actual: null, pain: false }],
-    }).success).toBe(true)
-  })
-
-  it('rejects empty region', () => {
-    expect(romRegionSchema.safeParse({
-      region: '',
-      movements: [{ movement: 'Flexion', normal: 60, actual: null, pain: false }],
-    }).success).toBe(false)
-  })
-
-  it('rejects empty movements array', () => {
-    expect(romRegionSchema.safeParse({
-      region: 'Cervical Spine',
-      movements: [],
-    }).success).toBe(false)
-  })
-})
-
-describe('defaultRomData', () => {
-  it('has 9 regions', () => {
-    expect(defaultRomData).toHaveLength(9)
-  })
-
-  it('has correct number of movements per region', () => {
-    const expected: Record<string, number> = {
-      'Cervical Spine': 6,
-      'Thoracic Spine': 4,
-      'Lumbar Spine': 6,
-      'Left Shoulder': 6,
-      'Right Shoulder': 6,
-      'Left Knee': 2,
-      'Right Knee': 2,
-      'Left Hip': 6,
-      'Right Hip': 6,
-    }
-    for (const region of defaultRomData) {
-      expect(region.movements).toHaveLength(expected[region.region])
-    }
-  })
-
-  it('has all actual values as null', () => {
-    for (const region of defaultRomData) {
-      for (const m of region.movements) {
-        expect(m.actual).toBeNull()
-      }
-    }
-  })
-
-  it('has all pain values as false', () => {
-    for (const region of defaultRomData) {
-      for (const m of region.movements) {
-        expect(m.pain).toBe(false)
-      }
-    }
-  })
-
-  it('passes initialVisitRomSchema validation', () => {
-    expect(initialVisitRomSchema.safeParse(defaultRomData).success).toBe(true)
   })
 })

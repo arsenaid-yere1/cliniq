@@ -7,7 +7,7 @@ import {
 } from '@/actions/initial-visit-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
-import { providerIntakeSchema, type InitialVisitRomValues } from '@/lib/validations/initial-visit-note'
+import { providerIntakeSchema } from '@/lib/validations/initial-visit-note'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 
 function parseIntake(raw: unknown) {
@@ -66,7 +66,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     : null
 
   // Index notes by visit_type and resolve their document file paths in parallel
-  type NoteRow = Record<string, unknown> & { id: string; visit_type: string; document_id: string | null; rom_data: unknown }
+  type NoteRow = Record<string, unknown> & { id: string; visit_type: string; document_id: string | null }
   const noteRows = ((notesResult.data as NoteRow[] | undefined) ?? []) as NoteRow[]
   const initialVisitNote = noteRows.find((n) => n.visit_type === 'initial_visit') ?? null
   const painEvaluationNote = noteRows.find((n) => n.visit_type === 'pain_evaluation_visit') ?? null
@@ -119,11 +119,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     pain_evaluation_visit: parseIntake(painEvalIntakeResult.data),
   }
 
-  const romByVisitType = {
-    initial_visit: (initialVisitNote?.rom_data as InitialVisitRomValues | null) ?? null,
-    pain_evaluation_visit: (painEvaluationNote?.rom_data as InitialVisitRomValues | null) ?? null,
-  }
-
   const documentFilePathByVisitType = {
     initial_visit: initialVisitDocPath,
     pain_evaluation_visit: painEvalDocPath,
@@ -143,7 +138,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       caseId={caseId}
       notesByVisitType={notesByVisitType}
       intakesByVisitType={intakesByVisitType}
-      romByVisitType={romByVisitType}
       documentFilePathByVisitType={documentFilePathByVisitType}
       defaultVisitType="initial_visit"
       canGenerate={prereqResult.data?.canGenerate ?? false}

@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
-import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, Activity, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
+import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -52,7 +52,6 @@ import {
   regenerateNoteSection,
   resetInitialVisitNote,
   saveInitialVisitVitals,
-  saveInitialVisitRom,
   saveProviderIntake,
   saveInitialVisitNoteToneHint,
 } from '@/actions/initial-visit-notes'
@@ -64,16 +63,13 @@ import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import {
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
-  initialVisitRomSchema,
   initialVisitSections,
   sectionLabels,
-  defaultRomData,
   providerIntakeSchema,
   defaultProviderIntake,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
   type InitialVisitVitalsValues,
-  type InitialVisitRomValues,
   type ProviderIntakeValues,
 } from '@/lib/validations/initial-visit-note'
 import { useCaseStatus } from '@/components/patients/case-status-context'
@@ -106,7 +102,6 @@ interface NoteRow {
   finalized_at: string | null
   finalized_by_user_id: string | null
   document_id: string | null
-  rom_data: unknown
   tone_hint: string | null
   sections_done: number | null
   sections_total: number | null
@@ -156,7 +151,6 @@ interface InitialVisitEditorOuterProps {
   caseId: string
   notesByVisitType: Record<NoteVisitType, unknown>
   intakesByVisitType: Record<NoteVisitType, ProviderIntakeValues | null>
-  romByVisitType: Record<NoteVisitType, InitialVisitRomValues | null>
   documentFilePathByVisitType: Record<NoteVisitType, string | null>
   defaultVisitType: NoteVisitType
   canGenerate: boolean
@@ -185,7 +179,6 @@ interface InitialVisitEditorInnerProps {
   canGenerate: boolean
   prerequisiteReason?: string
   initialVitals: VitalsData | null
-  initialRom: InitialVisitRomValues | null
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
@@ -198,13 +191,12 @@ interface InitialVisitEditorInnerProps {
 
 // Outer wrapper: visit type tab selector. Each tab has its own completely
 // independent InitialVisitEditorInner instance — separate notes, separate
-// intake, separate ROM, separate orders. Switching tabs does not lose or
-// merge data on either side.
+// intake, separate orders. Switching tabs does not lose or merge data on
+// either side.
 export function InitialVisitEditor({
   caseId,
   notesByVisitType,
   intakesByVisitType,
-  romByVisitType,
   documentFilePathByVisitType,
   defaultVisitType,
   canGenerate,
@@ -259,7 +251,6 @@ export function InitialVisitEditor({
                 canGenerate={canGenerate}
                 prerequisiteReason={prerequisiteReason}
                 initialVitals={initialVitals}
-                initialRom={romByVisitType[vt.value]}
                 clinicSettings={clinicSettings}
                 providerProfile={providerProfile}
                 clinicLogoUrl={clinicLogoUrl}
@@ -315,7 +306,6 @@ function InitialVisitEditorInner({
   canGenerate,
   prerequisiteReason,
   initialVitals,
-  initialRom,
   clinicSettings,
   providerProfile,
   clinicLogoUrl,
@@ -352,7 +342,7 @@ function InitialVisitEditorInner({
     })
   }
 
-  // A note row may exist with only rom_data/vitals but no generated sections yet
+  // A note row may exist with only vitals but no generated sections yet
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
 
   // Parse initial intake data safely
@@ -431,10 +421,6 @@ function InitialVisitEditorInner({
               <Heart className="h-3.5 w-3.5 mr-1.5" />
               Vital Signs
             </TabsTrigger>
-            <TabsTrigger value="rom">
-              <Activity className="h-3.5 w-3.5 mr-1.5" />
-              Range of Motion
-            </TabsTrigger>
           </TabsList>
           <TabsContent value="chief-complaints" className="mt-4">
             <ChiefComplaintsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
@@ -453,9 +439,6 @@ function InitialVisitEditorInner({
           </TabsContent>
           <TabsContent value="vitals" className="mt-4">
             <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
-          </TabsContent>
-          <TabsContent value="rom" className="mt-4">
-            <RomInputCard caseId={caseId} visitType={visitType} initialRom={initialRom ?? (note?.rom_data as InitialVisitRomValues | null)} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
 
@@ -553,7 +536,7 @@ function InitialVisitEditorInner({
               <AlertDialogHeader>
                 <AlertDialogTitle>Reset Note</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings), vitals, and ROM data will be preserved. Continue?
+                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings) and vitals will be preserved. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -607,7 +590,6 @@ function InitialVisitEditorInner({
       visitTypeLabel={visitTypeLabel}
       note={note}
       initialVitals={initialVitals}
-      initialRom={initialRom}
       isPending={isPending}
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
@@ -1397,242 +1379,6 @@ function VitalSignsCard({
   )
 }
 
-// --- ROM Input Card ---
-
-function RomInputCard({
-  caseId,
-  visitType,
-  initialRom,
-  isLocked,
-}: {
-  caseId: string
-  visitType: NoteVisitType
-  initialRom: InitialVisitRomValues | null
-  isLocked: boolean
-}) {
-  const [isSaving, startSaving] = useTransition()
-  const form = useForm<{ rom: InitialVisitRomValues }>({
-    defaultValues: {
-      rom: initialRom ?? defaultRomData,
-    },
-  })
-
-  const regionsArray = useFieldArray({
-    control: form.control,
-    name: 'rom',
-  })
-
-  function handleSaveRom() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const validated = initialVisitRomSchema.safeParse(values.rom)
-      if (!validated.success) {
-        toast.error('Invalid ROM data')
-        return
-      }
-      const result = await saveInitialVisitRom(caseId, visitType, validated.data)
-      if (result.error) toast.error(result.error)
-      else toast.success('ROM data saved')
-    })
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardDescription>
-          Record ROM measurements for each affected region. Save to include in the generated note.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <div className="space-y-6">
-            {regionsArray.fields.map((regionField, regionIndex) => (
-              <RomRegionSection
-                key={regionField.id}
-                form={form}
-                regionIndex={regionIndex}
-                onRemoveRegion={() => regionsArray.remove(regionIndex)}
-                isLocked={isLocked}
-              />
-            ))}
-
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => regionsArray.append({
-                  region: '',
-                  movements: [{ movement: '', normal: null, actual: null, pain: false }],
-                })}
-                disabled={isLocked}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Region
-              </Button>
-              <div className="flex-1" />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleSaveRom}
-                disabled={isLocked || isSaving}
-              >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Save ROM
-              </Button>
-            </div>
-          </div>
-        </Form>
-      </CardContent>
-    </Card>
-  )
-}
-
-// --- ROM Region Section (nested field array) ---
-
-function RomRegionSection({
-  form,
-  regionIndex,
-  onRemoveRegion,
-  isLocked,
-}: {
-  form: ReturnType<typeof useForm<{ rom: InitialVisitRomValues }>>
-  regionIndex: number
-  onRemoveRegion: () => void
-  isLocked: boolean
-}) {
-  const movementsArray = useFieldArray({
-    control: form.control,
-    name: `rom.${regionIndex}.movements`,
-  })
-
-  return (
-    <div className="border rounded-lg p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <FormField
-          control={form.control}
-          name={`rom.${regionIndex}.region`}
-          render={({ field }) => (
-            <FormItem className="flex-1">
-              <FormControl>
-                <Input
-                  placeholder="Region (e.g., Cervical Spine)"
-                  className="font-semibold"
-                  {...field}
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-          onClick={onRemoveRegion}
-          disabled={isLocked}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {movementsArray.fields.length > 0 && (
-        <div className="space-y-1">
-          <div className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 text-xs text-muted-foreground px-1">
-            <span>Movement</span>
-            <span>Normal (°)</span>
-            <span>Actual (°)</span>
-            <span>Pain</span>
-            <span />
-          </div>
-          {movementsArray.fields.map((movField, movIndex) => (
-            <div key={movField.id} className="grid grid-cols-[1fr_70px_70px_50px_28px] gap-2 items-center">
-              <FormField
-                control={form.control}
-                name={`rom.${regionIndex}.movements.${movIndex}.movement`}
-                render={({ field }) => (
-                  <FormControl>
-                    <Input className="h-8 text-sm" placeholder="e.g. Flexion" {...field} />
-                  </FormControl>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`rom.${regionIndex}.movements.${movIndex}.normal`}
-                render={({ field }) => (
-                  <FormControl>
-                    <Input
-                      className="h-8 text-sm"
-                      type="number"
-                      placeholder="°"
-                      value={field.value ?? ''}
-                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                    />
-                  </FormControl>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`rom.${regionIndex}.movements.${movIndex}.actual`}
-                render={({ field }) => (
-                  <FormControl>
-                    <Input
-                      className="h-8 text-sm"
-                      type="number"
-                      placeholder="°"
-                      value={field.value ?? ''}
-                      onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
-                    />
-                  </FormControl>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`rom.${regionIndex}.movements.${movIndex}.pain`}
-                render={({ field }) => (
-                  <FormControl>
-                    <select
-                      className="h-8 text-sm border rounded px-1 w-full"
-                      value={field.value ? 'Y' : 'N'}
-                      onChange={(e) => field.onChange(e.target.value === 'Y')}
-                    >
-                      <option value="N">No</option>
-                      <option value="Y">Yes</option>
-                    </select>
-                  </FormControl>
-                )}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => movementsArray.remove(movIndex)}
-                disabled={isLocked}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs"
-        onClick={() => movementsArray.append({ movement: '', normal: null, actual: null, pain: false })}
-        disabled={isLocked}
-      >
-        <Plus className="h-3 w-3 mr-1" />
-        Add Movement
-      </Button>
-    </div>
-  )
-}
-
 // --- Draft Editor ---
 
 function DraftEditor({
@@ -1641,7 +1387,6 @@ function DraftEditor({
   visitTypeLabel,
   note,
   initialVitals,
-  initialRom,
   isPending,
   startTransition,
   regeneratingSection,
@@ -1653,7 +1398,6 @@ function DraftEditor({
   visitTypeLabel: string
   note: NoteRow
   initialVitals: VitalsData | null
-  initialRom: InitialVisitRomValues | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
   regeneratingSection: InitialVisitSection | null
@@ -1747,7 +1491,7 @@ function DraftEditor({
               <AlertDialogHeader>
                 <AlertDialogTitle>Reset Note</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings), vitals, and ROM data will be preserved. Continue?
+                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings) and vitals will be preserved. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1819,10 +1563,6 @@ function DraftEditor({
           <TabsTrigger value="vitals">
             <Heart className="h-3.5 w-3.5 mr-1.5" />
             Vital Signs
-          </TabsTrigger>
-          <TabsTrigger value="rom">
-            <Activity className="h-3.5 w-3.5 mr-1.5" />
-            Range of Motion
           </TabsTrigger>
         </TabsList>
 
@@ -1897,10 +1637,6 @@ function DraftEditor({
 
         <TabsContent value="vitals" className="mt-4">
           <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
-        </TabsContent>
-
-        <TabsContent value="rom" className="mt-4">
-          <RomInputCard caseId={caseId} visitType={visitType} initialRom={initialRom} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
     </div>
