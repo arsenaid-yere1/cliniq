@@ -32,6 +32,8 @@ import { deleteInvoice, generateInvoicePdf } from '@/actions/billing'
 import { buildDownloadFilename } from '@/lib/filenames/build-download-filename'
 import { issueInvoice, voidInvoice, markInvoiceOverdue, writeOffInvoice } from '@/actions/invoice-status'
 import { ALLOWED_TRANSITIONS, INVOICE_STATUS_COLORS, INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
+import { LOCKED_STATUSES, PAYMENT_ALLOWED_LOCKED_STATUSES, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
+import { useCaseStatus } from '@/components/patients/case-status-context'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
 import { PaymentDialog, type PaymentDialogMode } from './payment-dialog'
 
@@ -186,6 +188,13 @@ export function InvoiceDetailClient({
   const availableTransitions = ALLOWED_TRANSITIONS[currentStatus] ?? []
   const isDraft = currentStatus === 'draft'
 
+  const caseStatus = useCaseStatus() as CaseStatus
+  const isLocked = LOCKED_STATUSES.includes(caseStatus)
+  // Payments stay available in Pending Settlement; everything else follows the lock.
+  const paymentsBlocked = isLocked && !PAYMENT_ALLOWED_LOCKED_STATUSES.includes(caseStatus)
+  const lockLabel = isLocked ? CASE_STATUS_CONFIG[caseStatus].label : null
+  const lockedHint = `This case is locked (${lockLabel}). Move it back to Active to make changes.`
+
   const patient = invoice.case?.patient
   const attorney = invoice.case?.attorney
   const balance = Number(invoice.total_amount) - Number(invoice.paid_amount)
@@ -313,11 +322,11 @@ export function InvoiceDetailClient({
           </Button>
           {isDraft && (
             <>
-              <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
+              <Button variant="outline" size="sm" disabled={isLocked} title={isLocked ? lockedHint : undefined} onClick={() => setIsEditOpen(true)}>
                 <Pencil className="h-4 w-4 mr-1" />
                 Edit
               </Button>
-              <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDeleteConfirm(true)}>
+              <Button variant="outline" size="sm" className="text-destructive" disabled={isLocked} title={isLocked ? lockedHint : undefined} onClick={() => setShowDeleteConfirm(true)}>
                 <Trash2 className="h-4 w-4 mr-1" />
                 Delete
               </Button>
@@ -326,7 +335,8 @@ export function InvoiceDetailClient({
           {availableTransitions.includes('issued') && (
             <Button
               size="sm"
-              disabled={isTransitioning}
+              disabled={isTransitioning || isLocked}
+              title={isLocked ? lockedHint : undefined}
               onClick={() => handleTransition(() => issueInvoice(invoice.id), 'Invoice issued')}
             >
               Issue Invoice
@@ -336,7 +346,8 @@ export function InvoiceDetailClient({
             <Button
               size="sm"
               className="bg-green-600 hover:bg-green-700"
-              disabled={isTransitioning}
+              disabled={isTransitioning || paymentsBlocked}
+              title={paymentsBlocked ? lockedHint : undefined}
               onClick={() => {
                 setPaymentDialogMode('mark-paid')
                 setShowPaymentDialog(true)
@@ -349,7 +360,8 @@ export function InvoiceDetailClient({
             <Button
               variant="secondary"
               size="sm"
-              disabled={isTransitioning}
+              disabled={isTransitioning || paymentsBlocked}
+              title={paymentsBlocked ? lockedHint : undefined}
               onClick={() => {
                 setPaymentDialogMode('record-payment')
                 setShowPaymentDialog(true)
@@ -363,7 +375,8 @@ export function InvoiceDetailClient({
               variant="outline"
               size="sm"
               className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950"
-              disabled={isTransitioning}
+              disabled={isTransitioning || isLocked}
+              title={isLocked ? lockedHint : undefined}
               onClick={() => handleTransition(() => markInvoiceOverdue(invoice.id), 'Invoice marked as overdue')}
             >
               Mark Overdue
@@ -374,7 +387,8 @@ export function InvoiceDetailClient({
               variant="outline"
               size="sm"
               className="text-destructive"
-              disabled={isTransitioning}
+              disabled={isTransitioning || isLocked}
+              title={isLocked ? lockedHint : undefined}
               onClick={() => setShowVoidDialog(true)}
             >
               Void Invoice
@@ -385,7 +399,8 @@ export function InvoiceDetailClient({
               variant="outline"
               size="sm"
               className="text-destructive"
-              disabled={isTransitioning}
+              disabled={isTransitioning || isLocked}
+              title={isLocked ? lockedHint : undefined}
               onClick={() => setShowWriteOffDialog(true)}
             >
               Write Off

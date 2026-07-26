@@ -185,6 +185,46 @@ describe('markInvoicePaid', () => {
     const result = await markInvoicePaid(TEST_INVOICE_ID, { amount: 1000 })
     expect(result.error).toContain('locked')
   })
+
+  it('blocks when case is archived', async () => {
+    mockFromPerTable({
+      cases: { data: { case_status: 'archived' }, error: null },
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+    })
+    const result = await markInvoicePaid(TEST_INVOICE_ID, { amount: 1000 })
+    expect(result.error).toContain('locked')
+  })
+
+  it('allows payment when case is pending_settlement', async () => {
+    mockFromPerTable({
+      cases: { data: { case_status: 'pending_settlement' }, error: null },
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+      payments: { data: null, error: null },
+      invoice_status_history: { data: null, error: null },
+    })
+    const result = await markInvoicePaid(TEST_INVOICE_ID, { amount: 1000 })
+    expect(result.error).toBeNull()
+  })
+
+  it('still enforces settlement reason when paying below total in pending_settlement', async () => {
+    mockFromPerTable({
+      cases: { data: { case_status: 'pending_settlement' }, error: null },
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+      payments: { data: null, error: null },
+      invoice_status_history: { data: null, error: null },
+    })
+    const result = await markInvoicePaid(TEST_INVOICE_ID, { amount: 600 })
+    expect(result.error).toContain('Settlement reason is required')
+  })
 })
 
 describe('recordPayment', () => {
@@ -258,6 +298,76 @@ describe('recordPayment', () => {
     })
     const result = await recordPayment(TEST_INVOICE_ID, { amount: 0 })
     expect(result.error).toContain('greater than 0')
+  })
+
+  it('allows payment when case is pending_settlement', async () => {
+    mockFromPerTable({
+      cases: { data: { case_status: 'pending_settlement' }, error: null },
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+      payments: { data: null, error: null },
+    })
+    const result = await recordPayment(TEST_INVOICE_ID, { amount: 400 })
+    expect(result.error).toBeNull()
+  })
+
+  it('blocks when case is archived', async () => {
+    mockFromPerTable({
+      cases: { data: { case_status: 'archived' }, error: null },
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+    })
+    const result = await recordPayment(TEST_INVOICE_ID, { amount: 400 })
+    expect(result.error).toContain('locked')
+  })
+})
+
+describe('pending_settlement exception is payment-only', () => {
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  const PENDING_SETTLEMENT = {
+    cases: { data: { case_status: 'pending_settlement' }, error: null },
+    invoices: {
+      data: { id: TEST_INVOICE_ID, status: 'issued', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+      error: null,
+    },
+  }
+
+  it('still blocks voidInvoice', async () => {
+    mockFromPerTable(PENDING_SETTLEMENT)
+    const result = await voidInvoice(TEST_INVOICE_ID, 'duplicate')
+    expect(result.error).toContain('locked')
+  })
+
+  it('still blocks writeOffInvoice', async () => {
+    mockFromPerTable(PENDING_SETTLEMENT)
+    const result = await writeOffInvoice(TEST_INVOICE_ID, 'uncollectible')
+    expect(result.error).toContain('locked')
+  })
+
+  it('still blocks markInvoiceOverdue', async () => {
+    mockFromPerTable(PENDING_SETTLEMENT)
+    const result = await markInvoiceOverdue(TEST_INVOICE_ID)
+    expect(result.error).toContain('locked')
+  })
+
+  it('still blocks issueInvoice', async () => {
+    mockFromPerTable({
+      ...PENDING_SETTLEMENT,
+      invoices: {
+        data: { id: TEST_INVOICE_ID, status: 'draft', case_id: 'c-1', total_amount: 1000, paid_amount: 0 },
+        error: null,
+      },
+      invoice_line_items: { data: [{ id: 'li-1' }], error: null },
+    })
+    const result = await issueInvoice(TEST_INVOICE_ID)
+    expect(result.error).toContain('locked')
   })
 })
 

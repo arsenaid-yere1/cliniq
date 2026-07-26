@@ -3,13 +3,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUserWithRole } from '@/lib/auth/require-role'
-import { LOCKED_STATUSES, CASE_STATUS_TRANSITIONS, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
+import { LOCKED_STATUSES, PAYMENT_ALLOWED_LOCKED_STATUSES, CASE_STATUS_TRANSITIONS, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 
 // --- Shared guard: call at top of every write action ---
 
 export async function assertCaseNotClosed(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
+  options?: { allowPayment?: boolean },
 ): Promise<{ error: string | null }> {
   const { data } = await supabase
     .from('cases')
@@ -19,7 +20,12 @@ export async function assertCaseNotClosed(
     .single()
 
   if (data?.case_status && LOCKED_STATUSES.includes(data.case_status as CaseStatus)) {
-    const label = CASE_STATUS_CONFIG[data.case_status as CaseStatus].label
+    const status = data.case_status as CaseStatus
+    // Payment actions stay open in Pending Settlement (still blocked in Closed/Archived).
+    if (options?.allowPayment && PAYMENT_ALLOWED_LOCKED_STATUSES.includes(status)) {
+      return { error: null }
+    }
+    const label = CASE_STATUS_CONFIG[status].label
     return { error: `This case is locked (${label}). Move it back to Active to make changes.` }
   }
   return { error: null }

@@ -24,3 +24,8 @@ export const CASE_STATUS_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
 }
 
 export const LOCKED_STATUSES: CaseStatus[] = ['pending_settlement', 'closed', 'archived']
+
+// Statuses where recording payments stays allowed despite the case being locked.
+// Settlement money often arrives after the case has moved to Pending Settlement,
+// so payments must still be recordable while notes/docs/procedures stay frozen.
+export const PAYMENT_ALLOWED_LOCKED_STATUSES: CaseStatus[] = ['pending_settlement']

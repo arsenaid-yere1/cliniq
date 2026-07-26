@@ -105,7 +105,7 @@ export async function markInvoicePaid(
 
   if (fetchError || !invoice) return { error: 'Invoice not found' }
 
-  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id)
+  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id, { allowPayment: true })
   if (closedCheck.error) return { error: closedCheck.error }
 
   const currentStatus = invoice.status as InvoiceStatus
@@ -199,7 +199,7 @@ export async function recordPayment(
     .single()
   if (fetchError || !invoice) return { error: 'Invoice not found' }
 
-  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id)
+  const closedCheck = await assertCaseNotClosed(supabase, invoice.case_id, { allowPayment: true })
   if (closedCheck.error) return { error: closedCheck.error }
 
   const status = invoice.status as InvoiceStatus
