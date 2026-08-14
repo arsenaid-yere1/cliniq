@@ -14,7 +14,13 @@ RULES:
 6. For treatment dates, list every individual visit date found in this report. Flag any gaps exceeding 14 days.
 7. Return null for any field that cannot be determined from the document.
 8. Set confidence to "low" for poor quality scans, partial documents, or ambiguous content.
-9. Add extraction_notes for anything ambiguous or noteworthy.`
+9. Add extraction_notes for anything ambiguous or noteworthy.
+10. COMPILED CHARTS: If the PDF contains multiple distinct examination or report packets, aggregate them into one result. Set report_type to "other" when more than one report type is present, and set report_date to the latest explicit examination or report date.
+11. For a compiled chart, put each unique explicit examination or visit date in treatment_dates.visit_dates in chronological order. Set first_visit and last_visit from the list bounds, total_visits to the list length, and include only gaps exceeding 14 days in treatment_gaps.
+12. Deduplicate diagnoses by the exact (icd10_code, description, region) combination. If a repeated diagnosis is primary in any packet, set is_primary to true on the single retained entry.
+13. Deduplicate treatment modalities by the exact (modality, cpt_code, regions_treated, frequency) combination. Keep separate entries when frequency or treated regions differ.
+14. Preserve longitudinal pain observations when their date, score, or clinical context differs. Do not discard clinically distinct observations to reduce output length.
+15. For a compiled chart, state in extraction_notes that the source was aggregated and summarize the number and types of packets detected without reproducing patient narrative.`
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
   name: 'extract_chiro_data',
@@ -179,7 +185,7 @@ export async function extractChiroFromPdf(pdfBase64: string): Promise<{
 }> {
   return callClaudeTool<ChiroExtractionResult>({
     model: 'claude-sonnet-4-6',
-    maxTokens: 4096,
+    maxTokens: 16384,
     system: SYSTEM_PROMPT,
     tools: [EXTRACTION_TOOL],
     toolName: 'extract_chiro_data',
