@@ -66,6 +66,14 @@ export async function updatePainFollowUpEncounter(
   if (!existing) return { error: 'Visit not found' }
   try { await requireWritableEpisode(caseId, existing.episode_id, supabase) }
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
+
+  const effectiveModality = parsed.data.modality ?? existing.modality
+  const effectiveConsent = parsed.data.telehealth_consent_obtained
+    ?? existing.telehealth_consent_obtained
+  if (effectiveModality !== 'telehealth' && effectiveConsent === true) {
+    return { error: 'Telehealth consent can only be recorded for a telehealth encounter' }
+  }
+
   const { encounter_id, ...changes } = parsed.data
   const { error } = await supabase.from('clinical_encounters')
     .update({ ...changes, updated_by_user_id: user.id }).eq('id', encounter_id)

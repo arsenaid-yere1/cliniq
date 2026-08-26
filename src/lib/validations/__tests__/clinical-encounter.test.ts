@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { clinicalEncounterInputSchema } from '../clinical-encounter'
+import {
+  clinicalEncounterInputSchema,
+  updatePainFollowUpEncounterSchema,
+} from '../clinical-encounter'
 
 const baseEncounter = {
   case_id: '11111111-1111-4111-8111-111111111111',
@@ -45,6 +48,24 @@ describe('clinicalEncounterInputSchema', () => {
   it('does not allow telehealth consent on an in-person encounter', () => {
     expect(clinicalEncounterInputSchema.safeParse({
       ...baseEncounter,
+      modality: 'in_person',
+      telehealth_consent_obtained: true,
+    }).success).toBe(false)
+  })
+})
+
+describe('updatePainFollowUpEncounterSchema', () => {
+  it('accepts a consent-only partial update so stored modality can be checked', () => {
+    expect(updatePainFollowUpEncounterSchema.safeParse({
+      encounter_id: '33333333-3333-4333-8333-333333333333',
+      telehealth_consent_obtained: true,
+      telehealth_consent_at: '2026-08-26T12:00:00Z',
+    }).success).toBe(true)
+  })
+
+  it('rejects consent when a non-telehealth modality is included explicitly', () => {
+    expect(updatePainFollowUpEncounterSchema.safeParse({
+      encounter_id: '33333333-3333-4333-8333-333333333333',
       modality: 'in_person',
       telehealth_consent_obtained: true,
     }).success).toBe(false)

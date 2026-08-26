@@ -85,7 +85,13 @@ function validateEncounterCrossFields(
     })
   }
 
-  if (value.modality !== 'telehealth' && value.telehealth_consent_obtained === true) {
+  // Partial encounter updates do not always include modality. Defer validation
+  // against the persisted modality to the server action when it is omitted.
+  if (
+    value.modality !== undefined
+    && value.modality !== 'telehealth'
+    && value.telehealth_consent_obtained === true
+  ) {
     context.addIssue({
       code: 'custom',
       path: ['telehealth_consent_obtained'],
