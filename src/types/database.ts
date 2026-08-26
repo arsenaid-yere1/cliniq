@@ -4213,48 +4213,143 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      close_procedure_appointment: {
-        Args: { p_appointment_id: string; p_idempotency_key: string; p_reason: string; p_status: string }
+      cancel_procedure_order: {
+        Args: {
+          p_idempotency_key: string
+          p_order_id: string
+          p_reason: string
+        }
         Returns: Json
       }
-      cancel_procedure_order: {
-        Args: { p_idempotency_key: string; p_order_id: string; p_reason: string }
+      close_procedure_appointment: {
+        Args: {
+          p_appointment_id: string
+          p_idempotency_key: string
+          p_reason: string
+          p_status: string
+        }
         Returns: Json
       }
       complete_procedure_appointment: {
-        Args: { p_appointment_id: string; p_idempotency_key: string; p_procedure: Json; p_vitals: Json }
+        Args: {
+          p_appointment_id: string
+          p_idempotency_key: string
+          p_procedure: Json
+          p_vitals: Json
+        }
         Returns: Json
       }
       create_direct_episode_procedure: {
-        Args: { p_case_id: string; p_idempotency_key: string; p_procedure: Json; p_procedure_type: string; p_vitals: Json }
+        Args: {
+          p_case_id: string
+          p_idempotency_key: string
+          p_procedure: Json
+          p_procedure_type: string
+          p_vitals: Json
+        }
         Returns: Json
       }
       create_procedure_order_from_recommendation: {
-        Args: { p_case_id: string; p_continued_from_series_id?: string; p_diagnoses: Json; p_episode_id: string; p_priority: string; p_procedure_type: string; p_rationale: string; p_recommendation_id: string; p_sites: Json; p_source_encounter_id: string }
-        Returns: Database["public"]["Tables"]["procedure_orders"]["Row"]
+        Args: {
+          p_case_id: string
+          p_continued_from_series_id?: string
+          p_diagnoses: Json
+          p_episode_id: string
+          p_priority: string
+          p_procedure_type: string
+          p_rationale: string
+          p_recommendation_id: string
+          p_sites: Json
+          p_source_encounter_id: string
+        }
+        Returns: {
+          cancellation_reason: string | null
+          case_id: string
+          clinical_rationale: string | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          diagnoses: Json
+          episode_id: string
+          id: string
+          priority: string
+          procedure_series_id: string
+          procedure_type: string
+          sites: Json
+          source_encounter_id: string
+          source_recommendation_id: string
+          status: string
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "procedure_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       delete_performed_procedure: {
         Args: { p_case_id: string; p_procedure_id: string }
         Returns: Json
       }
       finalize_episode_discharge: {
-        Args: { p_case_id: string; p_document_id: string; p_episode_id: string; p_note_id: string }
-        Returns: { episode_id: string; note_id: string; replayed: boolean }[]
+        Args: {
+          p_case_id: string
+          p_document_id: string
+          p_episode_id: string
+          p_note_id: string
+        }
+        Returns: {
+          episode_id: string
+          note_id: string
+          replayed: boolean
+        }[]
       }
       finalize_pain_follow_up: {
-        Args: { p_case_id: string; p_document_id: string; p_encounter_id: string; p_note_id: string }
-        Returns: { encounter_id: string; note_id: string; replayed: boolean }[]
+        Args: {
+          p_case_id: string
+          p_document_id: string
+          p_encounter_id: string
+          p_note_id: string
+        }
+        Returns: {
+          encounter_id: string
+          note_id: string
+          replayed: boolean
+        }[]
       }
       reschedule_procedure_appointment: {
-        Args: { p_appointment_id: string; p_idempotency_key: string; p_location: string; p_notes: string; p_provider_id: string; p_scheduled_end: string; p_scheduled_start: string }
+        Args: {
+          p_appointment_id: string
+          p_idempotency_key: string
+          p_location: string
+          p_notes: string
+          p_provider_id: string
+          p_scheduled_end: string
+          p_scheduled_start: string
+        }
         Returns: Json
       }
       save_invoice_with_claims: {
-        Args: { p_case_id: string; p_invoice: Json; p_invoice_id: string; p_lines: Json }
+        Args: {
+          p_case_id: string
+          p_invoice: Json
+          p_invoice_id: string
+          p_lines: Json
+        }
         Returns: string
       }
       schedule_procedure_appointment: {
-        Args: { p_idempotency_key: string; p_location: string; p_notes: string; p_order_id: string; p_provider_id: string; p_scheduled_end: string; p_scheduled_start: string }
+        Args: {
+          p_idempotency_key: string
+          p_location: string
+          p_notes: string
+          p_order_id: string
+          p_provider_id: string
+          p_scheduled_end: string
+          p_scheduled_start: string
+        }
         Returns: Json
       }
       start_return_episode: {
