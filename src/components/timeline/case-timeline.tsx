@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { Flag, FileText, Activity, Receipt, ArrowRightLeft, DollarSign } from 'lucide-react'
+import { Flag, FileText, Activity, Receipt, ArrowRightLeft, DollarSign, CalendarClock, Stethoscope, Layers3 } from 'lucide-react'
 import type { TimelineEvent, TimelineEventType } from '@/actions/timeline'
 import {
   Timeline,
@@ -16,6 +16,17 @@ const eventConfig: Record<TimelineEventType, { icon: React.ElementType; colorCla
   invoice_created: { icon: Receipt, colorClass: 'text-purple-600' },
   invoice_status_change: { icon: ArrowRightLeft, colorClass: 'text-amber-600' },
   invoice_payment: { icon: DollarSign, colorClass: 'text-emerald-600' },
+  episode_started: { icon: Layers3, colorClass: 'text-blue-600' },
+  episode_ended: { icon: Layers3, colorClass: 'text-slate-600' },
+  visit_scheduled: { icon: CalendarClock, colorClass: 'text-blue-600' },
+  visit_completed: { icon: Stethoscope, colorClass: 'text-green-600' },
+  visit_cancelled: { icon: CalendarClock, colorClass: 'text-slate-500' },
+  visit_no_show: { icon: CalendarClock, colorClass: 'text-red-600' },
+  procedure_ordered: { icon: Activity, colorClass: 'text-indigo-600' },
+  procedure_scheduled: { icon: CalendarClock, colorClass: 'text-indigo-600' },
+  procedure_rescheduled: { icon: ArrowRightLeft, colorClass: 'text-amber-600' },
+  procedure_cancelled: { icon: CalendarClock, colorClass: 'text-slate-500' },
+  procedure_no_show: { icon: CalendarClock, colorClass: 'text-red-600' },
 }
 
 function formatEventDate(dateStr: string): string {

@@ -19,7 +19,7 @@ export const scheduleProcedureAppointmentSchema = z.object({
 })
 
 export const rescheduleProcedureAppointmentSchema =
-  scheduleProcedureAppointmentSchema.extend({
+  scheduleProcedureAppointmentSchema.safeExtend({
     appointment_id: z.string().uuid(),
   })
 

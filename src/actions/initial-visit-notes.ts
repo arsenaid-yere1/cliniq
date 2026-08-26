@@ -25,6 +25,7 @@ import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-statu
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 import { validateNarrative } from '@/lib/qc/narrative-validator'
+import { ensureLegacyEpisodeEncounter } from '@/lib/clinical/episode-context'
 
 // --- Helper: compute source data hash ---
 
@@ -422,10 +423,18 @@ export async function generateInitialVisitNote(
     // No existing row for this visit type — create one. The unique partial
     // index on (case_id, visit_type) protects against concurrent inserts:
     // a second racer gets a unique-violation error (code 23505).
+    const ownership = await ensureLegacyEpisodeEncounter(
+      caseId,
+      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+      { encounterDate: effectiveVisitDate, providerId: null, userId: user.id },
+      supabase,
+    )
     const { data: record, error: insertError } = await supabase
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
+        episode_id: ownership.episodeId,
+        encounter_id: ownership.encounterId,
         visit_type: visitType,
         status: 'generating',
         generation_attempts: 1,
@@ -691,6 +700,8 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .from('documents')
     .insert({
       case_id: caseId,
+      episode_id: note.episode_id,
+      encounter_id: note.encounter_id,
       document_type: 'generated',
       file_name: fileName,
       file_path: storagePath,
@@ -1010,10 +1021,19 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
 
     if (error) return { error: 'Failed to update vitals' }
   } else {
+    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+      .eq('id', caseId).is('deleted_at', null).single()
+    const ownership = await ensureLegacyEpisodeEncounter(
+      caseId,
+      'initial_evaluation',
+      { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id },
+      supabase,
+    )
     const { error } = await supabase
       .from('vital_signs')
       .insert({
         case_id: caseId,
+        encounter_id: ownership.encounterId,
         procedure_id: null,
         ...validated.data,
         created_by_user_id: user.id,
@@ -1083,10 +1103,20 @@ export async function saveProviderIntake(
 
     if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
   } else {
+    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+      .eq('id', caseId).is('deleted_at', null).single()
+    const ownership = await ensureLegacyEpisodeEncounter(
+      caseId,
+      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+      { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
+      supabase,
+    )
     const { error } = await supabase
       .from('initial_visit_notes')
       .insert({
         case_id: caseId,
+        episode_id: ownership.episodeId,
+        encounter_id: ownership.encounterId,
         visit_type: visitType,
         status: 'draft',
         provider_intake: validated.data as unknown as Record<string, unknown>,
@@ -1130,4 +1160,3 @@ export async function saveInitialVisitNoteToneHint(
 
   return {}
 }
-

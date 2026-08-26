@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
@@ -70,6 +70,7 @@ interface RecordBotoxDialogProps {
   patientLastName: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  procedureAppointmentId?: string
 }
 
 export function RecordBotoxDialog({
@@ -80,8 +81,10 @@ export function RecordBotoxDialog({
   patientLastName,
   open,
   onOpenChange,
+  procedureAppointmentId,
 }: RecordBotoxDialogProps) {
   const isEditing = !!initialData?.id
+  const createKey = useRef(crypto.randomUUID())
   const [generatingConsent, setGeneratingConsent] = useState(false)
 
   const dosing = (initialData?.botox_dosing ?? null) as BotoxDosingInitial | null
@@ -179,15 +182,18 @@ export function RecordBotoxDialog({
 
   async function onSubmit(values: BotoxProcedureFormValues) {
     const result = isEditing
-      ? await updateBotoxProcedure(initialData!.id, caseId, values)
-      : await createBotoxProcedure(caseId, values)
+      ? await updateBotoxProcedure(initialData!.id!, caseId, values)
+      : await createBotoxProcedure(caseId, values, createKey.current, procedureAppointmentId)
     if ('error' in result && result.error) {
       toast.error(result.error)
       return
     }
     toast.success(isEditing ? 'Procedure updated' : 'Procedure recorded')
     onOpenChange(false)
-    if (!isEditing) form.reset()
+    if (!isEditing) {
+      createKey.current = crypto.randomUUID()
+      form.reset()
+    }
   }
 
   return (

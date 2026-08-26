@@ -34,7 +34,7 @@ export default async function ProcedureNotePage({
   ] = await Promise.all([
     getProcedureById(procedureId),
     getProcedureNote(procedureId),
-    checkProcedureNotePrerequisites(caseId),
+    checkProcedureNotePrerequisites(caseId, procedureId),
     getClinicSettings(),
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),

@@ -61,6 +61,17 @@ export interface QualityReviewInputData {
   // initial_visit row. Reviewer must skip every initial_visit-anchored check
   // and treat pain_evaluation as the chain origin.
   painManagementStart: boolean
+  painFollowUpNotes?: Array<{
+    id: string
+    encounter_id: string
+    status: string
+    subjective: string | null
+    telehealth_observations: string | null
+    assessment: string | null
+    diagnoses: string | null
+    treatment_plan: string | null
+    clinician_disclaimer: string | null
+  }>
   procedureNotes: Array<{
     id: string
     procedure_id: string
@@ -171,6 +182,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
             'step',
             'note_id',
             'procedure_id',
+            'encounter_id',
             'section_key',
             'message',
             'rationale',
@@ -184,6 +196,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
               enum: [
                 'initial_visit',
                 'pain_evaluation',
+                'pain_follow_up',
                 'procedure',
                 'discharge',
                 'case_summary',
@@ -192,6 +205,7 @@ const REVIEW_TOOL: Anthropic.Tool = {
             },
             note_id: { type: ['string', 'null'] },
             procedure_id: { type: ['string', 'null'] },
+            encounter_id: { type: ['string', 'null'] },
             section_key: { type: ['string', 'null'] },
             message: { type: 'string' },
             rationale: { type: ['string', 'null'] },
@@ -291,6 +305,7 @@ export async function generateQualityReviewFromData(
         step: f.step,
         note_id: normalizeNullableString(f.note_id),
         procedure_id: normalizeNullableString(f.procedure_id),
+        encounter_id: normalizeNullableString(f.encounter_id),
         section_key: normalizeNullableString(f.section_key),
         message: typeof f.message === 'string' ? f.message : String(f.message ?? ''),
         rationale: normalizeNullableString(f.rationale),

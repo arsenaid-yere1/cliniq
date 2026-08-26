@@ -6,6 +6,7 @@ import { generateImagingOrders, generateChiropracticOrder, type ClinicalOrderInp
 import { type OrderType } from '@/lib/validations/clinical-orders'
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { type NoteVisitType } from '@/lib/claude/generate-initial-visit'
+import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 
 // --- Helper: gather input data from finalized note for a specific visit type ---
 
@@ -13,12 +14,16 @@ async function gatherOrderInputData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   visitType: NoteVisitType,
-): Promise<{ data?: ClinicalOrderInputData; noteId?: string; error?: string }> {
+): Promise<{ data?: ClinicalOrderInputData; noteId?: string; episodeId?: string; encounterId?: string; error?: string }> {
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { error: 'Care episode not found' }
   // Fetch the note matching BOTH case_id and visit_type
   const { data: note, error: noteError } = await supabase
     .from('initial_visit_notes')
     .select(`
       id,
+      episode_id,
+      encounter_id,
       status,
       diagnoses,
       chief_complaint,
@@ -32,6 +37,7 @@ async function gatherOrderInputData(
     `)
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .in('status', ['finalized', 'draft'])
     .maybeSingle()
@@ -65,6 +71,8 @@ async function gatherOrderInputData(
 
   return {
     noteId: note.id,
+    episodeId: note.episode_id,
+    encounterId: note.encounter_id,
     data: {
       patientInfo: {
         first_name: caseData.patient.first_name,
@@ -111,8 +119,8 @@ export async function generateClinicalOrder(
   if (closedCheck.error) return { error: closedCheck.error }
 
   // Gather input data from the visit-type-specific note
-  const { data: inputData, noteId, error: gatherError } = await gatherOrderInputData(supabase, caseId, visitType)
-  if (gatherError || !inputData || !noteId) return { error: gatherError ?? 'Failed to gather order data' }
+  const { data: inputData, noteId, episodeId, encounterId, error: gatherError } = await gatherOrderInputData(supabase, caseId, visitType)
+  if (gatherError || !inputData || !noteId || !episodeId) return { error: gatherError ?? 'Failed to gather order data' }
 
   // Create order row in generating state
   const { data: order, error: insertError } = await supabase
@@ -120,6 +128,8 @@ export async function generateClinicalOrder(
     .insert({
       case_id: caseId,
       initial_visit_note_id: noteId,
+      episode_id: episodeId,
+      encounter_id: encounterId ?? null,
       order_type: orderType,
       status: 'generating',
       created_by_user_id: user.id,
@@ -209,6 +219,8 @@ export async function generateClinicalOrder(
     .from('documents')
     .insert({
       case_id: caseId,
+      episode_id: episodeId,
+      encounter_id: encounterId ?? null,
       document_type: 'generated',
       file_name: fileName,
       file_path: storagePath,
@@ -251,6 +263,8 @@ export async function getClinicalOrders(caseId: string, visitType: NoteVisitType
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: [] }
 
   // Resolve the note row for this (case, visit_type). Orders are linked to
   // a specific note row so we use that id as the scope filter.
@@ -259,6 +273,7 @@ export async function getClinicalOrders(caseId: string, visitType: NoteVisitType
     .select('id')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -376,6 +391,8 @@ export async function finalizeClinicalOrder(orderId: string, caseId: string) {
     .from('documents')
     .insert({
       case_id: caseId,
+      episode_id: order.episode_id,
+      encounter_id: order.encounter_id,
       document_type: 'generated',
       file_name: fileName,
       file_path: storagePath,

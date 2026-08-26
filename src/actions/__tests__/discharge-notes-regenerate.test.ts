@@ -126,6 +126,19 @@ describe('regenerateDischargeNoteSectionAction — dischargeVitals wiring', () =
     }
 
     mockTableResults(mockSupabase, {
+      care_episodes: {
+        data: {
+          id: '22222222-2222-4222-8222-222222222222',
+          case_id: TEST_CASE_ID,
+          episode_number: 1,
+          status: 'active',
+          opened_at: '2026-01-01T00:00:00.000Z',
+          discharged_at: null,
+          discharge_note_id: null,
+          deleted_at: null,
+        },
+        error: null,
+      },
       discharge_notes: { data: noteRow, error: null },
       cases: { data: caseRow, error: null },
       procedures: { data: [procedureRow], error: null },

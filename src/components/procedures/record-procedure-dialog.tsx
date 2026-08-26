@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
@@ -87,7 +87,7 @@ function scrollToSection(id: string) {
 }
 
 export interface ProcedureInitialData {
-  id: string
+  id?: string
   procedure_date: string
   // Discriminator: 'prp' | 'cortisone' | 'hyaluronic' | 'botox'. Drives which
   // record dialog the table opens for editing.
@@ -141,6 +141,7 @@ interface RecordProcedureDialogProps {
   patientLastName: string | null
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  procedureAppointmentId?: string
 }
 
 export function RecordProcedureDialog({
@@ -151,8 +152,10 @@ export function RecordProcedureDialog({
   patientLastName,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  procedureAppointmentId,
 }: RecordProcedureDialogProps) {
   const isEditing = !!initialData?.id
+  const createKey = useRef(crypto.randomUUID())
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
   const setOpen = controlledOnOpenChange ?? setInternalOpen
@@ -328,8 +331,8 @@ export function RecordProcedureDialog({
 
   async function onSubmit(values: PrpProcedureFormValues) {
     const result = isEditing
-      ? await updatePrpProcedure(initialData!.id, caseId, values)
-      : await createPrpProcedure(caseId, values)
+      ? await updatePrpProcedure(initialData!.id!, caseId, values)
+      : await createPrpProcedure(caseId, values, createKey.current, procedureAppointmentId)
     if ('error' in result && result.error) {
       toast.error(result.error)
       return
@@ -337,6 +340,7 @@ export function RecordProcedureDialog({
     toast.success(isEditing ? 'Procedure updated' : 'Procedure recorded')
     setOpen(false)
     if (!isEditing) {
+      createKey.current = crypto.randomUUID()
       setComplicationsMode('none')
       form.reset()
     }

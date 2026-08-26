@@ -30,9 +30,14 @@ import {
 import { regenerateNoteSection } from '@/actions/initial-visit-notes'
 import { regenerateDischargeNoteSectionAction } from '@/actions/discharge-notes'
 import { regenerateProcedureNoteSectionAction } from '@/actions/procedure-notes'
+import {
+  regeneratePainFollowUpSectionAction,
+  type PainFollowUpSection,
+} from '@/actions/pain-follow-up-notes'
 import type { InitialVisitSection } from '@/lib/validations/initial-visit-note'
 import type { DischargeNoteSection } from '@/lib/validations/discharge-note'
 import type { ProcedureNoteSection } from '@/lib/validations/procedure-note'
+import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 
 function computeSourceHash(inputData: QualityReviewInputData): string {
   return createHash('sha256').update(JSON.stringify(inputData)).digest('hex')
@@ -42,11 +47,14 @@ async function gatherSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
 ): Promise<{ data: QualityReviewInputData | null; error: string | null }> {
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: null, error: 'Care episode not found' }
   const [
     caseRes,
     summaryRes,
     ivRes,
     procedureNotesRes,
+    followUpRes,
     dischargeRes,
     mriCountRes,
     ptCountRes,
@@ -80,21 +88,27 @@ async function gatherSourceData(
         'id, visit_type, visit_date, status, diagnoses, chief_complaint, physical_exam, treatment_plan, medical_necessity, prognosis, raw_ai_response',
       )
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .is('deleted_at', null),
     supabase
       .from('procedure_notes')
       .select(
-        'id, procedure_id, status, subjective, assessment_summary, procedure_injection, assessment_and_plan, prognosis, plan_alignment_status, raw_ai_response, procedures!inner(id, procedure_date, procedure_number, diagnoses)',
+        'id, procedure_id, status, subjective, assessment_summary, procedure_injection, assessment_and_plan, prognosis, plan_alignment_status, raw_ai_response, procedures!inner(id, procedure_date, procedure_number, diagnoses, episode_id)',
       )
       .eq('case_id', caseId)
+      .eq('procedures.episode_id', episode.id)
       .is('deleted_at', null)
       .order('procedure_id', { ascending: true }),
+    supabase.from('pain_follow_up_notes')
+      .select('id,encounter_id,status,subjective,telehealth_observations,assessment,diagnoses,treatment_plan,clinician_disclaimer')
+      .eq('case_id',caseId).eq('episode_id',episode.id).is('deleted_at',null),
     supabase
       .from('discharge_notes')
       .select(
         'id, visit_date, status, subjective, objective_vitals, diagnoses, assessment, plan_and_recommendations, prognosis, pain_score_max, pain_trajectory_text, raw_ai_response',
       )
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .is('deleted_at', null)
       .maybeSingle(),
     supabase
@@ -256,6 +270,7 @@ async function gatherSourceData(
           }
         : null,
       painManagementStart,
+      painFollowUpNotes: followUpRes.data ?? [],
       procedureNotes,
       dischargeNote: dischargeRes.data
         ? {
@@ -296,6 +311,8 @@ export async function runCaseQualityReview(caseId: string) {
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { error: 'Care episode not found' }
 
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId)
   if (gatherError || !inputData) {
@@ -311,6 +328,7 @@ export async function runCaseQualityReview(caseId: string) {
     .from('case_quality_reviews')
     .select('finding_overrides')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   const priorOverrides: FindingOverridesMap =
@@ -321,6 +339,7 @@ export async function runCaseQualityReview(caseId: string) {
     .from('case_quality_reviews')
     .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
 
   const sourceHash = computeSourceHash(inputData)
@@ -328,6 +347,7 @@ export async function runCaseQualityReview(caseId: string) {
     .from('case_quality_reviews')
     .insert({
       case_id: caseId,
+      episode_id: episode.id,
       generation_status: 'processing',
       generation_attempts: 1,
       source_data_hash: sourceHash,
@@ -466,10 +486,13 @@ export async function getCaseQualityReview(caseId: string) {
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: null }
   const { data, error } = await supabase
     .from('case_quality_reviews')
     .select('*')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -490,10 +513,13 @@ export async function checkQualityReviewStaleness(caseId: string) {
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: { isStale: false } }
   const { data: review } = await supabase
     .from('case_quality_reviews')
     .select('source_data_hash')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -519,10 +545,13 @@ async function loadActiveReviewForOverride(
   | { data: { id: string; finding_overrides: FindingOverridesMap }; error: null }
   | { data: null; error: string }
 > {
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: null, error: 'No active review' }
   const { data, error } = await supabase
     .from('case_quality_reviews')
     .select('id, finding_overrides')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (error || !data) return { data: null, error: 'No active review' }
@@ -713,11 +742,14 @@ export async function verifyFinding(caseId: string, findingHash: string) {
   if (!user) return { error: 'Not authenticated' }
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { error: 'Care episode not found' }
 
   const { data: row } = await supabase
     .from('case_quality_reviews')
     .select('id, findings, finding_overrides')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (!row) return { error: 'No active review' }
@@ -894,11 +926,14 @@ export async function fixFinding(caseId: string, findingHash: string) {
   if (!user) return { error: 'Not authenticated' }
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { error: 'Care episode not found' }
 
   const { data: row } = await supabase
     .from('case_quality_reviews')
     .select('id, findings, finding_overrides')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (!row) return { error: 'No active review' }
@@ -958,6 +993,14 @@ export async function fixFinding(caseId: string, findingHash: string) {
       findingFix,
     )
     if ('error' in res && res.error) regenError = res.error
+  } else if (finding.step === 'pain_follow_up') {
+    const res = await regeneratePainFollowUpSectionAction(
+      caseId,
+      finding.encounter_id as string,
+      finding.section_key as PainFollowUpSection,
+      findingFix,
+    )
+    if ('error' in res && res.error) regenError = res.error
   } else if (finding.step === 'discharge') {
     const res = await regenerateDischargeNoteSectionAction(
       caseId,
@@ -1002,6 +1045,7 @@ export async function fixFinding(caseId: string, findingHash: string) {
       .from('case_quality_reviews')
       .select('id, finding_overrides')
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .is('deleted_at', null)
       .maybeSingle()
     if (latest) {
@@ -1023,6 +1067,7 @@ export async function fixFinding(caseId: string, findingHash: string) {
     .from('case_quality_reviews')
     .select('id, findings, finding_overrides')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (post) {

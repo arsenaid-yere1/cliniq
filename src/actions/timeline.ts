@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { INVOICE_STATUS_LABELS, type InvoiceStatus } from '@/lib/constants/invoice-status'
 import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 
-export type TimelineEventType = 'status_change' | 'document_added' | 'procedure' | 'invoice_created' | 'invoice_status_change' | 'invoice_payment'
+export type TimelineEventType = 'status_change' | 'document_added' | 'procedure' | 'invoice_created' | 'invoice_status_change' | 'invoice_payment' | 'episode_started' | 'episode_ended' | 'visit_scheduled' | 'visit_completed' | 'visit_cancelled' | 'visit_no_show' | 'procedure_ordered' | 'procedure_scheduled' | 'procedure_rescheduled' | 'procedure_cancelled' | 'procedure_no_show'
 
 export interface TimelineEvent {
   id: string
@@ -18,7 +18,7 @@ export interface TimelineEvent {
 export async function getTimelineEvents(caseId: string): Promise<{ data: TimelineEvent[], error?: string }> {
   const supabase = await createClient()
 
-  const [statusRes, docRes, procRes, invRes, invStatusRes, paymentsRes] = await Promise.all([
+  const [statusRes, docRes, procRes, invRes, invStatusRes, paymentsRes, episodeRes, encounterRes, orderRes, appointmentRes] = await Promise.all([
     supabase
       .from('case_status_history')
       .select('id, previous_status, new_status, changed_at, notes, changed_by:users!changed_by_user_id(full_name)')
@@ -69,6 +69,10 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
       `)
       .eq('invoices.case_id', caseId)
       .order('payment_date', { ascending: false }),
+    supabase.from('care_episodes').select('id,episode_number,status,opened_at,ended_at,return_reason,end_reason').eq('case_id',caseId).is('deleted_at',null),
+    supabase.from('clinical_encounters').select('id,encounter_type,modality,status,scheduled_start,encounter_date,completed_at,reason_for_visit').eq('case_id',caseId).is('deleted_at',null),
+    supabase.from('procedure_orders').select('id,procedure_type,status,created_at,clinical_rationale').eq('case_id',caseId).is('deleted_at',null),
+    supabase.from('procedure_appointments').select('id,status,scheduled_start,updated_at,cancellation_reason').eq('case_id',caseId).is('deleted_at',null),
   ])
 
   const events: TimelineEvent[] = []
@@ -169,6 +173,21 @@ export async function getTimelineEvents(caseId: string): Promise<{ data: Timelin
     })
   }
 
+  for (const episode of episodeRes.data ?? []) {
+    events.push({ id:`episode-start-${episode.id}`,type:'episode_started',date:episode.opened_at,title:`Care Episode ${episode.episode_number} started`,description:episode.return_reason })
+    if(episode.ended_at) events.push({ id:`episode-end-${episode.id}`,type:'episode_ended',date:episode.ended_at,title:`Care Episode ${episode.episode_number} ${episode.status}`,description:episode.end_reason })
+  }
+  for (const visit of encounterRes.data ?? []) {
+    const date=visit.completed_at??visit.scheduled_start??`${visit.encounter_date??new Date().toISOString().slice(0,10)}T00:00:00`
+    const type:TimelineEventType=visit.status==='completed'?'visit_completed':visit.status==='cancelled'?'visit_cancelled':visit.status==='no_show'?'visit_no_show':'visit_scheduled'
+    events.push({id:`visit-${visit.id}`,type,date,title:`Pain visit ${visit.status.replaceAll('_',' ')}`,description:`${visit.modality.replaceAll('_',' ')}${visit.reason_for_visit?` · ${visit.reason_for_visit}`:''}`})
+  }
+  for (const order of orderRes.data ?? []) events.push({id:`order-${order.id}`,type:'procedure_ordered',date:order.created_at,title:`${order.procedure_type.toUpperCase()} procedure ordered`,description:order.clinical_rationale})
+  for (const appointment of appointmentRes.data ?? []) {
+    const type:TimelineEventType=appointment.status==='no_show'?'procedure_no_show':appointment.status==='cancelled'?(appointment.cancellation_reason==='rescheduled'?'procedure_rescheduled':'procedure_cancelled'):'procedure_scheduled'
+    events.push({id:`appointment-${appointment.id}`,type,date:appointment.status==='scheduled'?appointment.scheduled_start:appointment.updated_at,title:`Procedure appointment ${appointment.status.replaceAll('_',' ')}`,description:appointment.cancellation_reason})
+  }
+
   // Sort by date descending
   events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
@@ -189,4 +208,3 @@ function formatDocType(type: string): string {
   }
   return labels[type] ?? type
 }
-

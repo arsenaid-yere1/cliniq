@@ -21,6 +21,8 @@ import {
   parseInitialVisitTreatmentPlan,
 } from '@/lib/procedures/compute-plan-alignment'
 import { sitesFromPlan } from '@/lib/procedures/sites-from-plan'
+import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
+import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -74,8 +76,14 @@ export async function getProcedureCount(caseId: string) {
 
 export async function createPrpProcedure(
   caseId: string,
-  values: PrpProcedureFormValues
+  values: PrpProcedureFormValues,
+  idempotencyKey = crypto.randomUUID(),
+  procedureAppointmentId?: string,
 ) {
+  if (procedureAppointmentId) {
+    const disabled = requireReturnTeleVisitsMutation()
+    if (disabled) return disabled
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -83,23 +91,17 @@ export async function createPrpProcedure(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
-  const { data: ivnRows } = await supabase
-    .from('initial_visit_notes')
-    .select('visit_date')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .not('visit_date', 'is', null)
-
-  const floorDate = (ivnRows ?? [])
-    .map((r) => r.visit_date as string)
-    .sort()
-    .at(-1) ?? null
-
-  if (floorDate && values.procedure_date < floorDate) {
-    return {
-      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
-    }
+  if (!procedureAppointmentId) {
+    const episode = await getActiveOrLatestEpisode(caseId, supabase)
+    const { data: ivnRows } = await supabase
+      .from('initial_visit_notes')
+      .select('visit_date')
+      .eq('case_id', caseId)
+      .eq('episode_id', episode?.id ?? '00000000-0000-0000-0000-000000000000')
+      .is('deleted_at', null)
+      .not('visit_date', 'is', null)
+    const floorDate = (ivnRows ?? []).map((row) => row.visit_date as string).sort().at(-1) ?? null
+    if (floorDate && values.procedure_date < floorDate) return { error: `Procedure date cannot precede the Initial Visit date (${floorDate})` }
   }
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
@@ -120,12 +122,7 @@ export async function createPrpProcedure(
     procedureNumber,
   })
 
-  // Insert procedure record
-  const { data: procedure, error: procError } = await supabase
-    .from('procedures')
-    .insert({
-      // --- Story 4.1 fields ---
-      case_id: caseId,
+  const procedurePayload = {
       procedure_date: values.procedure_date,
       procedure_name: 'PRP Injection',
       // sites jsonb is the structured source of truth; injection_site is
@@ -134,7 +131,6 @@ export async function createPrpProcedure(
       injection_site: injectionSiteFromSites(values.sites),
       diagnoses: rewrittenDiagnoses,
       consent_obtained: values.consent_obtained,
-      procedure_number: procedureNumber,
       // --- Story 4.2: PRP Preparation ---
       blood_draw_volume_ml: values.prp_preparation.blood_draw_volume_ml,
       centrifuge_duration_min: values.prp_preparation.centrifuge_duration_min,
@@ -150,7 +146,6 @@ export async function createPrpProcedure(
       guidance_method: values.injection.guidance_method,
       target_structure: values.injection.target_structure,
       // C4: procedure_type — schema-only, hard-coded 'prp' until selector ships
-      procedure_type: 'prp',
       // --- Story 4.2: Post-Procedure ---
       complications: values.post_procedure.complications,
       supplies_used: values.post_procedure.supplies_used || null,
@@ -158,38 +153,24 @@ export async function createPrpProcedure(
       activity_restriction_hrs: values.post_procedure.activity_restriction_hrs,
       // --- Plan-vs-performed rationale (optional) ---
       plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
-      // --- audit ---
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select()
-    .single()
-
-  if (procError || !procedure) return { error: procError?.message ?? 'Failed to create procedure' }
-
-  // Insert vital signs record
+  }
   const vs = values.vital_signs
   const hasVitals = Object.values(vs).some((v) => v !== null && v !== undefined)
-  if (hasVitals) {
-    const { error: vsError } = await supabase
-      .from('vital_signs')
-      .insert({
-        case_id: caseId,
-        procedure_id: procedure.id,
-        bp_systolic: vs.bp_systolic,
-        bp_diastolic: vs.bp_diastolic,
-        heart_rate: vs.heart_rate,
-        respiratory_rate: vs.respiratory_rate,
-        temperature_f: vs.temperature_f,
-        spo2_percent: vs.spo2_percent,
-        pain_score_min: vs.pain_score_min,
-        pain_score_max: vs.pain_score_max,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
+  const { data: rpcResult, error: procError } = procedureAppointmentId
+    ? await supabase.rpc('complete_procedure_appointment', {
+        p_appointment_id: procedureAppointmentId,
+        p_procedure: procedurePayload,
+        p_vitals: hasVitals ? vs : {},
+        p_idempotency_key: idempotencyKey,
       })
-
-    if (vsError) return { error: vsError.message }
-  }
+    : await supabase.rpc('create_direct_episode_procedure', {
+        p_case_id: caseId, p_procedure_type: 'prp', p_procedure: procedurePayload,
+        p_vitals: hasVitals ? vs : {}, p_idempotency_key: idempotencyKey,
+      })
+  if (procError) return { error: procError.message.includes('active care episode') ? procError.message : 'Failed to create procedure' }
+  const procedureId = (rpcResult as { procedure_id?: string } | null)?.procedure_id
+  if (!procedureId) return { error: 'Failed to create procedure' }
+  const { data: procedure } = await supabase.from('procedures').select('*').eq('id', procedureId).single()
 
   revalidatePath(`/patients/${caseId}/procedures`)
   return { data: procedure }
@@ -299,25 +280,6 @@ export async function updatePrpProcedure(
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
-
-  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
-  const { data: ivnRows } = await supabase
-    .from('initial_visit_notes')
-    .select('visit_date')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .not('visit_date', 'is', null)
-
-  const floorDate = (ivnRows ?? [])
-    .map((r) => r.visit_date as string)
-    .sort()
-    .at(-1) ?? null
-
-  if (floorDate && values.procedure_date < floorDate) {
-    return {
-      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
-    }
-  }
 
   // Load procedure_number for the deterministic A→D rewrite path.
   const { data: existingProc } = await supabase
@@ -431,8 +393,14 @@ export async function updatePrpProcedure(
 
 export async function createBotoxProcedure(
   caseId: string,
-  values: BotoxProcedureFormValues
+  values: BotoxProcedureFormValues,
+  idempotencyKey = crypto.randomUUID(),
+  procedureAppointmentId?: string,
 ) {
+  if (procedureAppointmentId) {
+    const disabled = requireReturnTeleVisitsMutation()
+    if (disabled) return disabled
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -440,23 +408,17 @@ export async function createBotoxProcedure(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  // Friendly pre-check: procedure_date cannot precede the latest Initial Visit date
-  const { data: ivnRows } = await supabase
-    .from('initial_visit_notes')
-    .select('visit_date')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .not('visit_date', 'is', null)
-
-  const floorDate = (ivnRows ?? [])
-    .map((r) => r.visit_date as string)
-    .sort()
-    .at(-1) ?? null
-
-  if (floorDate && values.procedure_date < floorDate) {
-    return {
-      error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
-    }
+  if (!procedureAppointmentId) {
+    const episode = await getActiveOrLatestEpisode(caseId, supabase)
+    const { data: ivnRows } = await supabase
+      .from('initial_visit_notes')
+      .select('visit_date')
+      .eq('case_id', caseId)
+      .eq('episode_id', episode?.id ?? '00000000-0000-0000-0000-000000000000')
+      .is('deleted_at', null)
+      .not('visit_date', 'is', null)
+    const floorDate = (ivnRows ?? []).map((row) => row.visit_date as string).sort().at(-1) ?? null
+    if (floorDate && values.procedure_date < floorDate) return { error: `Procedure date cannot precede the Initial Visit date (${floorDate})` }
   }
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
@@ -473,55 +435,37 @@ export async function createBotoxProcedure(
     procedureNumber,
   })
 
-  const { data: procedure, error: procError } = await supabase
-    .from('procedures')
-    .insert({
-      case_id: caseId,
+  const procedurePayload = {
       procedure_date: values.procedure_date,
       procedure_name: 'Therapeutic BOTOX Injection',
-      procedure_type: 'botox',
       // sites carry per-muscle points/units; injection_site is the denormalized string.
       sites: values.sites,
       injection_site: injectionSiteFromSites(values.sites),
       diagnoses: rewrittenDiagnoses,
       consent_obtained: values.consent_obtained,
-      procedure_number: procedureNumber,
       // BOTOX product/vial/units block.
       botox_dosing: values.botox_dosing,
       needle_gauge: values.needle_gauge || null,
       complications: values.complications || null,
       plan_deviation_reason: values.plan_deviation_reason?.trim() || null,
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select()
-    .single()
-
-  if (procError || !procedure) return { error: procError?.message ?? 'Failed to create procedure' }
-
-  // Insert vital signs record (optional for BOTOX — all-null is skipped)
+  }
   const vs = values.vital_signs
   const hasVitals = Object.values(vs).some((v) => v !== null && v !== undefined)
-  if (hasVitals) {
-    const { error: vsError } = await supabase
-      .from('vital_signs')
-      .insert({
-        case_id: caseId,
-        procedure_id: procedure.id,
-        bp_systolic: vs.bp_systolic,
-        bp_diastolic: vs.bp_diastolic,
-        heart_rate: vs.heart_rate,
-        respiratory_rate: vs.respiratory_rate,
-        temperature_f: vs.temperature_f,
-        spo2_percent: vs.spo2_percent,
-        pain_score_min: vs.pain_score_min,
-        pain_score_max: vs.pain_score_max,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
+  const { data: rpcResult, error: procError } = procedureAppointmentId
+    ? await supabase.rpc('complete_procedure_appointment', {
+        p_appointment_id: procedureAppointmentId,
+        p_procedure: procedurePayload,
+        p_vitals: hasVitals ? vs : {},
+        p_idempotency_key: idempotencyKey,
       })
-
-    if (vsError) return { error: vsError.message }
-  }
+    : await supabase.rpc('create_direct_episode_procedure', {
+        p_case_id: caseId, p_procedure_type: 'botox', p_procedure: procedurePayload,
+        p_vitals: hasVitals ? vs : {}, p_idempotency_key: idempotencyKey,
+      })
+  if (procError) return { error: procError.message.includes('active care episode') ? procError.message : 'Failed to create procedure' }
+  const procedureId = (rpcResult as { procedure_id?: string } | null)?.procedure_id
+  if (!procedureId) return { error: 'Failed to create procedure' }
+  const { data: procedure } = await supabase.from('procedures').select('*').eq('id', procedureId).single()
 
   revalidatePath(`/patients/${caseId}/procedures`)
   return { data: procedure }
@@ -679,6 +623,11 @@ export interface ProcedureDefaults {
 
 export async function getProcedureDefaults(caseId: string): Promise<{ data: ProcedureDefaults }> {
   const supabase = await createClient()
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  const episodeId = episode?.id ?? '00000000-0000-0000-0000-000000000000'
+  const { data: encounterRows } = await supabase.from('clinical_encounters').select('id')
+    .eq('episode_id', episodeId).is('deleted_at', null)
+  const encounterIds = (encounterRows ?? []).map((row) => row.id)
 
   const [vitalsRes, ivnRes, ivnDxRes, pmDxRes] = await Promise.all([
     supabase
@@ -686,6 +635,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
       .is('procedure_id', null)
+      .in('encounter_id', encounterIds.length ? encounterIds : ['00000000-0000-0000-0000-000000000000'])
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
@@ -694,6 +644,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .from('initial_visit_notes')
       .select('provider_intake, visit_type, visit_date, treatment_plan, status')
       .eq('case_id', caseId)
+      .eq('episode_id', episodeId)
       .is('deleted_at', null),
     // Diagnosis fallback: when sites do not resolve to a single anatomy,
     // fall back to ICD-10 codes from the intake / PM extraction. IVN
@@ -702,6 +653,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .from('initial_visit_notes')
       .select('diagnoses, visit_type, status')
       .eq('case_id', caseId)
+      .eq('episode_id', episodeId)
       .is('deleted_at', null)
       .in('status', ['draft', 'finalized'])
       .not('diagnoses', 'is', null),
@@ -833,11 +785,14 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
 // Get the most recent prior PRP procedure for comparison
 export async function getPriorPrpProcedure(caseId: string) {
   const supabase = await createClient()
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: null }
 
   const { data, error } = await supabase
     .from('procedures')
     .select('id, procedure_date, procedure_number')
     .eq('case_id', caseId)
+    .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .order('procedure_date', { ascending: false })
     .limit(1)
@@ -855,8 +810,6 @@ export async function deleteProcedure(procedureId: string, caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  const now = new Date().toISOString()
-
   const { data: note } = await supabase
     .from('procedure_notes')
     .select('id, document_id')
@@ -864,6 +817,7 @@ export async function deleteProcedure(procedureId: string, caseId: string) {
     .is('deleted_at', null)
     .maybeSingle()
 
+  let storagePath: string | null = null
   if (note?.document_id) {
     const { data: doc } = await supabase
       .from('documents')
@@ -872,60 +826,13 @@ export async function deleteProcedure(procedureId: string, caseId: string) {
       .is('deleted_at', null)
       .maybeSingle()
 
-    if (doc?.file_path) {
-      await supabase.storage.from('case-documents').remove([doc.file_path])
-    }
-
-    await supabase
-      .from('documents')
-      .update({ deleted_at: now, updated_by_user_id: user.id })
-      .eq('id', note.document_id)
+    storagePath = doc?.file_path ?? null
   }
-
-  if (note?.id) {
-    await supabase
-      .from('procedure_notes')
-      .update({ deleted_at: now, updated_by_user_id: user.id })
-      .eq('id', note.id)
-  }
-
-  await supabase
-    .from('vital_signs')
-    .update({ deleted_at: now, updated_by_user_id: user.id })
-    .eq('procedure_id', procedureId)
-    .is('deleted_at', null)
-
-  const { error: procErr } = await supabase
-    .from('procedures')
-    .update({ deleted_at: now, updated_by_user_id: user.id })
-    .eq('id', procedureId)
-    .eq('case_id', caseId)
-
-  if (procErr) return { error: procErr.message }
-
-  const { data: remaining, error: remErr } = await supabase
-    .from('procedures')
-    .select('id, procedure_number')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .order('procedure_date', { ascending: true })
-    .order('created_at', { ascending: true })
-
-  if (remErr) return { error: remErr.message }
-
-  for (let i = 0; i < (remaining ?? []).length; i++) {
-    const target = i + 1
-    const row = remaining![i]
-    if (row.procedure_number !== target) {
-      const { error: renumErr } = await supabase
-        .from('procedures')
-        .update({ procedure_number: target, updated_by_user_id: user.id })
-        .eq('id', row.id)
-      if (renumErr) return { error: renumErr.message }
-    }
-  }
+  const { error } = await supabase.rpc('delete_performed_procedure', { p_case_id: caseId, p_procedure_id: procedureId })
+  if (error) return { error: error.message.includes('cannot be deleted') ? error.message : 'Failed to delete procedure' }
+  if (storagePath) await supabase.storage.from('case-documents').remove([storagePath])
 
   revalidatePath(`/patients/${caseId}/procedures`)
   revalidatePath(`/patients/${caseId}/documents`)
-  return { data: { success: true, remainingCount: remaining?.length ?? 0 } }
+  return { data: { success: true } }
 }

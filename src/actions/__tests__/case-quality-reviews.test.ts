@@ -46,6 +46,9 @@ vi.mock('@/actions/discharge-notes', () => ({
 vi.mock('@/actions/procedure-notes', () => ({
   regenerateProcedureNoteSectionAction: vi.fn(),
 }))
+vi.mock('@/actions/pain-follow-up-notes', () => ({
+  regeneratePainFollowUpSectionAction: vi.fn(),
+}))
 
 import {
   runCaseQualityReview,
@@ -75,9 +78,22 @@ const minimalCase = {
   },
 }
 
+const activeEpisode = {
+  id: '22222222-2222-4222-8222-222222222222',
+  case_id: VALID_CASE_ID,
+  episode_number: 1,
+  status: 'active',
+  opened_at: '2026-01-01T00:00:00.000Z',
+  discharged_at: null,
+  discharge_note_id: null,
+  deleted_at: null,
+}
+
 function defaultTableResults() {
   return {
     cases: { data: minimalCase, error: null },
+    care_episodes: { data: activeEpisode, error: null },
+    clinical_encounters: { data: [], error: null },
     case_summaries: { data: null, error: null },
     initial_visit_notes: { data: [], error: null },
     procedure_notes: { data: [], error: null },
@@ -464,6 +480,7 @@ describe('verifyFinding', () => {
 
   it('errors when no active review', async () => {
     mockTableResults(mockSupabase, {
+      care_episodes: { data: activeEpisode, error: null },
       case_quality_reviews: { data: null, error: null },
     })
     const result = await verifyFinding(VALID_CASE_ID, HASH)
@@ -514,6 +531,15 @@ describe('fixFinding', () => {
     mockSupabase = createMockSupabase()
   })
 
+  function mockFixTables(
+    tables: Record<string, { data: unknown; error: unknown; count?: number }>,
+  ) {
+    mockTableResults(mockSupabase, {
+      care_episodes: { data: activeEpisode, error: null },
+      ...tables,
+    })
+  }
+
   it('errors when not authenticated', async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null })
     const result = await fixFinding(VALID_CASE_ID, HASH)
@@ -521,7 +547,7 @@ describe('fixFinding', () => {
   })
 
   it('errors when no active review', async () => {
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: { data: null, error: null },
     })
     const result = await fixFinding(VALID_CASE_ID, HASH)
@@ -529,7 +555,7 @@ describe('fixFinding', () => {
   })
 
   it('errors when finding hash not in current review', async () => {
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: { id: 'review-1', findings: [], finding_overrides: {} },
         error: null,
@@ -546,7 +572,7 @@ describe('fixFinding', () => {
       section_key: null,
     })
     const hash = computeFindingHash(finding)
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: { id: 'review-1', findings: [finding], finding_overrides: {} },
         error: null,
@@ -561,7 +587,7 @@ describe('fixFinding', () => {
       section_key: '_qc_external_cause_chain',
     })
     const hash = computeFindingHash(finding)
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: { id: 'review-1', findings: [finding], finding_overrides: {} },
         error: null,
@@ -578,7 +604,7 @@ describe('fixFinding', () => {
       procedure_id: null,
     })
     const hash = computeFindingHash(finding)
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: { id: 'review-1', findings: [finding], finding_overrides: {} },
         error: null,
@@ -591,7 +617,7 @@ describe('fixFinding', () => {
   it('rejects concurrent fix already in progress', async () => {
     const finding = makeAiFinding()
     const hash = computeFindingHash(finding)
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: {
           id: 'review-1',
@@ -638,7 +664,7 @@ describe('fixFinding', () => {
       section_key: 'subjective',
     })
     const hash = computeFindingHash(finding)
-    mockTableResults(mockSupabase, {
+    mockFixTables({
       case_quality_reviews: {
         data: { id: 'review-1', findings: [finding], finding_overrides: {} },
         error: null,
@@ -650,6 +676,38 @@ describe('fixFinding', () => {
       VALID_PROC_ID,
       VALID_CASE_ID,
       'subjective',
+      { message: finding.message, rationale: finding.rationale },
+    )
+  })
+
+  it('dispatches encounter-scoped follow-up findings to the follow-up regenerator', async () => {
+    const { regeneratePainFollowUpSectionAction } = await import(
+      '@/actions/pain-follow-up-notes'
+    )
+    ;(regeneratePainFollowUpSectionAction as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      error: 'No draft follow-up note found',
+    })
+    const finding = makeAiFinding({
+      step: 'pain_follow_up',
+      encounter_id: VALID_PROC_ID,
+      procedure_id: null,
+      section_key: 'telehealth_observations',
+    })
+    const hash = computeFindingHash(finding)
+    mockFixTables({
+      case_quality_reviews: {
+        data: { id: 'review-1', findings: [finding], finding_overrides: {} },
+        error: null,
+      },
+    })
+
+    const result = await fixFinding(VALID_CASE_ID, hash)
+
+    expect(result.error).toBe('No draft follow-up note found')
+    expect(regeneratePainFollowUpSectionAction).toHaveBeenCalledWith(
+      VALID_CASE_ID,
+      VALID_PROC_ID,
+      'telehealth_observations',
       { message: finding.message, rationale: finding.rationale },
     )
   })

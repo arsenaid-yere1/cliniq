@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -90,16 +91,15 @@ async function gatherProcedureNoteSourceData(
       .is('deleted_at', null),
     supabase
       .from('initial_visit_notes')
-      .select('past_medical_history, social_history, treatment_plan')
+      .select('past_medical_history, social_history, treatment_plan, episode_id')
       .eq('case_id', caseId)
       .eq('status', 'finalized')
       .is('deleted_at', null)
-      .limit(1)
-      .maybeSingle(),
+      .order('created_at', { ascending: false }),
     // Prior procedures: all for this case excluding current, chronological (oldest → newest)
     supabase
       .from('procedures')
-      .select('id, procedure_date, procedure_number')
+      .select('id, procedure_date, procedure_number, procedure_series_id')
       .eq('case_id', caseId)
       .neq('id', procedureId)
       .is('deleted_at', null)
@@ -158,9 +158,13 @@ async function gatherProcedureNoteSourceData(
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
   }
+  const proc = procedureRes.data
+  const initialVisitNote = (ivNoteRes.data ?? []).find((note) => note.episode_id === proc.episode_id) ?? null
 
   // Batch-fetch prior procedures' pain ranges in a single query
-  const priorProcedureRows = priorProceduresRes.data ?? []
+  const priorProcedureRows = (priorProceduresRes.data ?? []).filter((prior) =>
+    proc.procedure_series_id ? prior.procedure_series_id === proc.procedure_series_id : true,
+  )
   const priorProcedureIds = priorProcedureRows.map((p) => p.id)
   const priorVitalsByProcedureId = new Map<string, {
     pain_score_min: number | null
@@ -208,8 +212,9 @@ async function gatherProcedureNoteSourceData(
     }
   }
 
-  // Fetch provider profile from case's assigned provider
-  const assignedProviderId = caseRes.data.assigned_provider_id as string | null
+  // Preserve the provider who actually performed the procedure. Legacy rows
+  // without a snapshot fall back to the case assignment.
+  const assignedProviderId = (procedureRes.data.provider_profile_id ?? caseRes.data.assigned_provider_id) as string | null
   let providerRes: { data: { display_name: string; credentials: string | null; npi_number: string | null } | null } = { data: null }
   if (assignedProviderId) {
     providerRes = await supabase
@@ -220,7 +225,6 @@ async function gatherProcedureNoteSourceData(
       .maybeSingle()
   }
 
-  const proc = procedureRes.data
   const patient = caseRes.data.patient as unknown as {
     first_name: string
     last_name: string
@@ -321,7 +325,7 @@ async function gatherProcedureNoteSourceData(
       ? ((pmRes.data.provider_overrides as { treatment_plan?: unknown } | null)
           ?.treatment_plan ?? pmRes.data.treatment_plan)
       : null,
-    initialVisitTreatmentPlan: ivNoteRes.data?.treatment_plan ?? null,
+    initialVisitTreatmentPlan: initialVisitNote?.treatment_plan ?? null,
   })
   const narrativeDirective = resolveProcedureNarrativeDirective({
     paintoneSignals: { vsBaseline: paintoneVsBaseline, vsPrevious: paintoneVsPrevious },
@@ -488,11 +492,11 @@ async function gatherProcedureNoteSourceData(
             source_quote: (d.source_quote as string | null | undefined) ?? null,
           }))
       })(),
-      initialVisitNote: ivNoteRes.data
+      initialVisitNote: initialVisitNote
         ? {
-            past_medical_history: ivNoteRes.data.past_medical_history,
-            social_history: ivNoteRes.data.social_history,
-            treatment_plan: ivNoteRes.data.treatment_plan ?? null,
+            past_medical_history: initialVisitNote.past_medical_history,
+            social_history: initialVisitNote.social_history,
+            treatment_plan: initialVisitNote.treatment_plan ?? null,
           }
         : null,
       planAlignment,
@@ -540,22 +544,30 @@ async function gatherProcedureNoteSourceData(
 
 // --- Check prerequisites ---
 
-export async function checkProcedureNotePrerequisites(caseId: string) {
+export async function checkProcedureNotePrerequisites(caseId: string, procedureId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: ivNote } = await supabase
-    .from('initial_visit_notes')
+  const episode = procedureId
+    ? (await supabase.from('procedures').select('episode_id').eq('id', procedureId).eq('case_id', caseId).is('deleted_at', null).maybeSingle()).data
+    : await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: { canGenerate: false, reason: 'Procedure episode not found.' } }
+  const episodeId = 'episode_id' in episode ? episode.episode_id : episode.id
+  if (!episodeId) return { data: { canGenerate: false, reason: 'Procedure episode not found.' } }
+  const { data: completedEncounter } = await supabase
+    .from('clinical_encounters')
     .select('id')
     .eq('case_id', caseId)
-    .eq('status', 'finalized')
+    .eq('episode_id', episodeId)
+    .eq('status', 'completed')
+    .in('encounter_type', ['initial_evaluation', 'pain_evaluation', 'pain_follow_up'])
     .is('deleted_at', null)
     .limit(1)
     .maybeSingle()
 
-  if (!ivNote) {
-    return { data: { canGenerate: false, reason: 'A finalized Initial Visit Note is required before generating a procedure note.' } }
+  if (!completedEncounter) {
+    return { data: { canGenerate: false, reason: 'A completed evaluation or follow-up visit is required before generating a procedure note.' } }
   }
 
   return { data: { canGenerate: true } }
@@ -578,7 +590,7 @@ export async function generateProcedureNote(
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Check prerequisite
-  const prereq = await checkProcedureNotePrerequisites(caseId)
+  const prereq = await checkProcedureNotePrerequisites(caseId, procedureId)
   if (prereq.data && !prereq.data.canGenerate) {
     return { error: prereq.data.reason }
   }
@@ -873,6 +885,15 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
 
+  const { data: procedureOwnership } = await supabase
+    .from('procedures')
+    .select('episode_id,source_encounter_id')
+    .eq('id', procedureId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+  if (!procedureOwnership?.episode_id) return { error: 'Procedure episode not found' }
+
   // Gate: block finalization of "unplanned" procedures unless provider
   // has explicitly acknowledged. This mirrors the consent_obtained
   // discipline — a dated attestation that the provider reviewed the
@@ -917,6 +938,8 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
     .from('documents')
     .insert({
       case_id: caseId,
+      episode_id: procedureOwnership.episode_id,
+      encounter_id: procedureOwnership.source_encounter_id,
       document_type: 'generated',
       file_name: 'PRP Procedure Note',
       file_path: storagePath,

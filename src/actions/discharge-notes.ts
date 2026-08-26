@@ -31,6 +31,17 @@ import {
   type DiagnosisItem,
 } from '@/lib/icd10/diagnosis-rewrite'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+import { ensureEpisodeEncounter, getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
+
+async function resolveDischargeEpisodeId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+  explicitEpisodeId?: string,
+) {
+  if (explicitEpisodeId) return (await getEpisodeById(caseId, explicitEpisodeId, supabase)).id
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
+  return episode?.id ?? null
+}
 
 // --- Helper: assemble discharge diagnosis pool ---
 // Aggregates diagnoses from procedures.diagnoses + IVN.diagnoses (free-text)
@@ -78,7 +89,15 @@ export async function gatherDischargeNoteSourceData(
   caseId: string,
   visitDate: string,
   dischargeVitals: DischargeNoteInputData['dischargeVitals'] = null,
+  requestedEpisodeId?: string,
 ): Promise<{ data: DischargeNoteInputData | null; error: string | null }> {
+  const episode = requestedEpisodeId
+    ? await supabase.from('care_episodes').select('id').eq('id', requestedEpisodeId).eq('case_id', caseId).is('deleted_at', null).maybeSingle().then((result) => result.data)
+    : await getActiveOrLatestEpisode(caseId, supabase)
+  if (!episode) return { data: null, error: 'Care episode not found' }
+  const { data: episodeEncounterRows } = await supabase.from('clinical_encounters').select('id')
+    .eq('episode_id', episode.id).eq('case_id', caseId).is('deleted_at', null)
+  const episodeEncounterIds = (episodeEncounterRows ?? []).map((row) => row.id)
   const [
     caseRes,
     proceduresRes,
@@ -102,6 +121,7 @@ export async function gatherDischargeNoteSourceData(
       .from('procedures')
       .select('id, procedure_date, procedure_name, procedure_number, injection_site, sites, diagnoses')
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .is('deleted_at', null)
       .order('procedure_date', { ascending: true }),
     supabase
@@ -117,6 +137,7 @@ export async function gatherDischargeNoteSourceData(
       .from('initial_visit_notes')
       .select('chief_complaint, physical_exam, diagnoses, treatment_plan')
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .eq('status', 'finalized')
       .is('deleted_at', null)
       .maybeSingle(),
@@ -130,6 +151,7 @@ export async function gatherDischargeNoteSourceData(
       .from('initial_visit_notes')
       .select('visit_date')
       .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -186,6 +208,7 @@ export async function gatherDischargeNoteSourceData(
       .select('pain_score_min, pain_score_max, recorded_at')
       .eq('case_id', caseId)
       .is('procedure_id', null)
+      .in('encounter_id', episodeEncounterIds.length ? episodeEncounterIds : ['00000000-0000-0000-0000-000000000000'])
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
@@ -594,23 +617,25 @@ export async function gatherDischargeNoteSourceData(
 
 // --- Check prerequisites ---
 
-export async function checkDischargeNotePrerequisites(caseId: string) {
+export async function checkDischargeNotePrerequisites(caseId: string, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: ivNotes } = await supabase
-    .from('initial_visit_notes')
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId, explicitEpisodeId)
+  if (!episodeId) return { data: { canGenerate: false, reason: 'A care episode is required before discharge.' } }
+  const { data: completedVisits } = await supabase
+    .from('clinical_encounters')
     .select('id')
     .eq('case_id', caseId)
-    .eq('status', 'finalized')
+    .eq('episode_id', episodeId)
+    .eq('status', 'completed')
+    .in('encounter_type', ['initial_evaluation', 'pain_evaluation', 'pain_follow_up'])
     .is('deleted_at', null)
     .limit(1)
 
-  const ivNote = ivNotes && ivNotes.length > 0 ? ivNotes[0] : null
-
-  if (!ivNote) {
-    return { data: { canGenerate: false, reason: 'A finalized Initial Visit Note is required before generating a discharge summary.' } }
+  if (!completedVisits?.length) {
+    return { data: { canGenerate: false, reason: 'A completed clinical visit is required before generating a discharge summary.' } }
   }
 
   return { data: { canGenerate: true } }
@@ -632,6 +657,9 @@ export async function generateDischargeNote(
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
+
   // Check prerequisite
   const prereq = await checkDischargeNotePrerequisites(caseId)
   if (prereq.data && !prereq.data.canGenerate) {
@@ -645,6 +673,7 @@ export async function generateDischargeNote(
     .from('discharge_notes')
     .select('id, status, updated_at, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -693,6 +722,7 @@ export async function generateDischargeNote(
     caseId,
     effectiveVisitDate,
     preservedVitals,
+    episodeId,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -714,15 +744,23 @@ export async function generateDischargeNote(
     .from('discharge_notes')
     .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
 
   // Insert generating record — carry forward preserved vitals so the provider's
   // entries survive regeneration.
+  const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+    .eq('id', caseId).is('deleted_at', null).single()
+  const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
+    encounterDate: effectiveVisitDate, providerId: clinicalCase?.assigned_provider_id, userId: user.id,
+  }, supabase)
   const sourceHash = computeSourceHash(inputData)
   const { data: record, error: insertError } = await supabase
     .from('discharge_notes')
     .insert({
       case_id: caseId,
+      episode_id: ownership.episodeId,
+      encounter_id: ownership.encounterId,
       status: 'generating',
       generation_attempts: 1,
       source_data_hash: sourceHash,
@@ -845,17 +883,20 @@ export async function generateDischargeNote(
 
 // --- Get discharge note ---
 
-export async function getDischargeNote(caseId: string) {
+export async function getDischargeNote(caseId: string, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId, explicitEpisodeId)
+  if (!episodeId) return { data: null }
   const { data, error } = await supabase
     .from('discharge_notes')
     .select('*')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
-    .single()
+    .maybeSingle()
 
   if (error && error.code !== 'PGRST116') {
     return { error: 'Failed to fetch note' }
@@ -877,6 +918,8 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   const validated = dischargeNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
   const { error } = await supabase
     .from('discharge_notes')
     .update({
@@ -884,6 +927,7 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
       updated_by_user_id: user.id,
     })
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
 
@@ -898,6 +942,7 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
     .from('discharge_notes')
     .select('id')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .maybeSingle()
@@ -918,17 +963,21 @@ export async function finalizeDischargeNote(caseId: string) {
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   // Fetch the draft note
   const { data: note, error: fetchError } = await supabase
     .from('discharge_notes')
     .select('*')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
-    .eq('status', 'draft')
-    .single()
+    .maybeSingle()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
+  if (note.status === 'finalized') return { data: { success: true, replayed: true } }
+  if (note.status !== 'draft') return { error: 'No draft note found to finalize' }
 
   // Defensibility guard: finalizing a discharge note requires provider-entered
   // discharge-visit vitals, at minimum pain_score_max. Without them, the note's
@@ -971,6 +1020,8 @@ export async function finalizeDischargeNote(caseId: string) {
     .from('documents')
     .insert({
       case_id: caseId,
+      episode_id: episodeId,
+      encounter_id: note.encounter_id,
       document_type: 'generated',
       file_name: 'Discharge Summary',
       file_path: storagePath,
@@ -986,19 +1037,15 @@ export async function finalizeDischargeNote(caseId: string) {
 
   if (docError || !doc) return { error: 'Failed to create document record' }
 
-  // Update note as finalized
-  const { error: updateError } = await supabase
-    .from('discharge_notes')
-    .update({
-      status: 'finalized',
-      finalized_by_user_id: user.id,
-      finalized_at: new Date().toISOString(),
-      document_id: doc.id,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
+  const { error: updateError } = await supabase.rpc('finalize_episode_discharge', {
+    p_case_id: caseId, p_episode_id: episodeId, p_note_id: note.id, p_document_id: doc.id,
+  })
 
-  if (updateError) return { error: 'Failed to finalize note' }
+  if (updateError) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    await supabase.from('documents').update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id }).eq('id', doc.id)
+    return { error: updateError.message.includes('Resolve open') ? updateError.message : 'Failed to finalize note' }
+  }
 
   revalidatePath(`/patients/${caseId}/discharge`)
   revalidatePath(`/patients/${caseId}/documents`)
@@ -1015,34 +1062,7 @@ export async function unfinalizeDischargeNote(caseId: string) {
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  const { data: note } = await supabase
-    .from('discharge_notes')
-    .select('id, document_id')
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .eq('status', 'finalized')
-    .maybeSingle()
-
-  if (!note) return { error: 'No finalized note to unfinalize' }
-
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
-
-  const { error } = await supabase
-    .from('discharge_notes')
-    .update({
-      status: 'draft',
-      finalized_by_user_id: null,
-      finalized_at: null,
-      document_id: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to unfinalize note' }
-
-  revalidatePath(`/patients/${caseId}/discharge`)
-  revalidatePath(`/patients/${caseId}/documents`)
-  return { data: { success: true } }
+  return { error: 'A finalized episode discharge cannot be reopened. Start a return visit instead.' }
 }
 
 // --- Regenerate single section ---
@@ -1058,12 +1078,15 @@ export async function regenerateDischargeNoteSectionAction(
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase
     .from('discharge_notes')
     .select('*')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .single()
@@ -1092,6 +1115,7 @@ export async function regenerateDischargeNoteSectionAction(
     caseId,
     visitDate,
     preservedVitals,
+    episodeId,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -1140,11 +1164,14 @@ export async function resetDischargeNote(caseId: string) {
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   const { data: note } = await supabase
     .from('discharge_notes')
     .select('id, status')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1194,10 +1221,13 @@ export async function getDischargeVitals(caseId: string): Promise<{
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { data: null }
   const { data, error } = await supabase
     .from('discharge_notes')
     .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1215,6 +1245,8 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
 
   const validated = dischargeNoteVitalsSchema.safeParse(vitals)
   if (!validated.success) return { error: 'Invalid vitals data' }
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   // Upsert pattern: update the active discharge_notes row if one exists,
   // otherwise create a pre-generation draft row holding only these vitals.
@@ -1222,6 +1254,7 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
     .from('discharge_notes')
     .select('id, status')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1244,10 +1277,17 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
     // as a non-fatal warning; provider chooses whether to section-regen.
     await refreshDischargeTrajectory(caseId, existing.id, { userId: user.id })
   } else {
+    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+      .eq('id', caseId).is('deleted_at', null).single()
+    const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
+      encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id,
+    }, supabase)
     const { error } = await supabase
       .from('discharge_notes')
       .insert({
         case_id: caseId,
+        episode_id: ownership.episodeId,
+        encounter_id: ownership.encounterId,
         status: 'draft',
         ...validated.data,
         created_by_user_id: user.id,
@@ -1276,6 +1316,8 @@ export async function saveDischargeNoteToneHint(
   if (closedCheck.error) return { error: closedCheck.error }
 
   const normalized = toneHint?.trim() ? toneHint.trim() : null
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   // Upsert pattern: update active row if present, otherwise create a pre-generation
   // draft row holding only the tone hint.
@@ -1283,6 +1325,7 @@ export async function saveDischargeNoteToneHint(
     .from('discharge_notes')
     .select('id, status')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1296,10 +1339,17 @@ export async function saveDischargeNoteToneHint(
       .eq('id', existing.id)
     if (error) return { error: 'Failed to save tone hint' }
   } else {
+    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+      .eq('id', caseId).is('deleted_at', null).single()
+    const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
+      encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id,
+    }, supabase)
     const { error } = await supabase
       .from('discharge_notes')
       .insert({
         case_id: caseId,
+        episode_id: ownership.episodeId,
+        encounter_id: ownership.encounterId,
         status: 'draft',
         tone_hint: normalized,
         created_by_user_id: user.id,
@@ -1330,6 +1380,8 @@ export async function getDischargePainTimeline(caseId: string): Promise<{
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
+  if (!episodeId) return { error: 'Care episode not found' }
 
   // Preserve provider-entered discharge vitals so the trajectory returned
   // here matches what generation would see. Match the same precedence
@@ -1338,6 +1390,7 @@ export async function getDischargePainTimeline(caseId: string): Promise<{
     .from('discharge_notes')
     .select('visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 

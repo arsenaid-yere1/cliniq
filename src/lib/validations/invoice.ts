@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const invoiceLineItemSchema = z.object({
   id: z.string().uuid().optional(),
   procedure_id: z.string().uuid().optional().or(z.literal('')),
+  encounter_id: z.string().uuid().optional().or(z.literal('')),
   service_date: z.string().min(1, 'Service date is required'),
   cpt_code: z.string().min(1, 'CPT code is required'),
   description: z.string().min(1, 'Description is required'),

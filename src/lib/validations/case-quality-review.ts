@@ -7,6 +7,7 @@ export type QcSeverity = (typeof qcSeverityValues)[number]
 export const qcStepValues = [
   'initial_visit',
   'pain_evaluation',
+  'pain_follow_up',
   'procedure',
   'discharge',
   'case_summary',
@@ -28,6 +29,7 @@ export const qualityFindingSchema = z.object({
   step: z.enum(qcStepValues),
   note_id: z.string().uuid().nullable(),
   procedure_id: z.string().uuid().nullable(),
+  encounter_id: z.string().uuid().nullable().default(null),
   section_key: z.string().nullable(),
   message: z.string().min(1),
   rationale: z.string().nullable(),
@@ -37,7 +39,9 @@ export const qualityFindingSchema = z.object({
   // enforced via the system prompt: critical 7-10, warning 4-6, info 1-3.
   score: z.number().int().min(1).max(10),
 })
-export type QualityFinding = z.infer<typeof qualityFindingSchema>
+export type QualityFinding = Omit<z.infer<typeof qualityFindingSchema>, 'encounter_id'> & {
+  encounter_id?: string | null
+}
 
 // Full AI tool output schema
 export const qualityReviewResultSchema = z.object({
@@ -134,6 +138,10 @@ export function getFindingScore(
 // will hash differently, which is acceptable: the override layer is wiped
 // on regen anyway.
 export function computeFindingHash(finding: QualityFinding): string {
+  if (finding.encounter_id) {
+    const versioned = ['v2', finding.severity, finding.step, finding.note_id ?? '', finding.procedure_id ?? '', finding.encounter_id, finding.section_key ?? '', finding.message].join('|')
+    return createHash('sha256').update(versioned).digest('hex')
+  }
   const parts = [
     finding.severity,
     finding.step,
@@ -150,6 +158,7 @@ export function computeFindingHash(finding: QualityFinding): string {
 const FIXABLE_STEPS = new Set<QcStep>([
   'initial_visit',
   'pain_evaluation',
+  'pain_follow_up',
   'procedure',
   'discharge',
 ])
@@ -186,6 +195,9 @@ export function findingFixEligibility(finding: QualityFinding): FindingFixEligib
   }
   if (finding.step === 'procedure' && !finding.procedure_id) {
     return { fixable: false, reason: 'Procedure finding missing procedure_id' }
+  }
+  if (finding.step === 'pain_follow_up' && !finding.encounter_id) {
+    return { fixable: false, reason: 'Follow-up finding missing encounter_id' }
   }
   if (finding.step !== 'procedure' && !finding.note_id) {
     return { fixable: false, reason: 'Finding missing note_id' }

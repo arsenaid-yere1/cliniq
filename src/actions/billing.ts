@@ -83,7 +83,7 @@ export async function getInvoiceFormData(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', data: null }
 
-  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitNotesResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult] = await Promise.all([
+  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitNotesResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult, completedEncountersResult, claimsResult] = await Promise.all([
     supabase
       .from('cases')
       .select(`
@@ -114,8 +114,9 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('visit_type, chief_complaint, diagnoses, created_at, visit_date')
+      .select('visit_type, chief_complaint, diagnoses, created_at, visit_date, encounter_id, status')
       .eq('case_id', caseId)
+      .eq('status', 'finalized')
       .is('deleted_at', null)
       .order('created_at', { ascending: true }),
     supabase
@@ -137,12 +138,16 @@ export async function getInvoiceFormData(caseId: string) {
       .maybeSingle(),
     supabase
       .from('discharge_notes')
-      .select('created_at, visit_date, diagnoses, status')
+      .select('created_at, visit_date, diagnoses, status, encounter_id')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase.from('clinical_encounters').select('id,encounter_type,encounter_date,completed_at')
+      .eq('case_id',caseId).eq('status','completed').in('encounter_type',['pain_follow_up','discharge']).is('deleted_at',null),
+    supabase.from('billing_source_claims').select('encounter_id,procedure_id,claim_kind,invoice_id')
+      .is('released_at',null),
   ])
 
   if (caseResult.error) return { error: caseResult.error.message, data: null }
@@ -214,6 +219,7 @@ export async function getInvoiceFormData(caseId: string) {
   // Build pre-populated line items matching reference invoice format
   const prePopulatedLineItems: Array<{
     procedure_id?: string
+    encounter_id?: string
     service_date: string
     cpt_code: string
     description: string
@@ -223,6 +229,8 @@ export async function getInvoiceFormData(caseId: string) {
   }> = []
 
   const caseOpenDate = caseResult.data?.case_open_date
+  const claimedEncounterIds = new Set((claimsResult.data ?? []).filter((claim)=>claim.claim_kind==='visit').map((claim)=>claim.encounter_id).filter(Boolean))
+  const claimedProcedureKinds = new Set((claimsResult.data ?? []).filter((claim)=>claim.procedure_id).map((claim)=>`${claim.procedure_id}:${claim.claim_kind}`))
 
   // 1. Visit line items (CPT 99204) — one per initial_visit_notes row
   // The initial_visit_notes table stores both Initial Visit and Pain Evaluation Visit,
@@ -233,13 +241,16 @@ export async function getInvoiceFormData(caseId: string) {
     created_at: string | null
     chief_complaint: string | null
     diagnoses: string | null
+    encounter_id: string | null
   }>
   for (const note of visitNotes) {
+    if (note.encounter_id && claimedEncounterIds.has(note.encounter_id)) continue
     const price = priceMap['99204'] ?? 0
     const description = note.visit_type === 'pain_evaluation_visit'
       ? 'Pain evaluation visit (45-60min)'
       : 'Initial exam (45-60min)'
     prePopulatedLineItems.push({
+      encounter_id: note.encounter_id ?? undefined,
       service_date: note.visit_date
         ?? note.created_at?.split('T')[0]
         ?? caseOpenDate
@@ -300,6 +311,7 @@ export async function getInvoiceFormData(caseId: string) {
       procedure_type?: 'prp' | 'cortisone' | 'hyaluronic' | 'botox' | null
       botox_dosing?: unknown
     }
+    if (claimedProcedureKinds.has(`${typedProc.id}:medical`)) continue
 
     // BOTOX: per-unit administration line + separate waste line (JW-style),
     // reconciling to the reconstituted vial. No PRP CPT composite.
@@ -380,20 +392,18 @@ export async function getInvoiceFormData(caseId: string) {
       unit_price: msuPrice,
       total_price: msuPrice,
     }
-  })
+  }).filter((line) => !line.procedure_id || !claimedProcedureKinds.has(`${line.procedure_id}:facility`))
 
-  // 4. Follow up / Discharge visit (CPT 99213) — if a discharge note exists
-  if (dischargeNoteResult.data) {
+  for (const encounter of completedEncountersResult.data ?? []) {
+    if (claimedEncounterIds.has(encounter.id)) continue
+    if (encounter.encounter_type === 'discharge' && dischargeNoteResult.data?.status !== 'finalized') continue
     const price = priceMap['99213'] ?? 0
     prePopulatedLineItems.push({
-      service_date: dischargeNoteResult.data.visit_date
-        ?? dischargeNoteResult.data.created_at?.split('T')[0]
-        ?? new Date().toISOString().split('T')[0],
-      cpt_code: '99213',
-      description: 'Follow up/ Discharge visit',
-      quantity: 1,
-      unit_price: price,
-      total_price: price,
+      encounter_id: encounter.id,
+      service_date: encounter.encounter_date ?? encounter.completed_at?.slice(0,10) ?? new Date().toISOString().slice(0,10),
+      cpt_code:'99213',
+      description:encounter.encounter_type==='discharge'?'Follow-up / discharge visit':'Pain management follow-up visit',
+      quantity:1,unit_price:price,total_price:price,
     })
   }
 
@@ -439,32 +449,9 @@ export async function createInvoice(caseId: string, values: CreateInvoiceFormVal
   const { line_items, ...invoiceData } = parsed.data
   const totalAmount = line_items.reduce((sum, item) => sum + item.total_price, 0)
 
-  // invoice_number is auto-generated by DB trigger (set_invoice_number)
-  const { data: invoice, error: invoiceError } = await supabase
-    .from('invoices')
-    .insert({
-      case_id: caseId,
-      invoice_type: invoiceData.invoice_type,
-      invoice_date: invoiceData.invoice_date,
-      claim_type: invoiceData.claim_type,
-      indication: invoiceData.indication || null,
-      diagnoses_snapshot: invoiceData.diagnoses_snapshot,
-      payee_name: invoiceData.payee_name || null,
-      payee_address: invoiceData.payee_address || null,
-      notes: invoiceData.notes || null,
-      total_amount: totalAmount,
-      status: 'draft',
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select()
-    .single()
-
-  if (invoiceError || !invoice) return { error: invoiceError?.message ?? 'Failed to create invoice' }
-
   const lineItemRows = line_items.map((item, idx) => ({
-    invoice_id: invoice.id,
     procedure_id: item.procedure_id || null,
+    encounter_id: item.encounter_id || null,
     service_date: item.service_date,
     cpt_code: item.cpt_code,
     description: item.description,
@@ -474,11 +461,12 @@ export async function createInvoice(caseId: string, values: CreateInvoiceFormVal
     display_order: idx,
   }))
 
-  const { error: lineItemsError } = await supabase
-    .from('invoice_line_items')
-    .insert(lineItemRows)
-
-  if (lineItemsError) return { error: lineItemsError.message }
+  const { data: invoiceId, error: invoiceError } = await supabase.rpc('save_invoice_with_claims', {
+    p_case_id: caseId, p_invoice_id: null,
+    p_invoice: { ...invoiceData, total_amount: totalAmount }, p_lines: lineItemRows,
+  })
+  if (invoiceError || !invoiceId) return { error: invoiceError?.code === '23505' ? 'One or more clinical services are already on another invoice' : 'Failed to create invoice' }
+  const { data: invoice } = await supabase.from('invoices').select('*').eq('id', invoiceId).single()
 
   revalidatePath(`/patients/${caseId}/billing`)
   return { data: invoice }
@@ -513,32 +501,9 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
   const { line_items, ...invoiceData } = parsed.data
   const totalAmount = line_items.reduce((sum, item) => sum + item.total_price, 0)
 
-  const { data: invoice, error: invoiceError } = await supabase
-    .from('invoices')
-    .update({
-      ...invoiceData,
-      indication: invoiceData.indication || null,
-      payee_name: invoiceData.payee_name || null,
-      payee_address: invoiceData.payee_address || null,
-      notes: invoiceData.notes || null,
-      total_amount: totalAmount,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', invoiceId)
-    .select()
-    .single()
-
-  if (invoiceError || !invoice) return { error: invoiceError?.message ?? 'Failed to update invoice' }
-
-  // Replace line items: delete existing, insert new
-  await supabase
-    .from('invoice_line_items')
-    .delete()
-    .eq('invoice_id', invoiceId)
-
   const lineItemRows = line_items.map((item, idx) => ({
-    invoice_id: invoiceId,
     procedure_id: item.procedure_id || null,
+    encounter_id: item.encounter_id || null,
     service_date: item.service_date,
     cpt_code: item.cpt_code,
     description: item.description,
@@ -548,11 +513,12 @@ export async function updateInvoice(invoiceId: string, caseId: string, values: U
     display_order: idx,
   }))
 
-  const { error: lineItemsError } = await supabase
-    .from('invoice_line_items')
-    .insert(lineItemRows)
-
-  if (lineItemsError) return { error: lineItemsError.message }
+  const { error: invoiceError } = await supabase.rpc('save_invoice_with_claims', {
+    p_case_id: caseId, p_invoice_id: invoiceId,
+    p_invoice: { ...invoiceData, total_amount: totalAmount }, p_lines: lineItemRows,
+  })
+  if (invoiceError) return { error: invoiceError.code === '23505' ? 'One or more clinical services are already on another invoice' : 'Failed to update invoice' }
+  const { data: invoice } = await supabase.from('invoices').select('*').eq('id', invoiceId).single()
 
   revalidatePath(`/patients/${caseId}/billing`)
   return { data: invoice }

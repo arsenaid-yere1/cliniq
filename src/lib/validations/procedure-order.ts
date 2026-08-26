@@ -25,5 +25,10 @@ export const cancelProcedureOrderSchema = z.object({
   reason: z.string().trim().min(1).max(2000),
 })
 
+export const createProcedureOrderFromRecommendationSchema = createProcedureOrderSchema
+  .omit({ procedure_series_id: true })
+  .extend({ continued_from_series_id: z.string().uuid().nullable().optional() })
+
 export type CreateProcedureOrderInput = z.infer<typeof createProcedureOrderSchema>
 export type CancelProcedureOrderInput = z.infer<typeof cancelProcedureOrderSchema>
+export type CreateProcedureOrderFromRecommendationInput = z.infer<typeof createProcedureOrderFromRecommendationSchema>

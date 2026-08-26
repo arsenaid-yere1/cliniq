@@ -43,7 +43,7 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
   // Fetch procedure record
   const { data: procedure } = await supabase
     .from('procedures')
-    .select('procedure_date, procedure_name, procedure_type, procedure_number, injection_site, sites, diagnoses')
+    .select('procedure_date, procedure_name, procedure_type, procedure_number, injection_site, sites, diagnoses, provider_profile_id')
     .eq('id', input.procedureId)
     .is('deleted_at', null)
     .single()
@@ -55,8 +55,8 @@ export async function renderProcedureNotePdf(input: RenderPdfInput): Promise<Buf
     .is('deleted_at', null)
     .maybeSingle()
 
-  // Fetch provider profile from case's assigned provider
-  const assignedProviderId = caseData?.assigned_provider_id as string | null
+  // Snapshot signer is authoritative; case assignment is a legacy fallback.
+  const assignedProviderId = (procedure?.provider_profile_id ?? caseData?.assigned_provider_id) as string | null
   let providerProfile: { display_name: string; credentials: string | null; npi_number: string | null; signature_storage_path: string | null } | null = null
   if (assignedProviderId) {
     const { data } = await supabase

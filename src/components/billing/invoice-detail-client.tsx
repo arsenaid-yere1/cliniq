@@ -55,6 +55,7 @@ interface InvoiceData {
   line_items: Array<{
     id: string
     procedure_id: string | null
+    encounter_id: string | null
     service_date: string | null
     cpt_code: string
     description: string

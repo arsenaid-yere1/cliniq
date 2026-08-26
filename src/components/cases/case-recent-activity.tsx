@@ -11,6 +11,17 @@ const eventIcons: Record<TimelineEventType, React.ElementType> = {
   invoice_created: Receipt,
   invoice_status_change: ArrowRightLeft,
   invoice_payment: DollarSign,
+  episode_started: Activity,
+  episode_ended: Activity,
+  visit_scheduled: Activity,
+  visit_completed: Activity,
+  visit_cancelled: Activity,
+  visit_no_show: Activity,
+  procedure_ordered: Activity,
+  procedure_scheduled: Activity,
+  procedure_rescheduled: ArrowRightLeft,
+  procedure_cancelled: Activity,
+  procedure_no_show: Activity,
 }
 
 const eventColors: Record<TimelineEventType, string> = {
@@ -20,6 +31,17 @@ const eventColors: Record<TimelineEventType, string> = {
   invoice_created: 'text-purple-600',
   invoice_status_change: 'text-amber-600',
   invoice_payment: 'text-emerald-600',
+  episode_started: 'text-blue-600',
+  episode_ended: 'text-slate-600',
+  visit_scheduled: 'text-blue-600',
+  visit_completed: 'text-green-600',
+  visit_cancelled: 'text-slate-500',
+  visit_no_show: 'text-red-600',
+  procedure_ordered: 'text-indigo-600',
+  procedure_scheduled: 'text-indigo-600',
+  procedure_rescheduled: 'text-amber-600',
+  procedure_cancelled: 'text-slate-500',
+  procedure_no_show: 'text-red-600',
 }
 
 export function CaseRecentActivity({ events }: { events: TimelineEvent[] }) {

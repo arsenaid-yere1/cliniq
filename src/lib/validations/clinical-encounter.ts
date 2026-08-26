@@ -104,5 +104,28 @@ export const firstReturnEncounterSchema = clinicalEncounterBaseSchema
   })
   .superRefine(validateEncounterCrossFields)
 
+export const schedulePainFollowUpSchema = clinicalEncounterBaseSchema
+  .omit({ encounter_type: true, status: true })
+  .extend({
+    scheduled_start: z.string().datetime({ offset: true }),
+    scheduled_end: z.string().datetime({ offset: true }),
+  })
+  .superRefine(validateEncounterCrossFields)
+
+export const updatePainFollowUpEncounterSchema = clinicalEncounterBaseSchema
+  .omit({ case_id: true, episode_id: true, encounter_type: true })
+  .partial()
+  .extend({ encounter_id: z.string().uuid() })
+  .superRefine(validateEncounterCrossFields)
+
+export const changeEncounterStatusSchema = z.object({
+  case_id: z.string().uuid(),
+  encounter_id: z.string().uuid(),
+  status: z.enum(['in_progress', 'cancelled', 'no_show']),
+  reason: z.string().trim().max(2000).nullable().optional(),
+})
+
 export type ClinicalEncounterInput = z.infer<typeof clinicalEncounterInputSchema>
 export type FirstReturnEncounterInput = z.infer<typeof firstReturnEncounterSchema>
+export type SchedulePainFollowUpInput = z.infer<typeof schedulePainFollowUpSchema>
+export type UpdatePainFollowUpEncounterInput = z.infer<typeof updatePainFollowUpEncounterSchema>

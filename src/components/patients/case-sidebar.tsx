@@ -29,6 +29,7 @@ const navItems = [
   { label: 'Documents', href: '/documents', enabled: true },
   { label: 'Clinical Data', href: '/clinical', enabled: true },
   { label: 'Initial Visit', href: '/initial-visit', enabled: true },
+  { label: 'Visits', href: '/visits', enabled: true },
   { label: 'Procedures', href: '/procedures', enabled: true },
   { label: 'Discharge', href: '/discharge', enabled: true },
   { label: 'Quality Review', href: '/qc', enabled: true },
@@ -36,7 +37,11 @@ const navItems = [
   { label: 'Timeline', href: '/timeline', enabled: true },
 ]
 
-export function CaseSidebar({ caseData }: { caseData: CaseData }) {
+export function CaseSidebar({ caseData, visitsEnabled = false, episodeStatus }: {
+  caseData: CaseData
+  visitsEnabled?: boolean
+  episodeStatus?: { number: number; status: string } | null
+}) {
   const pathname = usePathname()
   const [copied, setCopied] = useState(false)
   const basePath = `/patients/${caseData.id}`
@@ -82,10 +87,18 @@ export function CaseSidebar({ caseData }: { caseData: CaseData }) {
         {CASE_STATUS_CONFIG[caseData.case_status as CaseStatus]?.label ?? caseData.case_status}
       </Badge>
 
+      {episodeStatus && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Care Episode {episodeStatus.number}</span>
+          <Badge variant="outline" className="capitalize">{episodeStatus.status}</Badge>
+        </div>
+      )}
+
       <Separator />
 
       <nav className="space-y-1">
         {navItems.map((item) => {
+          if (item.href === '/visits' && !visitsEnabled) return null
           const href = basePath + item.href
           const isActive = item.href === ''
             ? pathname === basePath

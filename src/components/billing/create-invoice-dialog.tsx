@@ -89,6 +89,7 @@ interface ExistingInvoice {
   line_items: Array<{
     id: string
     procedure_id: string | null
+    encounter_id: string | null
     service_date: string | null
     cpt_code: string
     description: string
@@ -139,6 +140,7 @@ export function CreateInvoiceDialog({
         line_items: existingInvoice.line_items.map((li) => ({
           id: li.id,
           procedure_id: li.procedure_id ?? '',
+          encounter_id: li.encounter_id ?? '',
           service_date: li.service_date ?? '',
           cpt_code: li.cpt_code,
           description: li.description,
@@ -405,6 +407,8 @@ export function CreateInvoiceDialog({
                   variant="outline"
                   size="sm"
                   onClick={() => lineItemFields.append({
+                    procedure_id: '',
+                    encounter_id: '',
                     service_date: '',
                     cpt_code: '',
                     description: '',

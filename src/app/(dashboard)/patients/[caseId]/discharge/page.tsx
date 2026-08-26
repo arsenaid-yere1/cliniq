@@ -2,14 +2,30 @@ import { createClient } from '@/lib/supabase/server'
 import { getDischargeNote, checkDischargeNotePrerequisites } from '@/actions/discharge-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { DischargeNoteEditor } from '@/components/discharge/discharge-note-editor'
+import { getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
+import { notFound } from 'next/navigation'
 
 export default async function DischargePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ caseId: string }>
+  searchParams: Promise<{ episode?: string }>
 }) {
   const { caseId } = await params
+  const { episode: requestedEpisodeId } = await searchParams
   const supabase = await createClient()
+  let episode
+  try {
+    episode = requestedEpisodeId
+      ? await getEpisodeById(caseId, requestedEpisodeId, supabase)
+      : await getActiveOrLatestEpisode(caseId, supabase)
+  } catch {
+    notFound()
+  }
+  const episodeId = episode?.id ?? '00000000-0000-0000-0000-000000000000'
+  const { data: episodeEncounterRows } = await supabase.from('clinical_encounters').select('id').eq('episode_id',episodeId).is('deleted_at',null)
+  const episodeEncounterIds = (episodeEncounterRows ?? []).map((row)=>row.id)
 
   // Fetch case first to get assigned_provider_id for signature lookup
   const caseRes = await supabase
@@ -29,8 +45,8 @@ export default async function DischargePage({
     logoResult,
     signatureResult,
   ] = await Promise.all([
-    getDischargeNote(caseId),
-    checkDischargeNotePrerequisites(caseId),
+    getDischargeNote(caseId, episode?.id),
+    checkDischargeNotePrerequisites(caseId, episode?.id),
     getClinicSettings(),
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
@@ -72,6 +88,7 @@ export default async function DischargePage({
     .from('procedures')
     .select('id')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .order('procedure_date', { ascending: false })
     .limit(1)
@@ -106,6 +123,7 @@ export default async function DischargePage({
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
       .is('procedure_id', null)
+      .in('encounter_id', episodeEncounterIds.length ? episodeEncounterIds : ['00000000-0000-0000-0000-000000000000'])
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
@@ -127,9 +145,9 @@ export default async function DischargePage({
       supabase.from('pain_management_extractions').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('mri_extractions').select('updated_at').eq('case_id', caseId).in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('chiro_extractions').select('updated_at').eq('case_id', caseId).eq('report_type', 'discharge_summary').in('review_status', ['approved', 'edited']).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('initial_visit_notes').select('updated_at').eq('case_id', caseId).eq('status', 'finalized').is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('procedures').select('updated_at').eq('case_id', caseId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('vital_signs').select('updated_at').eq('case_id', caseId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('initial_visit_notes').select('updated_at').eq('case_id', caseId).eq('episode_id',episodeId).eq('status', 'finalized').is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('procedures').select('updated_at').eq('case_id', caseId).eq('episode_id',episodeId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('vital_signs').select('updated_at,clinical_encounters!inner(episode_id)').eq('case_id', caseId).eq('clinical_encounters.episode_id',episodeId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     const latestInputUpdates = [csRes, ptRes, pmRes, mriRes, chiroRes, ivRes, procRes, vsRes]
       .map((r) => (r.data as { updated_at: string | null } | null)?.updated_at)
@@ -146,6 +164,7 @@ export default async function DischargePage({
     .from('initial_visit_notes')
     .select('visit_date')
     .eq('case_id', caseId)
+    .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .not('visit_date', 'is', null)
   const earliestDischargeDate =

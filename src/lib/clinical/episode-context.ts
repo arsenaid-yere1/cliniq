@@ -168,3 +168,60 @@ export function selectEpisodeDateFloor(
 
   return latestTimestamp.slice(0, 10)
 }
+
+export async function ensureLegacyEpisodeEncounter(
+  caseId: string,
+  encounterType: 'initial_evaluation' | 'pain_evaluation' | 'discharge',
+  input: {
+    encounterDate?: string | null
+    providerId?: string | null
+    providerIntake?: Record<string, unknown>
+    userId: string
+  },
+  client?: SupabaseClient,
+): Promise<{ episodeId: string; encounterId: string }> {
+  const supabase = await resolveClient(client)
+  const { data: episode, error: episodeError } = await supabase.from('care_episodes')
+    .select('id').eq('case_id', caseId).eq('episode_number', 1)
+    .is('deleted_at', null).maybeSingle()
+  if (episodeError || !episode) {
+    throw new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit')
+  }
+  return ensureEpisodeEncounter(caseId, episode.id, encounterType, input, supabase)
+}
+
+export async function ensureEpisodeEncounter(
+  caseId: string,
+  episodeId: string,
+  encounterType: 'initial_evaluation' | 'pain_evaluation' | 'discharge',
+  input: {
+    encounterDate?: string | null
+    providerId?: string | null
+    providerIntake?: Record<string, unknown>
+    userId: string
+  },
+  client?: SupabaseClient,
+): Promise<{ episodeId: string; encounterId: string }> {
+  const supabase = await resolveClient(client)
+  await getEpisodeById(caseId, episodeId, supabase)
+  const { data: existing, error: existingError } = await supabase.from('clinical_encounters')
+    .select('id').eq('case_id', caseId).eq('episode_id', episodeId)
+    .eq('encounter_type', encounterType).is('deleted_at', null).maybeSingle()
+  if (existingError) throw new EpisodeContextError('EPISODE_QUERY_FAILED', 'Unable to load the visit encounter')
+  if (existing) return { episodeId, encounterId: existing.id }
+
+  const { data: created, error } = await supabase.from('clinical_encounters').insert({
+    case_id: caseId, episode_id: episodeId, encounter_type: encounterType,
+    modality: 'unknown', status: 'in_progress', encounter_date: input.encounterDate ?? null,
+    provider_id: input.providerId ?? null, provider_intake: input.providerIntake ?? {},
+    created_by_user_id: input.userId, updated_by_user_id: input.userId,
+  }).select('id').single()
+  if (!error && created) return { episodeId, encounterId: created.id }
+  if (error?.code === '23505') {
+    const { data: raced } = await supabase.from('clinical_encounters').select('id')
+      .eq('case_id', caseId).eq('episode_id', episodeId).eq('encounter_type', encounterType)
+      .is('deleted_at', null).single()
+    if (raced) return { episodeId, encounterId: raced.id }
+  }
+  throw new EpisodeContextError('EPISODE_QUERY_FAILED', 'Unable to create the visit encounter')
+}

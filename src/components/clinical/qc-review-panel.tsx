@@ -84,6 +84,7 @@ const severityConfig: Record<
 const stepLabels: Record<QcStep, string> = {
   initial_visit: 'Initial Visit',
   pain_evaluation: 'Pain Evaluation',
+  pain_follow_up: 'Pain Follow-Up',
   procedure: 'Procedure',
   discharge: 'Discharge',
   case_summary: 'Case Summary',
