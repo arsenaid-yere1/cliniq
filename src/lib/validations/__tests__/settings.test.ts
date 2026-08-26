@@ -63,6 +63,27 @@ describe('clinicInfoSchema', () => {
     })
     expect(result.success).toBe(false)
   })
+
+  it('accepts a valid IANA timezone', () => {
+    const result = clinicInfoSchema.safeParse({
+      clinic_name: 'ClinIQ',
+      timezone: 'America/New_York',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts legacy callers that do not yet send a timezone', () => {
+    const result = clinicInfoSchema.safeParse({ clinic_name: 'ClinIQ' })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an unknown timezone', () => {
+    const result = clinicInfoSchema.safeParse({
+      clinic_name: 'ClinIQ',
+      timezone: 'Pacific/Atlantis',
+    })
+    expect(result.success).toBe(false)
+  })
 })
 
 describe('providerInfoSchema', () => {

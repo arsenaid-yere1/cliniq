@@ -3,7 +3,11 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { clinicInfoSchema, type ClinicInfoFormValues } from '@/lib/validations/settings'
+import {
+  clinicInfoSchema,
+  DEFAULT_CLINIC_TIMEZONE,
+  type ClinicInfoFormValues,
+} from '@/lib/validations/settings'
 import { updateClinicSettings } from '@/actions/settings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +21,11 @@ import {
 } from '@/components/ui/form'
 import type { Database } from '@/types/database'
 
-type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row']
+// Keep this additive field local until the generated database types are
+// refreshed from the Phase 1 local migration.
+type ClinicSettings = Database['public']['Tables']['clinic_settings']['Row'] & {
+  timezone?: string | null
+}
 
 interface ClinicInfoFormProps {
   initialData: ClinicSettings | null
@@ -37,6 +45,7 @@ export function ClinicInfoForm({ initialData }: ClinicInfoFormProps) {
       fax: initialData?.fax ?? '',
       email: initialData?.email ?? '',
       website: initialData?.website ?? '',
+      timezone: initialData?.timezone ?? DEFAULT_CLINIC_TIMEZONE,
     },
     mode: 'onBlur',
   })
@@ -190,6 +199,20 @@ export function ClinicInfoForm({ initialData }: ClinicInfoFormProps) {
               <FormLabel>Website</FormLabel>
               <FormControl>
                 <Input {...field} type="url" placeholder="https://..." />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="timezone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Clinic Timezone</FormLabel>
+              <FormControl>
+                <Input {...field} placeholder="America/Los_Angeles" />
               </FormControl>
               <FormMessage />
             </FormItem>

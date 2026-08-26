@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "gen:types": "npx supabase gen types --lang=typescript --project-id=$SUPABASE_PROJECT_ID > src/types/database.ts"
+    "gen:types": "npx supabase gen types --lang=typescript --project-id=$SUPABASE_PROJECT_ID > src/types/database.ts",
+    "db:reset": "supabase db reset --local --no-seed",
+    "db:test": "supabase test db --local",
+    "gen:types:local": "supabase gen types --local --lang=typescript > src/types/database.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -50,6 +53,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "shadcn": "^3.8.5",
+    "supabase": "2.115.0",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5",
