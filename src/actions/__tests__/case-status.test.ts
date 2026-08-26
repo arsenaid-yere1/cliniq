@@ -28,6 +28,7 @@ import {
   autoAdvanceFromIntake,
   closeCase,
   reopenCase,
+  startReturnCareEpisode,
 } from '../case-status'
 
 // ---- Tests ----
@@ -341,5 +342,102 @@ describe('closeCase / reopenCase wrappers', () => {
     })
     const result = await reopenCase(TEST_CASE_ID)
     expect(result).toEqual({ data: { success: true } })
+  })
+})
+
+describe('startReturnCareEpisode', () => {
+  const encounterInput = {
+    case_id: TEST_CASE_ID,
+    modality: 'telehealth' as const,
+    scheduled_start: '2026-09-01T17:00:00.000Z',
+    scheduled_end: '2026-09-01T17:30:00.000Z',
+    encounter_date: '2026-09-01',
+    provider_id: '880e8400-e29b-41d4-a716-446655440000',
+    provider_intake: {},
+    patient_reported_measurements: {},
+  }
+
+  beforeEach(() => {
+    mockSupabase = createMockSupabase()
+  })
+
+  it('creates the episode and encounter through one RPC call', async () => {
+    mockSupabase.rpc.mockResolvedValue({
+      data: [{
+        episode_id: '110e8400-e29b-41d4-a716-446655440000',
+        encounter_id: '220e8400-e29b-41d4-a716-446655440000',
+        replayed: false,
+      }],
+      error: null,
+    })
+
+    const result = await startReturnCareEpisode(
+      TEST_CASE_ID,
+      'Pain returned after discharge',
+      encounterInput,
+      'return-visit-001',
+    )
+
+    expect(mockSupabase.rpc).toHaveBeenCalledTimes(1)
+    expect(mockSupabase.rpc).toHaveBeenCalledWith('start_return_episode', expect.objectContaining({
+      p_case_id: TEST_CASE_ID,
+      p_modality: 'telehealth',
+      p_idempotency_key: 'return-visit-001',
+    }))
+    expect(result).toEqual({
+      data: {
+        episodeId: '110e8400-e29b-41d4-a716-446655440000',
+        encounterId: '220e8400-e29b-41d4-a716-446655440000',
+        replayed: false,
+      },
+    })
+  })
+
+  it('returns the replayed result for an idempotent retry', async () => {
+    mockSupabase.rpc.mockResolvedValue({
+      data: [{
+        episode_id: '110e8400-e29b-41d4-a716-446655440000',
+        encounter_id: '220e8400-e29b-41d4-a716-446655440000',
+        replayed: true,
+      }],
+      error: null,
+    })
+
+    const result = await startReturnCareEpisode(
+      TEST_CASE_ID,
+      'Pain returned after discharge',
+      encounterInput,
+      'return-visit-001',
+    )
+
+    expect(result.data?.replayed).toBe(true)
+  })
+
+  it('rejects cross-case encounter input before database access', async () => {
+    const result = await startReturnCareEpisode(
+      TEST_CASE_ID,
+      'Pain returned after discharge',
+      { ...encounterInput, case_id: '220e8400-e29b-41d4-a716-446655440000' },
+      'return-visit-001',
+    )
+
+    expect(result.error).toContain('same case')
+    expect(mockSupabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('returns a stable active-episode conflict', async () => {
+    mockSupabase.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'This case already has an active care episode' },
+    })
+
+    const result = await startReturnCareEpisode(
+      TEST_CASE_ID,
+      'Pain returned after discharge',
+      encounterInput,
+      'return-visit-001',
+    )
+
+    expect(result.error).toBe('This case already has an active care episode')
   })
 })

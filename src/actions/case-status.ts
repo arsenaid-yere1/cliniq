@@ -4,6 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { getCurrentUserWithRole } from '@/lib/auth/require-role'
 import { LOCKED_STATUSES, PAYMENT_ALLOWED_LOCKED_STATUSES, CASE_STATUS_TRANSITIONS, CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
+import {
+  startReturnCareEpisodeSchema,
+  type StartReturnCareEpisodeInput,
+} from '@/lib/validations/care-episode'
+import type { FirstReturnEncounterInput } from '@/lib/validations/clinical-encounter'
 
 // --- Shared guard: call at top of every write action ---
 
@@ -177,4 +182,76 @@ export async function closeCase(caseId: string) {
 
 export async function reopenCase(caseId: string) {
   return updateCaseStatus(caseId, 'active')
+}
+
+export async function startReturnCareEpisode(
+  caseId: string,
+  returnReason: string,
+  firstEncounterInput: FirstReturnEncounterInput,
+  idempotencyKey: string,
+) {
+  const parsed = startReturnCareEpisodeSchema.safeParse({
+    case_id: caseId,
+    return_reason: returnReason,
+    idempotency_key: idempotencyKey,
+    first_encounter: firstEncounterInput,
+  } satisfies StartReturnCareEpisodeInput)
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Invalid return visit details' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const encounter = parsed.data.first_encounter
+  const { data, error } = await supabase.rpc('start_return_episode', {
+    p_case_id: parsed.data.case_id,
+    p_return_reason: parsed.data.return_reason,
+    p_idempotency_key: parsed.data.idempotency_key,
+    p_modality: encounter.modality,
+    p_scheduled_start: encounter.scheduled_start ?? null,
+    p_scheduled_end: encounter.scheduled_end ?? null,
+    p_encounter_date: encounter.encounter_date ?? null,
+    p_provider_id: encounter.provider_id ?? null,
+    p_provider_intake: encounter.provider_intake,
+    p_patient_reported_pain_min: encounter.patient_reported_pain_min ?? null,
+    p_patient_reported_pain_max: encounter.patient_reported_pain_max ?? null,
+    p_patient_reported_measurements: encounter.patient_reported_measurements,
+    p_telehealth_consent_obtained: encounter.telehealth_consent_obtained ?? null,
+    p_telehealth_consent_at: encounter.telehealth_consent_at ?? null,
+    p_patient_location_state: encounter.patient_location_state ?? null,
+    p_provider_location: encounter.provider_location ?? null,
+    p_connection_method: encounter.connection_method ?? null,
+  })
+
+  if (error) {
+    const knownMessages = [
+      'Case not found',
+      'Archived cases must be moved to Closed before starting a return visit',
+      'Case must be Active, Pending Settlement, or Closed to start a return visit',
+      'This case already has an active care episode',
+      'Idempotency key was already used with different input',
+    ]
+    const knownMessage = knownMessages.find((message) => error.message?.includes(message))
+    return { error: knownMessage ?? 'Failed to start the return visit' }
+  }
+
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result?.episode_id || !result.encounter_id) {
+    return { error: 'Failed to start the return visit' }
+  }
+
+  revalidatePath(`/patients/${caseId}`)
+  revalidatePath(`/patients/${caseId}/visits`)
+  revalidatePath('/patients')
+
+  return {
+    data: {
+      episodeId: result.episode_id,
+      encounterId: result.encounter_id,
+      replayed: result.replayed === true,
+    },
+  }
 }

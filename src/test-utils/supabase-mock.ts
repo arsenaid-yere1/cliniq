@@ -47,6 +47,7 @@ export function createMockSupabase(defaultResult: QueryResult = { data: null, er
 
   const client = {
     from: vi.fn().mockReturnValue(queryBuilder),
+    rpc: vi.fn().mockResolvedValue(defaultResult),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: 'test-user-id' } },

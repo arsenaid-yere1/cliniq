@@ -4210,7 +4210,32 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      start_return_episode: {
+        Args: {
+          p_case_id: string
+          p_connection_method: string
+          p_encounter_date: string
+          p_idempotency_key: string
+          p_modality: string
+          p_patient_location_state: string
+          p_patient_reported_measurements: Json
+          p_patient_reported_pain_max: number
+          p_patient_reported_pain_min: number
+          p_provider_id: string
+          p_provider_intake: Json
+          p_provider_location: string
+          p_return_reason: string
+          p_scheduled_end: string
+          p_scheduled_start: string
+          p_telehealth_consent_at: string
+          p_telehealth_consent_obtained: boolean
+        }
+        Returns: {
+          encounter_id: string
+          episode_id: string
+          replayed: boolean
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
