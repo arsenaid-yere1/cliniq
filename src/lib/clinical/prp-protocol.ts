@@ -1,25 +1,23 @@
 export const PRP_NSAID_PROTOCOL = {
-  preProcedureHoldDays: 7,
-  protectiveWindowWeeks: 2,
-  screeningRecentDays: 7,
+  avoidanceWindowWeeks: 2,
 } as const
 
 export function nsaidHeldPreProcedureClause(): string {
-  const { preProcedureHoldDays } = PRP_NSAID_PROTOCOL
-  return `held NSAIDs for ${preProcedureHoldDays} days prior to the procedure per protocol`
+  const { avoidanceWindowWeeks } = PRP_NSAID_PROTOCOL
+  return `held NSAIDs for ${avoidanceWindowWeeks} weeks prior to the procedure per protocol`
 }
 
 export function nsaidPostCareInstructionSentence(): string {
-  const { protectiveWindowWeeks } = PRP_NSAID_PROTOCOL
-  return `Avoid NSAIDs (ibuprofen, naproxen, aspirin, etc.) for ${protectiveWindowWeeks} weeks before and after the procedure, as they may interfere with the healing response.`
+  const { avoidanceWindowWeeks } = PRP_NSAID_PROTOCOL
+  return `Avoid NSAIDs (ibuprofen, naproxen, aspirin, etc.) for ${avoidanceWindowWeeks} weeks before and after the procedure, as they may interfere with the healing response.`
 }
 
 export function nsaidScreeningContraindicationLabel(): string {
-  const { screeningRecentDays } = PRP_NSAID_PROTOCOL
-  return `NSAIDs in past ${screeningRecentDays} days`
+  const { avoidanceWindowWeeks } = PRP_NSAID_PROTOCOL
+  return `NSAIDs in past ${avoidanceWindowWeeks} weeks`
 }
 
 export function nsaidAvoidanceTreatmentPlanFragment(): string {
-  const { protectiveWindowWeeks } = PRP_NSAID_PROTOCOL
-  return `avoid NSAIDs for ${protectiveWindowWeeks} weeks before and after each PRP injection`
+  const { avoidanceWindowWeeks } = PRP_NSAID_PROTOCOL
+  return `avoid NSAIDs for ${avoidanceWindowWeeks} weeks before and after each PRP injection`
 }

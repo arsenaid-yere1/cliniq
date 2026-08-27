@@ -13,9 +13,13 @@ import type { NarrativeDirective } from '@/lib/claude/narrative-directive'
 import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
 import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
-import { nsaidHeldPreProcedureClause } from '@/lib/clinical/prp-protocol'
+import {
+  nsaidHeldPreProcedureClause,
+  nsaidPostCareInstructionSentence,
+} from '@/lib/clinical/prp-protocol'
 
 const NSAID_HELD_CLAUSE = nsaidHeldPreProcedureClause()
+const NSAID_POST_CARE_INSTRUCTION = nsaidPostCareInstructionSentence()
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -607,7 +611,9 @@ Two components, in this order: (1) an IMMEDIATE POST-PROCEDURE MONITORING paragr
 
 IMMEDIATE POST-PROCEDURE MONITORING (MANDATORY — 2-3 sentences): Describe the observation window after the injection. Use this defensible boilerplate when the chart does not document specific monitoring details: "The patient tolerated the procedure well and was monitored in the clinic for approximately 20 minutes. Vital signs remained stable during the observation period. A brief neurological recheck of the upper and lower extremities was unchanged from baseline, with 5/5 motor strength and intact light-touch sensation bilaterally. There was no active bleeding or hematoma at the injection sites, and immediate post-procedure pain was reported as mild and expected." Adjust wording if procedureRecord.complications or procedureRecord.patient_tolerance documents otherwise. Do NOT fabricate specific vital sign numbers here; the pre-procedure vital signs already appear in section 7.
 
-DISCHARGE INSTRUCTIONS (~1 paragraph): Compression bandage, activity restrictions (hrs), medication instructions, infection warning signs. Reference for this paragraph: "A compression bandage was applied to the injection site, and the patient was advised to rest the back for 24-48 hours, avoiding any strenuous activity or heavy lifting. Patient was advised to continue his prescribed pain medication (Naproxen and Acetaminophen) and to apply ice to the injection site as needed for pain and swelling. Instructions were given on signs of infection (redness, swelling, increased pain) and to call immediately if any of these symptoms occurred."
+DISCHARGE INSTRUCTIONS (~1 paragraph): Cover compression bandage, activity restrictions (hrs), medication instructions, ice restrictions, and infection warning signs. Include this exact NSAID instruction: "${NSAID_POST_CARE_INSTRUCTION}" Acetaminophen may be used for breakthrough pain when clinically appropriate. Instruct the patient not to apply ice to the injection site during the first 72 hours. Do NOT recommend Naproxen, ibuprofen, aspirin, or any other NSAID as PRP post-procedure analgesia.
+
+Reference for this paragraph: "A compression bandage was applied to the injection site, and the patient was advised to rest the treated area for 24-48 hours, avoiding strenuous activity or heavy lifting. ${NSAID_POST_CARE_INSTRUCTION} Acetaminophen may be used for breakthrough pain as needed. The patient was instructed not to apply ice to the injection site during the first 72 hours. Instructions were given on signs of infection (redness, swelling, increased pain) and to call immediately if any of these symptoms occurred."
 
 16. procedure_followup (~2-3 sentences):
 Return timeline, potential additional injections based on procedure_number in series.
@@ -721,7 +727,7 @@ COUNTER-EXAMPLE (when M54.6 IS supported):
   If the exam THIS visit documents "thoracic paraspinal tenderness at T4-T8 with pain on rotation" OR the ROS mentions thoracic/mid-back pain, M54.6 may be kept.
 
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
-Reference plan: "• Continue Naproxen and Acetaminophen for pain management.\\n• Rest and ice for 48 hours post-procedure...\\n• Reevaluate in 10-14 days..."
+Reference plan: "• ${NSAID_POST_CARE_INSTRUCTION}\\n• Acetaminophen may be used for breakthrough pain as needed.\\n• Rest the treated area and do not apply ice during the first 72 hours.\\n• Reevaluate in 10-14 days."
 
 18. patient_education (~1 paragraph):
 Covers PRP role, post-injection instructions, follow-up. End with time documentation sentence: "I personally spent a cumulative total of greater than 60 minutes with and examining the patient... Of that, greater than 50% of the time was spent counseling and/or providing education."

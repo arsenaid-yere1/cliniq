@@ -12,7 +12,10 @@ import {
 } from '@/lib/claude/generate-procedure-note'
 import { procedureNoteSectionLabelsFor } from '@/lib/validations/procedure-note'
 import { callClaudeTool } from '@/lib/claude/client'
-import { nsaidHeldPreProcedureClause } from '@/lib/clinical/prp-protocol'
+import {
+  nsaidHeldPreProcedureClause,
+  nsaidPostCareInstructionSentence,
+} from '@/lib/clinical/prp-protocol'
 
 const emptyInput: ProcedureNoteInputData = {
   patientInfo: { first_name: 'A', last_name: 'B', date_of_birth: null, gender: null },
@@ -689,6 +692,27 @@ describe('SYSTEM_PROMPT — medico-legal editor pass (phase 11)', () => {
     expect(postBlock).toContain('DISCHARGE INSTRUCTIONS')
     // Length target acknowledges the new two-paragraph shape
     expect(postBlock).toContain('(~1-2 paragraphs)')
+  })
+
+  it('procedure_post_care aligns medication and ice instructions with PRP consent', async () => {
+    const system = await capturePrompt(emptyInput)
+    const postStart = system.indexOf('15. procedure_post_care')
+    const followupStart = system.indexOf('16. procedure_followup')
+    expect(postStart).toBeGreaterThan(0)
+    expect(followupStart).toBeGreaterThan(postStart)
+    const postBlock = system.slice(postStart, followupStart)
+
+    expect(postBlock).toContain(nsaidPostCareInstructionSentence())
+    expect(postBlock).toContain('Acetaminophen may be used for breakthrough pain')
+    expect(postBlock).toContain('not to apply ice to the injection site during the first 72 hours')
+    expect(postBlock).not.toContain('continue his prescribed pain medication (Naproxen')
+    expect(postBlock).not.toContain('apply ice to the injection site as needed')
+  })
+
+  it('does not recommend Naproxen or immediate ice elsewhere in the PRP prompt', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).not.toMatch(/(?:continue|use|take)[^\n]{0,40}Naproxen/i)
+    expect(system).not.toMatch(/(?:rest and ice|apply ice)[^\n]{0,40}(?:48 hours|as needed)/i)
   })
 })
 

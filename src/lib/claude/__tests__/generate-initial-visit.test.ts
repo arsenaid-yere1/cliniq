@@ -10,6 +10,7 @@ import {
   type InitialVisitInputData,
 } from '@/lib/claude/generate-initial-visit'
 import { callClaudeTool } from '@/lib/claude/client'
+import { nsaidAvoidanceTreatmentPlanFragment } from '@/lib/clinical/prp-protocol'
 
 const emptyInput: InitialVisitInputData = {
   patientInfo: { first_name: 'A', last_name: 'B', date_of_birth: null, gender: null },
@@ -110,6 +111,12 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     const system = await capturePrompt(emptyInput)
     expect(system).toContain('When priorVisitData.vitalSigns is null or pain_score_max is null, do NOT invent a numeric prior pain value')
     expect(system).toContain('qualitative comparative language tied to priorVisitData.chief_complaint narrative')
+  })
+
+  it('pain-eval treatment plan uses the canonical two-week NSAID window', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain(nsaidAvoidanceTreatmentPlanFragment())
+    expect(system).not.toMatch(/NSAIDs?[^\n]{0,60}\b7(?:-| )days?\b/i)
   })
 
   async function captureFirstVisitPrompt(input: InitialVisitInputData): Promise<string> {
