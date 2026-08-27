@@ -17,6 +17,7 @@ import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { computeBotoxDrugLineItems, computeBotoxFacilityLineItem, type BotoxDosing } from '@/lib/billing/botox-lines'
 import { sortInvoiceLineItemsChronologically } from '@/lib/billing/sort-line-items'
+import { resolveEncounterServiceDate } from '@/lib/billing/encounter-service-date'
 
 // Count distinct injection sites in a free-text string.
 // Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
@@ -84,7 +85,7 @@ export async function getInvoiceFormData(caseId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', data: null }
 
-  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitNotesResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult, completedEncountersResult, claimsResult] = await Promise.all([
+  const [caseResult, proceduresResult, clinicResult, providerProfileResult, initialVisitNotesResult, pmExtractionResult, mriExtractionResult, dischargeNoteResult, finalizedDischargeNotesResult, completedEncountersResult, claimsResult] = await Promise.all([
     supabase
       .from('cases')
       .select(`
@@ -145,6 +146,12 @@ export async function getInvoiceFormData(caseId: string) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('discharge_notes')
+      .select('encounter_id, visit_date')
+      .eq('case_id', caseId)
+      .eq('status', 'finalized')
+      .is('deleted_at', null),
     supabase.from('clinical_encounters').select('id,encounter_type,encounter_date,completed_at')
       .eq('case_id',caseId).eq('status','completed').in('encounter_type',['pain_follow_up','discharge']).is('deleted_at',null),
     supabase.from('billing_source_claims').select('encounter_id,procedure_id,claim_kind,invoice_id')
@@ -395,13 +402,24 @@ export async function getInvoiceFormData(caseId: string) {
     }
   }).filter((line) => !line.procedure_id || !claimedProcedureKinds.has(`${line.procedure_id}:facility`))
 
+  const dischargeVisitDatesByEncounterId = new Map(
+    (finalizedDischargeNotesResult.data ?? [])
+      .filter((note) => note.encounter_id)
+      .map((note) => [note.encounter_id as string, note.visit_date]),
+  )
+  const currentDate = new Date().toISOString().slice(0, 10)
+
   for (const encounter of completedEncountersResult.data ?? []) {
     if (claimedEncounterIds.has(encounter.id)) continue
-    if (encounter.encounter_type === 'discharge' && dischargeNoteResult.data?.status !== 'finalized') continue
+    const dischargeVisitDate = dischargeVisitDatesByEncounterId.get(encounter.id)
+    if (encounter.encounter_type === 'discharge' && !dischargeVisitDatesByEncounterId.has(encounter.id)) continue
     const price = priceMap['99213'] ?? 0
     prePopulatedLineItems.push({
       encounter_id: encounter.id,
-      service_date: encounter.encounter_date ?? encounter.completed_at?.slice(0,10) ?? new Date().toISOString().slice(0,10),
+      service_date: resolveEncounterServiceDate(encounter, {
+        dischargeVisitDate,
+        fallbackDate: currentDate,
+      }),
       cpt_code:'99213',
       description:encounter.encounter_type==='discharge'?'Follow-up / discharge visit':'Pain management follow-up visit',
       quantity:1,unit_price:price,total_price:price,
