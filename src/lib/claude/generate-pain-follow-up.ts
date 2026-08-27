@@ -81,7 +81,7 @@ export async function generatePainFollowUp(
     ? `\nRegenerate the ${regeneration.section} section to address this quality finding: ${regeneration.message}${regeneration.rationale ? ` (${regeneration.rationale})` : ''}. Keep all source boundaries and telehealth safeguards.`
     : ''
   return callClaudeTool<PainFollowUpNoteResult>({
-    model: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT,
+    model: 'claude-opus-4-6', fallbackModel: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT,
     tools: [TOOL], toolName: 'generate_pain_follow_up',
     messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${regenerationInstruction}` }],
     parse: (raw) => {

@@ -1,8 +1,56 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+
+vi.mock('@/lib/claude/client', () => ({
+  callClaudeTool: vi.fn(),
+}))
+
 import {
+  generatePainFollowUp,
   normalizePainFollowUpToolOutput,
   PAIN_FOLLOW_UP_SYSTEM_PROMPT,
+  type PainFollowUpSourceData,
 } from '../generate-pain-follow-up'
+import { callClaudeTool } from '@/lib/claude/client'
+
+const source: PainFollowUpSourceData = {
+  encounter: { id: 'encounter-1', modality: 'telehealth' },
+  patient: { id: 'patient-1' },
+  provider: { id: 'provider-1' },
+  latestCompletedEncounter: null,
+  priorEpisodeDischarge: null,
+  performedProcedures: [],
+}
+
+describe('pain follow-up model routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+  })
+
+  it('uses Opus 4.6 with Sonnet 4.6 fallback for full generation', async () => {
+    await generatePainFollowUp(source)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+
+    expect(opts.model).toBe('claude-opus-4-6')
+    expect(opts.fallbackModel).toBe('claude-sonnet-4-6')
+    expect(opts.maxTokens).toBe(6000)
+    expect(opts.toolName).toBe('generate_pain_follow_up')
+  })
+
+  it('uses the same model pair for regeneration and preserves its instruction', async () => {
+    await generatePainFollowUp(source, {
+      section: 'assessment',
+      message: 'Clarify the historical comparison',
+      rationale: 'The prior pain score needs a date label',
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+
+    expect(opts.model).toBe('claude-opus-4-6')
+    expect(opts.fallbackModel).toBe('claude-sonnet-4-6')
+    expect(opts.messages[0].content).toContain('Regenerate the assessment section')
+    expect(opts.messages[0].content).toContain('The prior pain score needs a date label')
+  })
+})
 
 describe('pain follow-up prompt contract', () => {
   it('forbids unsupported hands-on findings and labels historical context', () => {
