@@ -1150,10 +1150,10 @@ episode state outside the explicit atomic return action.
 
 ### Finalized document immutability
 
-Existing unfinalize flows can mutate the singleton discharge after reopen.
-Mitigation: once an episode is discharged, its finalized note cannot be
-unfinalized through normal provider flows. Any administrative correction must be
-a separately audited future capability.
+Once an episode is discharged, its finalized note cannot be unfinalized through
+normal provider flows. Corrections now use the separately audited finalized
+discharge correction workflow, which preserves each PDF revision and does not
+reopen the discharged episode or alter a later return episode.
 
 ### Deployment ordering
 
