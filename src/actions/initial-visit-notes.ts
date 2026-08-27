@@ -25,7 +25,10 @@ import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-statu
 import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 import { validateNarrative } from '@/lib/qc/narrative-validator'
-import { ensureLegacyEpisodeEncounter } from '@/lib/clinical/episode-context'
+import {
+  ensureLegacyEpisodeEncounter,
+  EpisodeContextError,
+} from '@/lib/clinical/episode-context'
 
 // --- Helper: compute source data hash ---
 
@@ -51,6 +54,11 @@ function mapVisitDateOrderError(err: PgError): string | null {
     return 'The Initial Visit date cannot be later than the Pain Evaluation Visit date on this case.'
   }
   return null
+}
+
+function mapEpisodeOwnershipError(error: unknown): string {
+  if (error instanceof EpisodeContextError) return error.message
+  return 'Unable to prepare the visit record. Please try again.'
 }
 
 // --- Helper: gather source data for note generation ---
@@ -423,12 +431,17 @@ export async function generateInitialVisitNote(
     // No existing row for this visit type — create one. The unique partial
     // index on (case_id, visit_type) protects against concurrent inserts:
     // a second racer gets a unique-violation error (code 23505).
-    const ownership = await ensureLegacyEpisodeEncounter(
-      caseId,
-      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
-      { encounterDate: effectiveVisitDate, providerId: null, userId: user.id },
-      supabase,
-    )
+    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    try {
+      ownership = await ensureLegacyEpisodeEncounter(
+        caseId,
+        visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+        { encounterDate: effectiveVisitDate, providerId: null, userId: user.id },
+        supabase,
+      )
+    } catch (error) {
+      return { error: mapEpisodeOwnershipError(error) }
+    }
     const { data: record, error: insertError } = await supabase
       .from('initial_visit_notes')
       .insert({
@@ -1023,12 +1036,17 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
   } else {
     const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
       .eq('id', caseId).is('deleted_at', null).single()
-    const ownership = await ensureLegacyEpisodeEncounter(
-      caseId,
-      'initial_evaluation',
-      { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id },
-      supabase,
-    )
+    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    try {
+      ownership = await ensureLegacyEpisodeEncounter(
+        caseId,
+        'initial_evaluation',
+        { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id },
+        supabase,
+      )
+    } catch (error) {
+      return { error: mapEpisodeOwnershipError(error) }
+    }
     const { error } = await supabase
       .from('vital_signs')
       .insert({
@@ -1105,12 +1123,17 @@ export async function saveProviderIntake(
   } else {
     const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
       .eq('id', caseId).is('deleted_at', null).single()
-    const ownership = await ensureLegacyEpisodeEncounter(
-      caseId,
-      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
-      { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
-      supabase,
-    )
+    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    try {
+      ownership = await ensureLegacyEpisodeEncounter(
+        caseId,
+        visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+        { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
+        supabase,
+      )
+    } catch (error) {
+      return { error: mapEpisodeOwnershipError(error) }
+    }
     const { error } = await supabase
       .from('initial_visit_notes')
       .insert({
