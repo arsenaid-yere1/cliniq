@@ -44,9 +44,12 @@ export async function listDocuments(caseId: string, filters?: {
     return { data: rows.map((r) => ({ ...r, content_date: null, procedure_number: null })) }
   }
 
-  const [dischargeRes, initialVisitRes, procedureNoteRes, clinicalOrderRes] = await Promise.all([
+  const [dischargeRes, initialVisitRes, painFollowUpRes, procedureNoteRes, clinicalOrderRes] = await Promise.all([
     supabase.from('discharge_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('initial_visit_notes').select('document_id, visit_date').in('document_id', generatedIds),
+    supabase.from('pain_follow_up_notes')
+      .select('document_id, encounter:clinical_encounters!pain_follow_up_notes_encounter_ownership_fkey(encounter_date)')
+      .in('document_id', generatedIds),
     supabase.from('procedure_notes').select('document_id, procedure:procedures(procedure_date, procedure_number)').in('document_id', generatedIds),
     supabase.from('clinical_orders').select('document_id').in('document_id', generatedIds),
   ])
@@ -58,6 +61,16 @@ export async function listDocuments(caseId: string, filters?: {
   }
   for (const r of initialVisitRes.data ?? []) {
     if (r.document_id && r.visit_date) contentDateByDocId.set(r.document_id, r.visit_date)
+  }
+  for (const r of painFollowUpRes.data ?? []) {
+    const encounterRaw = r.encounter as unknown as
+      | { encounter_date: string | null }
+      | { encounter_date: string | null }[]
+      | null
+    const encounter = Array.isArray(encounterRaw) ? encounterRaw[0] ?? null : encounterRaw
+    if (r.document_id && encounter?.encounter_date) {
+      contentDateByDocId.set(r.document_id, encounter.encounter_date)
+    }
   }
   for (const r of procedureNoteRes.data ?? []) {
     const procRaw = r.procedure as unknown as

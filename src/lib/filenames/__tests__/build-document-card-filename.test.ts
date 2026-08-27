@@ -7,7 +7,7 @@ describe('buildDocumentCardFilename', () => {
       file_name: 'Pain Management Follow-Up',
       document_type: 'generated',
       mime_type: 'application/pdf',
-      created_at: '2026-08-27T17:00:00Z',
+      created_at: '2026-08-29T17:00:00Z',
       content_date: '2026-08-27',
       procedure_number: null,
     }, 'Smith')).toBe('Smith_PainManagementFollowUp_2026-08-27.pdf')
