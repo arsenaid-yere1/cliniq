@@ -17,6 +17,8 @@ const emptyInput: DischargeNoteInputData = {
   caseDetails: { case_number: 'C1', accident_date: null, accident_type: null },
   visitDate: '2026-04-16',
   procedures: [],
+  prpSessionCount: 0,
+  prpTargetAreaCount: 0,
   diagnosisPool: null,
   latestVitals: null,
   dischargeVitals: null,
@@ -66,6 +68,36 @@ describe('generateDischargeNoteFromData', () => {
     expect(opts.model).toBe('claude-opus-4-6')
     expect(opts.toolName).toBe('generate_discharge_note')
     expect(opts.maxTokens).toBe(16384)
+  })
+
+  it('threads deterministic PRP course counts into the prompt payload', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({
+      ...emptyInput,
+      prpSessionCount: 2,
+      prpTargetAreaCount: 6,
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('"prpSessionCount": 2')
+    expect(opts.messages[0].content).toContain('"prpTargetAreaCount": 6')
+  })
+
+  it('defines target areas as injections and forbids session-based re-derivation', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData(emptyInput)
+    const system = (callClaudeTool as unknown as Mock).mock.calls[0][0].system as string
+    expect(system).toContain('PRP COURSE COUNTS (HIGHEST PRIORITY)')
+    expect(system).toContain('the number MUST be `prpTargetAreaCount`')
+    expect(system).toContain('NEVER use `procedures.length`')
+    expect(system).toContain('Use it only when explicitly quantifying sessions')
+  })
+
+  it('preserves a null target count and requires nonnumeric injection wording', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateDischargeNoteFromData({ ...emptyInput, prpSessionCount: 2, prpTargetAreaCount: null })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.messages[0].content).toContain('"prpTargetAreaCount": null')
+    expect(opts.system).toContain('Do NOT state a numeric total of PRP injections')
   })
 })
 

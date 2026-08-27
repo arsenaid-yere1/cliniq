@@ -35,6 +35,7 @@ export interface DischargeNoteInputData {
   procedures: Array<{
     procedure_date: string
     procedure_name: string
+    procedure_type: string
     procedure_number: number
     injection_site: string | null
     sites: Array<{
@@ -47,6 +48,12 @@ export interface DischargeNoteInputData {
     pain_score_max: number | null
     diagnoses: Array<{ icd10_code: string | null; description: string }>
   }>
+  // Deterministic PRP course counts. Sessions count procedure rows; target
+  // areas count each performed sites[] occurrence across PRP sessions.
+  prpSessionCount: number
+  // Null means at least one PRP session lacks usable structured or legacy
+  // target-area data, so a numeric injection total would be incomplete.
+  prpTargetAreaCount: number | null
   // Pre-filtered, deduped diagnosis pool for the discharge diagnoses section.
   // Aggregated from procedures.diagnoses + IVN.diagnoses + pmExtraction.diagnoses,
   // then run through rewriteDiagnosesForDischarge: V/W/X/Y stripped, A-suffix
@@ -242,6 +249,17 @@ PDF-SAFE FORMATTING:
 === CONTEXT ===
 
 This is a DISCHARGE note — the patient has COMPLETED their PRP treatment series and is being evaluated for discharge from active interventional pain management care. The tone should reflect completion, improvement, and forward-looking recommendations. Summarize the entire treatment course and outcomes.
+
+=== PRP COURSE COUNTS (HIGHEST PRIORITY) ===
+
+The top-level fields \`prpSessionCount\` and \`prpTargetAreaCount\` are computed deterministically from the structured procedure record. They describe different facts and MUST NOT be interchanged or re-derived.
+
+• \`prpSessionCount\` is the number of PRP treatment sessions/procedure visits. Use it only when explicitly quantifying sessions, procedures, encounters, or visits.
+• \`prpTargetAreaCount\` is the total number of performed PRP target-area injection occurrences across those sessions. Whenever prose explicitly states how many PRP "injections" the patient received, the number MUST be \`prpTargetAreaCount\`, even when multiple target areas were treated during one session.
+• NEVER use \`procedures.length\`, the number of procedure dates, procedure ordinals, or any other inferred value as the injection count. NEVER count or deduplicate \`procedures[].sites\` yourself; the TypeScript value is authoritative.
+• When \`prpTargetAreaCount\` is null, target-area data is incomplete. Do NOT state a numeric total of PRP injections. Use nonnumeric wording such as "after completing PRP treatment" and, if useful, state \`prpSessionCount\` only as a session count.
+• A bilateral site stored as one target entry counts once, and a target treated again in another session counts again. These semantics are already reflected in \`prpTargetAreaCount\`; do not adjust it.
+• Preferred wording when both counts are useful: "The patient completed {prpSessionCount} PRP treatment sessions comprising {prpTargetAreaCount} target-area injections."
 
 === DETERMINISTIC PAIN TRAJECTORY (HIGHEST PRIORITY) ===
 

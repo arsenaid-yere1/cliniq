@@ -24,7 +24,10 @@ import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } f
 import { resolveDischargeNarrativeDirective } from '@/lib/claude/narrative-directive'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import { refreshDischargeTrajectory } from '@/actions/discharge-notes-trajectory'
-import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
+import {
+  deriveDischargePrpCounts,
+  resolveDischargeProcedureSites,
+} from '@/lib/claude/discharge-prp-counts'
 import { buildPainObservations } from '@/lib/claude/pain-observations'
 import {
   rewriteDiagnosesForDischarge,
@@ -119,7 +122,7 @@ export async function gatherDischargeNoteSourceData(
       .single(),
     supabase
       .from('procedures')
-      .select('id, procedure_date, procedure_name, procedure_number, injection_site, sites, diagnoses')
+      .select('id, procedure_date, procedure_name, procedure_type, procedure_number, injection_site, sites, diagnoses')
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
       .is('deleted_at', null)
@@ -266,12 +269,14 @@ export async function gatherDischargeNoteSourceData(
 
   const procedures = procRows.map((p) => {
     const v = vitalsByProcedureId.get(p.id)
+    const sites = resolveDischargeProcedureSites(p.sites, p.injection_site)
     return {
       procedure_date: p.procedure_date,
       procedure_name: p.procedure_name,
+      procedure_type: p.procedure_type,
       procedure_number: p.procedure_number ?? 1,
       injection_site: p.injection_site,
-      sites: parseSitesJsonb(p.sites),
+      sites,
       pain_score_min: v?.pain_score_min ?? null,
       pain_score_max: v?.pain_score_max ?? null,
       diagnoses: Array.isArray(p.diagnoses)
@@ -497,6 +502,7 @@ export async function gatherDischargeNoteSourceData(
     pmDiagnoses: pmDiagnosesArray,
     ivnDiagnosesText: ivNoteRes.data?.diagnoses ?? null,
   })
+  const prpCounts = deriveDischargePrpCounts(procedures)
 
   return {
     data: {
@@ -514,6 +520,7 @@ export async function gatherDischargeNoteSourceData(
       },
       visitDate,
       procedures,
+      ...prpCounts,
       diagnosisPool: diagnosisPool.length > 0 ? diagnosisPool : null,
       latestVitals,
       dischargeVitals,

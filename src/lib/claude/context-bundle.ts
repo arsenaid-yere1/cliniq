@@ -30,6 +30,8 @@ const PRESERVED_KEYS_EVEN_IF_EMPTY = new Set<string>([
   'painObservations',
   'overallPainTrend',
   'seriesVolatility',
+  'prpSessionCount',
+  'prpTargetAreaCount',
   'chiroProgress',
   'planAlignment',
   // Diagnosis pool — empty array still informs the prompt that no pre-filter
