@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireWritableEpisode } from '@/lib/clinical/episode-context'
+import { alignTelehealthConsentToEncounterDate } from '@/lib/clinical/encounter-dates'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
 import {
   changeEncounterStatusSchema,
@@ -75,8 +76,22 @@ export async function updatePainFollowUpEncounter(
   }
 
   const { encounter_id, ...changes } = parsed.data
+  const effectiveEncounterDate = parsed.data.encounter_date ?? existing.encounter_date
+  const normalizedChanges = {
+    ...changes,
+    ...(effectiveConsent === true
+      ? {
+          telehealth_consent_at: alignTelehealthConsentToEncounterDate(
+            parsed.data.telehealth_consent_at ?? existing.telehealth_consent_at,
+            effectiveEncounterDate,
+          ),
+        }
+      : parsed.data.telehealth_consent_obtained === false
+        ? { telehealth_consent_at: null }
+        : {}),
+  }
   const { error } = await supabase.from('clinical_encounters')
-    .update({ ...changes, updated_by_user_id: user.id }).eq('id', encounter_id)
+    .update({ ...normalizedChanges, updated_by_user_id: user.id }).eq('id', encounter_id)
   if (error) return { error: 'Unable to update visit' }
   revalidatePath(`/patients/${caseId}/visits`)
   revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)

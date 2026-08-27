@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { encounterDateFromLocalDateTime } from '@/lib/clinical/encounter-dates'
 
 export function ScheduleVisitDialog({ caseId, episodeId, providers }: { caseId: string; episodeId: string; providers: Array<{ id: string; display_name: string }> }) {
   const router = useRouter(); const [open,setOpen]=useState(false); const [pending,setPending]=useState(false)
@@ -19,7 +20,7 @@ export function ScheduleVisitDialog({ caseId, episodeId, providers }: { caseId: 
     setPending(true)
     const result = await schedulePainFollowUp({ case_id:caseId,episode_id:episodeId,modality,
       scheduled_start:start.toISOString(),scheduled_end:new Date(start.getTime()+30*60_000).toISOString(),
-      encounter_date:start.toISOString().slice(0,10),provider_id:provider||null,provider_intake:{},patient_reported_measurements:{} })
+      encounter_date:encounterDateFromLocalDateTime(time),provider_id:provider||null,provider_intake:{},patient_reported_measurements:{} })
     setPending(false)
     if ('error' in result && result.error) return toast.error(result.error)
     setOpen(false); toast.success('Visit scheduled'); router.refresh()

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { startReturnVisit } from '@/actions/care-episodes'
+import { encounterDateFromLocalDateTime } from '@/lib/clinical/encounter-dates'
 
 export function StartReturnEpisodeDialog({ caseId, providers }: { caseId: string; providers: Array<{ id: string; display_name: string }> }) {
   const router = useRouter()
@@ -29,7 +30,9 @@ export function StartReturnEpisodeDialog({ caseId, providers }: { caseId: string
       case_id: caseId, modality,
       scheduled_start: start?.toISOString() ?? null,
       scheduled_end: start ? new Date(start.getTime() + 30 * 60_000).toISOString() : null,
-      encounter_date: start ? start.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      encounter_date: start
+        ? encounterDateFromLocalDateTime(scheduledStart)
+        : new Date().toISOString().slice(0, 10),
       provider_id: providerId || null, provider_intake: {}, patient_reported_measurements: {},
     }, idempotencyKey.current)
     setPending(false)

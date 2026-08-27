@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { encounterDateFromLocalDateTime } from '@/lib/clinical/encounter-dates'
 import type { Tables } from '@/types/database'
 
 type Intake = { chief_complaint?: string; interval_history?: string; review_of_systems?: string; video_observations?: string }
@@ -41,7 +42,9 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
       encounter_id: encounter.id,
       scheduled_start: start?.toISOString() ?? null,
       scheduled_end: start ? new Date(start.getTime() + 30 * 60_000).toISOString() : null,
-      encounter_date: start ? start.toISOString().slice(0, 10) : encounter.encounter_date,
+      encounter_date: start
+        ? encounterDateFromLocalDateTime(scheduledStart)
+        : encounter.encounter_date,
       provider_intake: intake,
       patient_reported_pain_min: painMin === '' ? null : Number(painMin),
       patient_reported_pain_max: painMax === '' ? null : Number(painMax),
