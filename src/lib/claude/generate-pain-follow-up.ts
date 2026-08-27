@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createHash } from 'node:crypto'
 import { callClaudeTool } from '@/lib/claude/client'
 import { painFollowUpNoteResultSchema, type PainFollowUpNoteResult } from '@/lib/validations/pain-follow-up-note'
 import { validateTelehealthFollowUpOutput } from '@/lib/qc/telehealth-follow-up'
@@ -32,11 +33,39 @@ const TOOL: Anthropic.Tool = {
       diagnoses:{type:'string'}, treatment_plan:{type:'string'}, patient_education:{type:'string'},
       follow_up:{type:'string'}, clinician_disclaimer:{type:'string'},
       procedure_recommendations:{type:'array',items:{type:'object',required:['recommendation_id','procedure_type','sites','diagnoses','rationale'],properties:{
-        recommendation_id:{type:'string'},procedure_type:{type:'string',enum:['prp','cortisone','hyaluronic','botox']},
-        sites:{type:'array',items:{type:'string'}},diagnoses:{type:'array',items:{type:'object',required:['icd10_code','description'],properties:{icd10_code:{type:['string','null']},description:{type:'string'}}}},rationale:{type:'string'},suggested_timing:{type:['string','null']},
+        recommendation_id:{type:'string',format:'uuid'},procedure_type:{type:'string',enum:['prp','cortisone','hyaluronic','botox']},
+        sites:{type:'array',minItems:1,items:{type:'string',minLength:1}},diagnoses:{type:'array',items:{type:'object',required:['icd10_code','description'],properties:{icd10_code:{type:['string','null']},description:{type:'string',minLength:1}}}},rationale:{type:'string',minLength:1},suggested_timing:{type:['string','null']},
       }}},
     },
   },
+}
+
+const uuidSchema = z.string().uuid()
+
+function deterministicRecommendationId(value: Record<string, unknown>, index: number) {
+  const { recommendation_id: _ignored, ...clinicalContent } = value
+  void _ignored
+  const hash = createHash('sha256')
+    .update(JSON.stringify({ index, ...clinicalContent }))
+    .digest('hex')
+  const variant = ((Number.parseInt(hash[16], 16) & 0x3) | 0x8).toString(16)
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-${variant}${hash.slice(17, 20)}-${hash.slice(20, 32)}`
+}
+
+export function normalizePainFollowUpToolOutput(raw: Record<string, unknown>) {
+  if (!Array.isArray(raw.procedure_recommendations)) return raw
+  return {
+    ...raw,
+    procedure_recommendations: raw.procedure_recommendations.map((value, index) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+      const recommendation = value as Record<string, unknown>
+      if (uuidSchema.safeParse(recommendation.recommendation_id).success) return recommendation
+      return {
+        ...recommendation,
+        recommendation_id: deterministicRecommendationId(recommendation, index),
+      }
+    }),
+  }
 }
 
 export async function generatePainFollowUp(
@@ -51,7 +80,7 @@ export async function generatePainFollowUp(
     tools: [TOOL], toolName: 'generate_pain_follow_up',
     messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${regenerationInstruction}` }],
     parse: (raw) => {
-      const parsed = painFollowUpNoteResultSchema.safeParse(raw)
+      const parsed = painFollowUpNoteResultSchema.safeParse(normalizePainFollowUpToolOutput(raw))
       if (!parsed.success) return { success: false, error: parsed.error }
       const guarded = validateTelehealthFollowUpOutput(parsed.data)
       return guarded.error

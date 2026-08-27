@@ -21,4 +21,16 @@ describe('validateTelehealthFollowUpOutput', () => {
   it('rejects unsupported current vital signs', () => {
     expect(validateTelehealthFollowUpOutput({ ...base, assessment: 'Blood pressure 120/80.' }).error).toMatch(/vital signs/)
   })
+  it('allows documentation that a hands-on examination was not performed', () => {
+    expect(validateTelehealthFollowUpOutput({
+      ...base,
+      telehealth_observations: 'Palpation was not performed because this was a telehealth encounter.',
+    }).data).toBeDefined()
+  })
+  it('allows clearly labeled historical findings and patient-reported home vitals', () => {
+    expect(validateTelehealthFollowUpOutput({
+      ...base,
+      assessment: 'Prior examination documented strength 5/5. Patient reports a home blood pressure reading of 120/80.',
+    }).data).toBeDefined()
+  })
 })

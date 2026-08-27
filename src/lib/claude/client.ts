@@ -114,6 +114,7 @@ async function callClaudeToolForModel<TOutput>(
 
   let zodAttempt = 0
   let lastRaw: unknown
+  let lastValidationError: z.ZodError | null = null
 
   while (zodAttempt <= ZOD_RETRY_ATTEMPTS) {
     let apiAttempt = 0
@@ -122,10 +123,14 @@ async function callClaudeToolForModel<TOutput>(
 
     while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
+        const validationFeedback = lastValidationError
+          ? `\n\nYour previous tool output failed validation. Correct these issues in the next tool call: ${formatZodError(lastValidationError)}`
+          : ''
+        const systemText = opts.system + validationFeedback
         const systemParam: Anthropic.Messages.MessageCreateParams['system'] =
           opts.cacheSystem
-            ? [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }]
-            : opts.system
+            ? [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
+            : systemText
         const stream = client.messages.stream({
           model,
           max_tokens: opts.maxTokens,
@@ -194,13 +199,21 @@ async function callClaudeToolForModel<TOutput>(
       return { data: parsed.data, rawResponse: raw }
     }
 
+    lastValidationError = parsed.error
     zodAttempt += 1
   }
 
   return {
-    error: `Tool output failed Zod validation after ${ZOD_RETRY_ATTEMPTS + 1} attempts`,
+    error: `Tool output failed Zod validation after ${ZOD_RETRY_ATTEMPTS + 1} attempts${lastValidationError ? `: ${formatZodError(lastValidationError)}` : ''}`,
     rawResponse: lastRaw,
   }
+}
+
+function formatZodError(error: z.ZodError) {
+  return error.issues.slice(0, 5).map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join('.') : 'tool output'
+    return `${path}: ${issue.message}`
+  }).join('; ')
 }
 
 function isRetryableApiError(err: unknown): boolean {

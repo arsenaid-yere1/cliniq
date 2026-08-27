@@ -84,6 +84,8 @@ describe('callClaudeTool', () => {
     const result = await callClaudeTool({ ...baseOpts(), _client: stub })
     expect(result.data).toEqual({ value: 'ok' })
     expect(stub._create).toHaveBeenCalledTimes(2)
+    expect(stub._create.mock.calls[1][0].system).toContain('previous tool output failed validation')
+    expect(stub._create.mock.calls[1][0].system).toContain('value:')
   })
 
   it('returns {error} after Zod retries are exhausted', async () => {
@@ -92,6 +94,7 @@ describe('callClaudeTool', () => {
 
     const result = await callClaudeTool({ ...baseOpts(), _client: stub })
     expect(result.error).toMatch(/failed Zod validation/)
+    expect(result.error).toContain('value:')
     expect(result.rawResponse).toEqual({ wrong: 'field' })
     expect(stub._create).toHaveBeenCalledTimes(2)
   })
