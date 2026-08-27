@@ -1247,6 +1247,105 @@ export type Database = {
           },
         ]
       }
+      discharge_note_corrections: {
+        Row: {
+          cancelled_at: string | null
+          cancelled_by_user_id: string | null
+          case_id: string
+          created_at: string
+          discharge_note_id: string
+          episode_id: string
+          finalized_at: string | null
+          finalized_by_user_id: string | null
+          id: string
+          opened_at: string
+          opened_by_user_id: string
+          original_document_id: string
+          original_note_snapshot: Json
+          reason: string
+          replacement_document_id: string | null
+          revision_number: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          case_id: string
+          created_at?: string
+          discharge_note_id: string
+          episode_id: string
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          id?: string
+          opened_at?: string
+          opened_by_user_id: string
+          original_document_id: string
+          original_note_snapshot: Json
+          reason: string
+          replacement_document_id?: string | null
+          revision_number: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          cancelled_by_user_id?: string | null
+          case_id?: string
+          created_at?: string
+          discharge_note_id?: string
+          episode_id?: string
+          finalized_at?: string | null
+          finalized_by_user_id?: string | null
+          id?: string
+          opened_at?: string
+          opened_by_user_id?: string
+          original_document_id?: string
+          original_note_snapshot?: Json
+          reason?: string
+          replacement_document_id?: string | null
+          revision_number?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discharge_note_corrections_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_note_corrections_episode_case_fkey"
+            columns: ["episode_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "care_episodes"
+            referencedColumns: ["id", "case_id"]
+          },
+          {
+            foreignKeyName: "discharge_note_corrections_note_ownership_fkey"
+            columns: ["discharge_note_id", "episode_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "discharge_notes"
+            referencedColumns: ["id", "episode_id", "case_id"]
+          },
+          {
+            foreignKeyName: "discharge_note_corrections_original_document_id_fkey"
+            columns: ["original_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discharge_note_corrections_replacement_document_id_fkey"
+            columns: ["replacement_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       discharge_notes: {
         Row: {
           ai_model: string | null
@@ -4213,6 +4312,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      begin_discharge_correction: {
+        Args: {
+          p_case_id: string
+          p_episode_id: string
+          p_note_id: string
+          p_reason: string
+        }
+        Returns: string
+      }
+      cancel_discharge_correction: {
+        Args: {
+          p_case_id: string
+          p_correction_id: string
+          p_episode_id: string
+          p_note_id: string
+        }
+        Returns: string
+      }
       cancel_procedure_order: {
         Args: {
           p_idempotency_key: string
@@ -4306,6 +4423,16 @@ export type Database = {
           replayed: boolean
         }[]
       }
+      finalize_discharge_correction: {
+        Args: {
+          p_case_id: string
+          p_correction_id: string
+          p_document_id: string
+          p_episode_id: string
+          p_note_id: string
+        }
+        Returns: string
+      }
       finalize_pain_follow_up: {
         Args: {
           p_case_id: string
@@ -4337,6 +4464,16 @@ export type Database = {
           p_invoice: Json
           p_invoice_id: string
           p_lines: Json
+        }
+        Returns: string
+      }
+      save_discharge_correction: {
+        Args: {
+          p_case_id: string
+          p_correction_id: string
+          p_episode_id: string
+          p_note_id: string
+          p_values: Json
         }
         Returns: string
       }

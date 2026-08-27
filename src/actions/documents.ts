@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
 import { assertCaseNotClosed, assertCaseWritable, autoAdvanceFromIntake } from '@/actions/case-status'
+import { deriveDischargeDocumentRevisionStates } from '@/lib/documents/discharge-revision-state'
 
 export async function listDocuments(caseId: string, filters?: {
   search?: string
@@ -41,10 +42,16 @@ export async function listDocuments(caseId: string, filters?: {
     .map((r) => r.id)
 
   if (generatedIds.length === 0) {
-    return { data: rows.map((r) => ({ ...r, content_date: null, procedure_number: null })) }
+    return { data: rows.map((r) => ({
+      ...r,
+      content_date: null,
+      procedure_number: null,
+      revision_status: null,
+      revision_number: null,
+    })) }
   }
 
-  const [dischargeRes, initialVisitRes, painFollowUpRes, procedureNoteRes, clinicalOrderRes] = await Promise.all([
+  const [dischargeRes, initialVisitRes, painFollowUpRes, procedureNoteRes, clinicalOrderRes, correctionRes] = await Promise.all([
     supabase.from('discharge_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('initial_visit_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('pain_follow_up_notes')
@@ -52,6 +59,9 @@ export async function listDocuments(caseId: string, filters?: {
       .in('document_id', generatedIds),
     supabase.from('procedure_notes').select('document_id, procedure:procedures(procedure_date, procedure_number)').in('document_id', generatedIds),
     supabase.from('clinical_orders').select('document_id').in('document_id', generatedIds),
+    supabase.from('discharge_note_corrections')
+      .select('revision_number,status,original_document_id,replacement_document_id')
+      .or(`original_document_id.in.(${generatedIds.join(',')}),replacement_document_id.in.(${generatedIds.join(',')})`),
   ])
 
   const contentDateByDocId = new Map<string, string>()
@@ -83,12 +93,15 @@ export async function listDocuments(caseId: string, filters?: {
   }
   // clinical_orders has no content-date column; leave to fall back to created_at in the UI
   void clinicalOrderRes
+  const revisionStates = deriveDischargeDocumentRevisionStates(correctionRes.data ?? [])
 
   return {
     data: rows.map((r) => ({
       ...r,
       content_date: contentDateByDocId.get(r.id) ?? null,
       procedure_number: procedureNumberByDocId.get(r.id) ?? null,
+      revision_status: revisionStates.get(r.id)?.revisionStatus ?? null,
+      revision_number: revisionStates.get(r.id)?.revisionNumber ?? null,
     })),
   }
 }
@@ -216,6 +229,14 @@ export async function removeDocument(documentId: string) {
     .single()
 
   if (!docInfo) return { error: 'Document not found' }
+
+  const { data: correctionDocument } = await supabase.from('discharge_note_corrections')
+    .select('id')
+    .or(`original_document_id.eq.${documentId},replacement_document_id.eq.${documentId}`)
+    .limit(1)
+  if (correctionDocument?.length) {
+    return { error: 'Discharge correction documents are retained for audit and cannot be removed.' }
+  }
 
   const closedCheck = await assertCaseNotClosed(supabase, docInfo.case_id)
   if (closedCheck.error) return { error: closedCheck.error }

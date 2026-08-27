@@ -11,6 +11,8 @@ import {
 } from '@/lib/claude/generate-discharge-note'
 import {
   dischargeNoteEditSchema,
+  dischargeCorrectionIdentitySchema,
+  dischargeCorrectionReasonSchema,
   dischargeNoteSections,
   dischargeNoteVitalsSchema,
   type DischargeNoteEditValues,
@@ -35,6 +37,65 @@ import {
 } from '@/lib/icd10/diagnosis-rewrite'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
 import { ensureEpisodeEncounter, getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
+import type { Json } from '@/types/database'
+
+const CORRECTION_LOCKED_CASE_STATUSES = ['pending_settlement', 'closed', 'archived']
+
+async function getDischargeCorrectionAuthorization(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+  userId: string,
+): Promise<{ allowed: boolean; error: string | null }> {
+  const [{ data: actor }, { data: clinicalCase }] = await Promise.all([
+    supabase.from('users').select('role,is_active').eq('id', userId).maybeSingle(),
+    supabase.from('cases').select('assigned_provider_id,case_status')
+      .eq('id', caseId).is('deleted_at', null).maybeSingle(),
+  ])
+
+  if (!actor?.is_active) return { allowed: false, error: 'Active user account required' }
+  if (!clinicalCase) return { allowed: false, error: 'Case not found' }
+  if (actor.role === 'admin') return { allowed: true, error: null }
+  if (
+    actor.role === 'provider'
+    && clinicalCase.assigned_provider_id === userId
+    && !CORRECTION_LOCKED_CASE_STATUSES.includes(clinicalCase.case_status)
+  ) {
+    return { allowed: true, error: null }
+  }
+  return {
+    allowed: false,
+    error: 'Only an administrator or the assigned provider may correct this discharge',
+  }
+}
+
+async function assertNoOpenDischargeCorrection(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  caseId: string,
+  episodeId: string,
+): Promise<{ error: string | null }> {
+  const { data } = await supabase.from('discharge_note_corrections').select('id')
+    .eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'open').limit(1)
+  return data?.length
+    ? { error: 'A discharge correction is in progress. Use the correction controls to save, cancel, or finalize it.' }
+    : { error: null }
+}
+
+function dischargeCorrectionRpcError(message: string | undefined, fallback: string) {
+  if (!message) return fallback
+  const expectedFragments = [
+    'Correction reason',
+    'Only an administrator',
+    'Active user account',
+    'Case not found',
+    'Only a finalized discharge',
+    'Remove this discharge visit',
+    'already in progress',
+    'Open discharge correction not found',
+    'Discharge correction is not open',
+    'Corrected discharge',
+  ]
+  return expectedFragments.some((fragment) => message.includes(fragment)) ? message : fallback
+}
 
 async function resolveDischargeEpisodeId(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -666,6 +727,8 @@ export async function generateDischargeNote(
 
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   // Check prerequisite
   const prereq = await checkDischargeNotePrerequisites(caseId)
@@ -927,6 +990,8 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
 
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
   const { error } = await supabase
     .from('discharge_notes')
     .update({
@@ -972,6 +1037,8 @@ export async function finalizeDischargeNote(caseId: string) {
   if (closedCheck.error) return { error: closedCheck.error }
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   // Fetch the draft note
   const { data: note, error: fetchError } = await supabase
@@ -1059,17 +1126,242 @@ export async function finalizeDischargeNote(caseId: string) {
   return { data: { success: true } }
 }
 
-// --- Unfinalize note ---
+// --- Audited correction workflow ---
 
-export async function unfinalizeDischargeNote(caseId: string) {
+function revalidateDischargeCorrectionPaths(caseId: string) {
+  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidatePath(`/patients/${caseId}/documents`)
+  revalidatePath(`/patients/${caseId}/visits`)
+  revalidatePath(`/patients/${caseId}/timeline`)
+  revalidatePath(`/patients/${caseId}/billing`)
+}
+
+export async function getDischargeCorrectionContext(
+  caseId: string,
+  episodeId: string,
+  noteId: string,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const closedCheck = await assertCaseNotClosed(supabase, caseId)
-  if (closedCheck.error) return { error: closedCheck.error }
+  const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId })
+  if (!identity.success) return { error: 'Invalid discharge correction identifiers' }
 
-  return { error: 'A finalized episode discharge cannot be reopened. Start a return visit instead.' }
+  const [{ data: note }, authorization, { data: corrections }] = await Promise.all([
+    supabase.from('discharge_notes').select('id,encounter_id,status')
+      .eq('id', noteId).eq('case_id', caseId).eq('episode_id', episodeId)
+      .is('deleted_at', null).maybeSingle(),
+    getDischargeCorrectionAuthorization(supabase, caseId, user.id),
+    supabase.from('discharge_note_corrections')
+      .select('id,revision_number,reason,status,original_document_id,replacement_document_id,opened_at,opened_by_user_id,finalized_at,finalized_by_user_id,cancelled_at,cancelled_by_user_id')
+      .eq('case_id', caseId).eq('episode_id', episodeId).eq('discharge_note_id', noteId)
+      .order('revision_number', { ascending: true }),
+  ])
+
+  if (!note) return { error: 'Discharge note not found' }
+
+  const documentIds = [...new Set((corrections ?? []).flatMap((correction) => [
+    correction.original_document_id,
+    correction.replacement_document_id,
+  ]).filter((id): id is string => Boolean(id)))]
+  const { data: documents } = documentIds.length
+    ? await supabase.from('documents').select('id,file_path').in('id', documentIds).is('deleted_at', null)
+    : { data: [] as Array<{ id: string; file_path: string }> }
+  const filePathById = new Map((documents ?? []).map((document) => [document.id, document.file_path]))
+
+  const { data: claims } = await supabase.from('billing_source_claims').select('id')
+    .eq('encounter_id', note.encounter_id).eq('claim_kind', 'visit').is('released_at', null).limit(1)
+  const history = (corrections ?? []).map((correction) => ({
+    ...correction,
+    original_document_path: filePathById.get(correction.original_document_id) ?? null,
+    replacement_document_path: correction.replacement_document_id
+      ? filePathById.get(correction.replacement_document_id) ?? null
+      : null,
+  }))
+
+  return {
+    data: {
+      canCorrect: authorization.allowed,
+      authorizationError: authorization.error,
+      billingBlocked: Boolean(claims?.length),
+      billingError: claims?.length
+        ? 'Remove this discharge visit from its invoice or void the invoice before correcting it.'
+        : null,
+      openCorrection: history.find((correction) => correction.status === 'open') ?? null,
+      history,
+    },
+  }
+}
+
+export async function beginDischargeCorrection(
+  caseId: string,
+  episodeId: string,
+  noteId: string,
+  reason: string,
+) {
+  const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId })
+  if (!identity.success) return { error: 'Invalid discharge correction identifiers' }
+  const parsedReason = dischargeCorrectionReasonSchema.safeParse(reason)
+  if (!parsedReason.success) return { error: parsedReason.error.issues[0]?.message ?? 'Invalid correction reason' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const authorization = await getDischargeCorrectionAuthorization(supabase, caseId, user.id)
+  if (!authorization.allowed) return { error: authorization.error ?? 'Not authorized' }
+
+  const { data, error } = await supabase.rpc('begin_discharge_correction', {
+    p_case_id: caseId,
+    p_episode_id: episodeId,
+    p_note_id: noteId,
+    p_reason: parsedReason.data,
+  })
+  if (error) return { error: dischargeCorrectionRpcError(error.message, 'Unable to begin discharge correction') }
+
+  revalidateDischargeCorrectionPaths(caseId)
+  return { data: { correctionId: data } }
+}
+
+export async function saveDischargeCorrection(
+  caseId: string,
+  episodeId: string,
+  noteId: string,
+  correctionId: string,
+  values: DischargeNoteEditValues,
+) {
+  const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId, correctionId })
+  if (!identity.success || !identity.data.correctionId) return { error: 'Invalid discharge correction identifiers' }
+  const validated = dischargeNoteEditSchema.safeParse(values)
+  if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid form data' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const authorization = await getDischargeCorrectionAuthorization(supabase, caseId, user.id)
+  if (!authorization.allowed) return { error: authorization.error ?? 'Not authorized' }
+
+  const { error } = await supabase.rpc('save_discharge_correction', {
+    p_case_id: caseId,
+    p_episode_id: episodeId,
+    p_note_id: noteId,
+    p_correction_id: correctionId,
+    p_values: validated.data as Json,
+  })
+  if (error) return { error: dischargeCorrectionRpcError(error.message, 'Unable to save discharge correction') }
+
+  revalidatePath(`/patients/${caseId}/discharge`)
+  return { data: { success: true } }
+}
+
+export async function cancelDischargeCorrection(
+  caseId: string,
+  episodeId: string,
+  noteId: string,
+  correctionId: string,
+) {
+  const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId, correctionId })
+  if (!identity.success || !identity.data.correctionId) return { error: 'Invalid discharge correction identifiers' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const authorization = await getDischargeCorrectionAuthorization(supabase, caseId, user.id)
+  if (!authorization.allowed) return { error: authorization.error ?? 'Not authorized' }
+
+  const { error } = await supabase.rpc('cancel_discharge_correction', {
+    p_case_id: caseId,
+    p_episode_id: episodeId,
+    p_note_id: noteId,
+    p_correction_id: correctionId,
+  })
+  if (error) return { error: dischargeCorrectionRpcError(error.message, 'Unable to cancel discharge correction') }
+
+  revalidateDischargeCorrectionPaths(caseId)
+  return { data: { success: true } }
+}
+
+export async function finalizeDischargeCorrection(
+  caseId: string,
+  episodeId: string,
+  noteId: string,
+  correctionId: string,
+) {
+  const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId, correctionId })
+  if (!identity.success || !identity.data.correctionId) return { error: 'Invalid discharge correction identifiers' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const authorization = await getDischargeCorrectionAuthorization(supabase, caseId, user.id)
+  if (!authorization.allowed) return { error: authorization.error ?? 'Not authorized' }
+
+  const [{ data: note }, { data: correction }] = await Promise.all([
+    supabase.from('discharge_notes').select('*')
+      .eq('id', noteId).eq('case_id', caseId).eq('episode_id', episodeId)
+      .eq('status', 'draft').is('deleted_at', null).maybeSingle(),
+    supabase.from('discharge_note_corrections').select('id,revision_number,status')
+      .eq('id', correctionId).eq('case_id', caseId).eq('episode_id', episodeId)
+      .eq('discharge_note_id', noteId).maybeSingle(),
+  ])
+  if (!note || !correction || correction.status !== 'open') {
+    return { error: 'Open discharge correction not found' }
+  }
+  if (note.pain_score_max == null) {
+    return { error: 'The discharge pain score is required before finalizing the correction.' }
+  }
+
+  const { renderDischargeNotePdf } = await import('@/lib/pdf/render-discharge-note-pdf')
+  const pdfBuffer = await renderDischargeNotePdf({
+    note: note as Record<string, unknown>,
+    caseId,
+    userId: user.id,
+  })
+  const storagePath = `cases/${caseId}/discharge-correction-${noteId}-v${correction.revision_number}-${Date.now()}.pdf`
+  const { error: uploadError } = await supabase.storage.from('case-documents').upload(
+    storagePath,
+    new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
+    { contentType: 'application/pdf', upsert: false },
+  )
+  if (uploadError) return { error: `Failed to upload corrected discharge: ${uploadError.message}` }
+
+  const { data: document, error: documentError } = await supabase.from('documents').insert({
+    case_id: caseId,
+    episode_id: episodeId,
+    encounter_id: note.encounter_id,
+    document_type: 'generated',
+    file_name: `Discharge Summary - Corrected v${correction.revision_number}`,
+    file_path: storagePath,
+    file_size_bytes: pdfBuffer.length,
+    mime_type: 'application/pdf',
+    status: 'reviewed',
+    uploaded_by_user_id: user.id,
+    created_by_user_id: user.id,
+    updated_by_user_id: user.id,
+  }).select('id').single()
+  if (documentError || !document) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    return { error: 'Unable to create corrected discharge document' }
+  }
+
+  const { error } = await supabase.rpc('finalize_discharge_correction', {
+    p_case_id: caseId,
+    p_episode_id: episodeId,
+    p_note_id: noteId,
+    p_correction_id: correctionId,
+    p_document_id: document.id,
+  })
+  if (error) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    await supabase.from('documents').update({
+      deleted_at: new Date().toISOString(),
+      updated_by_user_id: user.id,
+    }).eq('id', document.id)
+    return { error: dischargeCorrectionRpcError(error.message, 'Unable to finalize discharge correction') }
+  }
+
+  revalidateDischargeCorrectionPaths(caseId)
+  return { data: { success: true, revisionNumber: correction.revision_number } }
 }
 
 // --- Regenerate single section ---
@@ -1087,6 +1379,8 @@ export async function regenerateDischargeNoteSectionAction(
   if (closedCheck.error) return { error: closedCheck.error }
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase
@@ -1173,6 +1467,8 @@ export async function resetDischargeNote(caseId: string) {
   if (closedCheck.error) return { error: closedCheck.error }
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   const { data: note } = await supabase
     .from('discharge_notes')
@@ -1254,6 +1550,8 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
   if (!validated.success) return { error: 'Invalid vitals data' }
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   // Upsert pattern: update the active discharge_notes row if one exists,
   // otherwise create a pre-generation draft row holding only these vitals.
@@ -1325,6 +1623,8 @@ export async function saveDischargeNoteToneHint(
   const normalized = toneHint?.trim() ? toneHint.trim() : null
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
+  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
+  if (correctionCheck.error) return { error: correctionCheck.error }
 
   // Upsert pattern: update active row if present, otherwise create a pre-generation
   // draft row holding only the tone hint.

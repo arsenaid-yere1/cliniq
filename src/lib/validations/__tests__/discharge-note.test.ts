@@ -4,6 +4,8 @@ import {
   dischargeNoteSectionLabels,
   dischargeNoteResultSchema,
   dischargeNoteEditSchema,
+  dischargeCorrectionIdentitySchema,
+  dischargeCorrectionReasonSchema,
 } from '../discharge-note'
 
 const validData: Record<string, string> = {}
@@ -52,5 +54,25 @@ describe('dischargeNoteEditSchema', () => {
       const data = { ...validEditData, [key]: '' }
       expect(dischargeNoteEditSchema.safeParse(data).success).toBe(false)
     }
+  })
+})
+
+describe('discharge correction validation', () => {
+  it('requires a meaningful trimmed correction reason', () => {
+    expect(dischargeCorrectionReasonSchema.safeParse('short').success).toBe(false)
+    expect(dischargeCorrectionReasonSchema.parse('  Incorrect diagnosis text  ')).toBe('Incorrect diagnosis text')
+  })
+
+  it('requires explicit UUID ownership identifiers', () => {
+    expect(dischargeCorrectionIdentitySchema.safeParse({
+      caseId: '550e8400-e29b-41d4-a716-446655440000',
+      episodeId: '110e8400-e29b-41d4-a716-446655440000',
+      noteId: '220e8400-e29b-41d4-a716-446655440000',
+    }).success).toBe(true)
+    expect(dischargeCorrectionIdentitySchema.safeParse({
+      caseId: 'not-a-uuid',
+      episodeId: '110e8400-e29b-41d4-a716-446655440000',
+      noteId: '220e8400-e29b-41d4-a716-446655440000',
+    }).success).toBe(false)
   })
 })

@@ -72,6 +72,21 @@ export const dischargeNoteEditSchema = z.object({
 
 export type DischargeNoteEditValues = z.infer<typeof dischargeNoteEditSchema>
 
+export const dischargeCorrectionReasonSchema = z
+  .string()
+  .trim()
+  .min(10, 'Correction reason must be at least 10 characters')
+  .max(1000, 'Correction reason must be 1000 characters or fewer')
+
+export const dischargeCorrectionIdentitySchema = z.object({
+  caseId: z.string().uuid(),
+  episodeId: z.string().uuid(),
+  noteId: z.string().uuid(),
+  correctionId: z.string().uuid().optional(),
+})
+
+export type DischargeCorrectionIdentity = z.infer<typeof dischargeCorrectionIdentitySchema>
+
 // Discharge-visit vital signs — provider-entered at the discharge follow-up
 // encounter (a separate visit after the final PRP injection). When non-null,
 // these are used verbatim by the generator for the objective_vitals bullets

@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import { getDischargeNote, checkDischargeNotePrerequisites } from '@/actions/discharge-notes'
+import {
+  getDischargeNote,
+  checkDischargeNotePrerequisites,
+  getDischargeCorrectionContext,
+} from '@/actions/discharge-notes'
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { DischargeNoteEditor } from '@/components/discharge/discharge-note-editor'
 import { getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
@@ -70,6 +74,10 @@ export default async function DischargePage({
   // Fetch document file_path if note is finalized
   let documentFilePath: string | null = null
   const note = noteResult.data
+  const correctionContextResult = note?.id
+    ? await getDischargeCorrectionContext(caseId, episodeId, note.id)
+    : { data: null }
+  const correctionContext = correctionContextResult.data ?? null
   if (note?.document_id) {
     const { data: docRow } = await supabase
       .from('documents')
@@ -178,6 +186,7 @@ export default async function DischargePage({
   return (
     <DischargeNoteEditor
       caseId={caseId}
+      episodeId={episodeId}
       note={note ?? null}
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
@@ -187,6 +196,7 @@ export default async function DischargePage({
       providerSignatureUrl={signatureResult.url ?? null}
       caseData={caseData}
       documentFilePath={documentFilePath}
+      correctionContext={correctionContext}
       defaultVitals={defaultVitals}
       isStale={isStale}
       earliestDate={earliestDischargeDate}

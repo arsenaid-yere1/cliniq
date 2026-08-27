@@ -39,7 +39,10 @@ import {
   generateDischargeNote,
   saveDischargeNote,
   finalizeDischargeNote,
-  unfinalizeDischargeNote,
+  beginDischargeCorrection,
+  saveDischargeCorrection,
+  cancelDischargeCorrection,
+  finalizeDischargeCorrection,
   regenerateDischargeNoteSectionAction,
   resetDischargeNote,
   saveDischargeVitals,
@@ -141,8 +144,35 @@ interface DefaultVitals {
   pain_score_max: number | null
 }
 
+interface DischargeCorrectionEntry {
+  id: string
+  revision_number: number
+  reason: string
+  status: string
+  original_document_id: string
+  replacement_document_id: string | null
+  opened_at: string
+  opened_by_user_id: string
+  finalized_at: string | null
+  finalized_by_user_id: string | null
+  cancelled_at: string | null
+  cancelled_by_user_id: string | null
+  original_document_path: string | null
+  replacement_document_path: string | null
+}
+
+interface DischargeCorrectionContext {
+  canCorrect: boolean
+  authorizationError: string | null
+  billingBlocked: boolean
+  billingError: string | null
+  openCorrection: DischargeCorrectionEntry | null
+  history: DischargeCorrectionEntry[]
+}
+
 interface DischargeNoteEditorProps {
   caseId: string
+  episodeId: string
   note: NoteRow | null
   canGenerate: boolean
   prerequisiteReason?: string
@@ -152,6 +182,7 @@ interface DischargeNoteEditorProps {
   providerSignatureUrl: string | null
   caseData: CaseData | null
   documentFilePath: string | null
+  correctionContext: DischargeCorrectionContext | null
   defaultVitals: DefaultVitals | null
   // True when at least one upstream input (case_summaries, PT/PM/MRI/chiro
   // extractions, initial_visit_notes, procedures, vital_signs) was updated
@@ -193,6 +224,7 @@ const sectionRows: Record<DischargeNoteSection, number> = {
 
 export function DischargeNoteEditor({
   caseId,
+  episodeId,
   note,
   canGenerate,
   prerequisiteReason,
@@ -202,6 +234,7 @@ export function DischargeNoteEditor({
   providerSignatureUrl,
   caseData,
   documentFilePath,
+  correctionContext,
   defaultVitals,
   isStale,
   earliestDate,
@@ -397,6 +430,7 @@ export function DischargeNoteEditor({
     return (
       <FinalizedView
         caseId={caseId}
+        episodeId={episodeId}
         note={note}
         clinicSettings={clinicSettings}
         providerProfile={providerProfile}
@@ -404,9 +438,9 @@ export function DischargeNoteEditor({
         providerSignatureUrl={providerSignatureUrl}
         caseData={caseData}
         documentFilePath={documentFilePath}
+        correctionContext={correctionContext}
         isPending={isPending}
         startTransition={startTransition}
-        isLocked={isLocked}
       />
     )
   }
@@ -415,6 +449,7 @@ export function DischargeNoteEditor({
   return (
     <DraftEditor
       caseId={caseId}
+      episodeId={episodeId}
       note={note}
       isPending={isPending}
       startTransition={startTransition}
@@ -422,6 +457,7 @@ export function DischargeNoteEditor({
       setRegeneratingSection={setRegeneratingSection}
       isLocked={isLocked}
       isStale={isStale}
+      correction={correctionContext?.openCorrection ?? null}
     />
   )
 }
@@ -430,6 +466,7 @@ export function DischargeNoteEditor({
 
 function DraftEditor({
   caseId,
+  episodeId,
   note,
   isPending,
   startTransition,
@@ -437,8 +474,10 @@ function DraftEditor({
   setRegeneratingSection,
   isLocked,
   isStale,
+  correction,
 }: {
   caseId: string
+  episodeId: string
   note: NoteRow
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
@@ -446,6 +485,7 @@ function DraftEditor({
   setRegeneratingSection: (s: DischargeNoteSection | null) => void
   isLocked: boolean
   isStale: boolean
+  correction: DischargeCorrectionEntry | null
 }) {
   const form = useForm<DischargeNoteEditValues>({
     resolver: zodResolver(dischargeNoteEditSchema),
@@ -462,6 +502,8 @@ function DraftEditor({
     painObservations: PainObservation[]
     dischargeEstimated: boolean
   } | null>(null)
+  const isCorrection = Boolean(correction)
+  const editingDisabled = isPending || (isLocked && !isCorrection)
 
   // Load the read-only trajectory payload used by the Pain Timeline widget.
   // Runs on mount and whenever the note id changes (e.g. after reset).
@@ -483,6 +525,7 @@ function DraftEditor({
   }
 
   useEffect(() => {
+    if (isCorrection) return
     let cancelled = false
     async function load() {
       const res = await getDischargePainTimeline(caseId)
@@ -503,19 +546,21 @@ function DraftEditor({
     return () => {
       cancelled = true
     }
-  }, [caseId, note.id])
+  }, [caseId, note.id, isCorrection])
 
   function handleSave() {
     startTransition(async () => {
       const values = form.getValues()
-      const result = await saveDischargeNote(caseId, values)
+      const result = correction
+        ? await saveDischargeCorrection(caseId, episodeId, note.id, correction.id, values)
+        : await saveDischargeNote(caseId, values)
       if (result.error) toast.error(result.error)
       else {
-        toast.success('Draft saved')
+        toast.success(correction ? 'Correction saved' : 'Draft saved')
         // Visit-date on the form may have changed, which shifts the
         // discharge-entry day-offset in the trajectory. Refetch so the
         // Pain Timeline table reflects the saved visit_date.
-        await refreshTimeline()
+        if (!correction) await refreshTimeline()
       }
     })
   }
@@ -550,8 +595,13 @@ function DraftEditor({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
-          <Badge variant="outline">Draft</Badge>
-          {isStale && (
+          <Badge
+            variant="outline"
+            className={isCorrection ? 'border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200' : undefined}
+          >
+            {isCorrection ? `Correction in progress v${correction?.revision_number}` : 'Draft'}
+          </Badge>
+          {!isCorrection && isStale && (
             <Badge
               variant="outline"
               className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
@@ -570,17 +620,17 @@ function DraftEditor({
               id="discharge-visit-date-input"
               type="date"
               className="w-[160px]"
-              disabled={isLocked || isPending}
+              disabled={editingDisabled}
               {...form.register('visit_date', {
                 setValueAs: (v) => (v === '' ? null : v),
               })}
             />
           </div>
-          <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
+          <Button variant="outline" onClick={handleSave} disabled={editingDisabled}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Draft
+            {isCorrection ? 'Save Correction' : 'Save Draft'}
           </Button>
-          <AlertDialog>
+          {!isCorrection && <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={isLocked || isPending}>
                 <RotateCcw className="h-4 w-4 mr-2" />
@@ -609,8 +659,8 @@ function DraftEditor({
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
-          <AlertDialog>
+          </AlertDialog>}
+          {!isCorrection && <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={isLocked || isPending || note.pain_score_max == null} title={note.pain_score_max == null ? 'Enter the discharge-visit pain score before finalizing.' : undefined}>
                 <Lock className="h-4 w-4 mr-2" />
@@ -621,7 +671,7 @@ function DraftEditor({
               <AlertDialogHeader>
                 <AlertDialogTitle>Finalize Discharge Summary</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Finalizing will lock this note and create a document record. You can unfinalize later to make edits. Continue?
+                  Finalizing will close this episode and create the signed discharge document. Later documentation errors require an audited correction. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -645,20 +695,115 @@ function DraftEditor({
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+          </AlertDialog>}
+          {correction?.original_document_path && (
+            <Button
+              variant="outline"
+              disabled={isPending}
+              onClick={async () => {
+                const filename = buildDownloadFilename({
+                  lastName: null,
+                  docType: `DischargeSummary-Original-v${Math.max(1, correction.revision_number - 1)}`,
+                  date: note.visit_date,
+                })
+                const result = await getDocumentDownloadUrl(correction.original_document_path!, filename)
+                if (result.url) window.open(result.url, '_blank')
+                else toast.error('Failed to get original discharge PDF')
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Original PDF
+            </Button>
+          )}
+          {correction && <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={isPending}>Cancel Correction</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancel discharge correction?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This discards the correction edits and restores the original finalized note and PDF. The cancelled correction reason remains in the audit history.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await cancelDischargeCorrection(caseId, episodeId, note.id, correction.id)
+                      if (result.error) toast.error(result.error)
+                      else toast.success('Original discharge restored')
+                    })
+                  }}
+                >
+                  Cancel Correction
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>}
+          {correction && <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isPending || note.pain_score_max == null}>
+                <Lock className="h-4 w-4 mr-2" />
+                Finalize Corrected Discharge
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Finalize corrected discharge?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A replacement signed PDF will be created. The original PDF remains preserved and will be marked superseded. Clinical episode and procedure status will not change.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    startTransition(async () => {
+                      const values = form.getValues()
+                      const saveResult = await saveDischargeCorrection(
+                        caseId, episodeId, note.id, correction.id, values,
+                      )
+                      if (saveResult.error) {
+                        toast.error(saveResult.error)
+                        return
+                      }
+                      const result = await finalizeDischargeCorrection(
+                        caseId, episodeId, note.id, correction.id,
+                      )
+                      if (result.error) toast.error(result.error)
+                      else toast.success(`Corrected discharge v${correction.revision_number} finalized`)
+                    })
+                  }}
+                >
+                  Finalize Corrected Discharge
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>}
         </div>
       </div>
 
+      {correction && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="text-base">Correction reason</CardTitle>
+            <CardDescription>{correction.reason}</CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+
       <Form {...form}>
         <form className="space-y-6">
-          <ToneDirectionCard
+          {!isCorrection && <ToneDirectionCard
             value={toneHint}
             onChange={setToneHint}
             onBlur={handleToneHintBlur}
             disabled={isLocked || isPending}
             description="Edits apply to subsequent section regenerations. Saved automatically on blur."
-          />
-          {timeline && (
+          />}
+          {!isCorrection && timeline && (
             <PainTimelineTable
               trajectory={timeline.trajectory}
               painObservations={timeline.painObservations}
@@ -676,7 +821,7 @@ function DraftEditor({
                     <FormLabel className="text-base font-semibold">
                       {dischargeNoteSectionLabels[section]}
                     </FormLabel>
-                    <AlertDialog>
+                    {!isCorrection && <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
                           type="button"
@@ -706,13 +851,14 @@ function DraftEditor({
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
-                    </AlertDialog>
+                    </AlertDialog>}
                   </div>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={sectionRows[section]}
                       className="resize-y"
+                      disabled={editingDisabled}
                     />
                   </FormControl>
                   <FormMessage />
@@ -730,6 +876,7 @@ function DraftEditor({
 
 function FinalizedView({
   caseId,
+  episodeId,
   note,
   clinicSettings,
   providerProfile,
@@ -737,11 +884,12 @@ function FinalizedView({
   providerSignatureUrl,
   caseData,
   documentFilePath,
+  correctionContext,
   isPending,
   startTransition,
-  isLocked,
 }: {
   caseId: string
+  episodeId: string
   note: NoteRow
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
@@ -749,10 +897,11 @@ function FinalizedView({
   providerSignatureUrl: string | null
   caseData: CaseData | null
   documentFilePath: string | null
+  correctionContext: DischargeCorrectionContext | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
-  isLocked: boolean
 }) {
+  const [correctionReason, setCorrectionReason] = useState('')
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
     : null
@@ -762,6 +911,8 @@ function FinalizedView({
   const accidentDate = caseData?.accident_date
     ? format(new Date(caseData.accident_date + 'T00:00:00'), 'MM/dd/yyyy')
     : null
+  const finalizedCorrections = correctionContext?.history.filter((entry) => entry.status === 'finalized') ?? []
+  const latestCorrection = finalizedCorrections.at(-1) ?? null
 
   return (
     <div className="space-y-6">
@@ -770,6 +921,11 @@ function FinalizedView({
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Discharge Summary</h1>
           <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">Finalized</Badge>
+          {latestCorrection && (
+            <Badge variant="outline" className="border-blue-500/50 bg-blue-500/10 text-blue-800 dark:text-blue-200">
+              Corrected v{latestCorrection.revision_number}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {documentFilePath && (
@@ -791,38 +947,133 @@ function FinalizedView({
               Download PDF
             </Button>
           )}
-          <AlertDialog>
+          {correctionContext?.canCorrect && <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
+              <Button
+                variant="outline"
+                disabled={isPending || correctionContext.billingBlocked}
+                title={correctionContext.billingError ?? undefined}
+              >
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
-                Edit
+                Correct Finalized Discharge
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Unfinalize Discharge Summary</AlertDialogTitle>
+                <AlertDialogTitle>Correct Finalized Discharge</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will re-open the note for editing and remove the current finalized PDF from the document repository. Re-finalizing will generate a fresh PDF. Continue?
+                  Enter why this signed record needs correction. The original PDF will remain preserved. This corrects documentation only and does not resume care or reopen the discharged episode.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              <div className="space-y-2">
+                <label htmlFor="discharge-correction-reason" className="text-sm font-medium">
+                  Correction reason
+                </label>
+                <Textarea
+                  id="discharge-correction-reason"
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  placeholder="Describe the inaccurate statement or documentation error..."
+                  rows={4}
+                />
+                <p className="text-xs text-muted-foreground">At least 10 characters. This reason remains in the audit history.</p>
+              </div>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  disabled={correctionReason.trim().length < 10}
                   onClick={() => {
                     startTransition(async () => {
-                      const result = await unfinalizeDischargeNote(caseId)
+                      const result = await beginDischargeCorrection(
+                        caseId, episodeId, note.id, correctionReason,
+                      )
                       if (result.error) toast.error(result.error)
-                      else toast.success('Discharge summary reopened for editing')
+                      else {
+                        setCorrectionReason('')
+                        toast.success('Discharge correction started')
+                      }
                     })
                   }}
                 >
-                  Unfinalize
+                  Start Correction
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+          </AlertDialog>}
         </div>
       </div>
+
+      {correctionContext?.billingBlocked && correctionContext.canCorrect && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardContent className="pt-6 text-sm text-amber-900 dark:text-amber-200">
+            {correctionContext.billingError}
+          </CardContent>
+        </Card>
+      )}
+
+      {correctionContext && correctionContext.history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Discharge correction history</CardTitle>
+            <CardDescription>Original and replacement signed documents are retained for audit.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {correctionContext.history.map((entry) => (
+              <div key={entry.id} className="flex items-start justify-between gap-4 rounded-md border p-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Revision v{entry.revision_number}</span>
+                    <Badge variant="outline">{entry.status === 'finalized' ? 'Finalized correction' : 'Cancelled'}</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{entry.reason}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {entry.original_document_path && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const result = await getDocumentDownloadUrl(
+                          entry.original_document_path!,
+                          buildDownloadFilename({
+                            lastName: caseData?.patient.last_name,
+                            docType: `DischargeSummary-v${Math.max(1, entry.revision_number - 1)}`,
+                            date: note.visit_date ?? note.finalized_at,
+                          }),
+                        )
+                        if (result.url) window.open(result.url, '_blank')
+                        else toast.error('Failed to download prior discharge PDF')
+                      }}
+                    >
+                      Prior PDF
+                    </Button>
+                  )}
+                  {entry.replacement_document_path && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const result = await getDocumentDownloadUrl(
+                          entry.replacement_document_path!,
+                          buildDownloadFilename({
+                            lastName: caseData?.patient.last_name,
+                            docType: `DischargeSummary-Corrected-v${entry.revision_number}`,
+                            date: note.visit_date ?? note.finalized_at,
+                          }),
+                        )
+                        if (result.url) window.open(result.url, '_blank')
+                        else toast.error('Failed to download corrected discharge PDF')
+                      }}
+                    >
+                      Replacement PDF
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Document */}
       <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">

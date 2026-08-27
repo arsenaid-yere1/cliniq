@@ -76,6 +76,8 @@ interface DocumentCardProps {
     created_at: string
     content_date: string | null
     procedure_number: number | null
+    revision_status: 'superseded_discharge' | 'current_corrected_discharge' | null
+    revision_number: number | null
     notes: string | null
     uploaded_by: { full_name: string } | null
   }
@@ -143,6 +145,16 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
               <Badge variant="outline" className={docStatusColors[document.status] ?? ''}>
                 {docStatusLabels[document.status] ?? document.status}
               </Badge>
+              {document.revision_status === 'superseded_discharge' && (
+                <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+                  Superseded discharge v{document.revision_number}
+                </Badge>
+              )}
+              {document.revision_status === 'current_corrected_discharge' && (
+                <Badge variant="outline" className="border-blue-500/50 bg-blue-500/10 text-blue-800 dark:text-blue-200">
+                  Current corrected discharge v{document.revision_number}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               Uploaded {format(new Date(document.created_at), 'MM/dd/yyyy')}
@@ -161,7 +173,7 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
             <Button
               variant="ghost"
               size="sm"
-              disabled={isLocked}
+              disabled={isLocked && !document.revision_status}
               onClick={handleDownload}
             >
               Download
