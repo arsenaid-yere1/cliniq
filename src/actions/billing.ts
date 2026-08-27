@@ -16,6 +16,7 @@ import { singleAnatomyFromSites } from '@/lib/procedures/anatomy-classifier'
 import { getProcedureDefaultsByAnatomy } from '@/actions/procedure-defaults'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { computeBotoxDrugLineItems, computeBotoxFacilityLineItem, type BotoxDosing } from '@/lib/billing/botox-lines'
+import { sortInvoiceLineItemsChronologically } from '@/lib/billing/sort-line-items'
 
 // Count distinct injection sites in a free-text string.
 // Splits on commas, semicolons, slashes, ampersands, plus signs, or the word "and".
@@ -428,8 +429,8 @@ export async function getInvoiceFormData(caseId: string) {
       diagnoses,
       indication,
       dischargeDate,
-      prePopulatedLineItems,
-      facilityLineItems,
+      prePopulatedLineItems: sortInvoiceLineItemsChronologically(prePopulatedLineItems),
+      facilityLineItems: sortInvoiceLineItemsChronologically(facilityLineItems),
       catalogItems: catalogItems ?? [],
     },
   }
