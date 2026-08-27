@@ -26,7 +26,15 @@ export async function createProcedureOrderFromRecommendation(input:CreateProcedu
     p_sites:value.sites,p_diagnoses:value.diagnoses,p_rationale:value.clinical_rationale,
     p_priority:value.priority,p_continued_from_series_id:value.continued_from_series_id??null,
   })
-  if(error)return {error:error.message.includes('finalized recommendation')?'A finalized recommendation is required':error.message.includes('duplicate')?'This recommendation already has an order':'Unable to create procedure order'}
+  if(error){
+    const message=error.message
+    if(message.includes('finalized recommendation'))return {error:'A finalized recommendation is required'}
+    if(message.includes('recommendation_active')||message.includes('duplicate'))return {error:'This recommendation already has an order'}
+    if(message.includes('already has an open order')||message.includes('one_open_per_series'))return {error:'This series already has an open procedure order. Refresh after it is completed or cancelled.'}
+    if(message.includes('type does not match'))return {error:'This series no longer matches the recommended procedure type. Choose another series.'}
+    if(message.includes('no longer')||message.includes('no completed procedures'))return {error:'This series is no longer eligible. Refresh or choose another option.'}
+    return {error:'Unable to create procedure order'}
+  }
   revalidatePath(`/patients/${value.case_id}/procedures`); revalidatePath(`/patients/${value.case_id}/timeline`)
   return {data}
 }

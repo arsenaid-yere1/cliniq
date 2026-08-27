@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createProcedureOrderSchema } from '../procedure-order'
+import { createProcedureOrderFromRecommendationSchema, createProcedureOrderSchema } from '../procedure-order'
 
 const order = {
   case_id: '11111111-1111-4111-8111-111111111111',
@@ -30,6 +30,31 @@ describe('createProcedureOrderSchema', () => {
     expect(createProcedureOrderSchema.safeParse({
       ...order,
       clinical_rationale: '',
+    }).success).toBe(false)
+  })
+})
+
+describe('createProcedureOrderFromRecommendationSchema', () => {
+  const recommendationOrder = { ...order, procedure_series_id: undefined }
+
+  it('accepts the existing selected-series wire field', () => {
+    expect(createProcedureOrderFromRecommendationSchema.safeParse({
+      ...recommendationOrder,
+      continued_from_series_id: order.procedure_series_id,
+    }).success).toBe(true)
+  })
+
+  it('accepts null for a separate series', () => {
+    expect(createProcedureOrderFromRecommendationSchema.safeParse({
+      ...recommendationOrder,
+      continued_from_series_id: null,
+    }).success).toBe(true)
+  })
+
+  it('rejects an invalid selected series ID', () => {
+    expect(createProcedureOrderFromRecommendationSchema.safeParse({
+      ...recommendationOrder,
+      continued_from_series_id: 'not-a-uuid',
     }).success).toBe(false)
   })
 })

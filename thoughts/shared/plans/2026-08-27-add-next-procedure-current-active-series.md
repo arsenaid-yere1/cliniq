@@ -94,15 +94,15 @@ Use the same structured option model in the page, editor, and dialog so the UI c
 
 ### Automated Verification
 
-- Current active series is reused and no new series row is inserted.
-- Independent option creates a new unlinked series.
-- Prior completed series creates a new current-episode series with lineage.
+- [x] Current active series is reused and no new series row is inserted.
+- [x] Independent option creates a new unlinked series.
+- [x] Prior completed series creates a new current-episode series with lineage.
 - Mismatched procedure type is rejected for both current and prior choices.
-- Current series without a performed procedure is rejected.
+- [x] Current series without a performed procedure is rejected.
 - Current completed/deleted series is rejected.
 - Prior active/deleted series is rejected.
-- A second open order for a current series is rejected.
-- Concurrent inserts are protected by the partial unique index.
+- [x] A second open order for a current series is rejected.
+- [x] Concurrent inserts are protected by the partial unique index.
 - Submitting the same recommendation twice is rejected without leaving an orphaned series.
 
 ## Phase 2: Load Structured Series Options
@@ -131,9 +131,9 @@ Use the same structured option model in the page, editor, and dialog so the UI c
 
 ### Automated Verification
 
-- The page/helper classifies current and prior options correctly.
-- Deleted, empty, inactive current, active prior, and current series with open orders are excluded.
-- Next procedure number is derived from completed procedures, not appointments or orders.
+- [x] The page/helper classifies current and prior options correctly.
+- [x] Deleted, empty, inactive current, active prior, and current series with open orders are excluded.
+- [x] Next procedure number is derived from completed procedures, not appointments or orders.
 
 ## Phase 3: Improve the Order Dialog Labels and Behavior
 
@@ -165,11 +165,11 @@ Use the same structured option model in the page, editor, and dialog so the UI c
 
 ### Automated Verification
 
-- Label helpers produce the three relationship labels with correct episode, series, and next-procedure values.
-- Current and prior options are filtered by recommendation type.
+- [x] Label helpers produce the three relationship labels with correct episode, series, and next-procedure values.
+- [x] Current and prior options are filtered by recommendation type.
 - The selected current option submits its series ID.
 - Separate series submits `null`.
-- Validation accepts the existing wire shape and rejects invalid IDs.
+- [x] Validation accepts the existing wire shape and rejects invalid IDs.
 
 ## Phase 4: End-to-End Workflow Regression
 
