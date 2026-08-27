@@ -17,6 +17,8 @@ describe('validateTelehealthFollowUpOutput', () => {
   })
   it('rejects hands-on findings', () => {
     expect(validateTelehealthFollowUpOutput({ ...base, telehealth_observations: 'Strength 5/5.' }).error).toMatch(/hands-on/)
+    expect(validateTelehealthFollowUpOutput({ ...base, telehealth_observations: 'Palpation revealed focal tenderness.' }).error).toMatch(/hands-on/)
+    expect(validateTelehealthFollowUpOutput({ ...base, telehealth_observations: 'Palpation was not painful.' }).error).toMatch(/hands-on/)
   })
   it('rejects unsupported current vital signs', () => {
     expect(validateTelehealthFollowUpOutput({ ...base, assessment: 'Blood pressure 120/80.' }).error).toMatch(/vital signs/)
@@ -25,6 +27,18 @@ describe('validateTelehealthFollowUpOutput', () => {
     expect(validateTelehealthFollowUpOutput({
       ...base,
       telehealth_observations: 'Palpation was not performed because this was a telehealth encounter.',
+    }).data).toBeDefined()
+  })
+  it.each([
+    'Palpation cannot be assessed during a telehealth encounter.',
+    'Palpation could not be reliably assessed by telehealth.',
+    'Palpation was not formally assessed because this visit was remote.',
+    'Palpation was not conducted during the video encounter.',
+    'Palpation was unable to be assessed by telehealth.',
+  ])('allows explicit non-performance wording: %s', (telehealthObservations) => {
+    expect(validateTelehealthFollowUpOutput({
+      ...base,
+      telehealth_observations: telehealthObservations,
     }).data).toBeDefined()
   })
   it('allows clearly labeled historical findings and patient-reported home vitals', () => {

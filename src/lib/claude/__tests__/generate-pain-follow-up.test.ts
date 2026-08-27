@@ -9,6 +9,8 @@ describe('pain follow-up prompt contract', () => {
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('Never invent palpation')
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('historical comparisons')
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('modality explicitly')
+    expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('only findings directly visible or audible by video')
+    expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('Palpation was not performed')
   })
 })
 

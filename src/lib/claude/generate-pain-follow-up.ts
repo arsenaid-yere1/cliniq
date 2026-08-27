@@ -17,6 +17,9 @@ export interface PainFollowUpSourceData {
 export const PAIN_FOLLOW_UP_SYSTEM_PROMPT = `You generate a pain-management follow-up note for a remote encounter.
 State the modality explicitly. Separate patient-reported history from provider-observed video findings.
 Never invent palpation, strength grades, reflexes, measured range-of-motion degrees, procedure vitals, or other hands-on findings.
+The telehealth_observations section may contain only findings directly visible or audible by video, such as general appearance, alertness, speech, visible distress, and gross movement observed on camera.
+Do not describe palpation, graded strength, reflexes, or measured range of motion as current findings in telehealth_observations or assessment, even when normal.
+When a limitation must be documented, use explicit non-performance language such as: "Palpation was not performed because this was a telehealth encounter."
 Prior values are historical comparisons only and must retain their date/source label.
 Recommendations remain conditional and must also be emitted as structured procedure_recommendations with stable UUID recommendation_id values.
 Do not state that a procedure has been ordered or scheduled.`
@@ -29,7 +32,9 @@ const TOOL: Anthropic.Tool = {
     required: ['subjective','interval_history','review_of_systems','telehealth_observations','imaging_review','assessment','diagnoses','treatment_plan','patient_education','follow_up','clinician_disclaimer','procedure_recommendations'],
     properties: {
       subjective:{type:'string'}, interval_history:{type:'string'}, review_of_systems:{type:'string'},
-      telehealth_observations:{type:'string'}, imaging_review:{type:'string'}, assessment:{type:'string'},
+      telehealth_observations:{type:'string',description:'Only findings directly visible or audible during the video encounter. No current palpation, graded strength, reflex, measured range-of-motion, or clinician-obtained vital-sign findings.'},
+      imaging_review:{type:'string'},
+      assessment:{type:'string',description:'Clinical assessment based on reported history, video-observable findings, imaging, and clearly dated historical findings. No unsupported current hands-on examination findings.'},
       diagnoses:{type:'string'}, treatment_plan:{type:'string'}, patient_education:{type:'string'},
       follow_up:{type:'string'}, clinician_disclaimer:{type:'string'},
       procedure_recommendations:{type:'array',items:{type:'object',required:['recommendation_id','procedure_type','sites','diagnoses','rationale'],properties:{
