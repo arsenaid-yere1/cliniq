@@ -438,7 +438,7 @@ function InitialVisitEditorInner({
             <ExamFindingsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
           <TabsContent value="vitals" className="mt-4">
-            <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
+            <VitalSignsCard caseId={caseId} visitType={visitType} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
 
@@ -1160,10 +1160,12 @@ function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: Intake
 
 function VitalSignsCard({
   caseId,
+  visitType,
   initialVitals,
   isLocked,
 }: {
   caseId: string
+  visitType: NoteVisitType
   initialVitals: VitalsData | null
   isLocked: boolean
 }) {
@@ -1185,7 +1187,7 @@ function VitalSignsCard({
   function handleSaveVitals() {
     startSaving(async () => {
       const values = vitalsForm.getValues()
-      const result = await saveInitialVisitVitals(caseId, values)
+      const result = await saveInitialVisitVitals(caseId, visitType, values)
       if (result.error) toast.error(result.error)
       else toast.success('Vitals saved')
     })
@@ -1636,7 +1638,7 @@ function DraftEditor({
         </TabsContent>
 
         <TabsContent value="vitals" className="mt-4">
-          <VitalSignsCard caseId={caseId} initialVitals={initialVitals} isLocked={isLocked} />
+          <VitalSignsCard caseId={caseId} visitType={visitType} initialVitals={initialVitals} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
     </div>

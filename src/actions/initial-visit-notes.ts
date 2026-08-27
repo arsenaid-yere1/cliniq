@@ -1004,7 +1004,11 @@ export async function getInitialVisitVitals(caseId: string) {
 // editable artifact. A dedicated per-visit vitals column can be added
 // later if needed.
 
-export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisitVitalsValues) {
+export async function saveInitialVisitVitals(
+  caseId: string,
+  visitType: NoteVisitType,
+  vitals: InitialVisitVitalsValues,
+) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1015,12 +1019,32 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
   const validated = initialVisitVitalsSchema.safeParse(vitals)
   if (!validated.success) return { error: 'Invalid vitals data' }
 
+  const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+    .eq('id', caseId).is('deleted_at', null).single()
+  let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+  try {
+    ownership = await ensureLegacyEpisodeEncounter(
+      caseId,
+      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+      {
+        encounterDate: new Date().toISOString().slice(0, 10),
+        providerId: clinicalCase?.assigned_provider_id,
+        userId: user.id,
+      },
+      supabase,
+    )
+  } catch (error) {
+    return { error: mapEpisodeOwnershipError(error) }
+  }
+
   const { data: existing } = await supabase
     .from('vital_signs')
     .select('id')
     .eq('case_id', caseId)
     .is('procedure_id', null)
     .is('deleted_at', null)
+    .order('recorded_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (existing) {
@@ -1028,25 +1052,13 @@ export async function saveInitialVisitVitals(caseId: string, vitals: InitialVisi
       .from('vital_signs')
       .update({
         ...validated.data,
+        encounter_id: ownership.encounterId,
         updated_by_user_id: user.id,
       })
       .eq('id', existing.id)
 
     if (error) return { error: 'Failed to update vitals' }
   } else {
-    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
-      .eq('id', caseId).is('deleted_at', null).single()
-    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
-    try {
-      ownership = await ensureLegacyEpisodeEncounter(
-        caseId,
-        'initial_evaluation',
-        { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id },
-        supabase,
-      )
-    } catch (error) {
-      return { error: mapEpisodeOwnershipError(error) }
-    }
     const { error } = await supabase
       .from('vital_signs')
       .insert({
