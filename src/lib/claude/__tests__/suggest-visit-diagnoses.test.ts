@@ -31,6 +31,9 @@ describe('suggestVisitDiagnoses', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.model).toBe('claude-sonnet-4-6')
     expect(opts.toolName).toBe('suggest_current_visit_diagnoses')
+    expect(opts.timeoutMs).toBe(20_000)
+    expect(opts.apiRetryAttempts).toBe(0)
+    expect(opts.zodRetryAttempts).toBe(0)
     expect(opts.messages[0].content).toContain('Neck pain')
     expect(CURRENT_VISIT_DIAGNOSIS_SYSTEM_PROMPT).toContain('prior visit')
     expect(CURRENT_VISIT_DIAGNOSIS_SYSTEM_PROMPT).toContain('empty diagnoses array')

@@ -35,7 +35,7 @@ export function mockToolUseResponse(spec: ToolUseResponseSpec): Anthropic.Messag
 
 export function createMockAnthropic() {
   const create = vi.fn() as Mock
-  const stream = ((...args: unknown[]) => ({
+  const stream = vi.fn((...args: unknown[]) => ({
     finalMessage: () => create(...args),
   })) as unknown as Mock
   return {

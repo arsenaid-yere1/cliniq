@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { z } from 'zod'
 import { callClaudeTool } from '@/lib/claude/client'
 import { createMockAnthropic, mockToolUseResponse, makeApiError } from '@/test-utils/anthropic-mock'
@@ -51,6 +51,15 @@ describe('callClaudeTool', () => {
     expect(call.tools[0].cache_control).toBeUndefined()
     expect(call.tools[1].cache_control).toBeUndefined()
     expect(call.system).toBe('You are a test system prompt.')
+  })
+
+  it('passes a per-call timeout to the SDK stream', async () => {
+    const stub = createMockAnthropic()
+    stub._create.mockResolvedValue(mockToolUseResponse({ toolName: 't2', input: { value: 'ok' } }))
+
+    await callClaudeTool({ ...baseOpts({ timeoutMs: 20_000 }), _client: stub })
+
+    expect(stub.messages.stream).toHaveBeenCalledWith(expect.any(Object), { timeout: 20_000 })
   })
 
   it('sends system as a cache-controlled text block when cacheSystem is true', async () => {

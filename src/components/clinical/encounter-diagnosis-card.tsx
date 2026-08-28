@@ -56,23 +56,28 @@ export function EncounterDiagnosisCard({
 
     setSuggesting(true)
     setSuggestionError(null)
-    const result = await suggestCurrentEncounterDiagnoses(caseId, state.encounterId)
-    setSuggesting(false)
+    try {
+      const result = await suggestCurrentEncounterDiagnoses(caseId, state.encounterId)
+      if (result.error) {
+        setSuggestionStatus('error')
+        setSuggestionError(result.error)
+        return
+      }
+      if (result.status === 'insufficient_source') {
+        setSuggestionStatus('insufficient')
+        return
+      }
 
-    if (result.error) {
+      setDiagnoses(result.data)
+      setDirty(result.data.length > 0)
+      userEditedRef.current = false
+      setSuggestionStatus('ready')
+    } catch {
       setSuggestionStatus('error')
-      setSuggestionError(result.error)
-      return
+      setSuggestionError('Diagnosis refresh was interrupted. Please try again.')
+    } finally {
+      setSuggesting(false)
     }
-    if (result.status === 'insufficient_source') {
-      setSuggestionStatus('insufficient')
-      return
-    }
-
-    setDiagnoses(result.data)
-    setDirty(result.data.length > 0)
-    userEditedRef.current = false
-    setSuggestionStatus('ready')
   }, [caseId, diagnoses.length, locked, state])
 
   useEffect(() => {
@@ -177,8 +182,10 @@ export function EncounterDiagnosisCard({
                   onClick={() => void requestCurrentVisitSuggestions(true)}
                   disabled={pending || suggesting}
                 >
-                  <Sparkles className="mr-2 h-3.5 w-3.5" />
-                  Refresh from current visit
+                  {suggesting
+                    ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    : <Sparkles className="mr-2 h-3.5 w-3.5" />}
+                  {suggesting ? 'Refreshing diagnoses…' : 'Refresh from current visit'}
                 </Button>
               )}
               {!locked && (

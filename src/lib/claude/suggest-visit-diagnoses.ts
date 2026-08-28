@@ -47,6 +47,9 @@ export async function suggestVisitDiagnoses(
   return callClaudeTool<VisitDiagnosis[]>({
     model: 'claude-sonnet-4-6',
     maxTokens: 1600,
+    timeoutMs: 20_000,
+    apiRetryAttempts: 0,
+    zodRetryAttempts: 0,
     system: CURRENT_VISIT_DIAGNOSIS_SYSTEM_PROMPT,
     tools: [TOOL],
     toolName: 'suggest_current_visit_diagnoses',

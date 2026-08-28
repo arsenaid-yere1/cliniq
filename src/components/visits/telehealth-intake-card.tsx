@@ -52,23 +52,28 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
 
     setSuggesting(true)
     setSuggestionError(null)
-    const result = await suggestCurrentEncounterDiagnoses(caseId, encounter.id)
-    setSuggesting(false)
+    try {
+      const result = await suggestCurrentEncounterDiagnoses(caseId, encounter.id)
+      if (result.error) {
+        setSuggestionStatus('error')
+        setSuggestionError(result.error)
+        return
+      }
+      if (result.status === 'insufficient_source') {
+        setSuggestionStatus('insufficient')
+        return
+      }
 
-    if (result.error) {
+      setDiagnoses(result.data)
+      setDiagnosesDirty(result.data.length > 0)
+      userEditedDiagnosesRef.current = false
+      setSuggestionStatus('ready')
+    } catch {
       setSuggestionStatus('error')
-      setSuggestionError(result.error)
-      return
+      setSuggestionError('Diagnosis refresh was interrupted. Please try again.')
+    } finally {
+      setSuggesting(false)
     }
-    if (result.status === 'insufficient_source') {
-      setSuggestionStatus('insufficient')
-      return
-    }
-
-    setDiagnoses(result.data)
-    setDiagnosesDirty(result.data.length > 0)
-    userEditedDiagnosesRef.current = false
-    setSuggestionStatus('ready')
   }, [caseId, diagnoses.length, encounter.diagnoses_confirmed_at, encounter.id, locked])
 
   useEffect(() => {
@@ -152,7 +157,7 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
     {!suggesting && suggestionStatus === 'insufficient' && <p className="text-xs text-muted-foreground">Save current symptoms or observable findings to see diagnosis suggestions automatically.</p>}
     {!suggesting && suggestionStatus === 'error' && <p className="text-xs text-destructive">{suggestionError}</p>}
     <div className="flex flex-wrap items-center gap-3">
-      {!locked && <Button variant="ghost" size="sm" onClick={() => void requestCurrentVisitSuggestions(true)} disabled={pending || suggesting}><Sparkles className="mr-2 h-3.5 w-3.5" />Refresh from current visit</Button>}
+      {!locked && <Button variant="ghost" size="sm" onClick={() => void requestCurrentVisitSuggestions(true)} disabled={pending || suggesting}>{suggesting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}{suggesting ? 'Refreshing diagnoses…' : 'Refresh from current visit'}</Button>}
       {!locked && <Button variant="outline" onClick={confirmDiagnoses} disabled={pending || suggesting || (!diagnosesDirty && encounter.diagnoses_confirmed_at !== null)}>
         {encounter.diagnoses_confirmed_at ? 'Reconfirm diagnoses' : 'Confirm diagnoses'}
       </Button>}
