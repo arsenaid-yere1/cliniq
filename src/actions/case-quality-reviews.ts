@@ -24,8 +24,13 @@ import { computeAgeAtDate } from '@/lib/age'
 import {
   validateExternalCauseChain,
   validateSeventhCharacterIntegrity,
+  validateVisitDiagnosisAuthority,
   SECTION_QC_EXTERNAL_CAUSE_CHAIN,
   SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
+  SECTION_QC_VISIT_DIAGNOSIS_UNCONFIRMED,
+  SECTION_QC_NOTE_DIAGNOSIS_MISMATCH,
+  SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL,
+  SECTION_QC_PROCEDURE_DIAGNOSIS_MISMATCH,
 } from '@/lib/qc/diagnosis-validators'
 import { regenerateNoteSection } from '@/actions/initial-visit-notes'
 import { regenerateDischargeNoteSectionAction } from '@/actions/discharge-notes'
@@ -63,6 +68,7 @@ async function gatherSourceData(
     orthoCountRes,
     ctCountRes,
     xrayCountRes,
+    encounterDiagnosesRes,
   ] = await Promise.all([
     supabase
       .from('cases')
@@ -85,7 +91,7 @@ async function gatherSourceData(
     supabase
       .from('initial_visit_notes')
       .select(
-        'id, visit_type, visit_date, status, diagnoses, chief_complaint, physical_exam, treatment_plan, medical_necessity, prognosis, raw_ai_response',
+        'id, encounter_id, visit_type, visit_date, status, diagnoses, diagnoses_snapshot, chief_complaint, physical_exam, treatment_plan, medical_necessity, prognosis, raw_ai_response',
       )
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
@@ -93,14 +99,14 @@ async function gatherSourceData(
     supabase
       .from('procedure_notes')
       .select(
-        'id, procedure_id, status, subjective, assessment_summary, procedure_injection, assessment_and_plan, prognosis, plan_alignment_status, raw_ai_response, procedures!inner(id, procedure_date, procedure_number, diagnoses, episode_id)',
+        'id, procedure_id, status, subjective, assessment_summary, procedure_injection, assessment_and_plan, diagnoses_snapshot, prognosis, plan_alignment_status, raw_ai_response, procedures!inner(id, procedure_date, procedure_number, diagnoses, episode_id)',
       )
       .eq('case_id', caseId)
       .eq('procedures.episode_id', episode.id)
       .is('deleted_at', null)
       .order('procedure_id', { ascending: true }),
     supabase.from('pain_follow_up_notes')
-      .select('id,encounter_id,status,subjective,telehealth_observations,assessment,diagnoses,treatment_plan,clinician_disclaimer')
+      .select('id,encounter_id,status,subjective,telehealth_observations,assessment,diagnoses,diagnoses_snapshot,procedure_recommendations,treatment_plan,clinician_disclaimer')
       .eq('case_id',caseId).eq('episode_id',episode.id).is('deleted_at',null),
     supabase
       .from('discharge_notes')
@@ -153,6 +159,11 @@ async function gatherSourceData(
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null),
+    supabase.from('clinical_encounters')
+      .select('id,diagnoses,diagnoses_confirmed_at')
+      .eq('case_id', caseId)
+      .eq('episode_id', episode.id)
+      .is('deleted_at', null),
   ])
 
   if (caseRes.error || !caseRes.data) {
@@ -171,6 +182,7 @@ async function gatherSourceData(
   // Pain-management-entry case: no initial_visit row, only a pain_evaluation row.
   // Reviewer must skip every initial_visit-anchored check.
   const painManagementStart = initialVisit === null && painEval !== null
+  const encounterDiagnoses = new Map((encounterDiagnosesRes.data ?? []).map((encounter) => [encounter.id, encounter]))
 
   // Procedure-vitals lookup so each procedure note carries its pain numbers.
   const procIds = (procedureNotesRes.data ?? []).map((n) => n.procedure_id)
@@ -212,6 +224,7 @@ async function gatherSourceData(
       pain_score_min: v?.pain_score_min ?? null,
       pain_score_max: v?.pain_score_max ?? null,
       diagnoses: proc?.diagnoses ?? null,
+      diagnoses_snapshot: n.diagnoses_snapshot,
       raw_ai_response: n.raw_ai_response,
     }
   })
@@ -248,6 +261,10 @@ async function gatherSourceData(
             visit_date: initialVisit.visit_date,
             status: initialVisit.status,
             diagnoses: initialVisit.diagnoses,
+            diagnoses_snapshot: initialVisit.diagnoses_snapshot,
+            encounter_id: initialVisit.encounter_id,
+            encounter_diagnoses: initialVisit.encounter_id ? encounterDiagnoses.get(initialVisit.encounter_id)?.diagnoses ?? [] : [],
+            diagnoses_confirmed_at: initialVisit.encounter_id ? encounterDiagnoses.get(initialVisit.encounter_id)?.diagnoses_confirmed_at ?? null : null,
             chief_complaint: initialVisit.chief_complaint,
             physical_exam: initialVisit.physical_exam,
             treatment_plan: initialVisit.treatment_plan,
@@ -262,6 +279,10 @@ async function gatherSourceData(
             visit_date: painEval.visit_date,
             status: painEval.status,
             diagnoses: painEval.diagnoses,
+            diagnoses_snapshot: painEval.diagnoses_snapshot,
+            encounter_id: painEval.encounter_id,
+            encounter_diagnoses: painEval.encounter_id ? encounterDiagnoses.get(painEval.encounter_id)?.diagnoses ?? [] : [],
+            diagnoses_confirmed_at: painEval.encounter_id ? encounterDiagnoses.get(painEval.encounter_id)?.diagnoses_confirmed_at ?? null : null,
             chief_complaint: painEval.chief_complaint,
             physical_exam: painEval.physical_exam,
             treatment_plan: painEval.treatment_plan,
@@ -270,7 +291,11 @@ async function gatherSourceData(
           }
         : null,
       painManagementStart,
-      painFollowUpNotes: followUpRes.data ?? [],
+      painFollowUpNotes: (followUpRes.data ?? []).map((note) => ({
+        ...note,
+        encounter_diagnoses: encounterDiagnoses.get(note.encounter_id)?.diagnoses ?? [],
+        diagnoses_confirmed_at: encounterDiagnoses.get(note.encounter_id)?.diagnoses_confirmed_at ?? null,
+      })),
       procedureNotes,
       dischargeNote: dischargeRes.data
         ? {
@@ -407,6 +432,7 @@ export async function runCaseQualityReview(caseId: string) {
   const deterministicFindings: QualityFinding[] = [
     ...validateExternalCauseChain(inputData),
     ...validateSeventhCharacterIntegrity(inputData),
+    ...validateVisitDiagnosisAuthority(inputData),
   ]
   const deterministicHashes = new Set(
     deterministicFindings.map((f) => computeFindingHash(f)),
@@ -415,7 +441,11 @@ export async function runCaseQualityReview(caseId: string) {
     (f) =>
       !deterministicHashes.has(computeFindingHash(f as QualityFinding)) &&
       f.section_key !== SECTION_QC_EXTERNAL_CAUSE_CHAIN &&
-      f.section_key !== SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
+      f.section_key !== SECTION_QC_SEVENTH_CHARACTER_INTEGRITY &&
+      f.section_key !== SECTION_QC_VISIT_DIAGNOSIS_UNCONFIRMED &&
+      f.section_key !== SECTION_QC_NOTE_DIAGNOSIS_MISMATCH &&
+      f.section_key !== SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL &&
+      f.section_key !== SECTION_QC_PROCEDURE_DIAGNOSIS_MISMATCH,
   ) as QualityFinding[]
   const mergedFindings: QualityFinding[] = [
     ...deterministicFindings,
@@ -768,16 +798,21 @@ export async function verifyFinding(caseId: string, findingHash: string) {
   // the plan_alignment_status / trajectory_warnings checks.
   if (
     finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN ||
-    finding.section_key === SECTION_QC_SEVENTH_CHARACTER_INTEGRITY
+    finding.section_key === SECTION_QC_SEVENTH_CHARACTER_INTEGRITY ||
+    finding.section_key === SECTION_QC_VISIT_DIAGNOSIS_UNCONFIRMED ||
+    finding.section_key === SECTION_QC_NOTE_DIAGNOSIS_MISMATCH ||
+    finding.section_key === SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL ||
+    finding.section_key === SECTION_QC_PROCEDURE_DIAGNOSIS_MISMATCH
   ) {
     const fresh = await gatherSourceData(supabase, caseId)
     if (fresh.error || !fresh.data) {
       return { error: 'Failed to refresh source data for verify' }
     }
-    const replays =
-      finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN
-        ? validateExternalCauseChain(fresh.data)
-        : validateSeventhCharacterIntegrity(fresh.data)
+    const replays = finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN
+      ? validateExternalCauseChain(fresh.data)
+      : finding.section_key === SECTION_QC_SEVENTH_CHARACTER_INTEGRITY
+        ? validateSeventhCharacterIntegrity(fresh.data)
+        : validateVisitDiagnosisAuthority(fresh.data)
     const stillPresent = replays.some(
       (f) => computeFindingHash(f) === findingHash,
     )
@@ -788,7 +823,9 @@ export async function verifyFinding(caseId: string, findingHash: string) {
           reason:
             finding.section_key === SECTION_QC_EXTERNAL_CAUSE_CHAIN
               ? 'External cause code still present'
-              : '7th-character integrity violation still present',
+              : finding.section_key === SECTION_QC_SEVENTH_CHARACTER_INTEGRITY
+                ? '7th-character integrity violation still present'
+                : 'Visit diagnosis authority mismatch still present',
         },
       }
     }

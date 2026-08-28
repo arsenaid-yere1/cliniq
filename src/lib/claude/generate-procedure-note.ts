@@ -52,7 +52,7 @@ export interface ProcedureNoteInputData {
       points?: number | null
       units?: number | null
     }>
-    diagnoses: Array<{ icd10_code: string | null; description: string }>
+    diagnoses: Array<{ icd10_code: string; description: string }>
     consent_obtained: boolean | null
     // BOTOX product/vial/units block (null for non-botox procedures).
     botox_dosing: {
@@ -82,6 +82,7 @@ export interface ProcedureNoteInputData {
     activity_restriction_hrs: number | null
     plan_deviation_reason: string | null
   }
+  procedureDiagnosisVersion: string
   vitalSigns: {
     bp_systolic: number | null
     bp_diastolic: number | null
@@ -143,23 +144,16 @@ export interface ProcedureNoteInputData {
    * if the model misses the directive.
    */
   narrativeDirective: NarrativeDirective
-  /**
-   * Cross-source clinical synthesis (case_summaries row). Supplies
-   * pre-computed `suggested_diagnoses` entries with `confidence` and
-   * `downgrade_to` fields consumed by the DOWNGRADE-TO HONOR RULE in the
-   * prompt. Null when no case summary has been generated for this case yet.
-   */
+  /** Cross-source narrative/imaging context with diagnosis arrays removed. */
   caseSummary: {
     chief_complaint: string | null
     imaging_findings: unknown
     prior_treatment: unknown
     symptoms_timeline: unknown
-    suggested_diagnoses: unknown
   } | null
   pmExtraction: {
     chief_complaints: unknown
     physical_exam: unknown
-    diagnoses: unknown
     treatment_plan: unknown
     diagnostic_studies_summary: string | null
     /**
@@ -171,20 +165,6 @@ export interface ProcedureNoteInputData {
      */
     updated_after_procedure: boolean
   } | null
-  /**
-   * Supplementary PM-sourced candidate codes — codes present in the PM
-   * extraction but NOT already in procedureRecord.diagnoses. Deduplicated
-   * upstream so the LLM sees each candidate code at most once. Used by the
-   * SOURCE PRECEDENCE rule to surface PM codes the provider may have
-   * omitted that still carry strong evidence.
-   */
-  pmSupplementaryDiagnoses: Array<{
-    icd10_code: string | null
-    description: string
-    imaging_support?: string | null
-    exam_support?: string | null
-    source_quote?: string | null
-  }>
   initialVisitNote: {
     past_medical_history: string | null
     social_history: string | null
@@ -242,6 +222,8 @@ You are a clinical documentation specialist for a personal injury pain managemen
 This document is for medical-legal assessment and documentation for a personal injury case. It will be reviewed by attorneys, insurance adjusters, and opposing medical experts. Use precise medical terminology and formal clinical prose throughout.
 
 === GLOBAL RULES ===
+
+DIAGNOSIS AUTHORITY (OVERRIDES ALL DIAGNOSIS FILTERING, SUBSTITUTION, AND SOURCE-PRECEDENCE EXAMPLES BELOW): procedureRecord.diagnoses is the complete provider-committed diagnosis list for THIS procedure. The DIAGNOSES block must mirror it exactly. Never add, omit, infer, substitute, downgrade, or promote a code from caseSummary, pmExtraction, priorProcedureNotes, imaging, examination prose, or another provider. Those sources may inform narrative and plan text only.
 
 LENGTH: The target document should be approximately 6 PAGES when rendered as a PDF. Do NOT over-generate. Each section has a specific length target below — follow them strictly.
 
@@ -634,19 +616,9 @@ Reference (paintoneLabel="worsened"): "Mr. Israyelyan will return in 1 week for 
 17. assessment_and_plan:
 Two sub-sections in one field. First: "DIAGNOSES:" heading with ICD-10 code — description format (no bullet prefix, just code space dash space description, one per line). Then "PLAN:" heading with bullet list of action items.
 
-DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list in this procedure note is a FILTERED output, not a copy of the input. Apply the filters below to every candidate code regardless of whether it came from procedureRecord.diagnoses or pmExtraction.diagnoses. Omit any code that fails its filter — if a code is unsupported, substitute the downgrade listed below rather than just dropping it. The procedure note is not the document that establishes mechanism of injury; that is the initial-visit note.
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): NARRATIVE ONLY. The DIAGNOSES block is an exact, ordered mirror of procedureRecord.diagnoses. The support guidance below may shape narrative terminology and quality-review warnings, but it must never add, omit, substitute, downgrade, promote, or reorder a diagnosis code.
 
-SOURCE PRECEDENCE RULE (MANDATORY): The candidate code pool has TWO tiers, not one. Treat them asymmetrically.
-
-  • PRIMARY — procedureRecord.diagnoses: the provider's committed diagnosis list at the time this procedure was recorded. This list represents the provider's clinical decision AFTER reviewing PM extraction suggestions and the pre-populated combobox. Treat it as AUTHORITATIVE. Every code in procedureRecord.diagnoses MUST be evaluated against Filters (A)–(E) and either (i) emitted as-is if it passes, or (ii) downgraded per the Downgrade Table if it fails. Do NOT silently drop a provider-committed code; a failing code must be substituted with its downgrade target.
-
-  • SECONDARY — pmSupplementaryDiagnoses: codes that exist in the PM extraction but were NOT committed by the provider (dedup applied upstream). Treat as ADVISORY. Each carries per-code imaging_support / exam_support / source_quote tags. A supplementary code may be ADDED to the emitted diagnosis list ONLY when ALL of the following hold: (i) it passes every applicable filter including (B)/(C) region-match, (ii) its imaging_support == "confirmed" AND exam_support == "objective", (iii) the code is clinically essential to justify the procedure indication or primary pain generator on this visit. In all other cases, omit. Do NOT emit supplementary codes merely because they are present in the PM extraction.
-
-  • pmExtraction.diagnoses remains available as raw evidence-tag context. When evaluating a procedureRecord code against Filters (B)/(C), you MAY cite a matching pmExtraction.diagnoses entry's exam_support tag as evidence. This does NOT promote the supplementary tier — it only informs filter application on the primary tier.
-
-  • When pmExtraction.updated_after_procedure == true, the PM extraction was edited AFTER the procedure was recorded. In this case, the provider's committed list (procedureRecord.diagnoses) may have been informed by older PM data. Prefer the provider-committed list even more strongly; do NOT add supplementary codes from pmSupplementaryDiagnoses when this flag is true unless the code independently passes the high-evidence bar above AND its source_quote clearly establishes the clinical basis.
-
-  • caseSummary.suggested_diagnoses is a THIRD advisory source (cross-source synthesis). Use it to (i) resolve the CODING FRAMEWORK RULE between TRAUMATIC and DEGENERATIVE, (ii) consume the DOWNGRADE-TO HONOR RULE (see below). Do NOT add codes from suggested_diagnoses to the emitted list unless they are already present in procedureRecord.diagnoses or qualify for promotion under the pmSupplementaryDiagnoses rule above.
+SOURCE EXCLUSION RULE (MANDATORY): caseSummary, pmExtraction, priorProcedureNotes, imaging, examination prose, and other providers are not diagnosis sources for this procedure. They may inform narrative context only. procedureRecord.diagnoses is the sole diagnosis authority.
 
 CODING FRAMEWORK RULE (MANDATORY): Select ONE coding framework for this note and apply it consistently across the diagnosis code list AND across disc-pathology prose in subjective, assessment_summary, procedure_indication, and procedure_injection. Do NOT mix frameworks within a single note.
 
@@ -656,7 +628,7 @@ CODING FRAMEWORK RULE (MANDATORY): Select ONE coding framework for this note and
 
 Framework selection is a binary decision for the whole note. When accident_date is null AND no pre-existing DDD is documented (e.g., non-PI wellness case), default to framework (a) and phrase pathology neutrally as "disc displacement" without "traumatic". When both traumatic mechanism AND pre-existing DDD are documented, use framework (b) — the superimposed-trauma language captures both.
 
-DOWNGRADE-TO HONOR RULE: if the input contains a caseSummary.suggested_diagnoses entry with a non-null downgrade_to value, prefer that pre-computed target over re-deriving the substitution yourself. downgrade_to is populated by the case-summary AI per Rule 8b and reflects the cross-source evidence map. You may still apply Filters (A)-(E) to the downgraded code; the honor rule only controls WHICH code replaces the failed one, not whether the replacement is kept.
+OUTPUT-PRESERVATION RULE: Do not apply any downgrade or substitution to the DIAGNOSES block. If narrative evidence appears inconsistent with a clinician-confirmed code, preserve the code and avoid inventing supporting facts.
 
 (A) External-cause codes — ABSOLUTE OMISSION in procedure notes. Omit every V-code, W-code, X-code, and Y-code (e.g., V43.52XA motor-vehicle-collision codes) from the diagnosis list, EVEN IF the code appears in procedureRecord.diagnoses or pmExtraction.diagnoses. These codes establish causation and belong in the initial-visit note, not in a per-visit procedure note. Including them reads as aggressive billing and is a defensibility liability at deposition. No substitute — simply omit.
 
@@ -795,7 +767,7 @@ const PROCEDURE_NOTE_TOOL: Anthropic.Tool = {
       procedure_injection: { type: 'string', description: 'Guidance method, needle, target, injection volume, complications' },
       procedure_post_care: { type: 'string', description: 'Bandage, restrictions, medications, infection signs' },
       procedure_followup: { type: 'string', description: 'Return timeline and additional injection plans' },
-      assessment_and_plan: { type: 'string', description: 'DIAGNOSES heading with ICD-10 codes, then PLAN heading with action items' },
+      assessment_and_plan: { type: 'string', description: 'DIAGNOSES heading mirroring procedureRecord.diagnoses exactly, then PLAN heading with action items' },
       patient_education: { type: 'string', description: 'PRP education, post-injection instructions, time documentation' },
       prognosis: { type: 'string', description: 'Prognosis statement' },
       clinician_disclaimer: { type: 'string', description: 'Medical-legal disclaimer for procedure report' },

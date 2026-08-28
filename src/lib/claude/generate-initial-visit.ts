@@ -11,6 +11,7 @@ import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
 import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
 import { nsaidAvoidanceTreatmentPlanFragment } from '@/lib/clinical/prp-protocol'
+import type { VisitDiagnosis } from '@/lib/validations/clinical-encounter'
 
 const NSAID_AVOIDANCE_FRAGMENT = nsaidAvoidanceTreatmentPlanFragment()
 
@@ -55,6 +56,8 @@ LENGTH: The target document should be approximately 7 PAGES when rendered as a P
 CONCISENESS: Write in the same clinical prose style as the reference examples below. Formal but concise. No filler. No redundancy.
 
 NO REPETITION: DO NOT repeat information that appears in earlier sections. Each section should contain only NEW information. DO NOT repeat information that appears in the document header (clinic name, address, phone/fax, provider name/credentials — these are rendered separately in the PDF header and signature block).
+
+DIAGNOSIS AUTHORITY (OVERRIDES ALL DIAGNOSIS EXAMPLES BELOW): visitDiagnosisPool is the complete clinician-confirmed diagnosis list for THIS encounter. The diagnoses section must mirror that list exactly. Never add, infer, substitute, downgrade, or promote a code from caseSummary, priorVisitData, pmExtraction, imaging, examination prose, or another clinician. Historical clinical data may inform narrative assessment only. If visitDiagnosisPool is empty, emit exactly "No diagnoses selected for this encounter."
 
 NO UNNECESSARY BRACKETS: "[Provider to confirm]" / "[unknown]" / "[not provided]" / similar bracketed placeholders are BANNED in narrative sections (Social History, Past Medical History, Chief Complaint, Review of Systems, Physical Exam prose, Assessment, Plan, Prognosis, Clinician Disclaimer). If data is absent, either use the documented standard fallback phrase for that section (e.g. the Social History "Denies the use of alcohol, tobacco, and/or drugs." default) OR OMIT the field entirely. The ONLY places brackets are permitted:
   • Vital-sign values when the specific vital is not provided: use "[XX]" for the missing number (and ONLY the number — do not wrap the entire bullet).
@@ -128,12 +131,7 @@ End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentenc
 
 10. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.
-If caseSummary.suggested_diagnoses is provided, cross-reference it when selecting clinical diagnosis codes. Use suggested codes with "high" confidence when they align with the examination findings (first visit) or imaging findings (PRP evaluation). You may add or omit codes based on clinical judgment, but the suggested list should serve as a starting reference.
-After the clinical diagnosis codes, include the appropriate External Cause Code based on the accident_type from the case details:
-• If accident_type is "auto": add "• V43.52XA – Car occupant injured in collision with car, pick-up truck or van, initial encounter"
-• If accident_type is "slip_and_fall": add "• W01.0XXA – Fall on same level from slipping, initial encounter"
-• If accident_type is "workplace": add "• W18.49XA – Other slipping, tripping and stumbling with subsequent fall, initial encounter"
-• If accident_type is "other" or null: omit the external cause code
+Mirror visitDiagnosisPool exactly, in its existing order. Do not add a diagnosis or external-cause code based on accident_type, caseSummary, imaging, examination findings, or prior visits. An external-cause code appears only when the clinician explicitly included it in visitDiagnosisPool.
 
 15. TIME AND COMPLEXITY ATTESTATION (~2-3 sentences):
 A first-person attestation from the provider documenting the cumulative time spent and the nature of the visit complexity. Must include: (a) total face-to-face time in minutes (use ">60 minutes" as default), (b) activities performed (evaluating the patient, reviewing imaging and prior records, counseling regarding diagnosis and treatment options), and (c) statement that more than 50% of time was spent in counseling and care coordination.
@@ -289,7 +287,7 @@ Reference tone: "Following the collision, the patient was evaluated in the emerg
 For each MRI, state "MRI – [Region] ([date]):" then "• " bullets for findings with specific mm measurements. Then "IMPRESSION:" sub-heading repeating key findings. Do NOT add "Technique:" lines, severity ratings, or editorial commentary about missing imaging. Directly restate the MRI findings from the case summary source data.
 
 10-ADDITIONAL. DIAGNOSES — PRP EVALUATION SPECIFICS:
-Use imaging-confirmed diagnosis codes based on MRI findings from caseSummary.imaging_findings. Cross-reference caseSummary.suggested_diagnoses for pre-extracted ICD-10 codes — use suggested codes with "high" confidence when they match the imaging findings.
+The diagnosis list is still an exact mirror of visitDiagnosisPool. Imaging and examination findings may shape the narrative but may not add, remove, substitute, or reorder diagnosis codes.
 Common codes by pathology:
 • Cervical disc displacement: M50.20 (Other cervical disc displacement, unspecified mid-cervical region)
 • Cervical disc degeneration: M50.320 (Other cervical disc degeneration, mid-cervical region)
@@ -302,7 +300,7 @@ Common codes by pathology:
 • Sleep disturbance: G47.9 (Sleep disorder, unspecified) — use when the patient reports sleep disturbance or difficulty sleeping due to pain
 • Myalgia: M79.1 (Myalgia)
 
-DIAGNOSTIC-SUPPORT RULE (MANDATORY): The diagnosis list is a FILTERED output, not a copy of suggested_diagnoses or pmExtraction.diagnoses. Apply these filters before emitting any code. Candidate code sources: caseSummary.suggested_diagnoses, pmExtraction.diagnoses. For each pmExtraction diagnosis, inspect its imaging_support, exam_support, and source_quote tags (populated at extraction time) — a pmExtraction code with imaging_support="none" AND exam_support!="objective" has NO correlative support and must be dropped or downgraded.
+DIAGNOSTIC-SUPPORT RULE (MANDATORY): NARRATIVE ONLY. The clinical-support guidance below controls terminology in the narrative. It must never change the exact visitDiagnosisPool rendered in the diagnosis section. Do not use caseSummary, pmExtraction, imaging, or prior visits as candidate diagnosis sources.
 
 DOWNGRADE-TO HONOR RULE: if a caseSummary.suggested_diagnoses entry carries a non-null downgrade_to value, prefer that pre-computed target over re-deriving the substitution. downgrade_to is populated by the case summary generator per Rule 8b and reflects cross-source evidence. Filters (A)-(F) still apply to the downgraded code.
 
@@ -322,11 +320,11 @@ DOWNGRADE-TO HONOR RULE: if a caseSummary.suggested_diagnoses entry carries a no
   • Use M54.51 (Vertebrogenic low back pain) only when imaging documents vertebral endplate pathology (Modic changes) and the clinical pattern matches vertebrogenic pain.
   • Use M54.59 (Other low back pain) when a documented low-back-pain type does not fit .50 or .51.
 
-(E) suggested_diagnoses confidence handling — prefer "high"-confidence entries that match imaging + exam. For "medium"-confidence entries, require the same imaging + objective-finding support the filters above demand. OMIT "low"-confidence entries unless independent imaging + exam evidence supports them.
+(E) Historical diagnosis suggestions — may inform narrative context only. Never copy a suggested code into the diagnosis section unless that exact code is already present in visitDiagnosisPool.
 
-(F) pmExtraction provenance — A pmExtraction diagnosis with imaging_support="confirmed" AND exam_support="objective" is strong evidence; emit as-is if it passes the filters above. A pmExtraction diagnosis with exam_support="subjective_only" or "none" for a myelopathy/radiculopathy code fails Filters A/B automatically and must be downgraded. Cite source_quote verbatim in the imaging_findings or medical_necessity narrative when it establishes correlation, to make the clinical basis transparent.
+(F) Pain-management extraction provenance — may inform narrative context only. Never emit, substitute, or downgrade a diagnosis code from extraction data.
 
-Select codes that correspond to actual MRI findings in the source data. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
+Render only the clinician-confirmed codes in visitDiagnosisPool, even when other source material would support additional codes.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
 Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
@@ -420,7 +418,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       },
       diagnoses: {
         type: 'string',
-        description: 'ICD-10 diagnosis list. For first-visit cases: clinical impression codes (strain/sprain) based on exam and mechanism. For PRP evaluation cases: imaging-confirmed diagnosis codes',
+        description: 'Exact formatted mirror of visitDiagnosisPool. Do not add, infer, substitute, or remove codes.',
       },
       medical_necessity: {
         type: 'string',
@@ -477,7 +475,6 @@ export interface InitialVisitInputData {
     imaging_findings: unknown
     prior_treatment: unknown
     symptoms_timeline: unknown
-    suggested_diagnoses: unknown
   } | null
   clinicInfo: {
     clinic_name: string | null
@@ -517,6 +514,8 @@ export interface InitialVisitInputData {
     social_history: unknown
     exam_findings: unknown
   } | null
+  visitDiagnosisPool: VisitDiagnosis[]
+  visitDiagnosisConfirmedAt: string
   /**
    * Read-only reference data from a prior finalized Initial Visit on the same case.
    * Populated only when generating a Pain Evaluation Visit. Null otherwise.
@@ -526,7 +525,6 @@ export interface InitialVisitInputData {
     physical_exam: string | null
     imaging_findings: string | null
     medical_necessity: string | null
-    diagnoses: string | null
     treatment_plan: string | null
     prognosis: string | null
     provider_intake: unknown | null
@@ -550,13 +548,10 @@ export interface InitialVisitInputData {
    */
   hasApprovedDiagnosticExtractions: boolean
   /**
-   * Most recent approved/edited Pain Management extraction. Provides direct
-   * access to PM-sourced diagnoses with their imaging/exam support tags so the
-   * Pain Evaluation Visit prompt can apply the DIAGNOSTIC-SUPPORT RULE against
-   * fresh provenance data without relying on a stale case summary regeneration.
+   * Most recent approved/edited Pain Management extraction. Diagnosis-bearing
+   * fields are intentionally excluded; this is narrative/exam context only.
    */
   pmExtraction: {
-    diagnoses: unknown
     physical_exam: unknown
     diagnostic_studies_summary: string | null
   } | null

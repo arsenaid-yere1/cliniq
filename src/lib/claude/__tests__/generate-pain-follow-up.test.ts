@@ -19,6 +19,8 @@ const source: PainFollowUpSourceData = {
   latestCompletedEncounter: null,
   priorEpisodeDischarge: null,
   performedProcedures: [],
+  visitDiagnosisPool: [{ icd10_code: 'M54.50', description: 'Low back pain' }],
+  visitDiagnosisConfirmedAt: '2026-08-28T12:00:00Z',
 }
 
 describe('pain follow-up model routing', () => {
@@ -59,6 +61,20 @@ describe('pain follow-up prompt contract', () => {
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('modality explicitly')
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('only findings directly visible or audible by video')
     expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('Palpation was not performed')
+  })
+
+  it('uses only the current encounter pool as diagnosis authority', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generatePainFollowUp({
+      ...source,
+      latestCompletedEncounter: { assessment: 'History only' },
+      performedProcedures: [{ procedure_type: 'prp', procedure_date: '2026-08-01' }],
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('complete clinician-confirmed diagnosis authority')
+    expect(PAIN_FOLLOW_UP_SYSTEM_PROMPT).toContain('Every procedure_recommendations[].diagnoses item')
+    expect(opts.messages[0].content).toContain('"visitDiagnosisPool"')
+    expect(opts.messages[0].content).not.toContain('"diagnoses":')
   })
 })
 

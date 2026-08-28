@@ -26,6 +26,12 @@ import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
+import { normalizeVisitDiagnoses } from '@/lib/clinical/visit-diagnoses'
+import {
+  assertProcedureDiagnosisBlockMatches,
+  replaceDiagnosisBlock,
+  stripDiagnosisBlock,
+} from '@/lib/clinical/procedure-diagnoses'
 
 // --- Helper: compute source data hash ---
 
@@ -76,7 +82,7 @@ async function gatherProcedureNoteSourceData(
       .single(),
     supabase
       .from('pain_management_extractions')
-      .select('chief_complaints, physical_exam, diagnoses, treatment_plan, diagnostic_studies_summary, provider_overrides, updated_at, created_at')
+      .select('chief_complaints, physical_exam, treatment_plan, diagnostic_studies_summary, provider_overrides, updated_at, created_at')
       .eq('case_id', caseId)
       .in('review_status', ['approved', 'edited'])
       .is('deleted_at', null)
@@ -132,7 +138,7 @@ async function gatherProcedureNoteSourceData(
       .maybeSingle(),
     supabase
       .from('case_summaries')
-      .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline, suggested_diagnoses')
+      .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline')
       .eq('case_id', caseId)
       .is('deleted_at', null)
       .in('review_status', ['approved', 'edited'])
@@ -232,9 +238,12 @@ async function gatherProcedureNoteSourceData(
     gender: string | null
   }
 
-  const diagnoses = Array.isArray(proc.diagnoses)
-    ? (proc.diagnoses as Array<{ icd10_code: string | null; description: string }>)
-    : []
+  let diagnoses
+  try {
+    diagnoses = normalizeVisitDiagnoses(proc.diagnoses)
+  } catch {
+    return { data: null, error: 'Procedure diagnoses are invalid. Review the procedure record before generating.' }
+  }
 
   const age = computeAgeAtDate(patient.date_of_birth, proc.procedure_date)
 
@@ -374,6 +383,7 @@ async function gatherProcedureNoteSourceData(
         activity_restriction_hrs: proc.activity_restriction_hrs,
         plan_deviation_reason: proc.plan_deviation_reason,
       },
+      procedureDiagnosisVersion: proc.updated_at,
       vitalSigns: vitalsRes.data ?? null,
       priorProcedures: priorProcedureRows.map((p) => ({
         procedure_date: p.procedure_date,
@@ -438,7 +448,6 @@ async function gatherProcedureNoteSourceData(
             imaging_findings: caseSummaryRes.data.imaging_findings ?? null,
             prior_treatment: caseSummaryRes.data.prior_treatment ?? null,
             symptoms_timeline: caseSummaryRes.data.symptoms_timeline ?? null,
-            suggested_diagnoses: caseSummaryRes.data.suggested_diagnoses ?? null,
           }
         : null,
       pmExtraction: pmRes.data
@@ -446,7 +455,6 @@ async function gatherProcedureNoteSourceData(
             const overrides = pmRes.data.provider_overrides as {
               chief_complaints?: unknown
               physical_exam?: unknown
-              diagnoses?: unknown
               treatment_plan?: unknown
             } | null
             const pmUpdatedAt = pmRes.data.updated_at as string | null
@@ -456,42 +464,12 @@ async function gatherProcedureNoteSourceData(
             return {
               chief_complaints: overrides?.chief_complaints ?? pmRes.data.chief_complaints,
               physical_exam: overrides?.physical_exam ?? pmRes.data.physical_exam,
-              diagnoses: overrides?.diagnoses ?? pmRes.data.diagnoses,
               treatment_plan: overrides?.treatment_plan ?? pmRes.data.treatment_plan,
               diagnostic_studies_summary: pmRes.data.diagnostic_studies_summary,
               updated_after_procedure: updatedAfterProcedure,
             }
           })()
         : null,
-      // Supplementary PM-sourced candidate codes: codes present in the
-      // PM extraction but NOT already committed on procedureRecord.diagnoses.
-      // Dedup keyed on uppercased icd10_code so the LLM sees each candidate
-      // code at most once across the two sources. Preserves per-code
-      // evidence tags (imaging_support, exam_support, source_quote) for
-      // Filter F gating.
-      pmSupplementaryDiagnoses: (() => {
-        if (!pmRes.data) return []
-        const overrides = pmRes.data.provider_overrides as { diagnoses?: unknown } | null
-        const pmDxRaw = (overrides?.diagnoses ?? pmRes.data.diagnoses) as unknown
-        if (!Array.isArray(pmDxRaw)) return []
-        const committedCodes = new Set(
-          diagnoses
-            .map((d) => d.icd10_code?.toUpperCase())
-            .filter((c): c is string => !!c),
-        )
-        return (pmDxRaw as Array<Record<string, unknown>>)
-          .filter((d) => {
-            const code = typeof d.icd10_code === 'string' ? d.icd10_code.toUpperCase() : null
-            return code != null && !committedCodes.has(code)
-          })
-          .map((d) => ({
-            icd10_code: (d.icd10_code as string) ?? null,
-            description: (d.description as string) ?? '',
-            imaging_support: (d.imaging_support as string | null | undefined) ?? null,
-            exam_support: (d.exam_support as string | null | undefined) ?? null,
-            source_quote: (d.source_quote as string | null | undefined) ?? null,
-          }))
-      })(),
       initialVisitNote: initialVisitNote
         ? {
             past_medical_history: initialVisitNote.past_medical_history,
@@ -511,7 +489,7 @@ async function gatherProcedureNoteSourceData(
               subjective: sections.subjective,
               assessment_summary: sections.assessment_summary,
               procedure_injection: sections.procedure_injection,
-              assessment_and_plan: sections.assessment_and_plan,
+              assessment_and_plan: stripDiagnosisBlock(sections.assessment_and_plan),
               prognosis: sections.prognosis,
             },
           }
@@ -750,8 +728,39 @@ export async function generateProcedureNote(
     return { error: result.error || 'Note generation failed' }
   }
 
+  const { data: latestProcedure } = await supabase.from('procedures')
+    .select('diagnoses,updated_at')
+    .eq('id', procedureId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  let latestDiagnoses
+  try {
+    latestDiagnoses = latestProcedure ? normalizeVisitDiagnoses(latestProcedure.diagnoses) : null
+  } catch {
+    latestDiagnoses = null
+  }
+  if (
+    !latestDiagnoses
+    || latestProcedure?.updated_at !== inputData.procedureDiagnosisVersion
+    || JSON.stringify(latestDiagnoses) !== JSON.stringify(inputData.procedureRecord.diagnoses)
+  ) {
+    await supabase.from('procedure_notes').update({
+      status: 'failed',
+      generation_error: 'Procedure diagnoses changed during generation. Review the procedure and generate again.',
+      updated_by_user_id: user.id,
+    }).eq('id', recordId)
+    return { error: 'Procedure diagnoses changed during generation. Review the procedure and generate again.' }
+  }
+
   // Write success
-  const data = result.data!
+  const data = {
+    ...result.data,
+    assessment_and_plan: replaceDiagnosisBlock(
+      result.data.assessment_and_plan,
+      inputData.procedureRecord.diagnoses,
+    ),
+  }
   const narrativeWarnings = validateNarrative(data as unknown as Record<string, string | null>, {
     duplicateScope: [
       'subjective',
@@ -794,6 +803,7 @@ export async function generateProcedureNote(
       procedure_post_care: data.procedure_post_care,
       procedure_followup: data.procedure_followup,
       assessment_and_plan: data.assessment_and_plan,
+      diagnoses_snapshot: inputData.procedureRecord.diagnoses,
       patient_education: data.patient_education,
       prognosis: data.prognosis,
       clinician_disclaimer: data.clinician_disclaimer,
@@ -848,10 +858,26 @@ export async function saveProcedureNote(procedureId: string, caseId: string, val
   const validated = procedureNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
+  const { data: procedure } = await supabase.from('procedures')
+    .select('diagnoses')
+    .eq('id', procedureId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  let diagnoses
+  try {
+    diagnoses = procedure ? normalizeVisitDiagnoses(procedure.diagnoses) : null
+  } catch {
+    diagnoses = null
+  }
+  if (!diagnoses) return { error: 'Procedure diagnoses are invalid' }
+
   const { error } = await supabase
     .from('procedure_notes')
     .update({
       ...validated.data,
+      assessment_and_plan: replaceDiagnosisBlock(validated.data.assessment_and_plan, diagnoses),
+      diagnoses_snapshot: diagnoses,
       updated_by_user_id: user.id,
     })
     .eq('procedure_id', procedureId)
@@ -887,12 +913,22 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
 
   const { data: procedureOwnership } = await supabase
     .from('procedures')
-    .select('episode_id,source_encounter_id')
+    .select('episode_id,source_encounter_id,diagnoses')
     .eq('id', procedureId)
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .single()
   if (!procedureOwnership?.episode_id) return { error: 'Procedure episode not found' }
+  let procedureDiagnoses
+  try {
+    procedureDiagnoses = normalizeVisitDiagnoses(procedureOwnership.diagnoses)
+    assertProcedureDiagnosisBlockMatches(note.assessment_and_plan, procedureDiagnoses)
+    if (JSON.stringify(note.diagnoses_snapshot) !== JSON.stringify(procedureDiagnoses)) {
+      throw new Error('Procedure diagnosis snapshot does not match the procedure record')
+    }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Procedure diagnoses do not match this note' }
+  }
 
   // Gate: block finalization of "unplanned" procedures unless provider
   // has explicitly acknowledged. This mirrors the consent_obtained
@@ -1141,13 +1177,22 @@ export async function regenerateProcedureNoteSectionAction(
   const otherSections = Object.fromEntries(
     procedureNoteSections
       .filter((s) => s !== section)
-      .map((s) => [s, (note[s] as string | null) ?? '']),
+      .map((s) => [
+        s,
+        s === 'assessment_and_plan'
+          ? stripDiagnosisBlock(note[s] as string | null) ?? ''
+          : (note[s] as string | null) ?? '',
+      ]),
   ) as Partial<Record<ProcedureNoteSection, string>>
 
   const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections, findingFix)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }
+
+  const content = section === 'assessment_and_plan'
+    ? replaceDiagnosisBlock(result.data, inputData.procedureRecord.diagnoses)
+    : result.data
 
   // Merge the regenerated section into raw_ai_response so the audit blob
   // reflects what is actually surfaced. Without this merge, full-gen
@@ -1157,14 +1202,17 @@ export async function regenerateProcedureNoteSectionAction(
   const rawResponse = note.raw_ai_response as Record<string, unknown> | null
   const mergedRawResponse: Record<string, unknown> = {
     ...(rawResponse ?? {}),
-    [section]: result.data,
+    [section]: content,
   }
 
   // Update target section + audit blob.
   const { error: updateError } = await supabase
     .from('procedure_notes')
     .update({
-      [section]: result.data,
+      [section]: content,
+      ...(section === 'assessment_and_plan'
+        ? { diagnoses_snapshot: inputData.procedureRecord.diagnoses }
+        : {}),
       raw_ai_response: mergedRawResponse,
       updated_by_user_id: user.id,
     })
@@ -1173,7 +1221,7 @@ export async function regenerateProcedureNoteSectionAction(
   if (updateError) return { error: 'Failed to update section' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-  return { data: { content: result.data } }
+  return { data: { content } }
 }
 
 // --- Save tone hint (auto-save from draft editor) ---

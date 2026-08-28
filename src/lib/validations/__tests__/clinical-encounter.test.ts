@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   clinicalEncounterInputSchema,
+  saveEncounterDiagnosesSchema,
   updatePainFollowUpEncounterSchema,
+  visitDiagnosisListSchema,
 } from '../clinical-encounter'
 
 const baseEncounter = {
@@ -68,6 +70,32 @@ describe('updatePainFollowUpEncounterSchema', () => {
       encounter_id: '33333333-3333-4333-8333-333333333333',
       modality: 'in_person',
       telehealth_consent_obtained: true,
+    }).success).toBe(false)
+  })
+})
+
+describe('visit diagnosis schemas', () => {
+  it('accepts structured visit diagnoses', () => {
+    expect(visitDiagnosisListSchema.safeParse([
+      { icd10_code: 'M54.50', description: 'Low back pain, unspecified' },
+    ]).success).toBe(true)
+  })
+
+  it('rejects empty fields and unexpected diagnosis keys', () => {
+    expect(visitDiagnosisListSchema.safeParse([
+      { icd10_code: '', description: 'Low back pain' },
+    ]).success).toBe(false)
+    expect(visitDiagnosisListSchema.safeParse([
+      { icd10_code: 'M54.50', description: 'Low back pain', selected: true },
+    ]).success).toBe(false)
+  })
+
+  it('does not accept client-owned confirmation metadata', () => {
+    expect(saveEncounterDiagnosesSchema.safeParse({
+      case_id: '11111111-1111-4111-8111-111111111111',
+      encounter_id: '33333333-3333-4333-8333-333333333333',
+      diagnoses: [],
+      diagnoses_confirmed_at: '2026-08-28T12:00:00Z',
     }).success).toBe(false)
   })
 })

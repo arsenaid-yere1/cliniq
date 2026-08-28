@@ -39,6 +39,10 @@ export interface QualityReviewInputData {
     visit_date: string | null
     status: string
     diagnoses: string | null
+    diagnoses_snapshot: unknown
+    encounter_id: string | null
+    encounter_diagnoses: unknown
+    diagnoses_confirmed_at: string | null
     chief_complaint: string | null
     physical_exam: string | null
     treatment_plan: string | null
@@ -51,6 +55,10 @@ export interface QualityReviewInputData {
     visit_date: string | null
     status: string
     diagnoses: string | null
+    diagnoses_snapshot: unknown
+    encounter_id: string | null
+    encounter_diagnoses: unknown
+    diagnoses_confirmed_at: string | null
     chief_complaint: string | null
     physical_exam: string | null
     treatment_plan: string | null
@@ -69,6 +77,10 @@ export interface QualityReviewInputData {
     telehealth_observations: string | null
     assessment: string | null
     diagnoses: string | null
+    diagnoses_snapshot: unknown
+    encounter_diagnoses: unknown
+    diagnoses_confirmed_at: string | null
+    procedure_recommendations: unknown
     treatment_plan: string | null
     clinician_disclaimer: string | null
   }>
@@ -87,6 +99,7 @@ export interface QualityReviewInputData {
     pain_score_min: number | null
     pain_score_max: number | null
     diagnoses: unknown
+    diagnoses_snapshot: unknown
     raw_ai_response: unknown
   }>
   dischargeNote: {

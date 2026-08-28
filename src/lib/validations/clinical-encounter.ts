@@ -8,6 +8,19 @@ import {
 const optionalUuid = z.string().uuid().nullable().optional()
 const optionalDateTime = z.string().datetime({ offset: true }).nullable().optional()
 
+export const visitDiagnosisSchema = z.object({
+  icd10_code: z.string().trim().min(1).max(20),
+  description: z.string().trim().min(1).max(500),
+}).strict()
+
+export const visitDiagnosisListSchema = z.array(visitDiagnosisSchema).max(100)
+
+export const saveEncounterDiagnosesSchema = z.object({
+  case_id: z.string().uuid(),
+  encounter_id: z.string().uuid(),
+  diagnoses: visitDiagnosisListSchema,
+}).strict()
+
 export const patientReportedMeasurementsSchema = z.record(
   z.string(),
   z.object({
@@ -135,3 +148,5 @@ export type ClinicalEncounterInput = z.infer<typeof clinicalEncounterInputSchema
 export type FirstReturnEncounterInput = z.infer<typeof firstReturnEncounterSchema>
 export type SchedulePainFollowUpInput = z.infer<typeof schedulePainFollowUpSchema>
 export type UpdatePainFollowUpEncounterInput = z.infer<typeof updatePainFollowUpEncounterSchema>
+export type VisitDiagnosis = z.infer<typeof visitDiagnosisSchema>
+export type SaveEncounterDiagnosesInput = z.infer<typeof saveEncounterDiagnosesSchema>

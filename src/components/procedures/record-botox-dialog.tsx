@@ -98,14 +98,7 @@ export function RecordBotoxDialog({
       sites: initialData?.sites ?? [],
       diagnoses: Array.isArray(initialData?.diagnoses)
         ? (initialData.diagnoses as BotoxProcedureFormValues['diagnoses'])
-        : diagnosisSuggestions
-            .filter((d): d is typeof d & { icd10_code: string } => !!d.icd10_code)
-            .filter((d) => {
-              const hasEvidenceTags = d.imaging_support !== undefined || d.exam_support !== undefined
-              if (!hasEvidenceTags) return true
-              return d.imaging_support === 'confirmed' && d.exam_support === 'objective'
-            })
-            .map((d) => ({ icd10_code: d.icd10_code, description: d.description })),
+        : [],
       consent_obtained: initialData?.consent_obtained ?? true,
       vital_signs: initialData?._vitals ?? NULL_VITALS,
       botox_dosing: {

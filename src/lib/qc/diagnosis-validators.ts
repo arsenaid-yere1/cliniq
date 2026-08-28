@@ -22,6 +22,12 @@ import {
   isInitialEncounterSuffix,
   isM545Parent,
 } from '@/lib/icd10/seventh-character'
+import {
+  assertRecommendationDiagnosesInPool,
+  formatVisitDiagnoses,
+  normalizeVisitDiagnoses,
+} from '@/lib/clinical/visit-diagnoses'
+import { assertProcedureDiagnosisBlockMatches } from '@/lib/clinical/procedure-diagnoses'
 
 // Synthetic section_key sentinels — used for finding hash stability and
 // verifyFinding dispatch. Not real form sections; UI does not route on these.
@@ -31,6 +37,10 @@ import {
 export const SECTION_QC_EXTERNAL_CAUSE_CHAIN = '_qc_external_cause_chain'
 export const SECTION_QC_SEVENTH_CHARACTER_INTEGRITY =
   '_qc_seventh_character_integrity'
+export const SECTION_QC_VISIT_DIAGNOSIS_UNCONFIRMED = '_qc_visit_diagnosis_unconfirmed'
+export const SECTION_QC_NOTE_DIAGNOSIS_MISMATCH = '_qc_note_diagnosis_mismatch'
+export const SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL = '_qc_recommendation_diagnosis_outside_pool'
+export const SECTION_QC_PROCEDURE_DIAGNOSIS_MISMATCH = '_qc_procedure_diagnosis_mismatch'
 
 function diagnosesFromProcedure(proc: { diagnoses: unknown }): string[] {
   if (!Array.isArray(proc.diagnoses)) return []
@@ -211,6 +221,103 @@ export function validateSeventhCharacterIntegrity(
           suggested_tone_hint: 'Regenerate IV diagnoses with M54.50.',
         }))
       }
+    }
+  }
+
+  return findings
+}
+
+function sameJson(left: unknown, right: unknown) {
+  try {
+    return JSON.stringify(normalizeVisitDiagnoses(left)) === JSON.stringify(normalizeVisitDiagnoses(right))
+  } catch {
+    return false
+  }
+}
+
+export function validateVisitDiagnosisAuthority(input: QualityReviewInputData): QualityFinding[] {
+  const findings: QualityFinding[] = []
+  const visitNotes = [
+    input.initialVisitNote && { ...input.initialVisitNote, step: 'initial_visit' as const },
+    input.painEvaluationNote && { ...input.painEvaluationNote, step: 'pain_evaluation' as const },
+    ...(input.painFollowUpNotes ?? []).map((note) => ({ ...note, step: 'pain_follow_up' as const })),
+  ].filter((note): note is NonNullable<typeof note> => Boolean(note))
+
+  for (const note of visitNotes) {
+    if (note.status !== 'finalized' && !note.diagnoses_confirmed_at) {
+      findings.push(withDefaultScore({
+        severity: 'warning',
+        step: note.step,
+        note_id: note.id,
+        procedure_id: null,
+        encounter_id: note.encounter_id,
+        section_key: SECTION_QC_VISIT_DIAGNOSIS_UNCONFIRMED,
+        message: 'Visit diagnosis selection has not been confirmed',
+        rationale: 'Generation and finalization require an explicit clinician review, including for an empty list.',
+        suggested_tone_hint: null,
+      }))
+      continue
+    }
+    if (note.diagnoses_confirmed_at) {
+      let expected = ''
+      try { expected = formatVisitDiagnoses(normalizeVisitDiagnoses(note.encounter_diagnoses)) }
+      catch { expected = '' }
+      if (note.diagnoses !== expected || !sameJson(note.diagnoses_snapshot, note.encounter_diagnoses)) {
+        findings.push(withDefaultScore({
+          severity: 'critical',
+          step: note.step,
+          note_id: note.id,
+          procedure_id: null,
+          encounter_id: note.encounter_id,
+          section_key: SECTION_QC_NOTE_DIAGNOSIS_MISMATCH,
+          message: 'Note diagnoses do not match the confirmed encounter selection',
+          rationale: 'The structured encounter selection is the diagnosis source of truth for this visit.',
+          suggested_tone_hint: null,
+        }))
+      }
+    }
+    if (note.step === 'pain_follow_up' && note.diagnoses_confirmed_at) {
+      try {
+        assertRecommendationDiagnosesInPool(
+          Array.isArray(note.procedure_recommendations) ? note.procedure_recommendations as never[] : [],
+          normalizeVisitDiagnoses(note.encounter_diagnoses),
+        )
+      } catch {
+        findings.push(withDefaultScore({
+          severity: 'critical',
+          step: note.step,
+          note_id: note.id,
+          procedure_id: null,
+          encounter_id: note.encounter_id,
+          section_key: SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL,
+          message: 'Procedure recommendation references a diagnosis outside the confirmed visit pool',
+          rationale: 'Recommendations may only use diagnoses explicitly confirmed for this encounter.',
+          suggested_tone_hint: null,
+        }))
+      }
+    }
+  }
+
+  for (const note of input.procedureNotes) {
+    try {
+      const diagnoses = normalizeVisitDiagnoses(note.diagnoses)
+      if (!sameJson(note.diagnoses_snapshot, diagnoses)) throw new Error('snapshot mismatch')
+      assertProcedureDiagnosisBlockMatches(note.assessment_and_plan, diagnoses)
+    } catch {
+      if (note.status === 'finalized' && Array.isArray(note.diagnoses_snapshot) && note.diagnoses_snapshot.length === 0) {
+        continue
+      }
+      findings.push(withDefaultScore({
+        severity: 'critical',
+        step: 'procedure',
+        note_id: note.id,
+        procedure_id: note.procedure_id,
+        encounter_id: null,
+        section_key: SECTION_QC_PROCEDURE_DIAGNOSIS_MISMATCH,
+        message: `Procedure note ${note.procedure_number} diagnoses do not match the procedure record`,
+        rationale: 'The procedure record is the sole diagnosis authority for its generated note.',
+        suggested_tone_hint: null,
+      }))
     }
   }
 

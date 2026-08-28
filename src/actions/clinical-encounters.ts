@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 import { requireWritableEpisode } from '@/lib/clinical/episode-context'
 import { alignTelehealthConsentToEncounterDate } from '@/lib/clinical/encounter-dates'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
+import { normalizeVisitDiagnoses } from '@/lib/clinical/visit-diagnoses'
 import {
   changeEncounterStatusSchema,
+  saveEncounterDiagnosesSchema,
   schedulePainFollowUpSchema,
   updatePainFollowUpEncounterSchema,
   type SchedulePainFollowUpInput,
@@ -28,6 +30,105 @@ export async function listClinicalEncounters(caseId: string, episodeId?: string)
   if (episodeId) query = query.eq('episode_id', episodeId)
   const { data, error } = await query
   return error ? { error: 'Unable to load visits', data: [] } : { data: data ?? [] }
+}
+
+export async function getEncounterDiagnoses(caseId: string, encounterId: string) {
+  const { supabase, user } = await authenticatedClient()
+  if (!user) return { error: 'Not authenticated', data: null }
+
+  const { data, error } = await supabase.from('clinical_encounters')
+    .select('id,case_id,episode_id,provider_id,status,diagnoses,diagnoses_confirmed_at,diagnoses_confirmed_by_user_id')
+    .eq('id', encounterId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (error || !data) return { error: 'Visit not found', data: null }
+  return { data, error: null }
+}
+
+export async function saveEncounterDiagnoses(
+  caseId: string,
+  encounterId: string,
+  diagnoses: unknown,
+) {
+  const parsed = saveEncounterDiagnosesSchema.safeParse({
+    case_id: caseId,
+    encounter_id: encounterId,
+    diagnoses,
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Invalid diagnoses' }
+  }
+
+  const { supabase, user } = await authenticatedClient()
+  if (!user) return { error: 'Not authenticated' }
+
+  const [{ data: encounter, error: encounterError }, { data: actor, error: actorError }] = await Promise.all([
+    supabase.from('clinical_encounters')
+      .select('id,case_id,episode_id,provider_id,status')
+      .eq('id', encounterId)
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    supabase.from('users')
+      .select('role,is_active')
+      .eq('id', user.id)
+      .maybeSingle(),
+  ])
+
+  if (encounterError || !encounter) return { error: 'Visit not found' }
+  if (actorError || !actor?.is_active) return { error: 'Active user account required' }
+  if (['completed', 'cancelled', 'no_show'].includes(encounter.status)) {
+    return { error: 'Diagnoses cannot be changed on a locked encounter' }
+  }
+
+  try {
+    await requireWritableEpisode(caseId, encounter.episode_id, supabase)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Episode is not writable' }
+  }
+
+  let authorized = actor.role === 'admin'
+  if (!authorized && actor.role === 'provider') {
+    const { data: providerProfile } = await supabase.from('provider_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    authorized = providerProfile?.id === encounter.provider_id
+  }
+  if (!authorized) {
+    return { error: 'Only the encounter provider or an administrator may confirm diagnoses' }
+  }
+
+  let normalized
+  try {
+    normalized = normalizeVisitDiagnoses(parsed.data.diagnoses)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Invalid diagnoses' }
+  }
+
+  const { data, error } = await supabase.from('clinical_encounters')
+    .update({
+      diagnoses: normalized,
+      updated_by_user_id: user.id,
+    })
+    .eq('id', encounterId)
+    .eq('case_id', caseId)
+    .select('id,diagnoses,diagnoses_confirmed_at,diagnoses_confirmed_by_user_id')
+    .single()
+
+  if (error || !data) {
+    return { error: error?.message?.includes('locked encounter')
+      ? 'Diagnoses cannot be changed on a locked encounter'
+      : 'Unable to confirm visit diagnoses' }
+  }
+
+  revalidatePath(`/patients/${caseId}/visits`)
+  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  revalidatePath(`/patients/${caseId}/initial-visit`)
+  return { data }
 }
 
 export async function schedulePainFollowUp(input: SchedulePainFollowUpInput) {

@@ -48,6 +48,7 @@ const emptyInput: ProcedureNoteInputData = {
     activity_restriction_hrs: null,
     plan_deviation_reason: null,
   },
+  procedureDiagnosisVersion: '2026-08-28T12:00:00Z',
   vitalSigns: null,
   priorProcedures: [],
   intakePain: null,
@@ -65,7 +66,6 @@ const emptyInput: ProcedureNoteInputData = {
   },
   caseSummary: null,
   pmExtraction: null,
-  pmSupplementaryDiagnoses: [],
   initialVisitNote: null,
   planAlignment: { status: 'no_plan_on_file', planned: null, mismatches: [] },
   priorProcedureNotes: [],
@@ -87,6 +87,22 @@ describe('generateProcedureNoteFromData', () => {
     expect(opts.model).toBe('claude-opus-4-6')
     expect(opts.toolName).toBe('generate_procedure_note')
     expect(opts.maxTokens).toBe(16384)
+  })
+
+  it('makes the procedure record the sole diagnosis authority', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData({
+      ...emptyInput,
+      procedureRecord: {
+        ...emptyInput.procedureRecord,
+        diagnoses: [{ icd10_code: 'M54.50', description: 'Low back pain' }],
+      },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.system).toContain('procedureRecord.diagnoses is the complete provider-committed diagnosis list')
+    expect(opts.messages[0].content).toContain('"M54.50"')
+    expect(opts.messages[0].content).not.toContain('"suggested_diagnoses"')
+    expect(opts.messages[0].content).not.toContain('"pmSupplementaryDiagnoses"')
   })
 })
 

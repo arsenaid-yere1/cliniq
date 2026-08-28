@@ -890,6 +890,9 @@ export type Database = {
           created_at: string
           created_by_user_id: string | null
           deleted_at: string | null
+          diagnoses: Json
+          diagnoses_confirmed_at: string | null
+          diagnoses_confirmed_by_user_id: string | null
           encounter_date: string | null
           encounter_type: string
           episode_id: string
@@ -918,6 +921,9 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: Json
+          diagnoses_confirmed_at?: string | null
+          diagnoses_confirmed_by_user_id?: string | null
           encounter_date?: string | null
           encounter_type: string
           episode_id: string
@@ -946,6 +952,9 @@ export type Database = {
           created_at?: string
           created_by_user_id?: string | null
           deleted_at?: string | null
+          diagnoses?: Json
+          diagnoses_confirmed_at?: string | null
+          diagnoses_confirmed_by_user_id?: string | null
           encounter_date?: string | null
           encounter_type?: string
           episode_id?: string
@@ -978,6 +987,13 @@ export type Database = {
           {
             foreignKeyName: "clinical_encounters_created_by_user_id_fkey"
             columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_encounters_diagnoses_confirmed_by_user_id_fkey"
+            columns: ["diagnoses_confirmed_by_user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -1310,6 +1326,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "discharge_note_corrections_cancelled_by_user_id_fkey"
+            columns: ["cancelled_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "discharge_note_corrections_case_id_fkey"
             columns: ["case_id"]
             isOneToOne: false
@@ -1324,11 +1347,25 @@ export type Database = {
             referencedColumns: ["id", "case_id"]
           },
           {
+            foreignKeyName: "discharge_note_corrections_finalized_by_user_id_fkey"
+            columns: ["finalized_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "discharge_note_corrections_note_ownership_fkey"
             columns: ["discharge_note_id", "episode_id", "case_id"]
             isOneToOne: false
             referencedRelation: "discharge_notes"
             referencedColumns: ["id", "episode_id", "case_id"]
+          },
+          {
+            foreignKeyName: "discharge_note_corrections_opened_by_user_id_fkey"
+            columns: ["opened_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "discharge_note_corrections_original_document_id_fkey"
@@ -1754,6 +1791,7 @@ export type Database = {
           created_by_user_id: string | null
           deleted_at: string | null
           diagnoses: string | null
+          diagnoses_snapshot: Json
           document_id: string | null
           encounter_id: string | null
           episode_id: string | null
@@ -1797,6 +1835,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           encounter_id?: string | null
           episode_id?: string | null
@@ -1840,6 +1879,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           encounter_id?: string | null
           episode_id?: string | null
@@ -2559,6 +2599,7 @@ export type Database = {
           created_by_user_id: string | null
           deleted_at: string | null
           diagnoses: string | null
+          diagnoses_snapshot: Json
           document_id: string | null
           encounter_id: string
           episode_id: string
@@ -2594,6 +2635,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           encounter_id: string
           episode_id: string
@@ -2629,6 +2671,7 @@ export type Database = {
           created_by_user_id?: string | null
           deleted_at?: string | null
           diagnoses?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           encounter_id?: string
           episode_id?: string
@@ -3149,6 +3192,7 @@ export type Database = {
           created_by_user_id: string | null
           current_medications: string | null
           deleted_at: string | null
+          diagnoses_snapshot: Json
           document_id: string | null
           finalized_at: string | null
           finalized_by_user_id: string | null
@@ -3193,6 +3237,7 @@ export type Database = {
           created_by_user_id?: string | null
           current_medications?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
@@ -3237,6 +3282,7 @@ export type Database = {
           created_by_user_id?: string | null
           current_medications?: string | null
           deleted_at?: string | null
+          diagnoses_snapshot?: Json
           document_id?: string | null
           finalized_at?: string | null
           finalized_by_user_id?: string | null
@@ -4410,6 +4456,16 @@ export type Database = {
         Args: { p_case_id: string; p_procedure_id: string }
         Returns: Json
       }
+      finalize_discharge_correction: {
+        Args: {
+          p_case_id: string
+          p_correction_id: string
+          p_document_id: string
+          p_episode_id: string
+          p_note_id: string
+        }
+        Returns: string
+      }
       finalize_episode_discharge: {
         Args: {
           p_case_id: string
@@ -4422,16 +4478,6 @@ export type Database = {
           note_id: string
           replayed: boolean
         }[]
-      }
-      finalize_discharge_correction: {
-        Args: {
-          p_case_id: string
-          p_correction_id: string
-          p_document_id: string
-          p_episode_id: string
-          p_note_id: string
-        }
-        Returns: string
       }
       finalize_pain_follow_up: {
         Args: {
@@ -4446,6 +4492,15 @@ export type Database = {
           replayed: boolean
         }[]
       }
+      format_procedure_diagnoses: { Args: { value: Json }; Returns: string }
+      format_visit_diagnoses: { Args: { value: Json }; Returns: string }
+      prepare_evaluation_visit: {
+        Args: { p_case_id: string; p_visit_type: string }
+        Returns: {
+          encounter_id: string
+          episode_id: string
+        }[]
+      }
       reschedule_procedure_appointment: {
         Args: {
           p_appointment_id: string
@@ -4458,15 +4513,6 @@ export type Database = {
         }
         Returns: Json
       }
-      save_invoice_with_claims: {
-        Args: {
-          p_case_id: string
-          p_invoice: Json
-          p_invoice_id: string
-          p_lines: Json
-        }
-        Returns: string
-      }
       save_discharge_correction: {
         Args: {
           p_case_id: string
@@ -4474,6 +4520,15 @@ export type Database = {
           p_episode_id: string
           p_note_id: string
           p_values: Json
+        }
+        Returns: string
+      }
+      save_invoice_with_claims: {
+        Args: {
+          p_case_id: string
+          p_invoice: Json
+          p_invoice_id: string
+          p_lines: Json
         }
         Returns: string
       }
@@ -4519,6 +4574,7 @@ export type Database = {
         Args: { p_case_id: string; p_note_id: string }
         Returns: string
       }
+      valid_diagnosis_array: { Args: { value: Json }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
