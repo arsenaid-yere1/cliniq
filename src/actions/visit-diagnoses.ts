@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { normalizeVisitDiagnoses } from '@/lib/clinical/visit-diagnoses'
 import { encounterTimestamp, isEarlierEncounter } from '@/lib/clinical/visit-diagnosis-history'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
+import { buildCurrentEncounterDiagnosisSource } from '@/lib/clinical/current-visit-diagnosis-source'
+import { suggestVisitDiagnoses } from '@/lib/claude/suggest-visit-diagnoses'
 import type { VisitDiagnosis } from '@/lib/validations/clinical-encounter'
 
 export type EncounterDiagnosisSuggestion = {
@@ -14,6 +16,71 @@ export type EncounterDiagnosisSuggestion = {
   source_id: string
   source_date: string | null
   provider_label: string | null
+}
+
+export type CurrentVisitDiagnosisSuggestionResult = {
+  data: VisitDiagnosis[]
+  error: string | null
+  status: 'ready' | 'insufficient_source' | 'error'
+}
+
+export async function suggestCurrentEncounterDiagnoses(
+  caseId: string,
+  encounterId: string,
+): Promise<CurrentVisitDiagnosisSuggestionResult> {
+  const failed = (error: string): CurrentVisitDiagnosisSuggestionResult => ({ data: [], error, status: 'error' })
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return failed('Not authenticated')
+
+  const [{ data: encounter, error: encounterError }, { data: actor, error: actorError }] = await Promise.all([
+    supabase.from('clinical_encounters')
+      .select('id,case_id,encounter_type,provider_id,status,reason_for_visit,provider_intake,patient_reported_pain_min,patient_reported_pain_max')
+      .eq('id', encounterId)
+      .eq('case_id', caseId)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    supabase.from('users')
+      .select('role,is_active')
+      .eq('id', user.id)
+      .maybeSingle(),
+  ])
+
+  if (encounterError || !encounter) return failed('Visit not found')
+  if (actorError || !actor?.is_active) return failed('Active user account required')
+  if (['completed', 'cancelled', 'no_show'].includes(encounter.status)) {
+    return failed('Diagnosis suggestions are unavailable for a locked encounter')
+  }
+
+  let authorized = actor.role === 'admin'
+  if (!authorized && actor.role === 'provider') {
+    const { data: providerProfile } = await supabase.from('provider_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    authorized = providerProfile?.id === encounter.provider_id
+  }
+  if (!authorized) return failed('Only the encounter provider or an administrator may request diagnosis suggestions')
+
+  let evaluationProviderIntake: unknown
+  if (encounter.encounter_type === 'initial_evaluation' || encounter.encounter_type === 'pain_evaluation') {
+    const { data: note, error: noteError } = await supabase.from('initial_visit_notes')
+      .select('provider_intake')
+      .eq('case_id', caseId)
+      .eq('encounter_id', encounterId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (noteError || !note) return failed('Unable to load current visit intake')
+    evaluationProviderIntake = note.provider_intake
+  }
+
+  const source = buildCurrentEncounterDiagnosisSource(encounter, evaluationProviderIntake)
+  if (!source) return { data: [], error: null, status: 'insufficient_source' }
+
+  const result = await suggestVisitDiagnoses(source)
+  if (result.error || !result.data) return failed(result.error ?? 'Unable to suggest diagnoses from this visit')
+  return { data: result.data, error: null, status: 'ready' }
 }
 
 export async function getEncounterDiagnosisSuggestions(caseId: string, encounterId: string) {

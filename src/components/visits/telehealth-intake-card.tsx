@@ -1,10 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { Loader2, Sparkles } from 'lucide-react'
 import { changePainFollowUpStatus, saveEncounterDiagnoses, updatePainFollowUpEncounter } from '@/actions/clinical-encounters'
-import { getEncounterDiagnosisSuggestions, type EncounterDiagnosisSuggestion } from '@/actions/visit-diagnoses'
+import {
+  getEncounterDiagnosisSuggestions,
+  suggestCurrentEncounterDiagnoses,
+  type EncounterDiagnosisSuggestion,
+} from '@/actions/visit-diagnoses'
 import { DiagnosisCombobox, type ClinicalDiagnosis } from '@/components/clinical/diagnosis-combobox'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +41,35 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
   })
   const [diagnosisSuggestions, setDiagnosisSuggestions] = useState<EncounterDiagnosisSuggestion[]>([])
   const [diagnosesDirty, setDiagnosesDirty] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionStatus, setSuggestionStatus] = useState<'idle' | 'ready' | 'insufficient' | 'error'>('idle')
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
+  const userEditedDiagnosesRef = useRef(false)
+
+  const requestCurrentVisitSuggestions = useCallback(async (force = false) => {
+    if (locked || encounter.diagnoses_confirmed_at) return
+    if (!force && (userEditedDiagnosesRef.current || diagnoses.length > 0)) return
+
+    setSuggesting(true)
+    setSuggestionError(null)
+    const result = await suggestCurrentEncounterDiagnoses(caseId, encounter.id)
+    setSuggesting(false)
+
+    if (result.error) {
+      setSuggestionStatus('error')
+      setSuggestionError(result.error)
+      return
+    }
+    if (result.status === 'insufficient_source') {
+      setSuggestionStatus('insufficient')
+      return
+    }
+
+    setDiagnoses(result.data)
+    setDiagnosesDirty(result.data.length > 0)
+    userEditedDiagnosesRef.current = false
+    setSuggestionStatus('ready')
+  }, [caseId, diagnoses.length, encounter.diagnoses_confirmed_at, encounter.id, locked])
 
   useEffect(() => {
     let active = true
@@ -44,6 +78,11 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
     })
     return () => { active = false }
   }, [caseId, encounter.id])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void requestCurrentVisitSuggestions(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [requestCurrentVisitSuggestions])
 
   async function run(action: () => Promise<unknown>, message: string) {
     setPending(true)
@@ -55,7 +94,8 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
 
   async function save() {
     const start = scheduledStart ? new Date(scheduledStart) : null
-    await run(() => updatePainFollowUpEncounter(caseId, {
+    setPending(true)
+    const result = await updatePainFollowUpEncounter(caseId, {
       encounter_id: encounter.id,
       scheduled_start: start?.toISOString() ?? null,
       scheduled_end: start ? new Date(start.getTime() + 30 * 60_000).toISOString() : null,
@@ -70,7 +110,13 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
       patient_location_state: patientState || null,
       provider_location: providerLocation || null,
       connection_method: connection || null,
-    }), 'Visit intake saved')
+    })
+    setPending(false)
+    if ('error' in result) return toast.error(result.error)
+
+    toast.success('Visit intake saved')
+    if (!userEditedDiagnosesRef.current) await requestCurrentVisitSuggestions(true)
+    router.refresh()
   }
 
   async function changeStatus(status: 'in_progress' | 'cancelled' | 'no_show') {
@@ -94,11 +140,20 @@ export function TelehealthIntakeCard({ caseId, encounter }: { caseId: string; en
     <DiagnosisCombobox
       value={diagnoses}
       suggestions={diagnosisSuggestions}
-      disabled={locked || pending}
-      onChange={(value) => { setDiagnoses(value); setDiagnosesDirty(true) }}
+      disabled={locked || pending || suggesting}
+      onChange={(value) => {
+        userEditedDiagnosesRef.current = true
+        setDiagnoses(value)
+        setDiagnosesDirty(true)
+      }}
     />
+    {suggesting && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Suggesting diagnoses from this visit…</p>}
+    {!suggesting && suggestionStatus === 'ready' && <p className="text-xs text-muted-foreground">{diagnoses.length > 0 ? 'Provisional suggestions from this visit are shown above. Review, edit, and confirm them.' : 'No diagnosis was suggested from the saved current-visit evidence. You can add one manually.'}</p>}
+    {!suggesting && suggestionStatus === 'insufficient' && <p className="text-xs text-muted-foreground">Save current symptoms or observable findings to see diagnosis suggestions automatically.</p>}
+    {!suggesting && suggestionStatus === 'error' && <p className="text-xs text-destructive">{suggestionError}</p>}
     <div className="flex flex-wrap items-center gap-3">
-      {!locked && <Button variant="outline" onClick={confirmDiagnoses} disabled={pending || (!diagnosesDirty && encounter.diagnoses_confirmed_at !== null)}>
+      {!locked && <Button variant="ghost" size="sm" onClick={() => void requestCurrentVisitSuggestions(true)} disabled={pending || suggesting}><Sparkles className="mr-2 h-3.5 w-3.5" />Refresh from current visit</Button>}
+      {!locked && <Button variant="outline" onClick={confirmDiagnoses} disabled={pending || suggesting || (!diagnosesDirty && encounter.diagnoses_confirmed_at !== null)}>
         {encounter.diagnoses_confirmed_at ? 'Reconfirm diagnoses' : 'Confirm diagnoses'}
       </Button>}
       <span className="text-xs text-muted-foreground">

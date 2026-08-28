@@ -75,7 +75,11 @@ import {
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
-import { EncounterDiagnosisCard, type EncounterDiagnosisState } from '@/components/clinical/encounter-diagnosis-card'
+import {
+  CURRENT_VISIT_INTAKE_SAVED_EVENT,
+  EncounterDiagnosisCard,
+  type EncounterDiagnosisState,
+} from '@/components/clinical/encounter-diagnosis-card'
 
 interface NoteRow {
   id: string
@@ -636,6 +640,12 @@ function buildFullIntake(
   return { ...base, [section]: sectionData }
 }
 
+function announceProviderIntakeSaved(visitType: NoteVisitType) {
+  window.dispatchEvent(new CustomEvent(CURRENT_VISIT_INTAKE_SAVED_EVENT, {
+    detail: { visitType },
+  }))
+}
+
 // --- Chief Complaints Card ---
 
 function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
@@ -656,7 +666,10 @@ function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: Int
       const full = buildFullIntake(initialIntake, 'chief_complaints', values.chief_complaints)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else toast.success('Chief complaints saved')
+      else {
+        toast.success('Chief complaints saved')
+        announceProviderIntakeSaved(visitType)
+      }
     })
   }
 
@@ -809,7 +822,10 @@ function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: Int
       const full = buildFullIntake(initialIntake, 'accident_details', values.accident_details)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else toast.success('Accident details saved')
+      else {
+        toast.success('Accident details saved')
+        announceProviderIntakeSaved(visitType)
+      }
     })
   }
 
@@ -1081,7 +1097,10 @@ function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: Intake
       const full = buildFullIntake(initialIntake, 'exam_findings', values.exam_findings)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else toast.success('Exam findings saved')
+      else {
+        toast.success('Exam findings saved')
+        announceProviderIntakeSaved(visitType)
+      }
     })
   }
 
