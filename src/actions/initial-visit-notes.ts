@@ -84,6 +84,11 @@ export async function prepareEvaluationVisit(caseId: string, visitType: NoteVisi
   })
   const ownership = data?.[0]
   if (error || !ownership) {
+    console.error('[prepare-evaluation-visit] RPC failed', {
+      visitType,
+      code: error?.code,
+      message: error?.message,
+    })
     return { error: mapEvaluationVisitPreparationError(error) }
   }
 
