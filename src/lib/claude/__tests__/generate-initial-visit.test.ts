@@ -19,7 +19,7 @@ const emptyInput: InitialVisitInputData = {
   caseDetails: { case_number: 'C1', accident_type: null, accident_date: null, accident_description: null },
   caseSummary: {
     chief_complaint: null, imaging_findings: null, prior_treatment: null,
-    symptoms_timeline: null,
+    symptoms_timeline: null, suggested_diagnoses: null,
   },
   clinicInfo: {
     clinic_name: null, address_line1: null, address_line2: null, city: null,
@@ -29,8 +29,6 @@ const emptyInput: InitialVisitInputData = {
   vitalSigns: null,
   feeEstimate: null,
   providerIntake: null,
-  visitDiagnosisPool: [{ icd10_code: 'M54.50', description: 'Low back pain' }],
-  visitDiagnosisConfirmedAt: '2026-08-28T12:00:00Z',
   priorVisitData: null,
   hasApprovedDiagnosticExtractions: false,
   pmExtraction: null,
@@ -53,18 +51,6 @@ describe('generateInitialVisitFromData', () => {
     await generateInitialVisitFromData(emptyInput, 'initial_visit', 'be concise')
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.messages[0].content).toContain('be concise')
-  })
-
-  it('makes the encounter pool the only diagnosis authority in the payload', async () => {
-    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
-    await generateInitialVisitFromData(emptyInput, 'pain_evaluation_visit')
-    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
-    const payload = opts.messages[0].content as string
-    expect(payload).toContain('"visitDiagnosisPool"')
-    expect(payload).toContain('"M54.50"')
-    expect(payload).not.toContain('"suggested_diagnoses"')
-    expect(payload).not.toContain('"diagnoses":')
-    expect(opts.system).toContain('visitDiagnosisPool is the complete clinician-confirmed diagnosis list')
   })
 })
 
@@ -181,10 +167,12 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).toContain('replace M50.00/.01/.02 with M50.20')
   })
 
-  it('pain-eval prompt makes the encounter pool override legacy diagnosis guidance', async () => {
+  it('pain-eval prompt references pmExtraction provenance tags', async () => {
     const system = await capturePrompt(emptyInput)
-    expect(system).toContain('DIAGNOSIS AUTHORITY (OVERRIDES ALL DIAGNOSIS EXAMPLES BELOW)')
-    expect(system).toContain('Never add, infer, substitute, downgrade, or promote a code')
+    expect(system).toContain('pmExtraction.diagnoses')
+    expect(system).toContain('imaging_support')
+    expect(system).toContain('exam_support')
+    expect(system).toContain('source_quote')
   })
 
   it('pain-eval prompt instructs radicular-symptoms prose for downgraded radic codes', async () => {
@@ -216,10 +204,10 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).toContain('M54.59 (Other low back pain)')
   })
 
-  it('pain-eval prompt excludes historical suggestions as diagnosis sources', async () => {
+  it('pain-eval prompt contains suggested_diagnoses confidence handling', async () => {
     const system = await capturePrompt(emptyInput)
-    expect(system).toContain('Historical diagnosis suggestions — may inform narrative context only')
-    expect(system).toContain('Never copy a suggested code into the diagnosis section')
+    expect(system).toContain('suggested_diagnoses confidence handling')
+    expect(system).toContain('OMIT "low"-confidence entries unless independent imaging + exam evidence')
   })
 
   it('threads priorVisitData.vitalSigns into user payload when present', async () => {
@@ -232,6 +220,7 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
           physical_exam: null,
           imaging_findings: null,
           medical_necessity: null,
+          diagnoses: null,
           treatment_plan: null,
           prognosis: null,
           provider_intake: null,

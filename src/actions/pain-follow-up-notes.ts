@@ -8,12 +8,6 @@ import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visi
 import { generatePainFollowUp } from '@/lib/claude/generate-pain-follow-up'
 import { painFollowUpNoteEditSchema, type PainFollowUpNoteEditValues } from '@/lib/validations/pain-follow-up-note'
 import type { Json, Tables } from '@/types/database'
-import {
-  assertDiagnosisTextMatchesPool,
-  assertRecommendationDiagnosesInPool,
-  formatVisitDiagnoses,
-  requireConfirmedVisitDiagnosisPool,
-} from '@/lib/clinical/visit-diagnoses'
 
 const NOTE_SECTIONS = ['subjective','interval_history','review_of_systems','telehealth_observations','imaging_review','assessment','diagnoses','treatment_plan','patient_education','follow_up','clinician_disclaimer'] as const
 export type PainFollowUpSection = (typeof NOTE_SECTIONS)[number]
@@ -27,27 +21,18 @@ export async function getPainFollowUpNote(caseId: string, encounterId: string) {
 
 async function gatherSource(caseId: string, encounterId: string) {
   const supabase = await createClient()
-  const { data: encounter } = await supabase.from('clinical_encounters')
-    .select('id,case_id,episode_id,encounter_type,modality,status,scheduled_start,scheduled_end,encounter_date,completed_at,provider_id,reason_for_visit,provider_intake,patient_reported_pain_min,patient_reported_pain_max,patient_reported_measurements,telehealth_consent_obtained,telehealth_consent_at,patient_location_state,provider_location,connection_method,created_at,diagnoses,diagnoses_confirmed_at')
+  const { data: encounter } = await supabase.from('clinical_encounters').select('*')
     .eq('id', encounterId).eq('case_id', caseId).eq('encounter_type', 'pain_follow_up')
     .is('deleted_at', null).maybeSingle()
   if (!encounter) return { error: 'Visit not found' as const }
-  let visitDiagnosisPool
-  try {
-    visitDiagnosisPool = requireConfirmedVisitDiagnosisPool(encounter)
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Review and confirm diagnoses for this visit' }
-  }
   const [{ data: caseData }, { data: episode }, { data: episodeEncounters }, { data: procedures }] = await Promise.all([
     supabase.from('cases').select('patient:patients(first_name,last_name,date_of_birth,gender)')
       .eq('id', caseId).is('deleted_at', null).single(),
-    supabase.from('care_episodes').select('id,episode_number').eq('id', encounter.episode_id).eq('case_id', caseId).single(),
-    supabase.from('clinical_encounters')
-      .select('id,case_id,episode_id,encounter_type,modality,status,scheduled_start,scheduled_end,encounter_date,completed_at,provider_id,reason_for_visit,provider_intake,patient_reported_pain_min,patient_reported_pain_max,patient_reported_measurements,telehealth_consent_obtained,telehealth_consent_at,patient_location_state,provider_location,connection_method,created_at,updated_at,deleted_at,created_by_user_id,updated_by_user_id')
-      .eq('episode_id', encounter.episode_id)
+    supabase.from('care_episodes').select('*').eq('id', encounter.episode_id).eq('case_id', caseId).single(),
+    supabase.from('clinical_encounters').select('*').eq('episode_id', encounter.episode_id)
       .neq('id', encounterId).is('deleted_at', null),
-    supabase.from('procedures').select('procedure_date,procedure_type,sites,procedure_number')
-      .eq('episode_id', encounter.episode_id).eq('status', 'performed').is('deleted_at', null).order('procedure_date'),
+    supabase.from('procedures').select('procedure_date,procedure_type,sites,diagnoses,procedure_number')
+      .eq('episode_id', encounter.episode_id).is('deleted_at', null).order('procedure_date'),
   ])
   const previousEpisodeNumber = (episode?.episode_number ?? 1) - 1
   let priorEpisodeDischarge: Record<string, unknown> | null = null
@@ -68,29 +53,12 @@ async function gatherSource(caseId: string, encounterId: string) {
     provider = data
   }
   return { data: {
-    encounter: {
-      id: encounter.id,
-      modality: encounter.modality,
-      scheduled_start: encounter.scheduled_start,
-      encounter_date: encounter.encounter_date,
-      reason_for_visit: encounter.reason_for_visit,
-      provider_intake: encounter.provider_intake,
-      patient_reported_pain_min: encounter.patient_reported_pain_min,
-      patient_reported_pain_max: encounter.patient_reported_pain_max,
-      patient_reported_measurements: encounter.patient_reported_measurements,
-      telehealth_consent_obtained: encounter.telehealth_consent_obtained,
-      telehealth_consent_at: encounter.telehealth_consent_at,
-      patient_location_state: encounter.patient_location_state,
-      provider_location: encounter.provider_location,
-      connection_method: encounter.connection_method,
-    },
+    encounter: encounter as unknown as Record<string, unknown>,
     patient: (caseData?.patient ?? null) as unknown as Record<string, unknown> | null,
     provider,
     latestCompletedEncounter: selectLatestCompletedEncounter((episodeEncounters ?? []) as Tables<'clinical_encounters'>[]) as unknown as Record<string, unknown> | null,
     priorEpisodeDischarge,
     performedProcedures: (procedures ?? []) as unknown as Record<string, unknown>[],
-    visitDiagnosisPool,
-    visitDiagnosisConfirmedAt: encounter.diagnoses_confirmed_at!,
   }, encounter }
 }
 
@@ -129,50 +97,8 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
     await supabase.from('pain_follow_up_notes').update({ status: 'failed', generation_error: generated.error ?? 'Generation failed', updated_by_user_id: user.id }).eq('id', noteId)
     return { error: generated.error ?? 'Unable to generate follow-up note' }
   }
-  const { data: latestEncounter } = await supabase.from('clinical_encounters')
-    .select('diagnoses,diagnoses_confirmed_at')
-    .eq('id', encounterId)
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  let latestDiagnosisPool
-  try {
-    latestDiagnosisPool = latestEncounter ? requireConfirmedVisitDiagnosisPool(latestEncounter) : null
-  } catch {
-    latestDiagnosisPool = null
-  }
-  if (
-    !latestDiagnosisPool
-    || latestEncounter?.diagnoses_confirmed_at !== source.data.visitDiagnosisConfirmedAt
-    || JSON.stringify(latestDiagnosisPool) !== JSON.stringify(source.data.visitDiagnosisPool)
-  ) {
-    await supabase.from('pain_follow_up_notes').update({
-      status: 'failed',
-      generation_error: 'Visit diagnoses changed during generation. Review them and generate again.',
-      updated_by_user_id: user.id,
-    }).eq('id', noteId)
-    return { error: 'Visit diagnoses changed during generation. Review them and generate again.' }
-  }
-  try {
-    assertRecommendationDiagnosesInPool(
-      generated.data.procedure_recommendations,
-      source.data.visitDiagnosisPool,
-    )
-  } catch (error) {
-    await supabase.from('pain_follow_up_notes').update({
-      status: 'failed',
-      generation_error: error instanceof Error ? error.message : 'Recommendation diagnoses are invalid',
-      updated_by_user_id: user.id,
-    }).eq('id', noteId)
-    return { error: error instanceof Error ? error.message : 'Recommendation diagnoses are invalid' }
-  }
-  const deterministicData = {
-    ...generated.data,
-    diagnoses: formatVisitDiagnoses(source.data.visitDiagnosisPool),
-    diagnoses_snapshot: source.data.visitDiagnosisPool,
-  }
   const { error } = await supabase.from('pain_follow_up_notes').update({
-    ...deterministicData, status: 'draft', ai_model: 'claude-sonnet-4-6',
+    ...generated.data, status: 'draft', ai_model: 'claude-sonnet-4-6',
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
     source_data_hash: sourceHash, sections_done: NOTE_SECTIONS.length,
     generation_error: null, updated_by_user_id: user.id,
@@ -190,26 +116,13 @@ export async function savePainFollowUpNote(caseId: string, values: PainFollowUpN
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
-  const { data: encounter } = await supabase.from('clinical_encounters')
-    .select('episode_id,diagnoses,diagnoses_confirmed_at')
+  const { data: encounter } = await supabase.from('clinical_encounters').select('episode_id')
     .eq('id', parsed.data.encounter_id).eq('case_id', caseId).is('deleted_at', null).maybeSingle()
   if (!encounter) return { error: 'Visit not found' }
   try { await requireWritableEpisode(caseId, encounter.episode_id, supabase) }
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
   const { encounter_id, ...note } = parsed.data
-  let visitDiagnosisPool
-  try {
-    visitDiagnosisPool = requireConfirmedVisitDiagnosisPool(encounter)
-    assertRecommendationDiagnosesInPool(note.procedure_recommendations, visitDiagnosisPool)
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Visit diagnoses are invalid' }
-  }
-  const { error } = await supabase.from('pain_follow_up_notes').update({
-    ...note,
-    diagnoses: formatVisitDiagnoses(visitDiagnosisPool),
-    diagnoses_snapshot: visitDiagnosisPool,
-    updated_by_user_id: user.id,
-  })
+  const { error } = await supabase.from('pain_follow_up_notes').update({ ...note, updated_by_user_id: user.id })
     .eq('case_id', caseId).eq('encounter_id', encounter_id).eq('status', 'draft').is('deleted_at', null)
   if (error) return { error: 'Unable to save note' }
   revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
@@ -236,17 +149,6 @@ export async function regeneratePainFollowUpSectionAction(
   const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status')
     .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
   if (!note || note.status !== 'draft') return { error: 'No draft follow-up note found' }
-  if (section === 'diagnoses') {
-    const content = formatVisitDiagnoses(source.data.visitDiagnosisPool)
-    const { error } = await supabase.from('pain_follow_up_notes').update({
-      diagnoses: content,
-      diagnoses_snapshot: source.data.visitDiagnosisPool,
-      updated_by_user_id: user.id,
-    }).eq('id', note.id).eq('status', 'draft')
-    if (error) return { error: 'Unable to save regenerated diagnoses' }
-    revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
-    return { data: { success: true, content } }
-  }
   const generated = await generatePainFollowUp(source.data, findingFix
     ? { section, message: findingFix.message, rationale: findingFix.rationale }
     : undefined)
@@ -272,26 +174,6 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   if (!note) return { error: 'No draft follow-up note found' }
   if (note.status === 'finalized') return { data: { success: true, replayed: true } }
   if (note.status !== 'draft') return { error: 'No draft follow-up note found' }
-  const { data: encounter } = await supabase.from('clinical_encounters')
-    .select('diagnoses,diagnoses_confirmed_at')
-    .eq('id', encounterId)
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  try {
-    const visitDiagnosisPool = encounter ? requireConfirmedVisitDiagnosisPool(encounter) : null
-    if (!visitDiagnosisPool) throw new Error('Visit encounter not found')
-    assertDiagnosisTextMatchesPool(note.diagnoses, visitDiagnosisPool)
-    if (JSON.stringify(note.diagnoses_snapshot) !== JSON.stringify(visitDiagnosisPool)) {
-      throw new Error('Diagnosis snapshot does not match the confirmed visit diagnoses')
-    }
-    assertRecommendationDiagnosesInPool(
-      note.procedure_recommendations as unknown as PainFollowUpNoteEditValues['procedure_recommendations'],
-      visitDiagnosisPool,
-    )
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Visit diagnoses do not match this note' }
-  }
   const { renderPainFollowUpPdf } = await import('@/lib/pdf/render-pain-follow-up-pdf')
   const buffer = await renderPainFollowUpPdf(caseId, encounterId, note as unknown as Record<string, unknown>)
   const path = `cases/${caseId}/pain-follow-up-${encounterId}-${Date.now()}.pdf`

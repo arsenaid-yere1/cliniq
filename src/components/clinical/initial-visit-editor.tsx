@@ -75,11 +75,6 @@ import {
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
-import {
-  CURRENT_VISIT_INTAKE_SAVED_EVENT,
-  EncounterDiagnosisCard,
-  type EncounterDiagnosisState,
-} from '@/components/clinical/encounter-diagnosis-card'
 
 interface NoteRow {
   id: string
@@ -110,7 +105,6 @@ interface NoteRow {
   tone_hint: string | null
   sections_done: number | null
   sections_total: number | null
-  encounter_id: string | null
 }
 
 interface ClinicSettings {
@@ -158,11 +152,10 @@ interface InitialVisitEditorOuterProps {
   notesByVisitType: Record<NoteVisitType, unknown>
   intakesByVisitType: Record<NoteVisitType, ProviderIntakeValues | null>
   documentFilePathByVisitType: Record<NoteVisitType, string | null>
-  diagnosisStateByVisitType: Record<NoteVisitType, EncounterDiagnosisState | null>
   defaultVisitType: NoteVisitType
   canGenerate: boolean
   prerequisiteReason?: string
-  initialVitalsByVisitType: Record<NoteVisitType, VitalsData | null>
+  initialVitals: VitalsData | null
   clinicSettings: ClinicSettings | null
   providerProfile: ProviderProfile | null
   clinicLogoUrl: string | null
@@ -194,7 +187,6 @@ interface InitialVisitEditorInnerProps {
   documentFilePath: string | null
   initialIntake: ProviderIntakeValues | null
   siblingDate: string | null
-  diagnosisState: EncounterDiagnosisState | null
 }
 
 // Outer wrapper: visit type tab selector. Each tab has its own completely
@@ -206,11 +198,10 @@ export function InitialVisitEditor({
   notesByVisitType,
   intakesByVisitType,
   documentFilePathByVisitType,
-  diagnosisStateByVisitType,
   defaultVisitType,
   canGenerate,
   prerequisiteReason,
-  initialVitalsByVisitType,
+  initialVitals,
   clinicSettings,
   providerProfile,
   clinicLogoUrl,
@@ -259,7 +250,7 @@ export function InitialVisitEditor({
                 note={note}
                 canGenerate={canGenerate}
                 prerequisiteReason={prerequisiteReason}
-                initialVitals={initialVitalsByVisitType[vt.value]}
+                initialVitals={initialVitals}
                 clinicSettings={clinicSettings}
                 providerProfile={providerProfile}
                 clinicLogoUrl={clinicLogoUrl}
@@ -268,7 +259,6 @@ export function InitialVisitEditor({
                 documentFilePath={documentFilePathByVisitType[vt.value]}
                 initialIntake={intakesByVisitType[vt.value]}
                 siblingDate={siblingDatesByVisitType[vt.value]}
-                diagnosisState={diagnosisStateByVisitType[vt.value]}
               />
             </TabsContent>
           )
@@ -324,7 +314,6 @@ function InitialVisitEditorInner({
   documentFilePath,
   initialIntake,
   siblingDate,
-  diagnosisState,
 }: InitialVisitEditorInnerProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
@@ -406,13 +395,6 @@ function InitialVisitEditorInner({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
 
-        <EncounterDiagnosisCard
-          caseId={caseId}
-          visitType={visitType}
-          state={diagnosisState}
-          locked={isLocked}
-        />
-
         <Tabs defaultValue="chief-complaints">
           <TabsList className="flex-wrap h-auto gap-1 p-1">
             <TabsTrigger value="chief-complaints">
@@ -476,15 +458,13 @@ function InitialVisitEditorInner({
 
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border rounded-lg bg-muted/30">
           <p className="text-sm text-muted-foreground text-center max-w-md">
-            {canGenerate && diagnosisState?.confirmedAt
+            {canGenerate
               ? 'Generate an AI-powered Initial Visit note from available case data and provider intake.'
-              : !diagnosisState?.confirmedAt
-                ? 'Review and confirm diagnoses for this visit.'
-                : prerequisiteReason || 'Cannot generate note.'}
+              : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
             onClick={() => runGenerate(toneHint || null, preGenVisitDate || null)}
-            disabled={isLocked || !canGenerate || !diagnosisState?.confirmedAt || isPending}
+            disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             Generate {visitTypeLabel}
@@ -609,7 +589,6 @@ function InitialVisitEditorInner({
       visitType={visitType}
       visitTypeLabel={visitTypeLabel}
       note={note}
-      diagnosisState={diagnosisState}
       initialVitals={initialVitals}
       isPending={isPending}
       startTransition={startTransition}
@@ -640,12 +619,6 @@ function buildFullIntake(
   return { ...base, [section]: sectionData }
 }
 
-function announceProviderIntakeSaved(visitType: NoteVisitType) {
-  window.dispatchEvent(new CustomEvent(CURRENT_VISIT_INTAKE_SAVED_EVENT, {
-    detail: { visitType },
-  }))
-}
-
 // --- Chief Complaints Card ---
 
 function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
@@ -666,10 +639,7 @@ function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: Int
       const full = buildFullIntake(initialIntake, 'chief_complaints', values.chief_complaints)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else {
-        toast.success('Chief complaints saved')
-        announceProviderIntakeSaved(visitType)
-      }
+      else toast.success('Chief complaints saved')
     })
   }
 
@@ -822,10 +792,7 @@ function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: Int
       const full = buildFullIntake(initialIntake, 'accident_details', values.accident_details)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else {
-        toast.success('Accident details saved')
-        announceProviderIntakeSaved(visitType)
-      }
+      else toast.success('Accident details saved')
     })
   }
 
@@ -1097,10 +1064,7 @@ function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: Intake
       const full = buildFullIntake(initialIntake, 'exam_findings', values.exam_findings)
       const result = await saveProviderIntake(caseId, visitType, full)
       if (result.error) toast.error(result.error)
-      else {
-        toast.success('Exam findings saved')
-        announceProviderIntakeSaved(visitType)
-      }
+      else toast.success('Exam findings saved')
     })
   }
 
@@ -1424,7 +1388,6 @@ function DraftEditor({
   visitType,
   visitTypeLabel,
   note,
-  diagnosisState,
   initialVitals,
   isPending,
   startTransition,
@@ -1436,7 +1399,6 @@ function DraftEditor({
   visitType: NoteVisitType
   visitTypeLabel: string
   note: NoteRow
-  diagnosisState: EncounterDiagnosisState | null
   initialVitals: VitalsData | null
   isPending: boolean
   startTransition: (callback: () => Promise<void>) => void
@@ -1500,12 +1462,6 @@ function DraftEditor({
 
   return (
     <div className="space-y-6">
-      <EncounterDiagnosisCard
-        caseId={caseId}
-        visitType={visitType}
-        state={diagnosisState}
-        locked={isLocked}
-      />
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
@@ -1639,7 +1595,7 @@ function DraftEditor({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              disabled={isLocked || isPending || section === 'diagnoses'}
+                              disabled={isLocked || isPending}
                             >
                               {regeneratingSection === section ? (
                                 <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -1670,7 +1626,6 @@ function DraftEditor({
                           {...field}
                           rows={sectionRows[section]}
                           className="resize-y"
-                          readOnly={section === 'diagnoses'}
                         />
                       </FormControl>
                       <FormMessage />

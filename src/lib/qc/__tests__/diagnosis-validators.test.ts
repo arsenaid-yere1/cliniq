@@ -3,9 +3,7 @@ import {
   validateExternalCauseChain,
   validateSeventhCharacterIntegrity,
   SECTION_QC_EXTERNAL_CAUSE_CHAIN,
-  validateVisitDiagnosisAuthority,
-  SECTION_QC_NOTE_DIAGNOSIS_MISMATCH,
-  SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL,
+  SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
 } from '../diagnosis-validators'
 import { computeFindingHash } from '@/lib/validations/case-quality-review'
 import type { QualityReviewInputData } from '@/lib/claude/generate-quality-review'
@@ -60,10 +58,6 @@ function makeIvnNote(diagnosesText: string): QualityReviewInputData['initialVisi
     visit_date: '2026-01-01',
     status: 'finalized',
     diagnoses: diagnosesText,
-    diagnoses_snapshot: [],
-    encounter_id: '55555555-5555-4555-8555-555555555555',
-    encounter_diagnoses: [],
-    diagnoses_confirmed_at: null,
     chief_complaint: null,
     physical_exam: null,
     treatment_plan: null,
@@ -94,7 +88,6 @@ function makeProcNote(args: {
     pain_score_min: null,
     pain_score_max: null,
     diagnoses: args.diagnoses,
-    diagnoses_snapshot: args.diagnoses,
     raw_ai_response: null,
   }
 }
@@ -210,42 +203,6 @@ describe('validateExternalCauseChain', () => {
       dischargeNote: makeDischarge('• M54.50 — LBP'),
     })
     expect(validateExternalCauseChain(input)).toHaveLength(0)
-  })
-})
-
-describe('validateVisitDiagnosisAuthority', () => {
-  it('flags note text or snapshot that differs from the confirmed encounter pool', () => {
-    const note = makeIvnNote('• M54.12 — Cervical radiculopathy')!
-    note.diagnoses_confirmed_at = '2026-08-28T12:00:00Z'
-    note.encounter_diagnoses = [{ icd10_code: 'M54.50', description: 'Low back pain' }]
-    note.diagnoses_snapshot = [{ icd10_code: 'M54.12', description: 'Cervical radiculopathy' }]
-    const findings = validateVisitDiagnosisAuthority(baseInput({ initialVisitNote: note }))
-    expect(findings.some((finding) => finding.section_key === SECTION_QC_NOTE_DIAGNOSIS_MISMATCH)).toBe(true)
-  })
-
-  it('flags recommendation codes outside the confirmed follow-up pool', () => {
-    const findings = validateVisitDiagnosisAuthority(baseInput({
-      painFollowUpNotes: [{
-        id: '66666666-6666-4666-8666-666666666666',
-        encounter_id: '77777777-7777-4777-8777-777777777777',
-        status: 'draft',
-        subjective: null,
-        telehealth_observations: null,
-        assessment: null,
-        diagnoses: '• M54.50 — Low back pain',
-        diagnoses_snapshot: [{ icd10_code: 'M54.50', description: 'Low back pain' }],
-        encounter_diagnoses: [{ icd10_code: 'M54.50', description: 'Low back pain' }],
-        diagnoses_confirmed_at: '2026-08-28T12:00:00Z',
-        procedure_recommendations: [{
-          diagnoses: [{ icd10_code: 'M54.12', description: 'Cervical radiculopathy' }],
-        }],
-        treatment_plan: null,
-        clinician_disclaimer: null,
-      }],
-    }))
-    expect(findings.some((finding) => (
-      finding.section_key === SECTION_QC_RECOMMENDATION_DIAGNOSIS_OUTSIDE_POOL
-    ))).toBe(true)
   })
 })
 

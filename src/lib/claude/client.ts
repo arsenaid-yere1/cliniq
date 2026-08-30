@@ -40,12 +40,6 @@ export interface CallClaudeToolOptions<TOutput> {
   toolChoice?: Anthropic.Messages.ToolChoice
   messages: ClaudeMessage[]
   maxTokens: number
-  /** Per API attempt timeout. Defaults to the shared client's four-minute cap. */
-  timeoutMs?: number
-  /** Override retries for latency-sensitive calls. Defaults to 2. */
-  apiRetryAttempts?: number
-  /** Override schema-correction retries. Defaults to 1. */
-  zodRetryAttempts?: number
   thinking?: Anthropic.Messages.ThinkingConfigParam
   parse: (raw: Record<string, unknown>) =>
     | { success: true; data: TOutput }
@@ -117,19 +111,17 @@ async function callClaudeToolForModel<TOutput>(
   model: `claude-${string}`,
 ): Promise<InternalResult<TOutput>> {
   const client = opts._client ?? anthropic
-  const zodRetryAttempts = opts.zodRetryAttempts ?? ZOD_RETRY_ATTEMPTS
-  const apiRetryAttempts = opts.apiRetryAttempts ?? API_RETRY_ATTEMPTS
 
   let zodAttempt = 0
   let lastRaw: unknown
   let lastValidationError: z.ZodError | null = null
 
-  while (zodAttempt <= zodRetryAttempts) {
+  while (zodAttempt <= ZOD_RETRY_ATTEMPTS) {
     let apiAttempt = 0
     let apiResponse: Anthropic.Message | null = null
     let lastApiError: unknown
 
-    while (apiAttempt <= apiRetryAttempts) {
+    while (apiAttempt <= API_RETRY_ATTEMPTS) {
       try {
         const validationFeedback = lastValidationError
           ? `\n\nYour previous tool output failed validation. Correct these issues in the next tool call: ${formatZodError(lastValidationError)}`
@@ -147,7 +139,7 @@ async function callClaudeToolForModel<TOutput>(
           tools: opts.tools,
           tool_choice: opts.toolChoice ?? { type: 'tool', name: opts.toolName },
           messages: opts.messages,
-        }, opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined)
+        })
         if (opts.onProgress) {
           const onProgress = opts.onProgress
           let lastCount = 0
@@ -169,7 +161,7 @@ async function callClaudeToolForModel<TOutput>(
         if (!retryable) {
           return { error: extractErrorMessage(err) }
         }
-        if (apiAttempt === apiRetryAttempts) {
+        if (apiAttempt === API_RETRY_ATTEMPTS) {
           // Signal retryable exhaustion so the caller can swap to the
           // fallback model. Non-retryable errors return without the flag.
           return { error: extractErrorMessage(err), _retryableExhaust: true }
@@ -266,6 +258,7 @@ function sleep(ms: number) {
 // logs. Replacement with structured Sentry/pino logging is tracked in the
 // architecture-improvements plan §3 (observability).
 function logUsage(model: string, usage: Anthropic.Messages.Usage) {
+  // eslint-disable-next-line no-console
   console.info('[claude]', {
     model,
     input_tokens: usage.input_tokens,

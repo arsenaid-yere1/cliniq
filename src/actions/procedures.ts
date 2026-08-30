@@ -23,7 +23,6 @@ import {
 import { sitesFromPlan } from '@/lib/procedures/sites-from-plan'
 import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
-import { normalizeVisitDiagnoses } from '@/lib/clinical/visit-diagnoses'
 
 export async function getProcedureById(id: string) {
   const supabase = await createClient()
@@ -180,7 +179,6 @@ export async function createPrpProcedure(
 // Fetch approved PM diagnoses + finalized Initial Visit Note diagnoses for this case (ICD-10 combobox source)
 export async function getCaseDiagnoses(caseId: string) {
   const supabase = await createClient()
-  const episode = await getActiveOrLatestEpisode(caseId, supabase)
 
   // Fetch PM extraction diagnoses and Initial Visit Note diagnoses in parallel.
   // Accept both 'approved' and 'edited' PM extractions. Prefer provider_overrides.diagnoses
@@ -198,11 +196,10 @@ export async function getCaseDiagnoses(caseId: string) {
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('diagnoses, visit_type, status, visit_date')
+      .select('diagnoses, visit_type, status')
       .eq('case_id', caseId)
-      .eq('episode_id', episode?.id ?? '00000000-0000-0000-0000-000000000000')
       .is('deleted_at', null)
-      .eq('status', 'finalized')
+      .in('status', ['draft', 'finalized'])
       .not('diagnoses', 'is', null),
   ])
 
@@ -214,7 +211,6 @@ export async function getCaseDiagnoses(caseId: string) {
     imaging_support?: 'confirmed' | 'referenced' | 'none' | null
     exam_support?: 'objective' | 'subjective_only' | 'none' | null
     source_quote?: string | null
-    source_label?: string | null
   }
   const pmDiagnosesRaw: RawPmDiagnosis[] =
     Array.isArray(pmSourceDiagnoses) ? pmSourceDiagnoses as RawPmDiagnosis[] : []
@@ -224,14 +220,14 @@ export async function getCaseDiagnoses(caseId: string) {
       if (!d.icd10_code) return d
       const v = validateIcd10Code(d.icd10_code)
       if (!v.ok && v.reason === 'structure') return null
-      return { ...d, icd10_code: normalizeIcd10Code(d.icd10_code), source_label: 'Case history · pain-management extraction' }
+      return { ...d, icd10_code: normalizeIcd10Code(d.icd10_code) }
     })
     .filter((d): d is RawPmDiagnosis => d !== null)
 
   // Pick the best IVN row: prefer pain_evaluation_visit (imaging-confirmed codes)
   // over initial_visit (clinical impression codes). Draft is acceptable so the
   // dialog pre-fills before the note is finalized.
-  const ivnRows = (ivnRes.data ?? []) as Array<{ diagnoses: string | null; visit_type: string; visit_date: string | null }>
+  const ivnRows = (ivnRes.data ?? []) as Array<{ diagnoses: string | null; visit_type: string }>
   const preferredIvn =
     ivnRows.find((r) => r.visit_type === 'pain_evaluation_visit' && r.diagnoses)
     ?? ivnRows.find((r) => r.visit_type === 'initial_visit' && r.diagnoses)
@@ -245,10 +241,7 @@ export async function getCaseDiagnoses(caseId: string) {
     exam_support?: 'objective' | 'subjective_only' | 'none' | null
     source_quote?: string | null
   }
-  const ivnDiagnoses: SuggestedDiagnosis[] = parseIvnDiagnoses(preferredIvn?.diagnoses).map((diagnosis) => ({
-    ...diagnosis,
-    source_label: `${preferredIvn?.visit_type === 'pain_evaluation_visit' ? 'Pain evaluation' : 'Initial visit'}${preferredIvn?.visit_date ? ` · ${preferredIvn.visit_date}` : ''}`,
-  }))
+  const ivnDiagnoses: SuggestedDiagnosis[] = parseIvnDiagnoses(preferredIvn?.diagnoses)
 
   // Merge: PM extraction first, then IVN codes not already present (dedup by icd10_code).
   // When a code appears in BOTH PM and IVN, strip the PM evidence tags so the dialog's
@@ -263,7 +256,6 @@ export async function getCaseDiagnoses(caseId: string) {
         icd10_code: d.icd10_code,
         description: d.description,
         source_quote: d.source_quote,
-        source_label: d.source_label,
       }
     }
     return d
@@ -292,7 +284,7 @@ export async function updatePrpProcedure(
   // Load procedure_number for the deterministic A→D rewrite path.
   const { data: existingProc } = await supabase
     .from('procedures')
-    .select('procedure_number,diagnoses')
+    .select('procedure_number')
     .eq('id', procedureId)
     .is('deleted_at', null)
     .single()
@@ -302,11 +294,6 @@ export async function updatePrpProcedure(
   const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
     procedureNumber: existingProc.procedure_number,
   })
-  if (JSON.stringify(normalizeVisitDiagnoses(existingProc.diagnoses)) !== JSON.stringify(normalizeVisitDiagnoses(rewrittenDiagnoses))) {
-    const { data: finalizedNote } = await supabase.from('procedure_notes').select('id')
-      .eq('procedure_id', procedureId).eq('status', 'finalized').is('deleted_at', null).maybeSingle()
-    if (finalizedNote) return { error: 'Unfinalize the procedure note before changing diagnoses' }
-  }
 
   const { data: procedure, error: procError } = await supabase
     .from('procedures')
@@ -516,7 +503,7 @@ export async function updateBotoxProcedure(
 
   const { data: existingProc } = await supabase
     .from('procedures')
-    .select('procedure_number,diagnoses')
+    .select('procedure_number')
     .eq('id', procedureId)
     .is('deleted_at', null)
     .single()
@@ -526,11 +513,6 @@ export async function updateBotoxProcedure(
   const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
     procedureNumber: existingProc.procedure_number,
   })
-  if (JSON.stringify(normalizeVisitDiagnoses(existingProc.diagnoses)) !== JSON.stringify(normalizeVisitDiagnoses(rewrittenDiagnoses))) {
-    const { data: finalizedNote } = await supabase.from('procedure_notes').select('id')
-      .eq('procedure_id', procedureId).eq('status', 'finalized').is('deleted_at', null).maybeSingle()
-    if (finalizedNote) return { error: 'Unfinalize the procedure note before changing diagnoses' }
-  }
 
   const { data: procedure, error: procError } = await supabase
     .from('procedures')

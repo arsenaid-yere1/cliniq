@@ -4,6 +4,7 @@ import { TEST_CASE_ID } from '@/test-utils/fixtures'
 import { defaultProviderIntake } from '@/lib/validations/initial-visit-note'
 
 let mockSupabase: MockSupabaseClient
+const mockEnsureLegacyEpisodeEncounter = vi.fn()
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
@@ -16,7 +17,18 @@ vi.mock('@/actions/case-status', () => ({
   autoAdvanceFromIntake: vi.fn(async () => ({ error: null })),
 }))
 
+vi.mock('@/lib/clinical/episode-context', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/clinical/episode-context')>(
+    '@/lib/clinical/episode-context',
+  )
+  return {
+    ...actual,
+    ensureLegacyEpisodeEncounter: (...args: unknown[]) => mockEnsureLegacyEpisodeEncounter(...args),
+  }
+})
+
 import { saveInitialVisitVitals, saveProviderIntake } from '../initial-visit-notes'
+import { EpisodeContextError } from '@/lib/clinical/episode-context'
 
 describe('saveProviderIntake', () => {
   beforeEach(() => {
@@ -34,10 +46,9 @@ describe('saveProviderIntake', () => {
   })
 
   it('returns a readable error when Episode 1 is missing', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'Episode 1 is required for the evaluation' },
-    })
+    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(
+      new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit'),
+    )
 
     const result = await saveProviderIntake(
       TEST_CASE_ID,
@@ -45,14 +56,11 @@ describe('saveProviderIntake', () => {
       defaultProviderIntake,
     )
 
-    expect(result).toEqual({ error: 'Episode 1 is required for the evaluation' })
+    expect(result).toEqual({ error: 'Episode 1 is required for the legacy visit' })
   })
 
   it('does not expose unexpected exception details', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'database internals' },
-    })
+    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(new Error('database internals'))
 
     const result = await saveProviderIntake(
       TEST_CASE_ID,
@@ -87,12 +95,9 @@ describe('saveInitialVisitVitals', () => {
       }
       return createMockQueryBuilder()
     })
-    mockSupabase.rpc.mockResolvedValue({
-      data: [{
-        episode_id: '110e8400-e29b-41d4-a716-446655440000',
-        encounter_id: '220e8400-e29b-41d4-a716-446655440000',
-      }],
-      error: null,
+    mockEnsureLegacyEpisodeEncounter.mockResolvedValue({
+      episodeId: '110e8400-e29b-41d4-a716-446655440000',
+      encounterId: '220e8400-e29b-41d4-a716-446655440000',
     })
     vi.clearAllMocks()
   })
@@ -105,20 +110,24 @@ describe('saveInitialVisitVitals', () => {
     )
 
     expect(result).toEqual({ data: { success: true } })
-    expect(mockSupabase.rpc).toHaveBeenCalledWith('prepare_evaluation_visit', {
-      p_case_id: TEST_CASE_ID,
-      p_visit_type: 'pain_evaluation_visit',
-    })
+    expect(mockEnsureLegacyEpisodeEncounter).toHaveBeenCalledWith(
+      TEST_CASE_ID,
+      'pain_evaluation',
+      expect.objectContaining({ userId: 'test-user-id' }),
+      mockSupabase,
+    )
   })
 
   it('owns Initial Visit vitals with an initial_evaluation encounter', async () => {
     const result = await saveInitialVisitVitals(TEST_CASE_ID, 'initial_visit', vitals)
 
     expect(result).toEqual({ data: { success: true } })
-    expect(mockSupabase.rpc).toHaveBeenCalledWith('prepare_evaluation_visit', {
-      p_case_id: TEST_CASE_ID,
-      p_visit_type: 'initial_visit',
-    })
+    expect(mockEnsureLegacyEpisodeEncounter).toHaveBeenCalledWith(
+      TEST_CASE_ID,
+      'initial_evaluation',
+      expect.objectContaining({ userId: 'test-user-id' }),
+      mockSupabase,
+    )
   })
 
   it('relinks an existing shared vitals snapshot to the selected visit encounter', async () => {
@@ -147,10 +156,9 @@ describe('saveInitialVisitVitals', () => {
   })
 
   it('does not save vitals when encounter ownership cannot be prepared', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'Episode 1 is required for the evaluation' },
-    })
+    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(
+      new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit'),
+    )
 
     const result = await saveInitialVisitVitals(
       TEST_CASE_ID,
@@ -158,6 +166,6 @@ describe('saveInitialVisitVitals', () => {
       vitals,
     )
 
-    expect(result).toEqual({ error: 'Episode 1 is required for the evaluation' })
+    expect(result).toEqual({ error: 'Episode 1 is required for the legacy visit' })
   })
 })

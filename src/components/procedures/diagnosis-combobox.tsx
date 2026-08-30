@@ -5,27 +5,21 @@ import { X, AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { validateIcd10Code, classifyIcd10Code, normalizeIcd10Code } from '@/lib/icd10/validation'
+import type { PrpDiagnosis } from '@/lib/validations/prp-procedure'
+import { validateIcd10Code, classifyIcd10Code } from '@/lib/icd10/validation'
 
-export type ClinicalDiagnosis = {
-  icd10_code: string
-  description: string
-}
-
-export type DiagnosisSuggestion = {
+type DiagnosisSuggestion = {
   icd10_code: string | null
   description: string
   imaging_support?: 'confirmed' | 'referenced' | 'none' | null
   exam_support?: 'objective' | 'subjective_only' | 'none' | null
   source_quote?: string | null
-  source_label?: string | null
 }
 
 interface DiagnosisComboboxProps {
-  value: ClinicalDiagnosis[]
-  onChange: (v: ClinicalDiagnosis[]) => void
+  value: PrpDiagnosis[]
+  onChange: (v: PrpDiagnosis[]) => void
   suggestions: DiagnosisSuggestion[]
-  disabled?: boolean
 }
 
 // A myelopathy/radiculopathy suggestion with imaging_support="none" OR
@@ -46,13 +40,13 @@ function unsupportedReason(s: DiagnosisSuggestion): string | null {
   return null
 }
 
-export function DiagnosisCombobox({ value, onChange, suggestions, disabled = false }: DiagnosisComboboxProps) {
+export function DiagnosisCombobox({ value, onChange, suggestions }: DiagnosisComboboxProps) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const selectedCodes = new Set(value.map((d) => d.icd10_code.trim().toUpperCase()))
+  const selectedCodes = new Set(value.map((d) => d.icd10_code))
 
   const filtered = suggestions.filter((s) => {
     if (!query) return true
@@ -64,7 +58,7 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
   })
 
   function selectSuggestion(s: { icd10_code: string | null; description: string }) {
-    if (!s.icd10_code || selectedCodes.has(s.icd10_code.trim().toUpperCase())) return
+    if (!s.icd10_code || selectedCodes.has(s.icd10_code)) return
     const v = validateIcd10Code(s.icd10_code)
     if (!v.ok && v.reason === 'non_billable_parent' && v.suggestion) {
       setValidationError(
@@ -80,7 +74,7 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
       return
     }
     setValidationError(null)
-    onChange([...value, { icd10_code: normalizeIcd10Code(s.icd10_code), description: s.description }])
+    onChange([...value, { icd10_code: s.icd10_code, description: s.description }])
     setQuery('')
     inputRef.current?.focus()
   }
@@ -126,7 +120,7 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
   }
 
   function remove(code: string) {
-    onChange(value.filter((d) => d.icd10_code.toUpperCase() !== code.toUpperCase()))
+    onChange(value.filter((d) => d.icd10_code !== code))
   }
 
   const showAddOption = query.trim() !== '' && filtered.length === 0
@@ -143,7 +137,6 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
               <button
                 type="button"
                 onClick={() => remove(d.icd10_code)}
-                disabled={disabled}
                 className="ml-1 rounded-full hover:bg-muted"
                 aria-label={`Remove ${d.icd10_code}`}
               >
@@ -158,7 +151,6 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
       <div className="relative">
         <Input
           ref={inputRef}
-          disabled={disabled}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -189,13 +181,13 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
             <ul className="max-h-48 overflow-auto py-1 text-sm">
               {filtered.map((s) => {
-                const isSelected = selectedCodes.has(s.icd10_code?.trim().toUpperCase() ?? '')
+                const isSelected = selectedCodes.has(s.icd10_code ?? '')
                 const warn = unsupportedReason(s)
                 return (
                   <li key={s.icd10_code ?? s.description}>
                     <button
                       type="button"
-                      disabled={disabled || isSelected}
+                      disabled={isSelected}
                       onMouseDown={(e) => {
                         e.preventDefault()
                         selectSuggestion(s)
@@ -204,12 +196,7 @@ export function DiagnosisCombobox({ value, onChange, suggestions, disabled = fal
                       title={warn ?? undefined}
                     >
                       <span className="font-mono text-xs text-muted-foreground">{s.icd10_code}</span>
-                      <span className="text-xs">
-                        {s.description}
-                        {s.source_label && (
-                          <span className="ml-2 text-muted-foreground">{s.source_label}</span>
-                        )}
-                      </span>
+                      <span className="text-xs">{s.description}</span>
                       {warn && (
                         <AlertTriangle
                           className="h-3 w-3 shrink-0 text-amber-600"

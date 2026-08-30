@@ -6,7 +6,7 @@ export const procedureRecommendationSchema = z.object({
   procedure_type: z.enum(SCHEDULABLE_PROCEDURE_TYPES),
   sites: z.array(z.string().trim().min(1)).min(1),
   diagnoses: z.array(z.object({
-    icd10_code: z.string().trim().min(1),
+    icd10_code: z.string().trim().nullable(),
     description: z.string().trim().min(1),
   })).default([]),
   rationale: z.string().trim().min(1),

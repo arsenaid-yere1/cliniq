@@ -169,10 +169,6 @@ const FIXABLE_STEPS = new Set<QcStep>([
 const SYNTHETIC_SECTION_KEYS = new Set<string>([
   '_qc_external_cause_chain',
   '_qc_seventh_character_integrity',
-  '_qc_visit_diagnosis_unconfirmed',
-  '_qc_note_diagnosis_mismatch',
-  '_qc_recommendation_diagnosis_outside_pool',
-  '_qc_procedure_diagnosis_mismatch',
 ])
 
 export type FindingFixEligibility =

@@ -51,14 +51,4 @@ describe('painFollowUpNoteEditSchema', () => {
       }],
     }).success).toBe(false)
   })
-
-  it('rejects a recommendation diagnosis without an ICD-10 code', () => {
-    expect(painFollowUpNoteEditSchema.safeParse({
-      ...note,
-      procedure_recommendations: [{
-        ...note.procedure_recommendations[0],
-        diagnoses: [{ icd10_code: null, description: 'Lumbar spondylosis' }],
-      }],
-    }).success).toBe(false)
-  })
 })

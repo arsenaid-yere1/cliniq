@@ -4,7 +4,6 @@ import { callClaudeTool } from '@/lib/claude/client'
 import { painFollowUpNoteResultSchema, type PainFollowUpNoteResult } from '@/lib/validations/pain-follow-up-note'
 import { validateTelehealthFollowUpOutput } from '@/lib/qc/telehealth-follow-up'
 import { z } from 'zod'
-import type { VisitDiagnosis } from '@/lib/validations/clinical-encounter'
 
 export interface PainFollowUpSourceData {
   encounter: Record<string, unknown>
@@ -13,8 +12,6 @@ export interface PainFollowUpSourceData {
   latestCompletedEncounter: Record<string, unknown> | null
   priorEpisodeDischarge: Record<string, unknown> | null
   performedProcedures: Record<string, unknown>[]
-  visitDiagnosisPool: VisitDiagnosis[]
-  visitDiagnosisConfirmedAt: string
 }
 
 export const PAIN_FOLLOW_UP_SYSTEM_PROMPT = `You generate a pain-management follow-up note for a remote encounter.
@@ -26,8 +23,6 @@ When a limitation must be documented, use explicit non-performance language such
 Prior values are historical comparisons only and must retain their date/source label.
 Recommendations remain conditional and must also be emitted as structured procedure_recommendations with stable UUID recommendation_id values.
 Do not state that a procedure has been ordered or scheduled.`
-  + `
-The visitDiagnosisPool is the complete clinician-confirmed diagnosis authority for THIS encounter. The diagnoses section must mirror it exactly. Do not derive or add diagnoses from a prior encounter, prior discharge, performed procedure, imaging history, or another provider. Every procedure_recommendations[].diagnoses item must use a non-empty ICD-10 code from visitDiagnosisPool. If the pool is empty, emit exactly "No diagnoses selected for this encounter."`
 
 const TOOL: Anthropic.Tool = {
   name: 'generate_pain_follow_up',
@@ -40,11 +35,11 @@ const TOOL: Anthropic.Tool = {
       telehealth_observations:{type:'string',description:'Only findings directly visible or audible during the video encounter. No current palpation, graded strength, reflex, measured range-of-motion, or clinician-obtained vital-sign findings.'},
       imaging_review:{type:'string'},
       assessment:{type:'string',description:'Clinical assessment based on reported history, video-observable findings, imaging, and clearly dated historical findings. No unsupported current hands-on examination findings.'},
-      diagnoses:{type:'string',description:'Exact formatted mirror of visitDiagnosisPool.'}, treatment_plan:{type:'string'}, patient_education:{type:'string'},
+      diagnoses:{type:'string'}, treatment_plan:{type:'string'}, patient_education:{type:'string'},
       follow_up:{type:'string'}, clinician_disclaimer:{type:'string'},
       procedure_recommendations:{type:'array',items:{type:'object',required:['recommendation_id','procedure_type','sites','diagnoses','rationale'],properties:{
         recommendation_id:{type:'string',format:'uuid'},procedure_type:{type:'string',enum:['prp','cortisone','hyaluronic','botox']},
-        sites:{type:'array',minItems:1,items:{type:'string',minLength:1}},diagnoses:{type:'array',items:{type:'object',required:['icd10_code','description'],properties:{icd10_code:{type:'string',minLength:1},description:{type:'string',minLength:1}}}},rationale:{type:'string',minLength:1},suggested_timing:{type:['string','null']},
+        sites:{type:'array',minItems:1,items:{type:'string',minLength:1}},diagnoses:{type:'array',items:{type:'object',required:['icd10_code','description'],properties:{icd10_code:{type:['string','null']},description:{type:'string',minLength:1}}}},rationale:{type:'string',minLength:1},suggested_timing:{type:['string','null']},
       }}},
     },
   },

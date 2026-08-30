@@ -9,7 +9,6 @@ import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProvide
 import { InitialVisitEditor } from '@/components/clinical/initial-visit-editor'
 import { providerIntakeSchema } from '@/lib/validations/initial-visit-note'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
-import type { EncounterDiagnosisState } from '@/components/clinical/encounter-diagnosis-card'
 
 function parseIntake(raw: unknown) {
   if (!raw) return null
@@ -33,8 +32,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
   const [
     notesResult,
     prereqResult,
-    initialVitalsResult,
-    painEvalVitalsResult,
+    vitalsResult,
     clinicResult,
     providerResult,
     logoResult,
@@ -44,8 +42,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
   ] = await Promise.all([
     getInitialVisitNotes(caseId),
     checkNotePrerequisites(caseId),
-    getInitialVisitVitals(caseId, 'initial_visit'),
-    getInitialVisitVitals(caseId, 'pain_evaluation_visit'),
+    getInitialVisitVitals(caseId),
     getClinicSettings(),
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
@@ -69,7 +66,7 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     : null
 
   // Index notes by visit_type and resolve their document file paths in parallel
-  type NoteRow = Record<string, unknown> & { id: string; visit_type: string; document_id: string | null; encounter_id: string | null }
+  type NoteRow = Record<string, unknown> & { id: string; visit_type: string; document_id: string | null }
   const noteRows = ((notesResult.data as NoteRow[] | undefined) ?? []) as NoteRow[]
   const initialVisitNote = noteRows.find((n) => n.visit_type === 'initial_visit') ?? null
   const painEvaluationNote = noteRows.find((n) => n.visit_type === 'pain_evaluation_visit') ?? null
@@ -89,25 +86,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     resolveDocPath(initialVisitNote),
     resolveDocPath(painEvaluationNote),
   ])
-
-  const encounterIds = noteRows
-    .map((note) => note.encounter_id)
-    .filter((id): id is string => Boolean(id))
-  const { data: diagnosisEncounters } = encounterIds.length > 0
-    ? await supabase.from('clinical_encounters')
-        .select('id,diagnoses,diagnoses_confirmed_at')
-        .in('id', encounterIds)
-        .eq('case_id', caseId)
-        .is('deleted_at', null)
-    : { data: [] }
-  const diagnosisEncounterById = new Map((diagnosisEncounters ?? []).map((encounter) => [encounter.id, encounter]))
-  const diagnosisStateFor = (note: NoteRow | null): EncounterDiagnosisState | null => {
-    if (!note?.encounter_id) return null
-    const encounter = diagnosisEncounterById.get(note.encounter_id)
-    return encounter
-      ? { encounterId: encounter.id, diagnoses: encounter.diagnoses, confirmedAt: encounter.diagnoses_confirmed_at }
-      : null
-  }
 
   // Pain-eval follow-up relies on priorVisitData.vitalSigns (the intake vitals
   // row that predates the prior initial-visit's finalization) for the
@@ -145,15 +123,6 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     initial_visit: initialVisitDocPath,
     pain_evaluation_visit: painEvalDocPath,
   }
-  const initialVitalsByVisitType = {
-    initial_visit: initialVitalsResult.data ?? null,
-    pain_evaluation_visit: painEvalVitalsResult.data ?? null,
-  }
-
-  const diagnosisStateByVisitType: Record<NoteVisitType, EncounterDiagnosisState | null> = {
-    initial_visit: diagnosisStateFor(initialVisitNote),
-    pain_evaluation_visit: diagnosisStateFor(painEvaluationNote),
-  }
 
   // Sibling dates power the pre-generation date input's min/max bounds,
   // mirroring the DB trigger (20260414_initial_visit_date_order) which requires
@@ -170,11 +139,10 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
       notesByVisitType={notesByVisitType}
       intakesByVisitType={intakesByVisitType}
       documentFilePathByVisitType={documentFilePathByVisitType}
-      diagnosisStateByVisitType={diagnosisStateByVisitType}
       defaultVisitType="initial_visit"
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
-      initialVitalsByVisitType={initialVitalsByVisitType}
+      initialVitals={vitalsResult.data ?? null}
       clinicSettings={clinicResult.data ?? null}
       providerProfile={providerResult.data ?? null}
       clinicLogoUrl={logoResult.url ?? null}

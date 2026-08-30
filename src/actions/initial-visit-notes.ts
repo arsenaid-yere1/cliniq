@@ -29,11 +29,6 @@ import {
   ensureLegacyEpisodeEncounter,
   EpisodeContextError,
 } from '@/lib/clinical/episode-context'
-import {
-  assertDiagnosisTextMatchesPool,
-  formatVisitDiagnoses,
-  requireConfirmedVisitDiagnosisPool,
-} from '@/lib/clinical/visit-diagnoses'
 
 // --- Helper: compute source data hash ---
 
@@ -66,37 +61,6 @@ function mapEpisodeOwnershipError(error: unknown): string {
   return 'Unable to prepare the visit record. Please try again.'
 }
 
-function mapEvaluationVisitPreparationError(error: { message?: string } | null): string {
-  const message = error?.message ?? ''
-  if (message.includes('Assign a provider')) return 'Assign a provider before preparing this visit'
-  if (message.includes('Episode 1')) return 'Episode 1 is required for the evaluation'
-  return 'Unable to prepare the visit record. Please try again.'
-}
-
-export async function prepareEvaluationVisit(caseId: string, visitType: NoteVisitType) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const { data, error } = await supabase.rpc('prepare_evaluation_visit', {
-    p_case_id: caseId,
-    p_visit_type: visitType,
-  })
-  const ownership = data?.[0]
-  if (error || !ownership) {
-    console.error('[prepare-evaluation-visit] RPC failed', {
-      visitType,
-      code: error?.code,
-      message: error?.message,
-    })
-    return { error: mapEvaluationVisitPreparationError(error) }
-  }
-
-  revalidatePath(`/patients/${caseId}`)
-  revalidatePath(`/patients/${caseId}/initial-visit`)
-  return { data: ownership }
-}
-
 // --- Helper: gather source data for note generation ---
 //
 // `visitType` is required: it determines which intake row is loaded,
@@ -109,35 +73,6 @@ async function gatherSourceData(
   visitType: NoteVisitType,
   visitDateOverride?: string | null,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
-  const { data: currentNote, error: currentNoteError } = await supabase
-    .from('initial_visit_notes')
-    .select('encounter_id,provider_intake,visit_date,finalized_at')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (currentNoteError || !currentNote?.encounter_id) {
-    return { data: null, error: 'Prepare this visit before generating the note' }
-  }
-
-  const { data: currentEncounter, error: currentEncounterError } = await supabase
-    .from('clinical_encounters')
-    .select('id,provider_id,diagnoses,diagnoses_confirmed_at')
-    .eq('id', currentNote.encounter_id)
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (currentEncounterError || !currentEncounter) {
-    return { data: null, error: 'Visit encounter not found' }
-  }
-
-  let visitDiagnosisPool
-  try {
-    visitDiagnosisPool = requireConfirmedVisitDiagnosisPool(currentEncounter)
-  } catch (error) {
-    return { data: null, error: error instanceof Error ? error.message : 'Review and confirm diagnoses for this visit' }
-  }
-
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
   // provider-intake + vitals — no MRI/CT/PM data leaks into the prompt.
@@ -147,7 +82,7 @@ async function gatherSourceData(
     ? supabase
         .from('initial_visit_notes')
         .select(
-          'encounter_id, chief_complaint, physical_exam, imaging_findings, medical_necessity, treatment_plan, prognosis, provider_intake, visit_date, finalized_at',
+          'chief_complaint, physical_exam, imaging_findings, medical_necessity, diagnoses, treatment_plan, prognosis, provider_intake, visit_date, finalized_at',
         )
         .eq('case_id', caseId)
         .eq('visit_type', 'initial_visit')
@@ -159,7 +94,7 @@ async function gatherSourceData(
   const summaryQuery = loadImagingContext
     ? supabase
         .from('case_summaries')
-        .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline')
+        .select('chief_complaint, imaging_findings, prior_treatment, symptoms_timeline, suggested_diagnoses')
         .eq('case_id', caseId)
         .is('deleted_at', null)
         .in('review_status', ['approved', 'edited'])
@@ -170,7 +105,7 @@ async function gatherSourceData(
   const pmQuery = loadImagingContext
     ? supabase
         .from('pain_management_extractions')
-        .select('physical_exam, diagnostic_studies_summary, provider_overrides, review_status')
+        .select('diagnoses, physical_exam, diagnostic_studies_summary, provider_overrides, review_status')
         .eq('case_id', caseId)
         .is('deleted_at', null)
         .in('review_status', ['approved', 'edited'])
@@ -185,6 +120,7 @@ async function gatherSourceData(
     clinicRes,
     vitalsRes,
     feeEstimateTotals,
+    intakeRes,
     priorVisitRes,
     mriCountRes,
     ctCountRes,
@@ -209,12 +145,19 @@ async function gatherSourceData(
       .from('vital_signs')
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
-      .eq('encounter_id', currentEncounter.id)
+      .is('procedure_id', null)
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     getFeeEstimateTotals(),
+    supabase
+      .from('initial_visit_notes')
+      .select('provider_intake, visit_date, finalized_at')
+      .eq('case_id', caseId)
+      .eq('visit_type', visitType)
+      .is('deleted_at', null)
+      .maybeSingle(),
     priorVisitQuery,
     supabase
       .from('mri_extractions')
@@ -244,7 +187,7 @@ async function gatherSourceData(
   const summaryData = summaryRes.data
 
   // Fetch provider profile from case's assigned provider
-  const assignedProviderId = currentEncounter.provider_id
+  const assignedProviderId = caseRes.data.assigned_provider_id as string | null
   let providerRes: { data: { display_name: string; credentials: string | null; npi_number: string | null } | null } = { data: null }
   if (assignedProviderId) {
     providerRes = await supabase
@@ -268,13 +211,15 @@ async function gatherSourceData(
   // edits (review_status='edited') reach the note generator instead of the raw
   // AI-extracted diagnoses column.
   const pmRow = pmRes.data as {
+    diagnoses: unknown
     physical_exam: unknown
     diagnostic_studies_summary: string | null
     provider_overrides: Record<string, unknown> | null
   } | null
-  const pmOverrides = pmRow?.provider_overrides as { physical_exam?: unknown } | null
+  const pmOverrides = pmRow?.provider_overrides as { diagnoses?: unknown; physical_exam?: unknown } | null
   const pmExtraction: InitialVisitInputData['pmExtraction'] = pmRow
     ? {
+        diagnoses: pmOverrides?.diagnoses ?? pmRow.diagnoses,
         physical_exam: pmOverrides?.physical_exam ?? pmRow.physical_exam,
         diagnostic_studies_summary: pmRow.diagnostic_studies_summary,
       }
@@ -287,15 +232,15 @@ async function gatherSourceData(
   // follow-up note a numeric anchor for "pain decreased from X/10 to Y/10"
   // narrative — text-only prior data can't support that sentence.
   const priorVisitFinalizedAt = (priorVisitRow?.finalized_at as string | null) ?? null
-  const priorVisitEncounterId = (priorVisitRow?.encounter_id as string | null) ?? null
   let priorVisitVitalSigns: NonNullable<InitialVisitInputData['priorVisitData']>['vitalSigns'] = null
-  if (priorVisitRow && priorVisitEncounterId) {
+  if (priorVisitRow && priorVisitFinalizedAt) {
     const { data: vitalsRow } = await supabase
       .from('vital_signs')
       .select('recorded_at, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
-      .eq('encounter_id', priorVisitEncounterId)
+      .is('procedure_id', null)
       .is('deleted_at', null)
+      .lte('recorded_at', priorVisitFinalizedAt)
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -314,6 +259,7 @@ async function gatherSourceData(
         physical_exam: (priorVisitRow.physical_exam as string | null) ?? null,
         imaging_findings: (priorVisitRow.imaging_findings as string | null) ?? null,
         medical_necessity: (priorVisitRow.medical_necessity as string | null) ?? null,
+        diagnoses: (priorVisitRow.diagnoses as string | null) ?? null,
         treatment_plan: (priorVisitRow.treatment_plan as string | null) ?? null,
         prognosis: (priorVisitRow.prognosis as string | null) ?? null,
         provider_intake: priorVisitRow.provider_intake ?? null,
@@ -325,8 +271,8 @@ async function gatherSourceData(
 
   const visitAnchor = pickVisitAnchor(
     visitDateOverride ?? null,
-    currentNote.visit_date,
-    currentNote.finalized_at,
+    (intakeRes.data?.visit_date as string | null | undefined) ?? null,
+    (intakeRes.data?.finalized_at as string | null | undefined) ?? null,
   )
   const age = computeAgeAtDate(patient.date_of_birth, visitAnchor)
 
@@ -352,6 +298,7 @@ async function gatherSourceData(
             imaging_findings: summaryData?.imaging_findings ?? null,
             prior_treatment: summaryData?.prior_treatment ?? null,
             symptoms_timeline: summaryData?.symptoms_timeline ?? null,
+            suggested_diagnoses: summaryData?.suggested_diagnoses ?? null,
           }
         : null,
       clinicInfo: {
@@ -373,9 +320,7 @@ async function gatherSourceData(
       feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
         ? feeEstimateTotals
         : null,
-      providerIntake: (currentNote.provider_intake as InitialVisitInputData['providerIntake']) ?? null,
-      visitDiagnosisPool,
-      visitDiagnosisConfirmedAt: currentEncounter.diagnoses_confirmed_at!,
+      providerIntake: (intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake']) ?? null,
       priorVisitData,
       hasApprovedDiagnosticExtractions,
       pmExtraction,
@@ -401,15 +346,12 @@ export async function generateInitialVisitNote(
 
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
-  const prepared = await prepareEvaluationVisit(caseId, visitType)
-  if ('error' in prepared) return { error: prepared.error }
-
   // Find or create the note row for this (case, visit_type).
   // The unique partial index on (case_id, visit_type) guarantees at most one
   // live row per pair, so the other visit type's row is never touched.
   const { data: existingNote } = await supabase
     .from('initial_visit_notes')
-    .select('id, encounter_id, provider_intake, visit_date, tone_hint')
+    .select('id, provider_intake, visit_date, tone_hint')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
@@ -575,41 +517,7 @@ export async function generateInitialVisitNote(
     return { error: result.error || 'Note generation failed' }
   }
 
-  const { data: latestNote } = await supabase.from('initial_visit_notes')
-    .select('encounter_id')
-    .eq('id', recordId)
-    .maybeSingle()
-  const { data: latestEncounter } = latestNote?.encounter_id
-    ? await supabase.from('clinical_encounters')
-        .select('diagnoses,diagnoses_confirmed_at')
-        .eq('id', latestNote.encounter_id)
-        .maybeSingle()
-    : { data: null }
-  let latestDiagnosisPool
-  try {
-    latestDiagnosisPool = latestEncounter
-      ? requireConfirmedVisitDiagnosisPool(latestEncounter)
-      : null
-  } catch {
-    latestDiagnosisPool = null
-  }
-  if (
-    !latestDiagnosisPool
-    || latestEncounter?.diagnoses_confirmed_at !== inputData.visitDiagnosisConfirmedAt
-    || JSON.stringify(latestDiagnosisPool) !== JSON.stringify(inputData.visitDiagnosisPool)
-  ) {
-    await supabase.from('initial_visit_notes').update({
-      status: 'failed',
-      generation_error: 'Visit diagnoses changed during generation. Review them and generate again.',
-      updated_by_user_id: user.id,
-    }).eq('id', recordId)
-    return { error: 'Visit diagnoses changed during generation. Review them and generate again.' }
-  }
-
-  const data = {
-    ...result.data,
-    diagnoses: formatVisitDiagnoses(inputData.visitDiagnosisPool),
-  }
+  const data = result.data!
   const narrativeWarnings = validateNarrative(
     {
       introduction: data.introduction,
@@ -663,7 +571,6 @@ export async function generateInitialVisitNote(
       imaging_findings: data.imaging_findings,
       medical_necessity: data.medical_necessity,
       diagnoses: data.diagnoses,
-      diagnoses_snapshot: inputData.visitDiagnosisPool,
       treatment_plan: data.treatment_plan,
       patient_education: data.patient_education,
       prognosis: data.prognosis,
@@ -738,34 +645,10 @@ export async function saveInitialVisitNote(
   const validated = initialVisitNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
-  const { data: note } = await supabase.from('initial_visit_notes')
-    .select('id,encounter_id,status')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .eq('status', 'draft')
-    .maybeSingle()
-  if (!note?.encounter_id) return { error: 'Visit encounter not found' }
-  const { data: encounter } = await supabase.from('clinical_encounters')
-    .select('diagnoses,diagnoses_confirmed_at')
-    .eq('id', note.encounter_id)
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  let visitDiagnosisPool
-  try {
-    visitDiagnosisPool = encounter ? requireConfirmedVisitDiagnosisPool(encounter) : null
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Review and confirm diagnoses for this visit' }
-  }
-  if (!visitDiagnosisPool) return { error: 'Visit encounter not found' }
-
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
       ...validated.data,
-      diagnoses: formatVisitDiagnoses(visitDiagnosisPool),
-      diagnoses_snapshot: visitDiagnosisPool,
       updated_by_user_id: user.id,
     })
     .eq('case_id', caseId)
@@ -800,25 +683,6 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
-
-  if (!note.encounter_id) return { error: 'Visit encounter not found' }
-  const { data: encounter } = await supabase.from('clinical_encounters')
-    .select('diagnoses,diagnoses_confirmed_at')
-    .eq('id', note.encounter_id)
-    .eq('case_id', caseId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  let visitDiagnosisPool
-  try {
-    visitDiagnosisPool = encounter ? requireConfirmedVisitDiagnosisPool(encounter) : null
-    if (!visitDiagnosisPool) throw new Error('Visit encounter not found')
-    assertDiagnosisTextMatchesPool(note.diagnoses, visitDiagnosisPool)
-    if (JSON.stringify(note.diagnoses_snapshot) !== JSON.stringify(visitDiagnosisPool)) {
-      throw new Error('Diagnosis snapshot does not match the confirmed visit diagnoses')
-    }
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Visit diagnoses do not match this note' }
-  }
 
   // Clean up previous document if re-finalizing
   await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
@@ -1023,18 +887,6 @@ export async function regenerateNoteSection(
 
   const currentContent = (note[section] as string) || ''
 
-  if (section === 'diagnoses') {
-    const content = formatVisitDiagnoses(inputData.visitDiagnosisPool)
-    const { error: updateError } = await supabase.from('initial_visit_notes').update({
-      diagnoses: content,
-      diagnoses_snapshot: inputData.visitDiagnosisPool,
-      updated_by_user_id: user.id,
-    }).eq('id', note.id)
-    if (updateError) return { error: 'Failed to update diagnoses' }
-    revalidatePath(`/patients/${caseId}`)
-    return { data: { content } }
-  }
-
   // Build otherSections context — every non-target section present on the
   // draft row. Lets the regen prompt enforce prose-vs-diagnosis-code
   // consistency (e.g., if diagnoses were downgraded to M50.20, narrative
@@ -1124,24 +976,16 @@ export async function checkNotePrerequisites(
 
 // --- Get initial visit vitals ---
 
-export async function getInitialVisitVitals(caseId: string, visitType: NoteVisitType) {
+export async function getInitialVisitVitals(caseId: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
-
-  const { data: note } = await supabase.from('initial_visit_notes')
-    .select('encounter_id')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (!note?.encounter_id) return { data: null }
 
   const { data, error } = await supabase
     .from('vital_signs')
     .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
     .eq('case_id', caseId)
-    .eq('encounter_id', note.encounter_id)
+    .is('procedure_id', null)
     .is('deleted_at', null)
     .order('recorded_at', { ascending: false })
     .limit(1)
@@ -1175,18 +1019,29 @@ export async function saveInitialVisitVitals(
   const validated = initialVisitVitalsSchema.safeParse(vitals)
   if (!validated.success) return { error: 'Invalid vitals data' }
 
-  const { data: prepared, error: prepareError } = await supabase.rpc('prepare_evaluation_visit', {
-    p_case_id: caseId,
-    p_visit_type: visitType,
-  })
-  const ownership = prepared?.[0]
-  if (prepareError || !ownership) return { error: mapEvaluationVisitPreparationError(prepareError) }
+  const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+    .eq('id', caseId).is('deleted_at', null).single()
+  let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+  try {
+    ownership = await ensureLegacyEpisodeEncounter(
+      caseId,
+      visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+      {
+        encounterDate: new Date().toISOString().slice(0, 10),
+        providerId: clinicalCase?.assigned_provider_id,
+        userId: user.id,
+      },
+      supabase,
+    )
+  } catch (error) {
+    return { error: mapEpisodeOwnershipError(error) }
+  }
 
   const { data: existing } = await supabase
     .from('vital_signs')
     .select('id')
     .eq('case_id', caseId)
-    .eq('encounter_id', ownership.encounter_id)
+    .is('procedure_id', null)
     .is('deleted_at', null)
     .order('recorded_at', { ascending: false })
     .limit(1)
@@ -1197,7 +1052,7 @@ export async function saveInitialVisitVitals(
       .from('vital_signs')
       .update({
         ...validated.data,
-        encounter_id: ownership.encounter_id,
+        encounter_id: ownership.encounterId,
         updated_by_user_id: user.id,
       })
       .eq('id', existing.id)
@@ -1208,7 +1063,7 @@ export async function saveInitialVisitVitals(
       .from('vital_signs')
       .insert({
         case_id: caseId,
-        encounter_id: ownership.encounter_id,
+        encounter_id: ownership.encounterId,
         procedure_id: null,
         ...validated.data,
         created_by_user_id: user.id,
@@ -1259,21 +1114,54 @@ export async function saveProviderIntake(
   const validated = providerIntakeSchema.safeParse(intake)
   if (!validated.success) return { error: 'Invalid provider intake data' }
 
-  const { data: prepared, error: prepareError } = await supabase.rpc('prepare_evaluation_visit', {
-    p_case_id: caseId,
-    p_visit_type: visitType,
-  })
-  if (prepareError || !prepared?.[0]) return { error: mapEvaluationVisitPreparationError(prepareError) }
-
-  const { error } = await supabase.from('initial_visit_notes').update({
-    provider_intake: validated.data as unknown as Record<string, unknown>,
-    updated_by_user_id: user.id,
-  })
+  const { data: existing } = await supabase
+    .from('initial_visit_notes')
+    .select('id')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
+    .maybeSingle()
 
-  if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
+  if (existing) {
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .update({
+        provider_intake: validated.data as unknown as Record<string, unknown>,
+        updated_by_user_id: user.id,
+      })
+      .eq('id', existing.id)
+
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
+  } else {
+    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
+      .eq('id', caseId).is('deleted_at', null).single()
+    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    try {
+      ownership = await ensureLegacyEpisodeEncounter(
+        caseId,
+        visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
+        { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
+        supabase,
+      )
+    } catch (error) {
+      return { error: mapEpisodeOwnershipError(error) }
+    }
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .insert({
+        case_id: caseId,
+        episode_id: ownership.episodeId,
+        encounter_id: ownership.encounterId,
+        visit_type: visitType,
+        status: 'draft',
+        provider_intake: validated.data as unknown as Record<string, unknown>,
+        visit_date: new Date().toISOString().slice(0, 10),
+        created_by_user_id: user.id,
+        updated_by_user_id: user.id,
+      })
+
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save provider intake' }
+  }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
