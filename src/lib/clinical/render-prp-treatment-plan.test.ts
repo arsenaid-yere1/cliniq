@@ -21,7 +21,7 @@ describe('renderPrpTreatmentPlan', () => {
     )
     expect(text).toContain('Given the incomplete response to conservative measures')
     expect(text).toContain('• Lumbar Spine: Ultrasound-guided PRP injections at L5-S1')
-    expect(text).toContain('targeting facet-capsular structures at this level, where Facet arthropathy is documented')
+    expect(text).toContain('targeting the facet-mediated pain generators at this level, where the corresponding facet pathology is documented')
     expect(text).toContain('An initial staged course of one to three injection sessions is planned')
     expect(text).toContain('The patient will be re-evaluated after each injection')
     expect(text).toContain('persistent functional impairment support additional treatment')
@@ -62,6 +62,34 @@ describe('renderPrpTreatmentPlan', () => {
 
     const text = renderPrpTreatmentPlan('[[PRP_TARGET_RECOMMENDATIONS]]', validated, multiLevelBundle)
     expect(text).toContain('• Cervical Spine: Ultrasound-guided PRP injections at C5-C6 and C6-C7')
+    expect(text).toContain('targeting the discogenic pain generators at these levels, where the most significant disc pathology and foraminal narrowing are documented')
+    expect(text).not.toContain('Disc protrusion with foraminal narrowing')
     expect(text.match(/• Cervical Spine:/g)).toHaveLength(1)
+  })
+
+  it('summarizes shoulder targets without repeating full imaging findings', () => {
+    const shoulderBundle = buildPrpTargetEvidence({
+      imagingRows: [{
+        id: 'mri-shoulder', source_table: 'mri_extractions', modality: 'MRI',
+        body_region: 'Left shoulder', laterality: 'left', study_date: '2026-08-01',
+        findings: [
+          { level: 'conjoined supraspinatus and infraspinatus tendons', description: 'Full thickness rotator cuff tear measuring 11 x 7 mm.' },
+          { level: 'subacromial/subdeltoid bursa', description: 'Moderate bursitis.' },
+          { level: 'long head of biceps tendon', description: 'Severe bicipital tenosynovitis.' },
+        ],
+      }],
+      providerIntake: {
+        chief_complaints: { complaints: [{ body_region: 'Left shoulder' }] },
+        exam_findings: { regions: [{ region: 'Left shoulder', palpation_findings: 'Focal tenderness' }] },
+      },
+    })
+    const validated = validatePrpTargetSelections(shoulderBundle.candidates.map((candidate) => ({
+      candidate_id: candidate.id, target_structure: 'verbose model target', guidance_method: 'ultrasound' as const,
+      approach: 'targeted', clinical_rationale: 'Concordant.',
+    })), shoulderBundle).data!
+    const text = renderPrpTreatmentPlan('[[PRP_TARGET_RECOMMENDATIONS]]', validated, shoulderBundle)
+    expect(text).toContain('• Left Shoulder: Ultrasound-guided PRP injection targeting the rotator cuff tear, the subacromial/subdeltoid bursa and the biceps tendon sheath.')
+    expect(text).not.toContain('11 x 7 mm')
+    expect(text).not.toContain('verbose model target')
   })
 })

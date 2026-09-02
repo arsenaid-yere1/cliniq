@@ -9,6 +9,47 @@ function titleCase(value: string): string {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function joinClinicalList(values: string[]): string {
+  if (values.length <= 1) return values[0] ?? ''
+  return `${values.slice(0, -1).join(', ')} and ${values.at(-1)}`
+}
+
+function spineTargetSummary(descriptions: string[]): string {
+  const text = descriptions.join(' ').toLowerCase()
+  const hasDiscPathology = /disc|annular|herniat|protrusion|extrusion/.test(text)
+  const hasFacetPathology = /facet|apophyseal|uncovertebral/.test(text)
+  const target = hasDiscPathology && hasFacetPathology
+    ? 'the facet-mediated and discogenic pain generators'
+    : hasDiscPathology
+      ? 'the discogenic pain generators'
+      : hasFacetPathology
+        ? 'the facet-mediated pain generators'
+        : 'the clinically concordant pain generators'
+  const support = hasDiscPathology && /foraminal narrowing|foraminal stenosis/.test(text)
+    ? 'the most significant disc pathology and foraminal narrowing are documented'
+    : hasDiscPathology
+      ? 'the corresponding disc pathology is documented'
+      : hasFacetPathology
+        ? 'the corresponding facet pathology is documented'
+        : 'the corresponding structural abnormalities are documented'
+  return `${target}|${support}`
+}
+
+function nonSpineTargetSummary(region: string, locations: string[], descriptions: string[]): string {
+  const text = descriptions.join(' ').toLowerCase()
+  if (region === 'shoulder') {
+    const targets: string[] = []
+    if (/rotator cuff|supraspinatus|infraspinatus/.test(text)) {
+      targets.push(/tear/.test(text) ? 'the rotator cuff tear' : 'the rotator cuff tendinopathy')
+    }
+    if (/subacromial|subdeltoid|burs/.test(text)) targets.push('the subacromial/subdeltoid bursa')
+    if (/biceps|bicipital/.test(text)) targets.push('the biceps tendon sheath')
+    if (/glenohumeral/.test(text)) targets.push('the glenohumeral joint')
+    if (targets.length) return joinClinicalList(targets)
+  }
+  return joinClinicalList(locations.map((location) => `the documented ${location}`))
+}
+
 export function renderPrpTargetBlock(
   recommendations: PrpTargetRecommendation[],
   evidence: PrpTargetEvidenceBundle,
@@ -25,18 +66,14 @@ export function renderPrpTargetBlock(
     const side = first.laterality ? `${titleCase(first.laterality)} ` : ''
     const label = `${side}${titleCase(first.region)}${isSpineRegion(first.region) ? ' Spine' : ''}`
     const locations = [...new Set(group.map((item) => item.level_or_location))]
-    const targetStructures = [...new Set(group.map((item) => item.target_structure.trim()).filter(Boolean))]
     const descriptions = [...new Set(group.flatMap((item) => item.anatomic_evidence_ids)
       .map((id) => evidenceById.get(id)?.description).filter((value): value is string => Boolean(value)))]
-    const locationText = locations.length === 1 ? locations[0] : `${locations.slice(0, -1).join(', ')} and ${locations.at(-1)}`
-    const pathologyText = descriptions.join('; ')
-    const targetText = targetStructures.length === 1
-      ? targetStructures[0]
-      : `${targetStructures.slice(0, -1).join(', ')} and ${targetStructures.at(-1)}`
+    const locationText = joinClinicalList(locations)
     if (isSpineRegion(first.region)) {
-      return `• ${label}: Ultrasound-guided PRP injections at ${locationText} targeting ${targetText} at ${locations.length === 1 ? 'this level' : 'these levels'}, where ${pathologyText} ${descriptions.length === 1 ? 'is' : 'are'} documented.`
+      const [targetText, supportText] = spineTargetSummary(descriptions).split('|')
+      return `• ${label}: Ultrasound-guided PRP injections at ${locationText} targeting ${targetText} at ${locations.length === 1 ? 'this level' : 'these levels'}, where ${supportText}.`
     }
-    return `• ${label}: Ultrasound-guided PRP injection targeting ${targetText}, where ${pathologyText} ${descriptions.length === 1 ? 'is' : 'are'} documented.`
+    return `• ${label}: Ultrasound-guided PRP injection targeting ${nonSpineTargetSummary(first.region, locations, descriptions)}.`
   })
   return `${TARGET_INTRO}\n${bullets.join('\n')}\n${TARGET_FOLLOW_UP}`
 }
