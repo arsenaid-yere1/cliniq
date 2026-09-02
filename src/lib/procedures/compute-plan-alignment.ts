@@ -41,82 +41,18 @@ export type PlanAlignment = {
 }
 
 import { lateralityFromSites, type ProcedureSite } from './sites-helpers'
+import {
+  extractLaterality,
+  extractSpinalLevels,
+  normalizeRegion,
+} from '@/lib/clinical/anatomic-normalization'
+
+export { normalizeRegion } from '@/lib/clinical/anatomic-normalization'
 
 type PerformedInput = {
   injection_site: string | null
   sites: ProcedureSite[]
   guidance_method: 'ultrasound' | 'fluoroscopy' | 'landmark' | null
-}
-
-// Canonical regions — mirrors the informal taxonomy used elsewhere
-// (parse-body-region.ts handles laterality; this handles anatomical
-// grouping so "lumbar spine" / "lumbosacral" / "low back" all compare
-// equal against "lumbar").
-const REGION_SYNONYMS: Record<string, string> = {
-  lumbar: 'lumbar',
-  lumbosacral: 'lumbar',
-  'low back': 'lumbar',
-  'lower back': 'lumbar',
-  'lumbar spine': 'lumbar',
-  'l-spine': 'lumbar',
-  ls: 'lumbar',
-  cervical: 'cervical',
-  'cervical spine': 'cervical',
-  'c-spine': 'cervical',
-  neck: 'cervical',
-  thoracic: 'thoracic',
-  'thoracic spine': 'thoracic',
-  't-spine': 'thoracic',
-  'mid back': 'thoracic',
-  sacroiliac: 'sacroiliac',
-  si: 'sacroiliac',
-  'si joint': 'sacroiliac',
-  'sacroiliac joint': 'sacroiliac',
-  knee: 'knee',
-  shoulder: 'shoulder',
-  hip: 'hip',
-  wrist: 'wrist',
-  ankle: 'ankle',
-  elbow: 'elbow',
-}
-
-const VERTEBRAL_LEVEL_RE = /\b([CTL])\s*(\d{1,2})\s*[-–/]\s*(?:([CTLS])?\s*)?(\d{1,2})\b/gi
-const SIMPLE_LEVEL_RE = /\b([CTL])\s*(\d{1,2})\b/gi
-
-// Map a vertebral-level prefix letter (C/T/L/S) to a canonical spine region.
-// Used so a label like "C5-C6" or "L5-S1" classifies even when the label
-// carries no synonym keyword. Sacral prefix collapses to lumbar because the
-// only realistic sacral injection target in this pipeline is L-S transitional
-// (sacroiliac joint is a separate canonical region).
-function regionFromVertebralPrefix(prefix: string): string | null {
-  const p = prefix.toUpperCase()
-  if (p === 'C') return 'cervical'
-  if (p === 'T') return 'thoracic'
-  if (p === 'L' || p === 'S') return 'lumbar'
-  return null
-}
-
-export function normalizeRegion(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const cleaned = raw
-    .toLowerCase()
-    .replace(/^(left|right|bilateral|bilat|both|lt\.?|rt\.?|l\.?|r\.?)\s+/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!cleaned) return null
-  if (REGION_SYNONYMS[cleaned]) return REGION_SYNONYMS[cleaned]
-  // Try keyword contains
-  for (const [key, canonical] of Object.entries(REGION_SYNONYMS)) {
-    if (cleaned.includes(key)) return canonical
-  }
-  // Fall back to vertebral-level prefix (e.g. "c5-c6" → cervical, "l5-s1"
-  // → lumbar, "s1" → lumbar). Captures C/T/L/S level patterns.
-  const levelMatch = cleaned.match(/\b([ctls])\s*\d{1,2}\b/i)
-  if (levelMatch) {
-    const region = regionFromVertebralPrefix(levelMatch[1])
-    if (region) return region
-  }
-  return cleaned
 }
 
 // Derive the set of canonical regions implied by a sites[] array. Every site
@@ -132,38 +68,11 @@ export function regionsFromSites(sites: ProcedureSite[]): Set<string> {
   return regions
 }
 
-function extractLevels(text: string): string[] {
-  const levels = new Set<string>()
-  const multi = text.matchAll(VERTEBRAL_LEVEL_RE)
-  for (const m of multi) {
-    const prefix = m[1].toUpperCase()
-    const endPrefix = (m[3] ?? prefix).toUpperCase()
-    levels.add(`${prefix}${m[2]}-${endPrefix}${m[4]}`)
-  }
-  if (levels.size === 0) {
-    const single = text.matchAll(SIMPLE_LEVEL_RE)
-    for (const m of single) {
-      levels.add(`${m[1].toUpperCase()}${m[2]}`)
-    }
-  }
-  return [...levels]
-}
-
 function extractGuidanceHint(text: string): PlannedProcedure['guidance_hint'] {
   const t = text.toLowerCase()
   if (/\bfluoro(scopy|scopic)?\b/.test(t)) return 'fluoroscopy'
   if (/\bultrasound|\bus[- ]guided|sonograph/.test(t)) return 'ultrasound'
   if (/\blandmark|palpation-guided|blind technique/.test(t)) return 'landmark'
-  return null
-}
-
-function extractLaterality(
-  text: string,
-): 'left' | 'right' | 'bilateral' | null {
-  const t = text.toLowerCase()
-  if (/\bbilateral\b|\bbilat\b|\bboth sides\b/.test(t)) return 'bilateral'
-  if (/\b(left|lt\.?)\b/.test(t)) return 'left'
-  if (/\b(right|rt\.?)\b/.test(t)) return 'right'
   return null
 }
 
@@ -199,7 +108,7 @@ export function parsePmTreatmentPlan(
       body_region: region,
       laterality: extractLaterality(description),
       guidance_hint: extractGuidanceHint(description),
-      target_levels: extractLevels(description),
+      target_levels: extractSpinalLevels(description),
       raw_description: description,
     })
   }
@@ -226,7 +135,7 @@ export function parseInitialVisitTreatmentPlan(
       body_region: region,
       laterality: extractLaterality(sentence),
       guidance_hint: extractGuidanceHint(sentence),
-      target_levels: extractLevels(sentence),
+      target_levels: extractSpinalLevels(sentence),
       raw_description: sentence.trim(),
     })
   }
@@ -314,7 +223,7 @@ function computeMismatches(
     for (const lvl of cand.target_levels) plannedLevelsUnion.add(lvl)
   }
   if (plannedLevelsUnion.size > 0 && performed.injection_site) {
-    const performedLevels = extractLevels(performed.injection_site)
+    const performedLevels = extractSpinalLevels(performed.injection_site)
     if (performedLevels.length > 0) {
       const missing = [...plannedLevelsUnion].filter(
         (l) => !performedLevels.includes(l),

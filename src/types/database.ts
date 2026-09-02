@@ -1771,6 +1771,8 @@ export type Database = {
           physical_exam: string | null
           post_accident_history: string | null
           prognosis: string | null
+          prp_target_evidence_hash: string | null
+          prp_target_recommendations: Json
           provider_intake: Json | null
           raw_ai_response: Json | null
           review_of_systems: string | null
@@ -1814,6 +1816,8 @@ export type Database = {
           physical_exam?: string | null
           post_accident_history?: string | null
           prognosis?: string | null
+          prp_target_evidence_hash?: string | null
+          prp_target_recommendations?: Json
           provider_intake?: Json | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null
@@ -1857,6 +1861,8 @@ export type Database = {
           physical_exam?: string | null
           post_accident_history?: string | null
           prognosis?: string | null
+          prp_target_evidence_hash?: string | null
+          prp_target_recommendations?: Json
           provider_intake?: Json | null
           raw_ai_response?: Json | null
           review_of_systems?: string | null

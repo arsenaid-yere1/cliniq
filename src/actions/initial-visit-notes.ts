@@ -5,6 +5,7 @@ import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
+import { z } from 'zod'
 import {
   generateInitialVisitFromData,
   regenerateSection as regenerateSectionAI,
@@ -26,6 +27,13 @@ import { getFeeEstimateTotals } from '@/actions/fee-estimate'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
 import { validateNarrative } from '@/lib/qc/narrative-validator'
 import {
+  buildPrpTargetEvidence,
+  prpTargetRecommendationSchema,
+  validatePrpTargetSelections,
+  type ImagingEvidenceRow,
+} from '@/lib/clinical/prp-target-evidence'
+import { renderPrpTreatmentPlan, stripPrpTargetBlock } from '@/lib/clinical/render-prp-treatment-plan'
+import {
   ensureLegacyEpisodeEncounter,
   EpisodeContextError,
 } from '@/lib/clinical/episode-context'
@@ -35,6 +43,17 @@ import {
 function computeSourceHash(inputData: InitialVisitInputData): string {
   const serialized = JSON.stringify(inputData)
   return createHash('sha256').update(serialized).digest('hex')
+}
+
+function computePrpTargetEvidenceHash(inputData: InitialVisitInputData): string | null {
+  if (!inputData.prpTargetEvidence) return null
+  return createHash('sha256').update(JSON.stringify(inputData.prpTargetEvidence)).digest('hex')
+}
+
+function selectionFields(recommendations: Array<ReturnType<typeof prpTargetRecommendationSchema.parse>>) {
+  return recommendations.map(({ candidate_id, target_structure, guidance_method, approach, clinical_rationale }) => ({
+    candidate_id, target_structure, guidance_method, approach, clinical_rationale,
+  }))
 }
 
 // --- Helper: map the visit-date-order trigger's check_violation into a
@@ -122,9 +141,9 @@ async function gatherSourceData(
     feeEstimateTotals,
     intakeRes,
     priorVisitRes,
-    mriCountRes,
-    ctCountRes,
-    xRayCountRes,
+    mriEvidenceRes,
+    ctEvidenceRes,
+    xRayEvidenceRes,
     pmRes,
   ] = await Promise.all([
     supabase
@@ -159,24 +178,21 @@ async function gatherSourceData(
       .is('deleted_at', null)
       .maybeSingle(),
     priorVisitQuery,
-    supabase
-      .from('mri_extractions')
-      .select('id', { count: 'exact', head: true })
-      .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .in('review_status', ['approved', 'edited']),
-    supabase
-      .from('ct_scan_extractions')
-      .select('id', { count: 'exact', head: true })
-      .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .in('review_status', ['approved', 'edited']),
-    supabase
-      .from('x_ray_extractions')
-      .select('id', { count: 'exact', head: true })
-      .eq('case_id', caseId)
-      .is('deleted_at', null)
-      .in('review_status', ['approved', 'edited']),
+    loadImagingContext
+      ? supabase.from('mri_extractions')
+          .select('id, body_region, mri_date, findings, provider_overrides')
+          .eq('case_id', caseId).is('deleted_at', null).in('review_status', ['approved', 'edited'])
+      : Promise.resolve({ data: [], error: null }),
+    loadImagingContext
+      ? supabase.from('ct_scan_extractions')
+          .select('id, body_region, scan_date, findings, provider_overrides')
+          .eq('case_id', caseId).is('deleted_at', null).in('review_status', ['approved', 'edited'])
+      : Promise.resolve({ data: [], error: null }),
+    loadImagingContext
+      ? supabase.from('x_ray_extractions')
+          .select('id, body_region, laterality, scan_date, findings, provider_overrides')
+          .eq('case_id', caseId).is('deleted_at', null).in('review_status', ['approved', 'edited'])
+      : Promise.resolve({ data: [], error: null }),
     pmQuery,
   ])
 
@@ -205,7 +221,8 @@ async function gatherSourceData(
     gender: string | null
   }
 
-  const hasApprovedDiagnosticExtractions = ((mriCountRes.count ?? 0) + (ctCountRes.count ?? 0) + (xRayCountRes.count ?? 0)) > 0
+  const hasApprovedDiagnosticExtractions =
+    ((mriEvidenceRes.data?.length ?? 0) + (ctEvidenceRes.data?.length ?? 0) + (xRayEvidenceRes.data?.length ?? 0)) > 0
 
   // Build pmExtraction with overrides-first precedence on diagnoses so provider
   // edits (review_status='edited') reach the note generator instead of the raw
@@ -223,6 +240,30 @@ async function gatherSourceData(
         physical_exam: pmOverrides?.physical_exam ?? pmRow.physical_exam,
         diagnostic_studies_summary: pmRow.diagnostic_studies_summary,
       }
+    : null
+
+  const imagingRows: ImagingEvidenceRow[] = loadImagingContext
+    ? [
+        ...(mriEvidenceRes.data ?? []).map((row) => ({
+          id: row.id, source_table: 'mri_extractions' as const, modality: 'MRI' as const,
+          body_region: row.body_region, study_date: row.mri_date, findings: row.findings,
+          provider_overrides: row.provider_overrides as Record<string, unknown> | null,
+        })),
+        ...(ctEvidenceRes.data ?? []).map((row) => ({
+          id: row.id, source_table: 'ct_scan_extractions' as const, modality: 'CT' as const,
+          body_region: row.body_region, study_date: row.scan_date, findings: row.findings,
+          provider_overrides: row.provider_overrides as Record<string, unknown> | null,
+        })),
+        ...(xRayEvidenceRes.data ?? []).map((row) => ({
+          id: row.id, source_table: 'x_ray_extractions' as const, modality: 'X-ray' as const,
+          body_region: row.body_region, laterality: row.laterality, study_date: row.scan_date,
+          findings: row.findings, provider_overrides: row.provider_overrides as Record<string, unknown> | null,
+        })),
+      ]
+    : []
+  const providerIntake = (intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake']) ?? null
+  const prpTargetEvidence = loadImagingContext
+    ? buildPrpTargetEvidence({ imagingRows, providerIntake, pmPhysicalExam: pmExtraction?.physical_exam })
     : null
 
   const priorVisitRow = (priorVisitRes as { data: Record<string, unknown> | null }).data
@@ -320,10 +361,11 @@ async function gatherSourceData(
       feeEstimate: feeEstimateTotals.professional_max > 0 || feeEstimateTotals.practice_center_max > 0
         ? feeEstimateTotals
         : null,
-      providerIntake: (intakeRes.data?.provider_intake as InitialVisitInputData['providerIntake']) ?? null,
+      providerIntake,
       priorVisitData,
       hasApprovedDiagnosticExtractions,
       pmExtraction,
+      prpTargetEvidence,
     },
     error: null,
   }
@@ -417,6 +459,8 @@ export async function generateInitialVisitNote(
         raw_ai_response: null,
         generation_error: null,
         tone_hint: effectiveToneHint,
+        prp_target_recommendations: [],
+        prp_target_evidence_hash: null,
         updated_by_user_id: user.id,
       })
       .eq('id', existingNote.id)
@@ -518,6 +562,20 @@ export async function generateInitialVisitNote(
   }
 
   const data = result.data!
+  let validatedTargets = [] as NonNullable<ReturnType<typeof validatePrpTargetSelections>['data']>
+  if (visitType === 'pain_evaluation_visit') {
+    const validated = validatePrpTargetSelections(data.prp_target_recommendations, inputData.prpTargetEvidence!)
+    if (validated.error || !validated.data) {
+      await supabase.from('initial_visit_notes').update({
+        status: 'failed', generation_error: validated.error ?? 'Invalid PRP target selection',
+        raw_ai_response: result.rawResponse || null, updated_by_user_id: user.id,
+      }).eq('id', recordId)
+      revalidatePath(`/patients/${caseId}`)
+      return { error: validated.error ?? 'Invalid PRP target selection' }
+    }
+    validatedTargets = validated.data
+    data.treatment_plan = renderPrpTreatmentPlan(data.treatment_plan, validatedTargets, inputData.prpTargetEvidence!)
+  }
   const narrativeWarnings = validateNarrative(
     {
       introduction: data.introduction,
@@ -578,6 +636,8 @@ export async function generateInitialVisitNote(
       clinician_disclaimer: data.clinician_disclaimer,
       ai_model: 'claude-opus-4-6',
       raw_ai_response: { raw: result.rawResponse ?? null, narrative_warnings: narrativeWarnings },
+      prp_target_recommendations: validatedTargets,
+      prp_target_evidence_hash: computePrpTargetEvidenceHash(inputData),
       status: 'draft',
       sections_done: INITIAL_VISIT_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
@@ -645,10 +705,37 @@ export async function saveInitialVisitNote(
   const validated = initialVisitNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: 'Invalid form data' }
 
+  let valuesToSave = validated.data
+  let recommendationsToSave: unknown = undefined
+  if (visitType === 'pain_evaluation_visit') {
+    const { data: note } = await supabase.from('initial_visit_notes')
+      .select('prp_target_recommendations, prp_target_evidence_hash')
+      .eq('case_id', caseId).eq('visit_type', visitType).is('deleted_at', null).eq('status', 'draft').single()
+    if (!note) return { error: 'No draft note found' }
+    const { data: currentInput, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, validated.data.visit_date)
+    if (gatherError || !currentInput?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
+    const currentHash = computePrpTargetEvidenceHash(currentInput)
+    if (note.prp_target_evidence_hash !== currentHash) {
+      return { error: 'Clinical or imaging evidence changed. Regenerate the Treatment Plan before saving.' }
+    }
+    const parsed = z.array(prpTargetRecommendationSchema).safeParse(note.prp_target_recommendations)
+    if (!parsed.success) return { error: 'PRP target data is invalid. Regenerate the Treatment Plan.' }
+    const checked = validatePrpTargetSelections(selectionFields(parsed.data), currentInput.prpTargetEvidence)
+    if (checked.error || !checked.data) return { error: checked.error ?? 'PRP target validation failed' }
+    valuesToSave = {
+      ...validated.data,
+      treatment_plan: renderPrpTreatmentPlan(
+        stripPrpTargetBlock(validated.data.treatment_plan), checked.data, currentInput.prpTargetEvidence,
+      ),
+    }
+    recommendationsToSave = checked.data
+  }
+
   const { error } = await supabase
     .from('initial_visit_notes')
     .update({
-      ...validated.data,
+      ...valuesToSave,
+      ...(recommendationsToSave === undefined ? {} : { prp_target_recommendations: recommendationsToSave }),
       updated_by_user_id: user.id,
     })
     .eq('case_id', caseId)
@@ -660,6 +747,41 @@ export async function saveInitialVisitNote(
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
+}
+
+export async function removePrpTargetRecommendation(caseId: string, candidateId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const closedCheck = await assertCaseNotClosed(supabase, caseId)
+  if (closedCheck.error) return { error: closedCheck.error }
+  const { data: note } = await supabase.from('initial_visit_notes')
+    .select('id, visit_date, treatment_plan, prp_target_recommendations, prp_target_evidence_hash')
+    .eq('case_id', caseId).eq('visit_type', 'pain_evaluation_visit')
+    .is('deleted_at', null).eq('status', 'draft').single()
+  if (!note) return { error: 'No Pain Evaluation draft found' }
+  const parsed = z.array(prpTargetRecommendationSchema).safeParse(note.prp_target_recommendations)
+  if (!parsed.success) return { error: 'PRP target data is invalid. Regenerate the Treatment Plan.' }
+  const retained = parsed.data.filter((target) => target.candidate_id !== candidateId)
+  if (retained.length === parsed.data.length) return { error: 'PRP target not found' }
+  const { data: inputData, error: gatherError } = await gatherSourceData(
+    supabase, caseId, 'pain_evaluation_visit', note.visit_date,
+  )
+  if (gatherError || !inputData?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
+  if (note.prp_target_evidence_hash !== computePrpTargetEvidenceHash(inputData)) {
+    return { error: 'Clinical or imaging evidence changed. Regenerate the Treatment Plan first.' }
+  }
+  const checked = validatePrpTargetSelections(selectionFields(retained), inputData.prpTargetEvidence)
+  if (checked.error || !checked.data) return { error: checked.error ?? 'PRP target validation failed' }
+  const treatmentPlan = renderPrpTreatmentPlan(
+    stripPrpTargetBlock(note.treatment_plan ?? ''), checked.data, inputData.prpTargetEvidence,
+  )
+  const { error } = await supabase.from('initial_visit_notes').update({
+    prp_target_recommendations: checked.data, treatment_plan: treatmentPlan, updated_by_user_id: user.id,
+  }).eq('id', note.id)
+  if (error) return { error: 'Failed to remove PRP target' }
+  revalidatePath(`/patients/${caseId}`)
+  return { data: { treatment_plan: treatmentPlan } }
 }
 
 // --- Finalize note ---
@@ -683,6 +805,31 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
+
+  if (visitType === 'pain_evaluation_visit') {
+    const { data: currentInput, error: gatherError } = await gatherSourceData(
+      supabase, caseId, visitType, note.visit_date as string | null,
+    )
+    if (gatherError || !currentInput?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
+    const currentHash = computePrpTargetEvidenceHash(currentInput)
+    if (note.prp_target_evidence_hash !== currentHash) {
+      return { error: 'Clinical or imaging evidence changed. Regenerate the Treatment Plan before finalizing.' }
+    }
+    const parsed = z.array(prpTargetRecommendationSchema).safeParse(note.prp_target_recommendations)
+    if (!parsed.success) return { error: 'PRP target data is invalid. Regenerate the Treatment Plan.' }
+    const checked = validatePrpTargetSelections(selectionFields(parsed.data), currentInput.prpTargetEvidence)
+    if (checked.error || !checked.data) return { error: checked.error ?? 'PRP target validation failed' }
+    note.prp_target_recommendations = checked.data
+    note.treatment_plan = renderPrpTreatmentPlan(
+      stripPrpTargetBlock(note.treatment_plan ?? ''), checked.data, currentInput.prpTargetEvidence,
+    )
+    const { error: targetUpdateError } = await supabase.from('initial_visit_notes').update({
+      treatment_plan: note.treatment_plan,
+      prp_target_recommendations: checked.data,
+      updated_by_user_id: user.id,
+    }).eq('id', note.id)
+    if (targetUpdateError) return { error: 'Failed to persist validated PRP targets' }
+  }
 
   // Clean up previous document if re-finalizing
   await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
@@ -840,6 +987,8 @@ export async function resetInitialVisitNote(caseId: string, visitType: NoteVisit
       generation_error: null,
       generation_attempts: 0,
       source_data_hash: null,
+      prp_target_recommendations: [],
+      prp_target_evidence_hash: null,
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
@@ -886,6 +1035,36 @@ export async function regenerateNoteSection(
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
+
+  if (visitType === 'pain_evaluation_visit' && section === 'treatment_plan') {
+    const regenerated = await generateInitialVisitFromData(
+      inputData,
+      visitType,
+      (note.tone_hint as string | null) ?? null,
+    )
+    if (regenerated.error || !regenerated.data || !inputData.prpTargetEvidence) {
+      return { error: regenerated.error ?? 'Treatment Plan regeneration failed' }
+    }
+    const checked = validatePrpTargetSelections(
+      regenerated.data.prp_target_recommendations,
+      inputData.prpTargetEvidence,
+    )
+    if (checked.error || !checked.data) return { error: checked.error ?? 'PRP target validation failed' }
+    const content = renderPrpTreatmentPlan(
+      regenerated.data.treatment_plan,
+      checked.data,
+      inputData.prpTargetEvidence,
+    )
+    const { error: updateError } = await supabase.from('initial_visit_notes').update({
+      treatment_plan: content,
+      prp_target_recommendations: checked.data,
+      prp_target_evidence_hash: computePrpTargetEvidenceHash(inputData),
+      updated_by_user_id: user.id,
+    }).eq('id', note.id)
+    if (updateError) return { error: 'Failed to update Treatment Plan' }
+    revalidatePath(`/patients/${caseId}`)
+    return { data: { content } }
+  }
 
   // Build otherSections context — every non-target section present on the
   // draft row. Lets the regen prompt enforce prose-vs-diagnosis-code

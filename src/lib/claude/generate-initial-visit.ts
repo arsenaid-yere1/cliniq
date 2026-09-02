@@ -11,6 +11,7 @@ import { forbiddenPrognosisPromptBlock } from '@/lib/qc/forbidden-phrases'
 import { voiceCharterPromptBlock } from '@/lib/qc/voice-charter'
 import { curateInputDataForPrompt } from '@/lib/claude/context-bundle'
 import { nsaidAvoidanceTreatmentPlanFragment } from '@/lib/clinical/prp-protocol'
+import type { PrpTargetEvidenceBundle } from '@/lib/clinical/prp-target-evidence'
 
 const NSAID_AVOIDANCE_FRAGMENT = nsaidAvoidanceTreatmentPlanFragment()
 
@@ -158,6 +159,7 @@ This patient is presenting for their INITIAL clinical evaluation following a per
 • Do NOT reference any prior initial visit, prior conservative care outcome, or interval pain comparison — \`priorVisitData\` is null.
 • Imaging for this visit is ORDERED only; results are pending. Do NOT describe imaging findings, severity, or imaging-derived pathology.
 • All diagnosis coding at the initial visit is driven by physical examination findings and mechanism of injury ONLY. See DIAGNOSTIC-SUPPORT RULE (MANDATORY) below.
+• Return prp_target_recommendations as an empty array. PRP targets are prohibited for this visit type.
 
 2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences. Use providerIntake.accident_details if available.
@@ -333,20 +335,21 @@ Write a concise paragraph that: (a) correlates clinical exam findings with imagi
 Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
 Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of 03/12/2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
-12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
-Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region (e.g., cervical, thoracic, lumbar) and citing the MRI-confirmed pathology that supports intervention (e.g., disc herniations, disc bulges, annular tears, cervical instability/ligamentous laxity). State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
-Para 2 — PRP injection protocol: Transition with language such as "Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections." Then provide a bullet per target region (cervical, lumbar) specifying: the exact spinal levels to be treated (e.g., C4-5, C5-6, C6-7), the guidance modality (e.g., ultrasound-guided), and the injection approach (e.g., intradiscal, facet-mediated, epidural). After the bullets, state the planned number of injection sessions (typically one to three) and that the patient will be re-evaluated after each injection to assess therapeutic response before proceeding with additional treatments.
-Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
+12. TREATMENT PLAN (~3-4 paragraphs; include a cost estimate only when at least one eligible target is selected):
+Para 1 — Clinical rationale and medical necessity: Summarize persistent symptoms, the documented anatomic abnormalities, examination concordance, and response to conservative care. State that this establishes a basis for regenerative injection therapy only when prp_target_recommendations contains at least one selected eligible candidate. If it is empty, state that no clinically justified interventional target is established and recommend continued non-interventional care/further evaluation instead.
+Para 2 — PRP monitoring protocol only: Do NOT write target regions, spinal levels, laterality, target structures, guidance modalities, approaches, or target bullets in treatment_plan. Those are rendered deterministically from prp_target_recommendations after validation. State only that any PRP treatment will proceed solely at evidence-backed targets and that the patient will be re-evaluated after each session.
+PRP TARGET SELECTION (ABSOLUTE): prpTargetEvidence.candidates is the only allowed target source. An anatomic abnormality alone is not a treatment target, and symptoms alone do not establish abnormal anatomy. Select only candidate IDs where eligible=true. Never create a region, level, location, or laterality. Return one prp_target_recommendations entry per selected candidate with its candidate_id, target_structure, guidance_method, approach, and a concise clinical_rationale. The rationale must explain why the documented abnormality is clinically concordant; it must not invent evidence. When there are no eligible candidates, return an empty array and do not recommend PRP in treatment_plan.
+Cost estimate sub-section: Include this only when prp_target_recommendations contains at least one selected eligible candidate. If feeEstimate data is provided in the source data, use the exact values:
 "COST ESTIMATE PER SITE:" sub-heading (values are per injection site), then:
 "• Professional Fees: $\{professional_min\} – $\{professional_max\}"
 "• Practice Center Fees: $\{practice_center_min\} – $\{practice_center_max\}"
 Format dollar amounts with commas (e.g., $2,500 – $5,000). If all fee values are 0, omit the cost estimate sub-section entirely. If feeEstimate is null, use "[To be determined]" as placeholder.
 Para 3 — Supportive care and rehabilitation: In a single paragraph, outline the concurrent conservative management plan: (a) home exercise program emphasizing core stabilization, cervical/lumbar strengthening, and flexibility exercises for affected regions; (b) ergonomic modifications for work and daily activities to minimize biomechanical stress on injured structures; (c) continued physical therapy as tolerated to maintain functional gains.
-Para 4 — Medication management, monitoring, and escalation: In a single paragraph, cover: (a) medication guidance — the patient is advised to ${NSAID_AVOIDANCE_FRAGMENT} to avoid inhibiting the platelet-mediated healing response, with acetaminophen permitted for breakthrough pain as needed; (b) monitoring plan — the patient will be re-evaluated after each injection session to assess pain levels, functional improvement, and treatment response; (c) escalation language — if the patient does not demonstrate adequate clinical improvement after completing the PRP series, further diagnostic workup and/or referral for advanced interventional or surgical consultation will be considered. Do NOT create separate sub-sections — keep it ALL in one flowing paragraph.
+Para 4 — Medication management, monitoring, and escalation: When a PRP target is selected, in a single paragraph cover: (a) medication guidance — the patient is advised to ${NSAID_AVOIDANCE_FRAGMENT} to avoid inhibiting the platelet-mediated healing response, with acetaminophen permitted for breakthrough pain as needed; (b) monitoring after each injection session; and (c) escalation if the PRP series does not provide adequate improvement. When no target is selected, omit PRP-specific medication restrictions, injection monitoring, and post-PRP escalation; give ordinary conservative medication and follow-up guidance instead. Do NOT create separate sub-sections.
 The entire treatment plan should be approximately one full page.
 
 13. PATIENT EDUCATION (~1 paragraph):
-State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
+State that the patient was advised on home exercises, conservative care, nature of injuries, ergonomic strategies, and prevention of chronic pain. Include PRP mechanism and expected post-injection course only when at least one eligible target is selected. End with "The patient verbalized understanding." Keep to ONE paragraph.
 
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
@@ -380,6 +383,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       'prognosis',
       'time_complexity_attestation',
       'clinician_disclaimer',
+      'prp_target_recommendations',
     ],
     properties: {
       introduction: {
@@ -445,6 +449,21 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
       clinician_disclaimer: {
         type: 'string',
         description: 'Standard medical-legal disclaimer about scope of assessment',
+      },
+      prp_target_recommendations: {
+        type: 'array',
+        description: 'Pain Evaluation only: selections from eligible prpTargetEvidence candidate IDs. Initial Visit must return an empty array.',
+        items: {
+          type: 'object',
+          required: ['candidate_id', 'target_structure', 'guidance_method', 'approach', 'clinical_rationale'],
+          properties: {
+            candidate_id: { type: 'string' },
+            target_structure: { type: 'string' },
+            guidance_method: { type: 'string', enum: ['ultrasound', 'fluoroscopy', 'landmark'] },
+            approach: { type: 'string' },
+            clinical_rationale: { type: 'string' },
+          },
+        },
       },
     },
   },
@@ -560,6 +579,7 @@ export interface InitialVisitInputData {
     physical_exam: unknown
     diagnostic_studies_summary: string | null
   } | null
+  prpTargetEvidence: PrpTargetEvidenceBundle | null
 }
 
 /**

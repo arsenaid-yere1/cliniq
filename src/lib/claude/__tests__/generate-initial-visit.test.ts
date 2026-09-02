@@ -32,6 +32,7 @@ const emptyInput: InitialVisitInputData = {
   priorVisitData: null,
   hasApprovedDiagnosticExtractions: false,
   pmExtraction: null,
+  prpTargetEvidence: null,
 }
 
 describe('generateInitialVisitFromData', () => {
@@ -119,6 +120,21 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).not.toMatch(/NSAIDs?[^\n]{0,60}\b7(?:-| )days?\b/i)
   })
 
+  it('pain-eval target selection is limited to eligible evidence candidates', async () => {
+    const system = await capturePrompt(emptyInput)
+    expect(system).toContain('An anatomic abnormality alone is not a treatment target')
+    expect(system).toContain('Select only candidate IDs where eligible=true')
+    expect(system).toContain('Never create a region, level, location, or laterality')
+    expect(system).not.toContain('C4-5, C5-6, C6-7')
+  })
+
+  it('requires structured target selections in the tool contract', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateInitialVisitFromData(emptyInput, 'pain_evaluation_visit')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+    expect(opts.tools[0].input_schema.required).toContain('prp_target_recommendations')
+  })
+
   async function captureFirstVisitPrompt(input: InitialVisitInputData): Promise<string> {
     ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
     await generateInitialVisitFromData(input, 'initial_visit')
@@ -133,6 +149,11 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).toContain('Default → M54.50 (Low back pain, unspecified)')
     expect(system).toContain('M79.1 Myalgia — redundancy guard')
     expect(system).toContain('do NOT emit M54.12, M54.17, M50.1X, or M51.1X at the first visit')
+  })
+
+  it('first-visit prompt requires an empty structured PRP target list', async () => {
+    const system = await captureFirstVisitPrompt(emptyInput)
+    expect(system).toContain('Return prp_target_recommendations as an empty array')
   })
 
   it('first-visit lumbar catalog lists M54.50/M54.51/M54.59 not the parent M54.5', async () => {

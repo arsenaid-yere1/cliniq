@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { prpTargetRecommendationSchema } from '@/lib/clinical/prp-target-evidence'
 
 // --- Section names (16 sections matching provider template) ---
 
@@ -63,6 +64,13 @@ export const initialVisitNoteResultSchema = z.object({
   prognosis: z.string(),
   time_complexity_attestation: z.string(),
   clinician_disclaimer: z.string(),
+  prp_target_recommendations: z.array(prpTargetRecommendationSchema.pick({
+    candidate_id: true,
+    target_structure: true,
+    guidance_method: true,
+    approach: true,
+    clinical_rationale: true,
+  })).default([]),
 })
 
 export type InitialVisitNoteResult = z.infer<typeof initialVisitNoteResultSchema>

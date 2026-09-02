@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sitesFromPlan } from './sites-from-plan'
+import { sitesFromPlan, sitesFromPrpRecommendations } from './sites-from-plan'
 import type { PlannedProcedure } from './compute-plan-alignment'
 
 const pm = (overrides: Partial<PlannedProcedure> = {}): PlannedProcedure => ({
@@ -10,6 +10,15 @@ const pm = (overrides: Partial<PlannedProcedure> = {}): PlannedProcedure => ({
   target_levels: [],
   raw_description: '',
   ...overrides,
+})
+
+describe('sitesFromPrpRecommendations', () => {
+  it('uses validated structured target labels without asserting performed imaging confirmation', () => {
+    expect(sitesFromPrpRecommendations([
+      { level_or_location: 'L4-L5', laterality: 'left' },
+      { level_or_location: 'L4-L5', laterality: 'left' },
+    ])).toEqual([{ label: 'L4-L5', laterality: 'left', volume_ml: null, target_confirmed_imaging: null }])
+  })
 })
 const iv = (overrides: Partial<PlannedProcedure> = {}): PlannedProcedure => ({
   ...pm(overrides),

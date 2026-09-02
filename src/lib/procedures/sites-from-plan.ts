@@ -70,3 +70,23 @@ export function sitesFromPlan(
   }
   return out
 }
+
+export function sitesFromPrpRecommendations(raw: unknown): ProcedureSite[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const sites: ProcedureSite[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const recommendation = item as { level_or_location?: unknown; laterality?: unknown }
+    if (typeof recommendation.level_or_location !== 'string') continue
+    const label = recommendation.level_or_location.trim()
+    if (!label) continue
+    const laterality = recommendation.laterality === 'left' || recommendation.laterality === 'right' ||
+      recommendation.laterality === 'bilateral' ? recommendation.laterality : null
+    const key = `${label.toLowerCase()}|${laterality ?? 'null'}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    sites.push({ label, laterality, volume_ml: null, target_confirmed_imaging: null })
+  }
+  return sites
+}

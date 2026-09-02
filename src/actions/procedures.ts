@@ -20,7 +20,7 @@ import {
   parsePmTreatmentPlan,
   parseInitialVisitTreatmentPlan,
 } from '@/lib/procedures/compute-plan-alignment'
-import { sitesFromPlan } from '@/lib/procedures/sites-from-plan'
+import { sitesFromPlan, sitesFromPrpRecommendations } from '@/lib/procedures/sites-from-plan'
 import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
 
@@ -642,7 +642,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
       .maybeSingle(),
     supabase
       .from('initial_visit_notes')
-      .select('provider_intake, visit_type, visit_date, treatment_plan, status')
+      .select('provider_intake, visit_type, visit_date, treatment_plan, prp_target_recommendations, status')
       .eq('case_id', caseId)
       .eq('episode_id', episodeId)
       .is('deleted_at', null),
@@ -677,6 +677,7 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
     visit_date: string | null
     provider_intake: { chief_complaints?: { complaints?: Array<{ body_region: string }> } } | null
     treatment_plan: string | null
+    prp_target_recommendations: unknown
     status: string
   }
   const ivnRows = (ivnRes.data ?? []) as IvnIntakeRow[]
@@ -714,7 +715,10 @@ export async function getProcedureDefaults(caseId: string): Promise<{ data: Proc
 
   const pmCandidates = parsePmTreatmentPlan(pmTreatmentPlanRaw)
   const ivCandidates = parseInitialVisitTreatmentPlan(ivTreatmentPlanText)
-  const suggestedSites = sitesFromPlan(pmCandidates, ivCandidates)
+  const structuredSites = sitesFromPrpRecommendations(preferredIvnPlan?.prp_target_recommendations)
+  const suggestedSites = structuredSites.length > 0
+    ? structuredSites
+    : sitesFromPlan(pmCandidates, ivCandidates)
   const suggestedLabels = suggestedSites.map((s) => labelWithLaterality(s))
   const suggested_sites_label =
     suggestedLabels.length > 0
