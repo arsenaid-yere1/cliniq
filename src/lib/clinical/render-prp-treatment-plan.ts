@@ -3,7 +3,7 @@ import { isSpineRegion } from './anatomic-normalization'
 
 const TARGET_MARKER = '[[PRP_TARGET_RECOMMENDATIONS]]'
 const TARGET_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:'
-const TARGET_FOLLOW_UP = 'Treatment will proceed in a staged manner, beginning with the clinically indicated target or targets. The patient will be reassessed after each injection based on documented changes in pain, function, examination findings, and treatment tolerance. Any subsequent injection is not predetermined and will be recommended only when the response to the prior injection, persistent functional impairment, and current clinical findings establish continued medical necessity, following renewed discussion of the material risks, expected benefits, reasonable alternatives, and the patient’s decision to proceed.'
+const TARGET_FOLLOW_UP = 'Treatment will proceed in stages, with reassessment of pain, function, examination findings, and tolerance after each injection. Any additional injection is not predetermined and will require documented continued medical necessity and renewed informed consent.'
 
 function titleCase(value: string): string {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase())
