@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -55,7 +54,6 @@ import {
   saveInitialVisitVitals,
   saveProviderIntake,
   saveInitialVisitNoteToneHint,
-  removePrpTargetRecommendation,
 } from '@/actions/initial-visit-notes'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 import { ToneDirectionCard } from '@/components/clinical/tone-direction-card'
@@ -77,8 +75,6 @@ import {
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
-import type { PrpTargetRecommendation } from '@/lib/clinical/prp-target-evidence'
-import { stripPrpTargetBlock } from '@/lib/clinical/render-prp-treatment-plan'
 
 interface NoteRow {
   id: string
@@ -109,7 +105,6 @@ interface NoteRow {
   tone_hint: string | null
   sections_done: number | null
   sections_total: number | null
-  prp_target_recommendations: PrpTargetRecommendation[] | null
 }
 
 interface ClinicSettings {
@@ -1411,7 +1406,6 @@ function DraftEditor({
   setRegeneratingSection: (s: InitialVisitSection | null) => void
   isLocked: boolean
 }) {
-  const router = useRouter()
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
     defaultValues: {
@@ -1427,9 +1421,7 @@ function DraftEditor({
       imaging_findings: note.imaging_findings || '',
       medical_necessity: note.medical_necessity || '',
       diagnoses: note.diagnoses || '',
-      treatment_plan: visitType === 'pain_evaluation_visit'
-        ? stripPrpTargetBlock(note.treatment_plan || '')
-        : note.treatment_plan || '',
+      treatment_plan: note.treatment_plan || '',
       patient_education: note.patient_education || '',
       prognosis: note.prognosis || '',
       time_complexity_attestation: note.time_complexity_attestation || '',
@@ -1461,28 +1453,10 @@ function DraftEditor({
       if (result.error) {
         toast.error(result.error)
       } else if (result.data?.content) {
-        form.setValue(
-          section,
-          visitType === 'pain_evaluation_visit' && section === 'treatment_plan'
-            ? stripPrpTargetBlock(result.data.content)
-            : result.data.content,
-        )
-        if (visitType === 'pain_evaluation_visit' && section === 'treatment_plan') router.refresh()
+        form.setValue(section, result.data.content)
         toast.success(`${sectionLabels[section]} regenerated`)
       }
       setRegeneratingSection(null)
-    })
-  }
-
-  function handleRemoveTarget(candidateId: string) {
-    startTransition(async () => {
-      const result = await removePrpTargetRecommendation(caseId, candidateId)
-      if (result.error) toast.error(result.error)
-      else {
-        form.setValue('treatment_plan', stripPrpTargetBlock(result.data!.treatment_plan))
-        router.refresh()
-        toast.success('PRP target removed')
-      }
     })
   }
 
@@ -1604,50 +1578,6 @@ function DraftEditor({
                 disabled={isLocked || isPending}
                 description="Edits apply to subsequent section regenerations. Saved automatically on blur."
               />
-              {visitType === 'pain_evaluation_visit' && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Evidence-backed PRP targets</CardTitle>
-                    <CardDescription>
-                      Each target requires both a documented anatomic abnormality and matching current clinical findings.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {(note.prp_target_recommendations ?? []).length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No PRP target is established by the current evidence.</p>
-                    ) : (note.prp_target_recommendations ?? []).map((target) => (
-                      <div key={target.candidate_id} className="rounded-md border p-3 space-y-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium">{target.level_or_location} · {target.region}</p>
-                            <p className="text-xs text-muted-foreground">{target.laterality ?? 'Laterality not specified'}</p>
-                          </div>
-                          <Button type="button" variant="ghost" size="sm"
-                            disabled={isLocked || isPending}
-                            onClick={() => handleRemoveTarget(target.candidate_id)}>
-                            <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
-                          </Button>
-                        </div>
-                        <div className="text-sm">
-                          <p className="font-medium">Anatomic abnormality</p>
-                          {target.anatomic_evidence.map((evidence) => (
-                            <p key={evidence.id} className="text-muted-foreground">
-                              {evidence.modality}{evidence.study_date ? ` ${evidence.study_date}` : ''}: {evidence.description}
-                            </p>
-                          ))}
-                        </div>
-                        <div className="text-sm">
-                          <p className="font-medium">Clinical target justification</p>
-                          {target.clinical_evidence.map((evidence) => (
-                            <p key={evidence.id} className="text-muted-foreground">{evidence.description}</p>
-                          ))}
-                          <p className="mt-1">{target.clinical_rationale}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
               {initialVisitSections.map((section) => (
                 <FormField
                   key={section}

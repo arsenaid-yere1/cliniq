@@ -749,41 +749,6 @@ export async function saveInitialVisitNote(
   return { data: { success: true } }
 }
 
-export async function removePrpTargetRecommendation(caseId: string, candidateId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-  const closedCheck = await assertCaseNotClosed(supabase, caseId)
-  if (closedCheck.error) return { error: closedCheck.error }
-  const { data: note } = await supabase.from('initial_visit_notes')
-    .select('id, visit_date, treatment_plan, prp_target_recommendations, prp_target_evidence_hash')
-    .eq('case_id', caseId).eq('visit_type', 'pain_evaluation_visit')
-    .is('deleted_at', null).eq('status', 'draft').single()
-  if (!note) return { error: 'No Pain Evaluation draft found' }
-  const parsed = z.array(prpTargetRecommendationSchema).safeParse(note.prp_target_recommendations)
-  if (!parsed.success) return { error: 'PRP target data is invalid. Regenerate the Treatment Plan.' }
-  const retained = parsed.data.filter((target) => target.candidate_id !== candidateId)
-  if (retained.length === parsed.data.length) return { error: 'PRP target not found' }
-  const { data: inputData, error: gatherError } = await gatherSourceData(
-    supabase, caseId, 'pain_evaluation_visit', note.visit_date,
-  )
-  if (gatherError || !inputData?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
-  if (note.prp_target_evidence_hash !== computePrpTargetEvidenceHash(inputData)) {
-    return { error: 'Clinical or imaging evidence changed. Regenerate the Treatment Plan first.' }
-  }
-  const checked = validatePrpTargetSelections(selectionFields(retained), inputData.prpTargetEvidence)
-  if (checked.error || !checked.data) return { error: checked.error ?? 'PRP target validation failed' }
-  const treatmentPlan = renderPrpTreatmentPlan(
-    stripPrpTargetBlock(note.treatment_plan ?? ''), checked.data, inputData.prpTargetEvidence,
-  )
-  const { error } = await supabase.from('initial_visit_notes').update({
-    prp_target_recommendations: checked.data, treatment_plan: treatmentPlan, updated_by_user_id: user.id,
-  }).eq('id', note.id)
-  if (error) return { error: 'Failed to remove PRP target' }
-  revalidatePath(`/patients/${caseId}`)
-  return { data: { treatment_plan: treatmentPlan } }
-}
-
 // --- Finalize note ---
 
 export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType) {

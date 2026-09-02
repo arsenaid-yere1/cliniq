@@ -10,19 +10,19 @@ describe('renderPrpTreatmentPlan', () => {
       exam_findings: { regions: [{ region: 'Lumbar', palpation_findings: 'Focal tenderness' }] } },
   })
 
-  it('renders target evidence without relabeling the modality', () => {
+  it('renders only validated target details in the prior concise template style', () => {
     const validated = validatePrpTargetSelections([{ candidate_id: bundle.candidates[0].id,
       target_structure: 'facet-capsular structures', guidance_method: 'ultrasound', approach: 'periarticular',
       clinical_rationale: 'The focal examination is concordant.' }], bundle).data!
     const text = renderPrpTreatmentPlan('Continue rehabilitation.', validated, bundle)
-    expect(text).toContain('CT 08/01/2026: Facet arthropathy')
-    expect(text).not.toContain('MRI')
-    expect(text).toContain('Clinical target justification')
+    expect(text).toContain('PRP INJECTION TARGETS:')
+    expect(text).toContain('Lumbar at L5-S1: ultrasound-guided periarticular PRP')
+    expect(text).not.toContain('Anatomic abnormality')
+    expect(text).not.toContain('Clinical target justification')
   })
 
-  it('renders a non-PRP plan when no target qualifies', () => {
+  it('does not add target confirmation text when no target qualifies', () => {
     const text = renderPrpTreatmentPlan('Continue conservative care.', [], bundle)
-    expect(text).toContain('No PRP treatment target is established')
-    expect(text).toContain('Continue conservative care.')
+    expect(text).toBe('Continue conservative care.')
   })
 })
