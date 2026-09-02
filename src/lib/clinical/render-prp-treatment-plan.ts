@@ -1,4 +1,9 @@
 import type { PrpTargetEvidenceBundle, PrpTargetRecommendation } from './prp-target-evidence'
+import { isSpineRegion } from './anatomic-normalization'
+
+const TARGET_MARKER = '[[PRP_TARGET_RECOMMENDATIONS]]'
+const TARGET_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:'
+const TARGET_FOLLOW_UP = 'Treatment will proceed in a staged manner, beginning with the clinically indicated target or targets. The patient will be reassessed after each injection based on documented changes in pain, function, examination findings, and treatment tolerance. Any subsequent injection is not predetermined and will be recommended only when the response to the prior injection, persistent functional impairment, and current clinical findings establish continued medical necessity, following renewed discussion of the material risks, expected benefits, reasonable alternatives, and the patient’s decision to proceed.'
 
 function titleCase(value: string): string {
   return value.replace(/\b\w/g, (letter) => letter.toUpperCase())
@@ -6,15 +11,30 @@ function titleCase(value: string): string {
 
 export function renderPrpTargetBlock(
   recommendations: PrpTargetRecommendation[],
-  _evidence: PrpTargetEvidenceBundle,
+  evidence: PrpTargetEvidenceBundle,
 ): string {
-  void _evidence
   if (recommendations.length === 0) return ''
-  const bullets = recommendations.map((recommendation) => {
-    const side = recommendation.laterality ? `${titleCase(recommendation.laterality)} ` : ''
-    return `• ${side}${titleCase(recommendation.region)} at ${recommendation.level_or_location}: ${recommendation.guidance_method}-guided ${recommendation.approach} PRP targeting ${recommendation.target_structure}.`
+  const evidenceById = new Map(evidence.anatomic_evidence.map((item) => [item.id, item]))
+  const groups = new Map<string, PrpTargetRecommendation[]>()
+  for (const recommendation of recommendations) {
+    const key = `${recommendation.region}|${recommendation.laterality ?? ''}`
+    groups.set(key, [...(groups.get(key) ?? []), recommendation])
+  }
+  const bullets = [...groups.values()].map((group) => {
+    const first = group[0]
+    const side = first.laterality ? `${titleCase(first.laterality)} ` : ''
+    const label = `${side}${titleCase(first.region)}${isSpineRegion(first.region) ? ' Spine' : ''}`
+    const locations = [...new Set(group.map((item) => item.level_or_location))]
+    const descriptions = [...new Set(group.flatMap((item) => item.anatomic_evidence_ids)
+      .map((id) => evidenceById.get(id)?.description).filter((value): value is string => Boolean(value)))]
+    const locationText = locations.length === 1 ? locations[0] : `${locations.slice(0, -1).join(', ')} and ${locations.at(-1)}`
+    const pathologyText = descriptions.join('; ')
+    if (isSpineRegion(first.region)) {
+      return `• ${label}: Ultrasound-guided PRP injections at ${locationText} targeting the documented pain generators at ${locations.length === 1 ? 'this level' : 'these levels'}, where ${pathologyText} ${descriptions.length === 1 ? 'is' : 'are'} documented and clinically concordant.`
+    }
+    return `• ${label}: Ultrasound-guided PRP injection targeting the documented ${pathologyText} at ${locationText}, which is clinically concordant.`
   })
-  return `PRP INJECTION TARGETS:\n${bullets.join('\n')}`
+  return `${TARGET_INTRO}\n${bullets.join('\n')}\n${TARGET_FOLLOW_UP}`
 }
 
 export function renderPrpTreatmentPlan(
@@ -23,13 +43,27 @@ export function renderPrpTreatmentPlan(
   evidence: PrpTargetEvidenceBundle,
 ): string {
   const targetBlock = renderPrpTargetBlock(recommendations, evidence)
-  const trimmed = narrative.trim()
+  const trimmed = stripPrpTargetBlock(narrative)
+  if (trimmed.includes(TARGET_MARKER)) {
+    return trimmed.replace(TARGET_MARKER, targetBlock).replace(/\n{3,}/g, '\n\n').trim()
+  }
   if (!targetBlock) return trimmed
-  return trimmed ? `${targetBlock}\n\n${trimmed}` : targetBlock
+  const firstBreak = trimmed.indexOf('\n\n')
+  return firstBreak === -1
+    ? `${trimmed}\n\n${targetBlock}`.trim()
+    : `${trimmed.slice(0, firstBreak)}\n\n${targetBlock}\n\n${trimmed.slice(firstBreak + 2)}`.trim()
 }
 
 export function stripPrpTargetBlock(text: string): string {
   const trimmed = text.trim()
+  const newStart = trimmed.indexOf(TARGET_INTRO)
+  if (newStart !== -1) {
+    const followUpStart = trimmed.indexOf(TARGET_FOLLOW_UP, newStart)
+    if (followUpStart !== -1) {
+      return `${trimmed.slice(0, newStart)}${trimmed.slice(followUpStart + TARGET_FOLLOW_UP.length)}`
+        .replace(/\n{3,}/g, '\n\n').trim()
+    }
+  }
   if (!/^(PRP INJECTION TARGETS|EVIDENCE-BACKED PRP TARGETS|PRP TARGET ASSESSMENT):/i.test(trimmed)) return trimmed
   const separator = trimmed.indexOf('\n\n')
   return separator === -1 ? '' : trimmed.slice(separator + 2).trim()

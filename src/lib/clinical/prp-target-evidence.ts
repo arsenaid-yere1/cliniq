@@ -187,6 +187,9 @@ export function validatePrpTargetSelections(
     const candidate = candidates.get(selection.candidate_id)
     if (!candidate) return { error: `Unknown PRP target: ${selection.candidate_id}` }
     if (!candidate.eligible) return { error: `Ineligible PRP target: ${selection.candidate_id}` }
+    if (selection.guidance_method !== 'ultrasound') {
+      return { error: `PRP target must use ultrasound guidance: ${selection.candidate_id}` }
+    }
     const parsed = prpTargetRecommendationSchema.safeParse({ ...selection, region: candidate.region,
       level_or_location: candidate.level_or_location, laterality: candidate.laterality,
       anatomic_evidence_ids: candidate.anatomic_evidence_ids,

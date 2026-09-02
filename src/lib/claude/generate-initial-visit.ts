@@ -337,8 +337,8 @@ Reference: "The clinical examination and imaging findings support post-traumatic
 
 12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
 Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region and citing the MRI-confirmed pathology that supports intervention. State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
-Para 2 — PRP injection protocol: Transition with language such as "Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections." Do NOT write target regions, spinal levels, laterality, target structures, guidance modalities, approaches, or target bullets in treatment_plan. The server renders those details from validated prp_target_recommendations. State the planned number of injection sessions (typically one to three) and that the patient will be re-evaluated after each injection to assess therapeutic response before proceeding with additional treatments.
-PRP TARGET SELECTION (ABSOLUTE): prpTargetEvidence.candidates is the only allowed target source. An anatomic abnormality alone is not a treatment target, and symptoms alone do not establish abnormal anatomy. Select only candidate IDs where eligible=true. Never create a region, level, location, or laterality. Return one prp_target_recommendations entry per selected candidate with its candidate_id, target_structure, guidance_method, approach, and a concise clinical_rationale. The rationale must explain why the documented abnormality is clinically concordant; it must not invent evidence. When there are no eligible candidates, return an empty array and do not invent target details in treatment_plan.
+Para 2 — PRP injection protocol: Output the exact marker [[PRP_TARGET_RECOMMENDATIONS]] on its own line. Do NOT write any other PRP target or injection-session prose in treatment_plan; the server replaces this marker with the prior-format recommendation paragraph, region-grouped bullets, and medical-legal staged-treatment language requiring documented reassessment, continued medical necessity, and renewed informed consent before any subsequent injection.
+PRP TARGET SELECTION (ABSOLUTE): prpTargetEvidence.candidates is the only allowed target source. An anatomic abnormality alone is not a treatment target, and symptoms alone do not establish abnormal anatomy. Select only candidate IDs where eligible=true. Never create a region, level, location, or laterality. Return one prp_target_recommendations entry per selected candidate with its candidate_id, target_structure, guidance_method="ultrasound", approach, and a concise clinical_rationale. The rationale must explain why the documented abnormality is clinically concordant; it must not invent evidence. When there are no eligible candidates, return an empty array and do not invent target details in treatment_plan.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
 "COST ESTIMATE PER SITE:" sub-heading (values are per injection site), then:
 "• Professional Fees: $\{professional_min\} – $\{professional_max\}"
@@ -459,7 +459,7 @@ const INITIAL_VISIT_TOOL: Anthropic.Tool = {
           properties: {
             candidate_id: { type: 'string' },
             target_structure: { type: 'string' },
-            guidance_method: { type: 'string', enum: ['ultrasound', 'fluoroscopy', 'landmark'] },
+            guidance_method: { type: 'string', enum: ['ultrasound'] },
             approach: { type: 'string' },
             clinical_rationale: { type: 'string' },
           },

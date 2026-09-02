@@ -75,4 +75,12 @@ describe('validatePrpTargetSelections', () => {
     const ineligible = buildPrpTargetEvidence({ imagingRows: [imaging], providerIntake: null })
     expect(validatePrpTargetSelections([selection], ineligible).error).toContain('Ineligible')
   })
+
+  it('requires ultrasound guidance for PRP recommendations', () => {
+    const bundle = buildPrpTargetEvidence({ imagingRows: [imaging], providerIntake: intake })
+    const result = validatePrpTargetSelections([
+      { ...selection, guidance_method: 'fluoroscopy' },
+    ], bundle)
+    expect(result.error).toContain('must use ultrasound guidance')
+  })
 })

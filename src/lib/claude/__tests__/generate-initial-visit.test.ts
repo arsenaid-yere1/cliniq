@@ -125,6 +125,8 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     expect(system).toContain('An anatomic abnormality alone is not a treatment target')
     expect(system).toContain('Select only candidate IDs where eligible=true')
     expect(system).toContain('Never create a region, level, location, or laterality')
+    expect(system).toContain('guidance_method="ultrasound"')
+    expect(system).toContain('[[PRP_TARGET_RECOMMENDATIONS]]')
     expect(system).not.toContain('C4-5, C5-6, C6-7')
   })
 
@@ -133,6 +135,8 @@ describe('NUMERIC-ANCHOR for pain evaluation visit', () => {
     await generateInitialVisitFromData(emptyInput, 'pain_evaluation_visit')
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     expect(opts.tools[0].input_schema.required).toContain('prp_target_recommendations')
+    expect(opts.tools[0].input_schema.properties.prp_target_recommendations.items.properties.guidance_method.enum)
+      .toEqual(['ultrasound'])
   })
 
   async function captureFirstVisitPrompt(input: InitialVisitInputData): Promise<string> {
