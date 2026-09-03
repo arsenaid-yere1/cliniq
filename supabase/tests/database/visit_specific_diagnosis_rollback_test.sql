@@ -66,7 +66,7 @@ select results_eq(
     where n.nspname = 'public'
       and p.proname = 'finalize_pain_follow_up'
       and pg_get_function_identity_arguments(p.oid) =
-        'p_case_id uuid, p_encounter_id uuid, p_note_id uuid, p_document_id uuid'
+        'p_case_id uuid, p_encounter_id uuid, p_note_id uuid, p_document_id uuid, p_expected_updated_at timestamp with time zone'
       and p.prosrc not ilike '%diagnoses_snapshot%'
       and p.prosrc not ilike '%diagnoses_confirmed_at%'$$,
   $$values (1)$$,

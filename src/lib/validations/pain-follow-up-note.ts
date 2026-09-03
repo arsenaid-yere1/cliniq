@@ -1,6 +1,36 @@
 import { z } from 'zod'
 import { SCHEDULABLE_PROCEDURE_TYPES } from '@/lib/constants/procedure-scheduling'
 
+export const painFollowUpNoteSections = [
+  'subjective',
+  'interval_history',
+  'review_of_systems',
+  'telehealth_observations',
+  'imaging_review',
+  'assessment',
+  'diagnoses',
+  'treatment_plan',
+  'patient_education',
+  'follow_up',
+  'clinician_disclaimer',
+] as const
+
+export type PainFollowUpSection = typeof painFollowUpNoteSections[number]
+
+export const painFollowUpNoteSectionLabels: Record<PainFollowUpSection, string> = {
+  subjective: 'Subjective',
+  interval_history: 'Interval History',
+  review_of_systems: 'Review of Systems',
+  telehealth_observations: 'Telehealth Observations',
+  imaging_review: 'Imaging Review',
+  assessment: 'Assessment',
+  diagnoses: 'Diagnoses',
+  treatment_plan: 'Treatment Plan',
+  patient_education: 'Patient Education',
+  follow_up: 'Follow-Up',
+  clinician_disclaimer: 'Clinician Disclaimer',
+}
+
 export const procedureRecommendationSchema = z.object({
   recommendation_id: z.string().uuid(),
   procedure_type: z.enum(SCHEDULABLE_PROCEDURE_TYPES),

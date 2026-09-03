@@ -6,11 +6,15 @@ import { createClient } from '@/lib/supabase/server'
 import { requireWritableEpisode, selectLatestCompletedEncounter } from '@/lib/clinical/episode-context'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
 import { generatePainFollowUp } from '@/lib/claude/generate-pain-follow-up'
-import { painFollowUpNoteEditSchema, type PainFollowUpNoteEditValues } from '@/lib/validations/pain-follow-up-note'
+import {
+  painFollowUpNoteEditSchema,
+  painFollowUpNoteSections,
+  type PainFollowUpNoteEditValues,
+  type PainFollowUpSection,
+} from '@/lib/validations/pain-follow-up-note'
 import type { Json, Tables } from '@/types/database'
 
-const NOTE_SECTIONS = ['subjective','interval_history','review_of_systems','telehealth_observations','imaging_review','assessment','diagnoses','treatment_plan','patient_education','follow_up','clinician_disclaimer'] as const
-export type PainFollowUpSection = (typeof NOTE_SECTIONS)[number]
+export type { PainFollowUpSection } from '@/lib/validations/pain-follow-up-note'
 
 export async function getPainFollowUpNote(caseId: string, encounterId: string) {
   const supabase = await createClient()
@@ -82,11 +86,11 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
   if (noteId && existing) {
     await supabase.from('pain_follow_up_notes').update({ status: 'generating', generation_error: null,
       generation_attempts: (existing.generation_attempts ?? 0) + 1, sections_done: 0,
-      sections_total: NOTE_SECTIONS.length, updated_by_user_id: user.id }).eq('id', noteId)
+      sections_total: painFollowUpNoteSections.length, updated_by_user_id: user.id }).eq('id', noteId)
   } else {
     const { data: inserted, error } = await supabase.from('pain_follow_up_notes').insert({
       case_id: caseId, episode_id: source.encounter.episode_id, encounter_id: encounterId,
-      status: 'generating', generation_attempts: 1, sections_total: NOTE_SECTIONS.length,
+      status: 'generating', generation_attempts: 1, sections_total: painFollowUpNoteSections.length,
       created_by_user_id: user.id, updated_by_user_id: user.id,
     }).select('id').single()
     if (error || !inserted) return { error: 'Unable to start note generation' }
@@ -100,7 +104,7 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
   const { error } = await supabase.from('pain_follow_up_notes').update({
     ...generated.data, status: 'draft', ai_model: 'claude-sonnet-4-6',
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
-    source_data_hash: sourceHash, sections_done: NOTE_SECTIONS.length,
+    source_data_hash: sourceHash, sections_done: painFollowUpNoteSections.length,
     generation_error: null, updated_by_user_id: user.id,
   }).eq('id', noteId)
   if (error) return { error: 'Unable to save generated note' }
@@ -137,7 +141,7 @@ export async function regeneratePainFollowUpSectionAction(
 ) {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
-  if (!NOTE_SECTIONS.includes(section)) return { error: 'Invalid follow-up note section' }
+  if (!painFollowUpNoteSections.includes(section)) return { error: 'Invalid follow-up note section' }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -194,10 +198,14 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   }
   const { error } = await supabase.rpc('finalize_pain_follow_up', {
     p_case_id: caseId, p_encounter_id: encounterId, p_note_id: note.id, p_document_id: document.id,
+    p_expected_updated_at: note.updated_at,
   })
   if (error) {
     await supabase.storage.from('case-documents').remove([path])
     await supabase.from('documents').update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id }).eq('id', document.id)
+    if (error.message.includes('changed; review and finalize again')) {
+      return { error: 'The follow-up note changed. Review it and try finalizing again.' }
+    }
     return { error: error.message.includes('not writable') ? 'This visit is no longer writable' : 'Unable to finalize follow-up note' }
   }
   revalidatePath(`/patients/${caseId}/visits`)
@@ -207,6 +215,34 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   return { data: { success: true } }
 }
 
+export async function resetPainFollowUpNote(caseId: string, encounterId: string) {
+  const disabled = requireReturnTeleVisitsMutation()
+  if (disabled) return disabled
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { data: noteId, error } = await supabase.rpc('reset_pain_follow_up', {
+    p_case_id: caseId,
+    p_encounter_id: encounterId,
+  })
+  if (error) {
+    if (error.message.includes('Follow-up note not found')) {
+      return { error: 'No follow-up note to reset' }
+    }
+    if (error.message.includes('Only draft or failed')) {
+      return { error: 'Only draft or failed follow-up notes can be reset' }
+    }
+    if (error.message.includes('not writable')) {
+      return { error: 'This visit is no longer writable' }
+    }
+    return { error: 'Unable to reset follow-up note' }
+  }
+
+  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  return { data: { success: true, noteId } }
+}
+
 export async function unfinalizePainFollowUpNote(caseId: string, noteId: string) {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
@@ -214,12 +250,30 @@ export async function unfinalizePainFollowUpNote(caseId: string, noteId: string)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
   const { data: existing } = await supabase.from('pain_follow_up_notes')
-    .select('document:documents(file_path)').eq('id', noteId).eq('case_id', caseId)
+    .select('document_id,document:documents(file_path)').eq('id', noteId).eq('case_id', caseId)
     .eq('status', 'finalized').is('deleted_at', null).maybeSingle()
   const { data, error } = await supabase.rpc('unfinalize_pain_follow_up', { p_case_id: caseId, p_note_id: noteId })
-  if (error) return { error: error.message.includes('Remove procedure') ? error.message : 'Unable to reopen note' }
+  if (error) {
+    if (error.message.includes('Remove procedure orders and billing claims')) {
+      return { error: error.message }
+    }
+    if (error.message.includes('not writable')) {
+      return { error: 'This finalized follow-up note can no longer be reopened' }
+    }
+    return { error: 'Unable to reopen note' }
+  }
   const document = existing?.document as unknown as { file_path: string | null } | null
-  if (document?.file_path) await supabase.storage.from('case-documents').remove([document.file_path])
+  if (document?.file_path) {
+    const { error: storageError } = await supabase.storage.from('case-documents').remove([document.file_path])
+    if (storageError) {
+      console.error('Unable to remove unfinalized follow-up PDF from storage', {
+        documentId: existing?.document_id,
+      })
+    }
+  }
+  revalidatePath(`/patients/${caseId}/visits`)
   revalidatePath(`/patients/${caseId}/visits/${data}`)
+  revalidatePath(`/patients/${caseId}/documents`)
+  revalidatePath(`/patients/${caseId}/timeline`)
   return { data: { encounterId: data } }
 }

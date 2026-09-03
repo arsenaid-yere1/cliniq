@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { painFollowUpNoteEditSchema } from '../pain-follow-up-note'
+import {
+  painFollowUpNoteEditSchema,
+  painFollowUpNoteResultSchema,
+  painFollowUpNoteSectionLabels,
+  painFollowUpNoteSections,
+} from '../pain-follow-up-note'
 
 const ENCOUNTER_ID = '11111111-1111-4111-8111-111111111111'
 const RECOMMENDATION_ID = '22222222-2222-4222-8222-222222222222'
@@ -50,5 +55,25 @@ describe('painFollowUpNoteEditSchema', () => {
         sites: [],
       }],
     }).success).toBe(false)
+  })
+})
+
+describe('pain follow-up section metadata', () => {
+  it('defines the eleven generated sections with display labels', () => {
+    expect(painFollowUpNoteSections).toHaveLength(11)
+    for (const section of painFollowUpNoteSections) {
+      expect(painFollowUpNoteSectionLabels[section].trim()).not.toBe('')
+    }
+  })
+
+  it('constructs a complete result accepted by the schema', () => {
+    const sections = Object.fromEntries(
+      painFollowUpNoteSections.map((section) => [section, `${section} content`]),
+    )
+
+    expect(painFollowUpNoteResultSchema.safeParse({
+      ...sections,
+      procedure_recommendations: [],
+    }).success).toBe(true)
   })
 })

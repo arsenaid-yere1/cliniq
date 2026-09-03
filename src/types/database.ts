@@ -4444,6 +4444,7 @@ export type Database = {
           p_case_id: string
           p_document_id: string
           p_encounter_id: string
+          p_expected_updated_at: string
           p_note_id: string
         }
         Returns: {
@@ -4451,6 +4452,10 @@ export type Database = {
           note_id: string
           replayed: boolean
         }[]
+      }
+      reset_pain_follow_up: {
+        Args: { p_case_id: string; p_encounter_id: string }
+        Returns: string
       }
       reschedule_procedure_appointment: {
         Args: {
