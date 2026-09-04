@@ -7,10 +7,29 @@ Implemented across all five phases. The resulting source-of-truth pipeline is:
 1. `src/actions/initial-visit-notes.ts:gatherSourceData()` loads approved, provider-effective MRI/CT/X-ray rows for Pain Evaluation only.
 2. `src/lib/clinical/prp-target-evidence.ts:buildPrpTargetEvidence()` creates exact anatomic candidates and independently attaches current complaint and current examination evidence.
 3. `src/lib/clinical/prp-target-evidence.ts:validatePrpTargetSelections()` rejects unknown, duplicate, or ineligible selections and hydrates persisted evidence exclusively from the server-built bundle.
-4. `src/lib/clinical/render-prp-treatment-plan.ts:renderPrpTreatmentPlan()` renders the target block deterministically, including the no-target state.
-5. Save, removal, regeneration, and finalization rebuild and hash the evidence bundle so stale or unsupported targets fail closed.
+4. `src/lib/clinical/render-prp-treatment-plan.ts:renderPrpTreatmentPlan()` replaces a treatment-plan marker with concise, region-grouped, ultrasound-guided target bullets derived from validated anatomy. It does not repeat full imaging findings or measurements.
+5. Save, regeneration, and finalization rebuild and hash the evidence bundle so stale or unsupported targets fail closed. No separate provider confirmation or target-removal workflow is required.
 
-Automated verification completed: focused target tests, the full 95-file/1,286-test suite, TypeScript checking, changed-file lint, and a production build. Full-repository lint remains blocked by a pre-existing `react-hooks/set-state-in-effect` error in `src/components/settings/invite-user-dialog.tsx:62`. Database tests could not run because local Supabase was not available at `127.0.0.1:54322`; the migration therefore remains to be applied and generated types should be refreshed from the running local database before deployment. The provider/PDF scenarios under Manual verification remain release QA tasks.
+Production decisions finalized through commit `a76a1df`. The Supabase migration is applied in production and the Vercel deployment is live. Automated verification completed: focused target tests, the full 95-file/1,289-test suite, TypeScript checking, changed-file lint, and production builds. Full-repository lint remains blocked by a pre-existing `react-hooks/set-state-in-effect` error in `src/components/settings/invite-user-dialog.tsx:62`. Local database tests could not run because local Supabase was unavailable at `127.0.0.1:54322`. Existing drafts must regenerate the Treatment Plan to receive the current concise renderer output.
+
+## Final product decisions (authoritative)
+
+- Preserve the established Pain Evaluation Treatment Plan template. The target-safety change is limited to deciding and rendering PRP targets.
+- Do not add a provider target-confirmation card, approval step, removal action, evidence panel, or special no-target UI.
+- Require both documented anatomic abnormality and current complaint/examination concordance before a target is eligible.
+- Require ultrasound guidance for every rendered PRP recommendation.
+- Render one concise bullet per region and laterality. Combine multiple eligible spinal levels into that regional bullet.
+- Summarize spine targets as facet-mediated and/or discogenic pain generators based on the validated findings. Summarize shoulder targets as concise clinically relevant structures. Never reproduce full imaging descriptions, measurements, evidence IDs, or audit prose in the recommendation paragraph.
+- Use this fixed recommendation shape:
+
+  ```text
+  Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:
+  • [Region]: Ultrasound-guided PRP injection(s) at [validated location(s)] targeting [concise validated pain generator(s)/structure(s)], where [concise pathology support when appropriate].
+  An initial staged course of one to three injection sessions is planned. The patient will be re-evaluated after each injection; extension beyond the initial stage will occur only if the documented response and persistent functional impairment support additional treatment.
+  ```
+
+- Structured recommendations and evidence remain persisted for audit, evidence-hash invalidation, server-side recomposition, finalization checks, and downstream procedure defaults.
+- Existing drafts are not rewritten automatically; regenerate the Treatment Plan to apply the current renderer.
 
 ## Overview
 
@@ -19,7 +38,7 @@ Replace free-form PRP target invention in the Pain Evaluation Visit with an evid
 1. A documented anatomic abnormality exists at the same region, level/location, and laterality where applicable.
 2. Current clinical evidence makes that abnormality a plausible treatment target.
 
-The implementation will preserve `treatment_plan` as the rendered report section for PDF compatibility, while adding a structured, auditable target model that is built before generation, validated after generation, persisted with the note, and surfaced to the provider. The literal `initial_visit` flow will continue to prohibit PRP recommendations.
+The implementation preserves the previous `treatment_plan` template and PDF compatibility while adding a structured, auditable target model that is built before generation, validated after generation, and persisted with the note. Target validation remains internal; it does not add a confirmation interface to the provider workflow. The literal `initial_visit` flow continues to prohibit PRP recommendations.
 
 ## Current State
 
@@ -44,12 +63,14 @@ The implementation will preserve `treatment_plan` as the rendered report section
 - Spine targets must match a documented imaging level exactly after normalization. A region-only spine finding cannot support invention of a specific level.
 - Non-spine targets must match the documented anatomic location and laterality when present.
 - The model may select targets only by stable candidate ID. It may not create regions, levels, structures, or evidence.
+- Every PRP recommendation uses ultrasound guidance.
 - Each selected target records separate anatomic-evidence and clinical-justification fields.
 - The server rejects a generated selection whose candidate ID is unknown or ineligible. It does not silently save a clinically unsupported draft.
-- Report prose is composed from validated structured targets, so the displayed/PDF target bullets cannot drift from the audited target data.
+- Report prose is composed from validated structured targets, so the displayed/PDF target bullets cannot drift from the audited target data. Multiple eligible levels are grouped into one bullet per region and laterality.
+- Rendered bullets use concise clinical categories such as facet-mediated/discogenic pain generators or shoulder target structures. They do not include full imaging descriptions, measurements, evidence IDs, or a separate confirmation narrative.
 - Saving or finalizing after relevant imaging or provider-intake evidence changes is blocked until the Treatment Plan is regenerated against the new evidence bundle.
-- If no target passes both gates, the Pain Evaluation remains valid but does not recommend PRP. Its plan states that no PRP target is established from the current anatomic and clinical evidence and continues non-interventional care/further evaluation.
-- The provider UI shows why each recommended target passed both gates. Providers may remove an automatic target. Adding a target that failed the gates or was absent from the candidate set is out of scope for this change.
+- If no target passes both gates, no target bullet is emitted and no target anatomy is invented. The remainder of the established Pain Evaluation treatment-plan template is preserved.
+- The existing Treatment Plan editor remains unchanged. There is no separate target confirmation, approval, removal, or override UI.
 
 ## Key Discoveries
 
@@ -58,7 +79,7 @@ The implementation will preserve `treatment_plan` as the rendered report section
 - Provider overrides must be applied before evidence normalization. Pain-management overrides already use overrides-first precedence in `gatherSourceData()`; imaging rows need the same explicit behavior.
 - Existing `normalizeRegion()` and level parsing in `src/lib/procedures/compute-plan-alignment.ts` are useful, but the level extractor is private and permissive parsing of plan prose is not suitable as the source of truth.
 - The later procedure-note prompt already distinguishes anatomic pathology, symptom/exam concordance, and a primary pain generator (`src/lib/claude/generate-procedure-note.ts:534-538`). That is a useful terminology pattern, not an enforcement mechanism to reuse directly.
-- The Initial Visit editor renders all report sections as editable textareas. Target bullets need a separate structured editor/display path to prevent free-text edits from bypassing validation.
+- The Initial Visit editor renders report sections as editable textareas. Server-side recomposition during save and finalization—not a separate UI—prevents target prose from becoming authoritative.
 
 ## What We Are Not Doing
 
@@ -67,7 +88,7 @@ The implementation will preserve `treatment_plan` as the rendered report section
 - We are not making MRI the only possible source of an anatomic abnormality. The retained modality must be stated accurately, and modality-specific clinical policy can be tightened later without changing the target contract.
 - We are not deciding that CT or X-ray evidence is equivalent to MRI for every pathology. The evidence record preserves modality; this change enforces documented anatomy plus clinical concordance, not modality equivalence.
 - We are not changing performed-procedure site capture, billing, procedure-note plan alignment, or `target_confirmed_imaging` semantics.
-- We are not providing an unsupported-target override workflow in this iteration. Providers can remove generated targets and can document continued evaluation, but cannot promote an ineligible candidate through the report editor.
+- We are not adding a target confirmation, approval, removal, or unsupported-target override workflow. Target qualification is automatic and fail-closed.
 - We are not retroactively rewriting finalized reports. Existing rows receive an empty structured-target value and retain their historical prose.
 
 ## Implementation Approach
@@ -90,15 +111,18 @@ Candidate construction will be deterministic:
 3. Emit current complaint and examination evidence from `providerIntake`; retain PM examination evidence as supplemental context.
 4. Group by normalized region + exact level/location + laterality.
 5. Mark a candidate eligible only when at least one anatomic item, one current complaint, and one current exam item match. Treat null laterality as compatible but never convert a unilateral finding into bilateral support.
-6. Preserve every failed gate as a machine-readable reason for audit and UI display.
+6. Preserve every failed gate as a machine-readable reason for validation and audit.
 
 The Claude tool will return structured `prp_target_recommendations` in addition to narrative sections. The model can select only candidate IDs marked eligible. Server validation will resolve every selection back to its candidate, reject duplicate/unknown/ineligible IDs, and overwrite all evidence fields from the server-built candidate rather than trusting model-returned evidence.
 
-The treatment plan will be assembled in TypeScript from:
+The treatment plan will be assembled in TypeScript by replacing `[[PRP_TARGET_RECOMMENDATIONS]]` in the established template with:
 
-- model-generated rationale/supportive-care paragraphs that cannot introduce target bullets;
-- deterministic bullets rendered from validated recommendations and their evidence; and
-- a deterministic no-eligible-target paragraph when the recommendation array is empty.
+- the existing model-generated rationale, cost, supportive-care, medication, monitoring, and escalation paragraphs;
+- a short “Given the incomplete response…” introduction;
+- deterministic, region-grouped, ultrasound-guided bullets derived from eligible candidates; and
+- the agreed staged one-to-three-session language requiring re-evaluation after each injection and documented support before extending treatment.
+
+When the recommendation array is empty, the marker is removed without adding a target-assessment paragraph. The formatter does not print full imaging findings, measurements, or stored audit evidence in the report.
 
 This makes the structured recommendations—not prose parsing—the persisted source of truth.
 
@@ -172,13 +196,16 @@ This makes the structured recommendations—not prose parsing—the persisted so
   - Define the two independent gates explicitly.
   - Tell the model that an abnormality alone is not a treatment target and symptoms alone do not establish abnormal anatomy.
   - Require selection only from eligible candidate IDs.
-  - Require `target_structure`, `guidance_method`, `approach`, and concise clinical rationale for each selected candidate.
-  - Require an empty recommendation array when no candidate is eligible; do not force PRP into every Pain Evaluation.
+  - Require `target_structure`, ultrasound `guidance_method`, `approach`, and concise clinical rationale for each selected candidate.
+  - Require an empty recommendation array when no candidate is eligible; never invent target anatomy to satisfy the template.
   - Split the model's treatment-plan output into non-target narrative components so target bullets can be composed by code.
 - Add a pure formatter, `src/lib/clinical/render-prp-treatment-plan.ts`.
-  - Render validated target bullets with accurate modality language and separate anatomic/clinical rationale.
-  - Render the no-eligible-target plan when appropriate.
-  - Combine target output with medication, rehabilitation, monitoring, and escalation prose.
+  - Preserve the previous treatment-plan template around the target section.
+  - Group eligible targets by region and laterality; group multiple spinal levels into one bullet.
+  - Always render “Ultrasound-guided PRP injection(s).”
+  - Summarize spine targets as concise facet-mediated/discogenic pain generators and summarize shoulder targets as concise structure lists.
+  - Do not repeat full imaging descriptions, measurements, or evidence-verification prose.
+  - Remove the marker without adding target text when no candidate is selected.
 - Update `generateInitialVisitNote()` and `regenerateNoteSection()` in `src/actions/initial-visit-notes.ts`.
   - Validate target selections before persisting.
   - Fail the generation/regeneration with a clear error when model output references an invalid target; do not downgrade this to a narrative warning.
@@ -192,7 +219,7 @@ This makes the structured recommendations—not prose parsing—the persisted so
 - Test rejection of invented regions, invented levels, incompatible laterality, duplicate targets, and ineligible candidate IDs.
 - Test empty-target behavior when anatomy or current clinical support is missing.
 - Test that literal Initial Visit output cannot contain structured PRP targets.
-- Test that target bullets cite the actual modality and do not relabel CT/X-ray evidence as MRI.
+- Test mandatory ultrasound guidance, multi-level grouping, concise spine/shoulder summaries, and omission of full imaging measurements.
 - Test full and treatment-plan-only regeneration paths.
 - Run `npm test -- src/lib/claude/__tests__/generate-initial-visit.test.ts src/lib/clinical/render-prp-treatment-plan.test.ts src/lib/clinical/prp-target-evidence.test.ts`.
 
@@ -210,17 +237,12 @@ This makes the structured recommendations—not prose parsing—the persisted so
   - Do not backfill recommendations from historical free text; existing rows remain empty.
 - Regenerate `src/types/database.ts` with `npm run gen:types:local` after applying the migration locally.
 - Update `src/actions/initial-visit-notes.ts` to clear both fields on reset/new generation and persist validated recommendations plus the evidence hash for Pain Evaluation only.
-- Update the local `NoteRow` shape and report editor in `src/components/clinical/initial-visit-editor.tsx`.
-  - For Pain Evaluation, render an “Evidence-backed PRP targets” card above the Treatment Plan.
-  - Show region/level/laterality, anatomic abnormality with modality/date, and current complaint/exam justification separately.
-  - Allow removing a recommendation before finalization.
-  - Treat the generated target bullet block as read-only; keep supportive treatment-plan prose editable.
-  - Display the deterministic no-target state when no candidate passes both gates.
+- Keep `src/components/clinical/initial-visit-editor.tsx` on the existing Treatment Plan editor experience. Do not add a target confirmation card, evidence display, removal action, or special no-target state.
 - Update `saveInitialVisitNote()` to accept structured recommendations separately from editable prose and recompose the final `treatment_plan` server-side.
 - Update `saveInitialVisitNote()` and `finalizeInitialVisitNote()` to rebuild the current evidence bundle and compare its hash with the note's stored `prp_target_evidence_hash`. If relevant imaging or provider intake changed, return an actionable “regenerate Treatment Plan” error instead of accepting stale recommendations.
 - Update `finalizeInitialVisitNote()` to revalidate persisted recommendations against the current evidence bundle and recompose the target block before PDF rendering. Block finalization if structured data is invalid or target prose cannot be produced.
 - Keep `src/lib/pdf/render-initial-visit-pdf.ts` and `src/lib/pdf/initial-visit-template.tsx` consuming the composed `treatment_plan` string; no PDF layout change is required unless the evidence text causes overflow during visual verification.
-- Add/extend action and component tests for removal, save, reset, regeneration, finalization blocking, and historical rows with an empty structured array.
+- Add/extend tests for save, reset, regeneration, finalization blocking, historical rows with an empty structured array, and server-side target recomposition.
 
 ### Automated verification
 
@@ -234,11 +256,10 @@ This makes the structured recommendations—not prose parsing—the persisted so
 
 ### Manual verification
 
-- Confirm the provider can distinguish the abnormality evidence from the clinical-target justification at a glance.
-- Remove one of several recommended targets, save, reload, and finalize; confirm the PDF contains only the retained target.
-- Confirm editing supportive prose cannot introduce a new target bullet.
+- Confirm the provider sees the established Treatment Plan editor without a separate target-confirmation workflow.
+- Confirm editing target prose cannot persist an invented target after server-side save/finalization recomposition.
 - Open a historical finalized report and confirm it renders unchanged.
-- Render representative PDFs and check pagination, bullet wrapping, modality labels, and no-target wording.
+- Regenerate representative single-region, multi-level cervical, and shoulder plans; confirm concise bullets, ultrasound wording, staged-treatment language, and no repeated imaging measurements.
 
 ## Phase 5: Regression coverage across downstream procedure workflow
 
@@ -262,23 +283,24 @@ This makes the structured recommendations—not prose parsing—the persisted so
 
 ## Risks and rollback considerations
 
-- **Clinical-policy strictness:** Requiring both a current complaint and current exam match will reduce automatic recommendations when intake is incomplete. This is intentional fail-closed behavior; the UI must explain which gate is missing.
+- **Clinical-policy strictness:** Requiring both a current complaint and current exam match will reduce automatic recommendations when intake is incomplete. This is intentional fail-closed behavior; generation returns an actionable error for invalid selections without adding a confirmation UI.
 - **Normalization errors:** Region, level, and laterality synonyms can create false mismatches. Preserve original text, keep normalization conservative, and cover known variants with fixtures before expanding aliases.
 - **Modality ambiguity:** CT/X-ray findings may document anatomy without being sufficient for every PRP indication. Retaining modality prevents false MRI claims. Tightening modality eligibility later should occur in the candidate builder, not in prompt prose.
 - **LLM retry behavior:** A model may still return an invalid candidate ID. Treat this as generation failure with the existing retry UX; never persist the invalid target.
 - **Existing drafts:** Historical drafts have target prose but no structured recommendations. Do not infer audit data from prose. Finalized historical notes remain untouched. Unfinalized Pain Evaluation drafts with PRP prose and no structured targets must regenerate the Treatment Plan before finalization.
-- **PDF length:** Separate evidence-backed wording may lengthen the Treatment Plan. Keep bullets concise and render-test representative multi-target cases.
+- **PDF length:** Full imaging descriptions made target bullets excessively long. The renderer now emits concise clinical summaries and omits measurements; render-test representative multi-target cases.
 - **Rollback:** Dropping the new JSONB column is mechanically reversible because the composed `treatment_plan` remains stored. Do not remove the column until application code has been rolled back. New reports would retain readable prose but lose structured audit data after a rollback.
 
 ## Completion criteria
 
 - Every automatically recommended PRP target resolves to a server-built eligible candidate.
 - Every eligible recommendation has exact anatomic evidence and current complaint/exam concordance at the same canonical region, with exact level/location and compatible laterality where applicable.
-- Anatomic evidence and clinical justification are stored and displayed separately.
+- Anatomic evidence and clinical justification are stored separately for audit but are not displayed in a confirmation card or repeated verbatim in report prose.
 - Invented or ineligible target IDs cause generation to fail before draft persistence.
-- No eligible target produces a non-PRP plan rather than a fabricated recommendation.
+- No eligible target results in no target bullet; the system never fabricates target anatomy.
 - Literal Initial Visit behavior remains unchanged and PRP-free.
 - Treatment-plan prose and structured recommendations cannot drift during generation, editing, regeneration, save, or finalization.
 - Evidence changes after generation invalidate stale recommendations and require Treatment Plan regeneration before save/finalization.
 - New procedure defaults prefer structured validated targets; historical notes retain legacy parsing.
+- Every rendered recommendation is ultrasound-guided, grouped by region/laterality, concise, and followed by the agreed staged-course/re-evaluation language.
 - Database migration, generated types, focused unit/integration tests, full test suite, lint, build, and representative PDF/UI verification all pass.
