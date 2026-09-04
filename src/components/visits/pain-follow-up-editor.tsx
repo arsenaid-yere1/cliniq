@@ -14,6 +14,7 @@ import {
   unfinalizePainFollowUpNote,
 } from '@/actions/pain-follow-up-notes'
 import { ProcedureOrderDialog } from '@/components/procedures/procedure-order-dialog'
+import type { ProcedureOrderSummary } from '@/actions/procedure-orders'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getPainFollowUpEditorState } from '@/lib/clinical/pain-follow-up-editor-state'
-import type { ProcedureSeriesOption } from '@/lib/clinical/procedure-series-labels'
+import type { ProcedureSeriesChoice } from '@/lib/clinical/procedure-series-labels'
 import {
   painFollowUpNoteSectionLabels,
   painFollowUpNoteSections,
@@ -43,7 +44,9 @@ interface PainFollowUpEditorProps {
   caseId: string
   encounter: Tables<'clinical_encounters'>
   initialNote: Tables<'pain_follow_up_notes'> | null
-  seriesOptions?: ProcedureSeriesOption[]
+  seriesChoices?: ProcedureSeriesChoice[]
+  procedureOrders?: ProcedureOrderSummary[]
+  relationshipLoadError?: boolean
 }
 
 type ActionResult = { error?: string; data?: unknown }
@@ -52,7 +55,9 @@ export function PainFollowUpEditor({
   caseId,
   encounter,
   initialNote,
-  seriesOptions = [],
+  seriesChoices = [],
+  procedureOrders = [],
+  relationshipLoadError = false,
 }: PainFollowUpEditorProps) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -332,15 +337,21 @@ export function PainFollowUpEditor({
                   <p className="text-sm text-muted-foreground">{recommendation.sites.join(', ')}</p>
                   <p className="mt-1 text-sm">{recommendation.rationale}</p>
                 </div>
-                {finalized && (
-                  <ProcedureOrderDialog
+                {finalized && (() => {
+                  const order = procedureOrders.find((item) => item.source_recommendation_id === recommendation.recommendation_id)
+                  return order ? <div className="min-w-48 rounded-md bg-muted p-3 text-sm">
+                    <div className="flex items-center gap-2"><span className="font-medium">Ordered</span><span className="capitalize text-muted-foreground">{order.status}</span></div>
+                    <p className="mt-1 text-xs text-muted-foreground">{order.seriesRelationshipLabel}</p>
+                    <Link className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline" href={`/patients/${caseId}/procedures`}>View Procedures</Link>
+                  </div> : <ProcedureOrderDialog
                     caseId={caseId}
                     episodeId={encounter.episode_id}
                     encounterId={encounter.id}
                     recommendation={recommendation}
-                    seriesOptions={seriesOptions}
+                    seriesChoices={seriesChoices}
+                    seriesLoadError={relationshipLoadError}
                   />
-                )}
+                })()}
               </div>
             ))}
           </CardContent>

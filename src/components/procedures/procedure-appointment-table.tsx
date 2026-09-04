@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { completeProcedureAppointment, changeProcedureAppointmentStatus } from '@/actions/procedure-appointments'
-import { cancelProcedureOrder } from '@/actions/procedure-orders'
+import { cancelProcedureOrder, type ProcedureOrderSummary } from '@/actions/procedure-orders'
 import type { ProcedureDefaults } from '@/actions/procedures'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +29,7 @@ type DiagnosisSuggestion = {
 
 type Props = {
   caseId: string
-  orders: Tables<'procedure_orders'>[]
+  orders: ProcedureOrderSummary[]
   appointments: Tables<'procedure_appointments'>[]
   providers: Array<{ id: string; display_name: string }>
   defaultProviderId?: string | null
@@ -116,6 +116,7 @@ export function ProcedureAppointmentTable({ caseId, orders, appointments, provid
           <div className="flex flex-wrap items-start justify-between gap-3"><div>
             <div className="flex items-center gap-2"><p className="font-medium uppercase">{order.procedure_type}</p><Badge variant="outline">{order.status}</Badge></div>
             <p className="text-sm text-muted-foreground">{orderSites(order.sites).map((site) => site.label).join(', ') || 'Sites on order'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{order.seriesRelationshipLabel}</p>
             {active && <p className="mt-2 text-sm">{format(new Date(active.scheduled_start), 'MMM d, yyyy h:mm a')} · {providerName(active.provider_id)}</p>}
           </div><div className="flex flex-wrap gap-2">
             {order.status === 'ordered' && <ScheduleProcedureDialog orderId={order.id} providers={providers} defaultProviderId={defaultProviderId} />}

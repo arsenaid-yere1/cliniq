@@ -3321,6 +3321,55 @@ export type Database = {
           },
         ]
       }
+      procedure_order_series_selections: {
+        Row: {
+          case_id: string
+          created_at: string
+          created_by_user_id: string
+          procedure_order_id: string
+          relationship: string
+          selected_series_id: string | null
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          created_by_user_id: string
+          procedure_order_id: string
+          relationship: string
+          selected_series_id?: string | null
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          created_by_user_id?: string
+          procedure_order_id?: string
+          relationship?: string
+          selected_series_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedure_order_series_selections_order_case_fkey"
+            columns: ["procedure_order_id", "case_id"]
+            isOneToOne: true
+            referencedRelation: "procedure_orders"
+            referencedColumns: ["id", "case_id"]
+          },
+          {
+            foreignKeyName: "procedure_order_series_selections_selected_series_case_fkey"
+            columns: ["selected_series_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "procedure_series"
+            referencedColumns: ["id", "case_id"]
+          },
+          {
+            foreignKeyName: "procedure_order_series_selections_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       procedure_orders: {
         Row: {
           cancellation_reason: string | null
@@ -4405,6 +4454,28 @@ export type Database = {
           updated_at: string
           updated_by_user_id: string | null
         }
+        SetofOptions: {
+          from: "*"
+          to: "procedure_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_procedure_order_from_recommendation_v2: {
+        Args: {
+          p_case_id: string
+          p_diagnoses: Json
+          p_episode_id: string
+          p_priority: string
+          p_procedure_type: string
+          p_rationale: string
+          p_recommendation_id: string
+          p_selected_series_id: string | null
+          p_series_relationship: string
+          p_sites: Json
+          p_source_encounter_id: string
+        }
+        Returns: Database["public"]["Tables"]["procedure_orders"]["Row"]
         SetofOptions: {
           from: "*"
           to: "procedure_orders"

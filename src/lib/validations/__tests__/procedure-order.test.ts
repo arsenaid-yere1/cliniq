@@ -37,24 +37,27 @@ describe('createProcedureOrderSchema', () => {
 describe('createProcedureOrderFromRecommendationSchema', () => {
   const recommendationOrder = { ...order, procedure_series_id: undefined }
 
-  it('accepts the existing selected-series wire field', () => {
+  it('accepts an explicit current or prior selection', () => {
     expect(createProcedureOrderFromRecommendationSchema.safeParse({
       ...recommendationOrder,
-      continued_from_series_id: order.procedure_series_id,
+      series_relationship: 'current',
+      selected_series_id: order.procedure_series_id,
     }).success).toBe(true)
   })
 
   it('accepts null for a separate series', () => {
     expect(createProcedureOrderFromRecommendationSchema.safeParse({
       ...recommendationOrder,
-      continued_from_series_id: null,
+      series_relationship: 'separate',
+      selected_series_id: null,
     }).success).toBe(true)
   })
 
-  it('rejects an invalid selected series ID', () => {
+  it('rejects inconsistent relationship arguments', () => {
     expect(createProcedureOrderFromRecommendationSchema.safeParse({
       ...recommendationOrder,
-      continued_from_series_id: 'not-a-uuid',
+      series_relationship: 'prior',
+      selected_series_id: null,
     }).success).toBe(false)
   })
 })

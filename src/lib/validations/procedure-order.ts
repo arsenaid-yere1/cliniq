@@ -27,7 +27,10 @@ export const cancelProcedureOrderSchema = z.object({
 
 export const createProcedureOrderFromRecommendationSchema = createProcedureOrderSchema
   .omit({ procedure_series_id: true })
-  .extend({ continued_from_series_id: z.string().uuid().nullable().optional() })
+  .and(z.discriminatedUnion('series_relationship', [
+    z.object({ series_relationship: z.literal('separate'), selected_series_id: z.null() }),
+    z.object({ series_relationship: z.enum(['current', 'prior']), selected_series_id: z.string().uuid() }),
+  ]))
 
 export type CreateProcedureOrderInput = z.infer<typeof createProcedureOrderSchema>
 export type CancelProcedureOrderInput = z.infer<typeof cancelProcedureOrderSchema>

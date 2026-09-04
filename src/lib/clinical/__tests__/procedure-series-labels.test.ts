@@ -30,12 +30,12 @@ describe('procedure series labels', () => {
   it('labels the next procedure in a current active series', () => {
     expect(buildCurrentSeriesOptionLabel({
       id:'series-1',relationship:'current',episodeId:'episode-2',episodeNumber:2,
-      seriesNumber:1,procedureType:'prp',latestProcedureNumber:2,hasOpenOrder:false,
+      seriesNumber:1,procedureType:'prp',latestProcedureNumber:2,hasOpenOrder:false,eligible:true,unavailableReason:null,
     })).toBe('Add procedure #3 to current active series — PRP series 1')
   })
 
   it('builds prior labels and relationship descriptions from structured options', () => {
-    const prior={id:'series-1',relationship:'prior' as const,episodeId:'episode-1',episodeNumber:1,seriesNumber:2,procedureType:'botox',latestProcedureNumber:3,hasOpenOrder:false}
+    const prior={id:'series-1',relationship:'prior' as const,episodeId:'episode-1',episodeNumber:1,seriesNumber:2,procedureType:'botox',latestProcedureNumber:3,hasOpenOrder:false,eligible:true,unavailableReason:null}
     expect(buildSeriesOptionLabel(prior)).toBe('Continue from prior episode — Episode 1 · BOTOX series 2')
     expect(getSeriesRelationshipDescription(prior)).toContain('retaining lineage')
     expect(getSeriesRelationshipDescription()).toBe('Begins an independent treatment series.')
@@ -53,7 +53,7 @@ describe('procedure series labels', () => {
     ])
   })
 
-  it('excludes deleted, empty, inactive current, active prior, and current series with an open order', () => {
+  it('retains unavailable choices with stable reasons', () => {
     const base={episodeId:'current',episodeNumber:2,seriesNumber:1,procedureType:'prp',status:'active',deletedAt:null,procedureNumbers:[1],orderStatuses:[]}
     const options=buildProcedureSeriesOptions([
       {...base,id:'deleted',deletedAt:'2026-01-01'},
@@ -63,7 +63,14 @@ describe('procedure series labels', () => {
       {...base,id:'open',orderStatuses:[{status:'scheduled',deletedAt:null}]},
       {...base,id:'deleted-open',orderStatuses:[{status:'ordered',deletedAt:'2026-01-01'}]},
     ],'current')
-    expect(options.map((option)=>option.id)).toEqual(['deleted-open'])
+    expect(options.map(({id,unavailableReason})=>({id,unavailableReason}))).toEqual([
+      {id:'deleted-open',unavailableReason:null},
+      {id:'open',unavailableReason:'current_has_open_order'},
+      {id:'empty',unavailableReason:'no_performed_procedures'},
+      {id:'inactive',unavailableReason:'current_not_active'},
+      {id:'deleted',unavailableReason:'deleted'},
+      {id:'prior-active',unavailableReason:'prior_not_completed'},
+    ])
   })
 
   it('derives the next number only from performed procedure numbers', () => {
