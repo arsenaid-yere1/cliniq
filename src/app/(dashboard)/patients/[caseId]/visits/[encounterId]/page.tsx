@@ -19,10 +19,10 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
   ])
   if(!encounter) notFound()
   const {data:seriesRows,error:seriesError}=await supabase.from('procedure_series')
-    .select('id,episode_id,series_number,procedure_type,status,deleted_at,episode:care_episodes!inner(episode_number),procedures(procedure_number,deleted_at),procedure_orders(status,deleted_at)')
+    .select('id,episode_id,series_number,procedure_type,status,deleted_at,episode:care_episodes!inner(episode_number),procedures!procedures_series_ownership_fkey(procedure_number,deleted_at),procedure_orders(status,deleted_at)')
     .eq('case_id',caseId).order('created_at',{ascending:false})
   const candidates=(seriesRows??[]).flatMap((series)=>{
-    const episode=series.episode[0]
+    const episode=Array.isArray(series.episode)?series.episode[0]:series.episode
     return episode?[{
       id:series.id,
       episodeId:series.episode_id,episodeNumber:episode.episode_number,seriesNumber:series.series_number,

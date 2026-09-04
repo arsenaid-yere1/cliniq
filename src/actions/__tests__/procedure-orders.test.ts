@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMockSupabase, type MockSupabaseClient } from '@/test-utils/supabase-mock'
+import { createMockQueryBuilder, createMockSupabase, type MockSupabaseClient } from '@/test-utils/supabase-mock'
 
 let mockSupabase: MockSupabaseClient
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn(() => mockSupabase) }))
 
-import { createProcedureOrderFromRecommendation } from '../procedure-orders'
+import { createProcedureOrderFromRecommendation, listProcedureOrders } from '../procedure-orders'
 
 const input = {
   case_id: '11111111-1111-4111-8111-111111111111',
@@ -33,5 +33,24 @@ describe('createProcedureOrderFromRecommendation', () => {
     const result = await createProcedureOrderFromRecommendation(input as never)
     expect(result).toHaveProperty('error')
     expect(mockSupabase.rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('listProcedureOrders', () => {
+  beforeEach(() => { mockSupabase = createMockSupabase() })
+
+  it('keeps base orders available when optional relationship enrichment fails', async () => {
+    mockSupabase.from.mockImplementation((table: string) => createMockQueryBuilder(table === 'procedure_orders'
+      ? { data: [{ id: 'order-1' }], error: null }
+      : { data: null, error: { message: 'relationship metadata unavailable' } }))
+
+    const result = await listProcedureOrders('11111111-1111-4111-8111-111111111111')
+
+    expect(result).not.toHaveProperty('error')
+    expect(result.data[0]).toEqual(expect.objectContaining({
+      id: 'order-1',
+      seriesRelationship: 'unknown',
+      seriesRelationshipLabel: 'Series relationship unavailable for legacy order',
+    }))
   })
 })

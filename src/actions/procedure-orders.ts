@@ -19,21 +19,26 @@ export async function listProcedureOrders(caseId:string, episodeId?:string) {
   const {data,error}=await query
   if(error)return {error:'Unable to load procedure orders',data:[] as ProcedureOrderSummary[]}
   const orders=data??[]
+  const unknownSummaries=orders.map<ProcedureOrderSummary>((order)=>({
+    ...order,
+    seriesRelationship:'unknown',
+    seriesRelationshipLabel:buildSavedSeriesRelationshipLabel('unknown'),
+  }))
   const orderIds=orders.map((order)=>order.id)
   const {data:selections,error:selectionError}=orderIds.length
     ? await supabase.from('procedure_order_series_selections').select('procedure_order_id,relationship,selected_series_id').in('procedure_order_id',orderIds)
     : {data:[],error:null}
-  if(selectionError)return {error:'Unable to load procedure order relationships',data:[] as ProcedureOrderSummary[]}
+  if(selectionError)return {data:unknownSummaries}
   const selectedIds=(selections??[]).flatMap((selection)=>selection.selected_series_id?[selection.selected_series_id]:[])
   const {data:selectedSeries,error:seriesError}=selectedIds.length
     ? await supabase.from('procedure_series').select('id,episode_id,series_number,procedure_type').in('id',selectedIds)
     : {data:[],error:null}
-  if(seriesError)return {error:'Unable to load procedure order relationships',data:[] as ProcedureOrderSummary[]}
+  if(seriesError)return {data:unknownSummaries}
   const episodeIds=(selectedSeries??[]).map((series)=>series.episode_id)
   const {data:episodes,error:episodeError}=episodeIds.length
     ? await supabase.from('care_episodes').select('id,episode_number').in('id',episodeIds)
     : {data:[],error:null}
-  if(episodeError)return {error:'Unable to load procedure order relationships',data:[] as ProcedureOrderSummary[]}
+  if(episodeError)return {data:unknownSummaries}
   const selectionByOrder=new Map((selections??[]).map((selection)=>[selection.procedure_order_id,selection]))
   const seriesById=new Map((selectedSeries??[]).map((series)=>[series.id,series]))
   const episodeById=new Map((episodes??[]).map((episode)=>[episode.id,episode]))
