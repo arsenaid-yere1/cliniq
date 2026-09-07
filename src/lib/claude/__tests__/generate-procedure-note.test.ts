@@ -121,6 +121,48 @@ describe('regenerateProcedureNoteSection', () => {
   })
 })
 
+describe('PRP reassessment interval consistency', () => {
+  const routineSentence = 'Follow up in 2 weeks to reassess symptoms, functional status, and response to treatment.'
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('aligns follow-up and assessment-plan references, including the earlier-review exception', async () => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+    await generateProcedureNoteFromData(emptyInput)
+    const system = (callClaudeTool as unknown as Mock).mock.calls[0][0].system as string
+    const followUp = system.slice(system.indexOf('16. procedure_followup'), system.indexOf('17. assessment_and_plan'))
+    const plan = system.slice(system.indexOf('17. assessment_and_plan'), system.indexOf('18. patient_education'))
+
+    for (const label of ['baseline', 'stable', 'improved']) {
+      expect(followUp).toContain(`Reference (paintoneLabel="${label}"): "${routineSentence}`)
+    }
+    expect(plan).toContain(routineSentence)
+    expect(followUp).toContain('return in 1 week for earlier re-evaluation')
+    expect(plan).toContain('Return in 1 week for earlier re-evaluation')
+    expect(plan).toContain('The interval MUST match procedure_followup')
+    expect(system).not.toMatch(/10[-–]14 days/)
+    expect(followUp).toContain("MANDATORY for procedure_type = 'prp'")
+    expect(followUp).toContain('baseline, stable, minimally_improved, and improved')
+    expect(followUp).toContain('MISSING-VITALS BRANCH retains this baseline cadence')
+  })
+
+  it.each(['procedure_followup', 'assessment_and_plan'] as const)(
+    'keeps consistency guidance when regenerating %s from legacy wording',
+    async (section) => {
+      ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: { content: routineSentence } })
+      await regenerateProcedureNoteSection(emptyInput, section, 'Reevaluate in 10-14 days.', null, {
+        procedure_followup: routineSentence,
+        assessment_and_plan: 'Reevaluate in 10-14 days.',
+      })
+      const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
+      expect(opts.system).toBe(systemPromptForProcedureType('prp'))
+      expect(opts.system).toContain('exception to NO REPETITION and section-regeneration duplicate-content guidance')
+      expect(opts.system).toContain('do not copy a conflicting interval from old section content')
+      expect(opts.messages[0].content).toContain('Reevaluate in 10-14 days.')
+    },
+  )
+})
+
 describe('tone hint', () => {
   beforeEach(() => vi.clearAllMocks())
 

@@ -20,6 +20,7 @@ import {
 
 const NSAID_HELD_CLAUSE = nsaidHeldPreProcedureClause()
 const NSAID_POST_CARE_INSTRUCTION = nsaidPostCareInstructionSentence()
+const PRP_REASSESSMENT_SENTENCE = 'Follow up in 2 weeks to reassess symptoms, functional status, and response to treatment.'
 
 const sectionRegenSchema = z.object({ content: z.string() })
 
@@ -618,6 +619,8 @@ Reference for this paragraph: "A compression bandage was applied to the injectio
 16. procedure_followup (~2-3 sentences):
 Return timeline, potential additional injections based on procedure_number in series.
 
+PRP REASSESSMENT INTERVAL CONSISTENCY (MANDATORY for procedure_type = 'prp'): Use the SAME reassessment interval in procedure_followup and assessment_and_plan. Routine cadence is 2 weeks for baseline, stable, minimally_improved, and improved response; the MISSING-VITALS BRANCH retains this baseline cadence. Use this routine sentence: "${PRP_REASSESSMENT_SENTENCE}" When the existing worsened-response branch calls for earlier re-evaluation in 1 week, use 1 week in BOTH sections. The interval describes reassessment, not a commitment to another injection. Repeating the interval in these two sections is required for consistency and is an exception to NO REPETITION and section-regeneration duplicate-content guidance. Apply this rule during full generation and section regeneration; do not copy a conflicting interval from old section content. Other procedure types follow their own instructions.
+
 SERIES-TOTAL RULE (MANDATORY): Do NOT state that this is "Session 1 of 3", "Session 2 of 3", "Session 3 of 3", or any specific X-of-N series position. The procedures schema does not store a planned series total, so any such number would be fabricated. Phrase additional injections conditionally: "additional PRP treatment may be considered depending on clinical response", "follow-up will determine whether further interventional treatment is indicated", or "the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement" — all neutral and non-committal. You MAY reference the procedure_number as an ordinal when describing the visit itself (e.g., "second PRP injection") because procedure_number counts completed procedures, not a planned total.
 
 RESPONSE-CALIBRATED FOLLOW-UP (MANDATORY when at least one prior procedure exists): Match the follow-up narrative to the top-level "paintoneLabel" — do NOT emit identical boilerplate across every session of the series. The follow-up language must reflect the actual interval response so a reader sees the plan evolve with the patient, not a static template.
@@ -626,9 +629,9 @@ RESPONSE-CALIBRATED FOLLOW-UP (MANDATORY when at least one prior procedure exist
 • "improved" (current pain ≥3 points below the first-injection baseline) — the follow-up should recognize the favorable interim response and AVOID pre-committing to further injections by default. Frame additional PRP treatment as contingent on whether gains hold or regress ("given the favorable interim response, an additional PRP injection will be considered only if symptom gains plateau or regress at the next follow-up; otherwise the patient will transition to maintenance with continued conservative care"). Do NOT re-emit the first-visit reference that counsels "the potential need for 1-2 additional PRP injections" — that language belongs to the baseline/stable branches and reads as upsell when the patient is already improving.
 • "worsened" (current pain ≥2 points above the first-injection baseline) — acknowledge the interval worsening and propose either a shorter follow-up interval or consideration of alternative interventional options ("given the interval increase in pain burden, the patient will return in 1 week for re-evaluation, at which point alternative interventional options may be considered if symptoms do not improve with the current injection").
 
-Reference (paintoneLabel="baseline"): "Mr. Vardanyan will return for a follow-up in 2 weeks to assess his response to the injection. Additional PRP injections may be considered based on his progress. Patient was reminded of the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement."
-Reference (paintoneLabel="stable"): "Mr. Vardanyan will return for follow-up in 2 weeks to assess his response to today's injection. Given the modest interval response to the prior injection, the next visit will focus on whether continued interventional treatment remains indicated versus transition to conservative care alone. Additional PRP treatment will be considered based on the pattern of clinical response across the series."
-Reference (paintoneLabel="improved"): "Mr. Vardanyan will return for follow-up in 2 weeks to reassess symptoms and functional status. Given the favorable interim response to PRP therapy, an additional PRP injection will be considered only if symptom gains plateau or regress at the next follow-up; otherwise, the patient will transition to maintenance with continued conservative care. No additional injections are committed to at this time."
+Reference (paintoneLabel="baseline"): "${PRP_REASSESSMENT_SENTENCE} Additional PRP injections may be considered based on his progress. Patient was reminded of the potential need for 1-2 additional PRP injections, depending on the degree of symptom improvement."
+Reference (paintoneLabel="stable"): "${PRP_REASSESSMENT_SENTENCE} Given the modest interval response to the prior injection, the next visit will focus on whether continued interventional treatment remains indicated versus transition to conservative care alone. Additional PRP treatment will be considered based on the pattern of clinical response across the series."
+Reference (paintoneLabel="improved"): "${PRP_REASSESSMENT_SENTENCE} Given the favorable interim response to PRP therapy, an additional PRP injection will be considered only if symptom gains plateau or regress at the next follow-up; otherwise, the patient will transition to maintenance with continued conservative care. No additional injections are committed to at this time."
 Reference (paintoneLabel="worsened"): "Mr. Israyelyan will return in 1 week for earlier re-evaluation given the interval increase in symptoms despite the prior injection. At that visit, alternative interventional options may be considered if symptoms do not improve. No specific number of further PRP injections is committed to at this time; the plan will be revisited based on response."
 
 17. assessment_and_plan:
@@ -727,7 +730,8 @@ COUNTER-EXAMPLE (when M54.6 IS supported):
   If the exam THIS visit documents "thoracic paraspinal tenderness at T4-T8 with pain on rotation" OR the ROS mentions thoracic/mid-back pain, M54.6 may be kept.
 
 Reference diagnoses: "M51.26 Lumbar Disc Displacement\\nM54.5 Lumbago\\n..."
-Reference plan: "• ${NSAID_POST_CARE_INSTRUCTION}\\n• Acetaminophen may be used for breakthrough pain as needed.\\n• Rest the treated area and do not apply ice during the first 72 hours.\\n• Reevaluate in 10-14 days."
+Reference plan (routine PRP reassessment): "• ${NSAID_POST_CARE_INSTRUCTION}\\n• Acetaminophen may be used for breakthrough pain as needed.\\n• Rest the treated area and do not apply ice during the first 72 hours.\\n• ${PRP_REASSESSMENT_SENTENCE}"
+For the PRP worsened-response branch, replace the routine reassessment bullet with "• Return in 1 week for earlier re-evaluation given the interval increase in symptoms." The interval MUST match procedure_followup per PRP REASSESSMENT INTERVAL CONSISTENCY.
 
 18. patient_education (~1 paragraph):
 Covers PRP role, post-injection instructions, follow-up. End with time documentation sentence: "I personally spent a cumulative total of greater than 60 minutes with and examining the patient... Of that, greater than 50% of the time was spent counseling and/or providing education."
