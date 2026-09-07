@@ -20,6 +20,10 @@ describe('renderPrpTreatmentPlan', () => {
       bundle,
     )
     expect(text).toContain('Given the incomplete response to conservative measures')
+    expect(text).toContain('PRP) injections for therapeutic purposes, with the goal of reducing pain and improving function')
+    expect(text).not.toContain('for diagnostic and therapeutic purposes')
+    expect(text).toContain('any diagnostic facet block requires a separately documented indication, technique, injectate, and response assessment')
+    expect(text).toContain('The proposed PRP treatment does not itself establish a diagnosis of facet-mediated pain')
     expect(text).toContain('• Lumbar Spine: Ultrasound-guided PRP injections at L5-S1')
     expect(text).toContain('targeting the facet-mediated pain generators at this level, where the corresponding facet pathology is documented')
     expect(text).toContain('An initial staged course of one to three injection sessions is planned')
@@ -32,6 +36,23 @@ describe('renderPrpTreatmentPlan', () => {
   it('does not add target confirmation text when no target qualifies', () => {
     const text = renderPrpTreatmentPlan('Clinical rationale.\n\n[[PRP_TARGET_RECOMMENDATIONS]]\n\nContinue care.', [], bundle)
     expect(text).toBe('Clinical rationale.\n\nContinue care.')
+  })
+
+  it.each(['', ' for diagnostic and therapeutic purposes', ' for therapeutic purposes, with the goal of reducing pain and improving function,'])('replaces an existing recommendation block with purpose wording (%s)', (purpose) => {
+    const validated = validatePrpTargetSelections([{ candidate_id: bundle.candidates[0].id,
+      target_structure: 'facet-capsular structures', guidance_method: 'ultrasound', approach: 'periarticular',
+      clinical_rationale: 'The focal examination is concordant.' }], bundle).data!
+    const narrative = `Clinical rationale.\n\nGiven the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections${purpose} targeting the following regions:\n• Old target.\nAn initial staged course of one to three injection sessions is planned. The patient will be re-evaluated after each injection; extension beyond the initial stage will occur only if the documented response and persistent functional impairment support additional treatment.\n\nContinue care.`
+
+    const text = renderPrpTreatmentPlan(narrative, validated, bundle)
+    expect(text).not.toContain('for diagnostic and therapeutic purposes')
+    expect(text.match(/for therapeutic purposes/g)).toHaveLength(1)
+    expect(text.match(/any diagnostic facet block/g)).toHaveLength(1)
+    expect(text.match(/Given the incomplete response/g)).toHaveLength(1)
+    expect(text).not.toContain('Old target')
+    expect(text).toContain('Clinical rationale.')
+    expect(text).toContain('Continue care.')
+    expect(renderPrpTreatmentPlan(text, validated, bundle)).toBe(text)
   })
 
   it('groups multiple supported spinal levels into one regional bullet', () => {
@@ -64,6 +85,7 @@ describe('renderPrpTreatmentPlan', () => {
     expect(text).toContain('• Cervical Spine: Ultrasound-guided PRP injections at C5-C6 and C6-C7')
     expect(text).toContain('targeting the discogenic pain generators at these levels, where the most significant disc pathology and foraminal narrowing are documented')
     expect(text).not.toContain('Disc protrusion with foraminal narrowing')
+    expect(text).not.toContain('diagnostic')
     expect(text.match(/• Cervical Spine:/g)).toHaveLength(1)
   })
 
@@ -90,6 +112,7 @@ describe('renderPrpTreatmentPlan', () => {
     const text = renderPrpTreatmentPlan('[[PRP_TARGET_RECOMMENDATIONS]]', validated, shoulderBundle)
     expect(text).toContain('• Left Shoulder: Ultrasound-guided PRP injection targeting the rotator cuff tear, the subacromial/subdeltoid bursa and the biceps tendon sheath.')
     expect(text).not.toContain('11 x 7 mm')
+    expect(text).not.toContain('diagnostic')
     expect(text).not.toContain('verbose model target')
   })
 })

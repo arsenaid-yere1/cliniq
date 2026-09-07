@@ -2,7 +2,10 @@ import type { PrpTargetEvidenceBundle, PrpTargetRecommendation } from './prp-tar
 import { isSpineRegion } from './anatomic-normalization'
 
 const TARGET_MARKER = '[[PRP_TARGET_RECOMMENDATIONS]]'
-const TARGET_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:'
+const LEGACY_TARGET_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:'
+const LEGACY_DUAL_PURPOSE_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections for diagnostic and therapeutic purposes targeting the following regions:'
+const TARGET_INTRO = 'Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections for therapeutic purposes, with the goal of reducing pain and improving function, targeting the following regions:'
+const FACET_PURPOSE_CLARIFICATION = 'For facet-directed treatment, any diagnostic facet block requires a separately documented indication, technique, injectate, and response assessment. The proposed PRP treatment does not itself establish a diagnosis of facet-mediated pain.'
 const TARGET_FOLLOW_UP = 'An initial staged course of one to three injection sessions is planned. The patient will be re-evaluated after each injection; extension beyond the initial stage will occur only if the documented response and persistent functional impairment support additional treatment.'
 
 function titleCase(value: string): string {
@@ -75,7 +78,11 @@ export function renderPrpTargetBlock(
     }
     return `• ${label}: Ultrasound-guided PRP injection targeting ${nonSpineTargetSummary(first.region, locations, descriptions)}.`
   })
-  return `${TARGET_INTRO}\n${bullets.join('\n')}\n${TARGET_FOLLOW_UP}`
+  // A selected facet target is not evidence that a diagnostic block is planned.
+  const hasFacetTarget = recommendations.some((item) =>
+    isSpineRegion(item.region) && /\bfacet(?:s)?\b/i.test(item.target_structure))
+  return [TARGET_INTRO, ...bullets, hasFacetTarget ? FACET_PURPOSE_CLARIFICATION : null, TARGET_FOLLOW_UP]
+    .filter(Boolean).join('\n')
 }
 
 export function renderPrpTreatmentPlan(
@@ -97,7 +104,8 @@ export function renderPrpTreatmentPlan(
 
 export function stripPrpTargetBlock(text: string): string {
   const trimmed = text.trim()
-  const newStart = trimmed.indexOf(TARGET_INTRO)
+  const intro = [TARGET_INTRO, LEGACY_DUAL_PURPOSE_INTRO, LEGACY_TARGET_INTRO].find((value) => trimmed.includes(value))
+  const newStart = intro ? trimmed.indexOf(intro) : -1
   if (newStart !== -1) {
     const followUpStart = trimmed.indexOf(TARGET_FOLLOW_UP, newStart)
     if (followUpStart !== -1) {
