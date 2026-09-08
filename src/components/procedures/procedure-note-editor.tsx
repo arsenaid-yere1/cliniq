@@ -1,11 +1,13 @@
 'use client'
 
+import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
+
 import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, RotateCcw } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -35,9 +37,7 @@ import {
   generateProcedureNote,
   saveProcedureNote,
   finalizeProcedureNote,
-  unfinalizeProcedureNote,
   regenerateProcedureNoteSectionAction,
-  resetProcedureNote,
   saveProcedureNoteToneHint,
   acknowledgePlanDeviation,
 } from '@/actions/procedure-notes'
@@ -333,36 +333,7 @@ export function ProcedureNoteEditor({
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Retry
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Note</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. The underlying procedure record and vitals are preserved. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetProcedureNote(procedureId, caseId)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "procedure_notes", id: note.id }} disabled={isPending} />
         </div>
       </div>
     )
@@ -478,36 +449,7 @@ function DraftEditor({
             Save Draft
           </Button>
           {/* MissingPriorVitalsBadge surfaces separately below the header row */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Note</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. The underlying procedure record and vitals are preserved. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetProcedureNote(procedureId, caseId)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "procedure_notes", id: note.id }} disabled={isPending} />
           {note.plan_alignment_status === 'unplanned' &&
             !note.plan_deviation_acknowledged_at && (
               <Button
@@ -686,7 +628,6 @@ function DraftEditor({
 
 function FinalizedView({
   caseId,
-  procedureId,
   note,
   clinicSettings,
   providerProfile,
@@ -696,8 +637,6 @@ function FinalizedView({
   procedureInfo,
   documentFilePath,
   isPending,
-  startTransition,
-  isLocked,
 }: {
   caseId: string
   procedureId: string
@@ -774,36 +713,8 @@ function FinalizedView({
               Download PDF
             </Button>
           )}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
-                Edit
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unfinalize Note</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-open the note for editing and remove the current finalized PDF from the document repository. Re-finalizing will generate a fresh PDF. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await unfinalizeProcedureNote(procedureId, caseId)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note reopened for editing')
-                    })
-                  }}
-                >
-                  Unfinalize
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "procedure_notes", id: note.id }} disabled={isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "procedure_notes", id: note.id }} keepContent disabled={isPending} />
         </div>
       </div>
 

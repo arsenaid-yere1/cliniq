@@ -76,7 +76,8 @@ interface DocumentCardProps {
     created_at: string
     content_date: string | null
     procedure_number: number | null
-    revision_status: 'superseded_discharge' | 'current_corrected_discharge' | null
+    revision_status: 'superseded_discharge' | 'current_corrected_discharge' | 'reset_pending' | 'superseded_note' | null
+    revision_history?: string | null
     revision_number: number | null
     notes: string | null
     uploaded_by: { full_name: string } | null
@@ -145,6 +146,8 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
               <Badge variant="outline" className={docStatusColors[document.status] ?? ''}>
                 {docStatusLabels[document.status] ?? document.status}
               </Badge>
+              {document.revision_status === 'reset_pending' && <Badge variant="outline">Reset — replacement pending</Badge>}
+              {document.revision_status === 'superseded_note' && <Badge variant="outline">Superseded note</Badge>}
               {document.revision_status === 'superseded_discharge' && (
                 <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200">
                   Superseded discharge v{document.revision_number}
@@ -156,6 +159,7 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
                 </Badge>
               )}
             </div>
+            {document.revision_history && <p className="text-xs text-muted-foreground">{document.revision_history}</p>}
             <p className="text-xs text-muted-foreground">
               Uploaded {format(new Date(document.created_at), 'MM/dd/yyyy')}
               {document.uploaded_by && ` by ${document.uploaded_by.full_name}`}
@@ -180,7 +184,7 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" disabled={isLocked} className="text-destructive hover:text-destructive">
+                <Button variant="ghost" size="sm" disabled={isLocked || !!document.revision_status} className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>

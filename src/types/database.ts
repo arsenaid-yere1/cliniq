@@ -39,6 +39,142 @@ export type Database = {
   }
   public: {
     Tables: {
+      clinical_note_revisions: {
+        Row: {
+          id: string
+          operation_id: string
+          case_id: string
+          episode_id: string
+          note_table: string
+          note_id: string
+          original_snapshot: Json
+          original_document_id: string
+          replacement_document_id: string | null
+          replaced_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          operation_id: string
+          case_id: string
+          episode_id: string
+          note_table: string
+          note_id: string
+          original_snapshot: Json
+          original_document_id: string
+          replacement_document_id?: string | null
+          replaced_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          operation_id?: string
+          case_id?: string
+          episode_id?: string
+          note_table?: string
+          note_id?: string
+          original_snapshot?: Json
+          original_document_id?: string
+          replacement_document_id?: string | null
+          replaced_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinical_note_revisions_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "clinical_reset_operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_note_revisions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_note_revisions_original_document_id_fkey"
+            columns: ["original_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_note_revisions_replacement_document_id_fkey"
+            columns: ["replacement_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_note_revisions_episode_id_case_id_fkey"
+            columns: ["episode_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "care_episodes"
+            referencedColumns: ["id", "case_id"]
+          },
+        ]
+      }
+      clinical_reset_operations: {
+        Row: {
+          id: string
+          case_id: string
+          episode_id: string
+          actor_id: string
+          reason: string
+          request_key: string
+          request: Json
+          before_state: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          case_id: string
+          episode_id: string
+          actor_id: string
+          reason: string
+          request_key: string
+          request: Json
+          before_state: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          case_id?: string
+          episode_id?: string
+          actor_id?: string
+          reason?: string
+          request_key?: string
+          request?: Json
+          before_state?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinical_reset_operations_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_reset_operations_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_reset_operations_episode_id_case_id_fkey"
+            columns: ["episode_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "care_episodes"
+            referencedColumns: ["id", "case_id"]
+          },
+        ]
+      }
       attorneys: {
         Row: {
           address_line1: string | null
@@ -4367,6 +4503,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      preview_clinical_reset: { Args: { p_case_id: string; p_episode_id?: string }; Returns: Json }
+      apply_clinical_reset: { Args: { p_request: Json }; Returns: string }
+      finish_clinical_note: { Args: { p_kind: string; p_note_id: string; p_case_id: string; p_document_id: string; p_expected_updated_at: string }; Returns: string }
+
+
       begin_discharge_correction: {
         Args: {
           p_case_id: string
@@ -4486,19 +4627,6 @@ export type Database = {
       delete_performed_procedure: {
         Args: { p_case_id: string; p_procedure_id: string }
         Returns: Json
-      }
-      finalize_episode_discharge: {
-        Args: {
-          p_case_id: string
-          p_document_id: string
-          p_episode_id: string
-          p_note_id: string
-        }
-        Returns: {
-          episode_id: string
-          note_id: string
-          replayed: boolean
-        }[]
       }
       finalize_discharge_correction: {
         Args: {

@@ -1,5 +1,7 @@
 'use server'
 
+import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
+
 import { createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
@@ -150,7 +152,7 @@ export async function regeneratePainFollowUpSectionAction(
   if (source.encounter.status !== 'in_progress') return { error: 'Only an in-progress visit can be regenerated' }
   try { await requireWritableEpisode(caseId, source.encounter.episode_id, supabase) }
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
-  const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status')
+  const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status,updated_at')
     .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
   if (!note || note.status !== 'draft') return { error: 'No draft follow-up note found' }
   const generated = await generatePainFollowUp(source.data, findingFix
@@ -161,8 +163,8 @@ export async function regeneratePainFollowUpSectionAction(
     [section]: generated.data[section],
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
     updated_by_user_id: user.id,
-  }).eq('id', note.id).eq('status', 'draft')
-  if (error) return { error: 'Unable to save regenerated section' }
+  }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('id').single()
+  if (error) return { error: 'Note changed or could not be saved. Refresh and try again.' }
   revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
   return { data: { success: true } }
 }
@@ -201,8 +203,7 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
     p_expected_updated_at: note.updated_at,
   })
   if (error) {
-    await supabase.storage.from('case-documents').remove([path])
-    await supabase.from('documents').update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id }).eq('id', document.id)
+    await removeUnreferencedGeneratedDocument(supabase, document.id, path, user.id)
     if (error.message.includes('changed; review and finalize again')) {
       return { error: 'The follow-up note changed. Review it and try finalizing again.' }
     }
@@ -243,37 +244,7 @@ export async function resetPainFollowUpNote(caseId: string, encounterId: string)
   return { data: { success: true, noteId } }
 }
 
-export async function unfinalizePainFollowUpNote(caseId: string, noteId: string) {
-  const disabled = requireReturnTeleVisitsMutation()
-  if (disabled) return disabled
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-  const { data: existing } = await supabase.from('pain_follow_up_notes')
-    .select('document_id,document:documents(file_path)').eq('id', noteId).eq('case_id', caseId)
-    .eq('status', 'finalized').is('deleted_at', null).maybeSingle()
-  const { data, error } = await supabase.rpc('unfinalize_pain_follow_up', { p_case_id: caseId, p_note_id: noteId })
-  if (error) {
-    if (error.message.includes('Remove procedure orders and billing claims')) {
-      return { error: error.message }
-    }
-    if (error.message.includes('not writable')) {
-      return { error: 'This finalized follow-up note can no longer be reopened' }
-    }
-    return { error: 'Unable to reopen note' }
-  }
-  const document = existing?.document as unknown as { file_path: string | null } | null
-  if (document?.file_path) {
-    const { error: storageError } = await supabase.storage.from('case-documents').remove([document.file_path])
-    if (storageError) {
-      console.error('Unable to remove unfinalized follow-up PDF from storage', {
-        documentId: existing?.document_id,
-      })
-    }
-  }
-  revalidatePath(`/patients/${caseId}/visits`)
-  revalidatePath(`/patients/${caseId}/visits/${data}`)
-  revalidatePath(`/patients/${caseId}/documents`)
-  revalidatePath(`/patients/${caseId}/timeline`)
-  return { data: { encounterId: data } }
+export async function unfinalizePainFollowUpNote(_caseId: string, _noteId: string) {
+  void _caseId; void _noteId
+  return { error: 'Use the audited Edit control and provide a reason' }
 }

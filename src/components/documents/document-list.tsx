@@ -49,7 +49,8 @@ interface Document {
   created_at: string
   content_date: string | null
   procedure_number: number | null
-  revision_status: 'superseded_discharge' | 'current_corrected_discharge' | null
+  revision_status: 'superseded_discharge' | 'current_corrected_discharge' | 'reset_pending' | 'superseded_note' | null
+  revision_history?: string | null
   revision_number: number | null
   notes: string | null
   uploaded_by: { full_name: string } | null

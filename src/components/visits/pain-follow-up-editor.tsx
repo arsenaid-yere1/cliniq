@@ -1,31 +1,20 @@
 'use client'
 
+import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
+
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Loader2, Pencil, RotateCcw } from 'lucide-react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   finalizePainFollowUpNote,
   generatePainFollowUpNote,
   regeneratePainFollowUpSectionAction,
-  resetPainFollowUpNote,
   savePainFollowUpNote,
-  unfinalizePainFollowUpNote,
 } from '@/actions/pain-follow-up-notes'
 import { ProcedureOrderDialog } from '@/components/procedures/procedure-order-dialog'
 import type { ProcedureOrderSummary } from '@/actions/procedure-orders'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -90,36 +79,7 @@ export function PainFollowUpEditor({
   }
 
   const resetDialog = initialNote ? (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" disabled={pending || !visitWritable}>
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Reset
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Reset Follow-Up Note</AlertDialogTitle>
-          <AlertDialogDescription>
-            This permanently discards the generated narrative and structured procedure
-            recommendations. Visit intake, consent, pain information, and encounter details
-            will be preserved. Continue?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={pending || !visitWritable}
-            onClick={() => void run(
-              () => resetPainFollowUpNote(caseId, encounter.id),
-              'Follow-up note reset successfully',
-            )}
-          >
-            Reset Note
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ClinicalResetDialog caseId={caseId} target={{ kind: "pain_follow_up_notes", id: initialNote.id }} disabled={pending} />
   ) : null
 
   if (editorState === 'empty') {
@@ -226,37 +186,7 @@ export function PainFollowUpEditor({
             </Button>
           )}
           {finalized ? (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" disabled={pending || encounter.status !== 'completed'}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Unfinalize
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Unfinalize Follow-Up Note</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This reopens the note for editing, returns the visit to in progress, and
-                    removes the current finalized PDF. The generated note content is preserved;
-                    Reset remains a separate action after reopening. Re-finalizing creates a
-                    fresh PDF. Continue?
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    disabled={pending || encounter.status !== 'completed'}
-                    onClick={() => void run(
-                      () => unfinalizePainFollowUpNote(caseId, initialNote.id),
-                      'Follow-up note reopened successfully',
-                    )}
-                  >
-                    Unfinalize Note
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <><ClinicalResetDialog caseId={caseId} target={{ kind: "pain_follow_up_notes", id: initialNote.id }} disabled={pending} /><ClinicalResetDialog caseId={caseId} target={{ kind: "pain_follow_up_notes", id: initialNote.id }} keepContent disabled={pending} /></>
           ) : (
             <>
               {resetDialog}

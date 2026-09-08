@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(49);
+select no_plan();
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -179,8 +179,10 @@ select throws_ok(
   'generating notes cannot be reset'
 );
 
+reset role;
 update public.pain_follow_up_notes set status = 'finalized'
 where id = '60000000-0000-4000-8000-000000000001';
+set local role authenticated;
 select throws_ok(
   $$select public.reset_pain_follow_up(
     '30000000-0000-4000-8000-000000000001',
@@ -189,8 +191,10 @@ select throws_ok(
   'finalized notes cannot be reset'
 );
 
+reset role;
 update public.pain_follow_up_notes set status = 'draft'
 where id = '60000000-0000-4000-8000-000000000001';
+set local role authenticated;
 update public.clinical_encounters set status = 'scheduled'
 where id = '50000000-0000-4000-8000-000000000001';
 select throws_ok(
@@ -239,9 +243,11 @@ select throws_ok(
   'P0001', 'Care episode is not writable',
   'discharged episodes cannot be reset'
 );
+reset role;
 update public.care_episodes set status = 'active', ended_at = null
 where id = '40000000-0000-4000-8000-000000000001';
 
+set local role authenticated;
 update public.cases set case_status = 'pending_settlement'
 where id = '30000000-0000-4000-8000-000000000001';
 select throws_ok(
@@ -340,294 +346,11 @@ select throws_ok(
     '70000000-0000-4000-8000-000000000002',
     (select updated_at from public.pain_follow_up_notes
       where id = '60000000-0000-4000-8000-000000000001'))$$,
-  'P0001', 'Follow-up note changed; review and finalize again',
+  'P0001', 'Note changed; review and finalize again',
   'a competing finalized document is rejected'
 );
 
-select lives_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'a finalized note can be unfinalized'
-);
-select ok(
-  (select status = 'draft' and subjective = 'Content preserved through unfinalize'
-      and jsonb_array_length(procedure_recommendations) = 1 and document_id is null
-    from public.pain_follow_up_notes
-    where id = '60000000-0000-4000-8000-000000000001'),
-  'unfinalize preserves the current generated-content state and clears finalization linkage'
-);
-select ok(
-  (select d.deleted_at is not null and e.status = 'in_progress'
-      and e.completed_at is null
-    from public.documents d
-    join public.clinical_encounters e
-      on e.id = '50000000-0000-4000-8000-000000000001'
-    where d.id = '70000000-0000-4000-8000-000000000001'),
-  'unfinalize soft-deletes the document and reopens the encounter'
-);
-select lives_ok(
-  $$select public.reset_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '50000000-0000-4000-8000-000000000001')$$,
-  'reset succeeds after unfinalize'
-);
-
-insert into public.clinical_encounters (
-  id, case_id, episode_id, encounter_type, status, encounter_date,
-  created_by_user_id, updated_by_user_id
-) values (
-  '50000000-0000-4000-8000-000000000002',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  'pain_follow_up', 'in_progress', '2026-09-02',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-insert into public.pain_follow_up_notes (
-  id, case_id, episode_id, encounter_id, subjective, status, updated_at,
-  created_by_user_id, updated_by_user_id
-) values (
-  '60000000-0000-4000-8000-000000000002',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000002',
-  'stale content', 'draft', '2026-01-01 00:00:00+00',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-insert into public.documents (
-  id, case_id, episode_id, encounter_id, document_type, file_name, file_path,
-  status, uploaded_by_user_id, created_by_user_id, updated_by_user_id
-) values (
-  '70000000-0000-4000-8000-000000000004',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000002',
-  'generated', 'Stale Follow-up', 'cases/test/follow-up-stale.pdf', 'reviewed',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-select lives_ok(
-  $$select public.reset_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '50000000-0000-4000-8000-000000000002')$$,
-  'the stale-version fixture resets from an explicitly old timestamp'
-);
-select throws_ok(
-  $$select * from public.finalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '50000000-0000-4000-8000-000000000002',
-    '60000000-0000-4000-8000-000000000002',
-    '70000000-0000-4000-8000-000000000004',
-    '2026-01-01 00:00:00+00'::timestamptz)$$,
-  'P0001', 'Follow-up note changed; review and finalize again',
-  'reset wins over finalization carrying a stale note version'
-);
-select ok(
-  (select n.status = 'draft' and n.document_id is null
-      and e.status = 'in_progress'
-    from public.pain_follow_up_notes n
-    join public.clinical_encounters e on e.id = n.encounter_id
-    where n.id = '60000000-0000-4000-8000-000000000002'),
-  'stale finalization leaves the reset note and encounter unchanged'
-);
-
-insert into public.documents (
-  id, case_id, episode_id, encounter_id, document_type, file_name, file_path,
-  status, uploaded_by_user_id, created_by_user_id, updated_by_user_id
-) values (
-  '70000000-0000-4000-8000-000000000003',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000001',
-  'generated', 'Follow-up C', 'cases/test/follow-up-c.pdf', 'reviewed',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-select lives_ok(
-  $$select * from public.finalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '50000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001',
-    '70000000-0000-4000-8000-000000000003',
-    (select updated_at from public.pain_follow_up_notes
-      where id = '60000000-0000-4000-8000-000000000001'))$$,
-  'finalization can win before a reset'
-);
-select throws_ok(
-  $$select public.reset_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '50000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Only draft or failed follow-up notes can be reset',
-  'reset loses after finalization commits first'
-);
-
-insert into public.procedure_series (
-  id, case_id, episode_id, series_number, procedure_type, status,
-  created_by_user_id, updated_by_user_id
-) values (
-  '80000000-0000-4000-8000-000000000001',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  1, 'prp', 'active',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-insert into public.procedure_orders (
-  id, case_id, episode_id, source_encounter_id, source_recommendation_id,
-  procedure_series_id, procedure_type, sites, diagnoses, status,
-  created_by_user_id, updated_by_user_id
-) values (
-  '81000000-0000-4000-8000-000000000001',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000001',
-  '61000000-0000-4000-8000-000000000002',
-  '80000000-0000-4000-8000-000000000001', 'prp', '[]'::jsonb, '[]'::jsonb,
-  'ordered', '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Remove procedure orders and billing claims before reopening this note',
-  'procedure orders block unfinalize'
-);
-update public.procedure_orders set deleted_at = now()
-where id = '81000000-0000-4000-8000-000000000001';
-
-insert into public.invoices (
-  id, case_id, invoice_number, invoice_date, status,
-  created_by_user_id, updated_by_user_id
-) values (
-  '90000000-0000-4000-8000-000000000001',
-  '30000000-0000-4000-8000-000000000001',
-  'FOLLOW-UP-RESET-INVOICE', current_date, 'draft',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-insert into public.billing_source_claims (
-  id, invoice_id, encounter_id, claim_kind,
-  created_by_user_id, updated_by_user_id
-) values (
-  '91000000-0000-4000-8000-000000000001',
-  '90000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000001', 'visit',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Remove procedure orders and billing claims before reopening this note',
-  'unreleased billing claims block unfinalize'
-);
-update public.billing_source_claims set released_at = now(), release_reason = 'test'
-where id = '91000000-0000-4000-8000-000000000001';
-select lives_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'unfinalize succeeds after dependencies are resolved'
-);
-select ok(
-  (select n.status = 'draft' and e.status = 'in_progress'
-      and n.updated_by_user_id = '10000000-0000-4000-8000-000000000001'
-      and e.updated_by_user_id = '10000000-0000-4000-8000-000000000001'
-    from public.pain_follow_up_notes n
-    join public.clinical_encounters e on e.id = n.encounter_id
-    where n.id = '60000000-0000-4000-8000-000000000001'),
-  'unfinalize attributes the actor and preserves the reopened state'
-);
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'a non-finalized note cannot be unfinalized'
-);
-
-insert into public.documents (
-  id, case_id, episode_id, encounter_id, document_type, file_name, file_path,
-  status, uploaded_by_user_id, created_by_user_id, updated_by_user_id
-) values (
-  '70000000-0000-4000-8000-000000000005',
-  '30000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000001',
-  '50000000-0000-4000-8000-000000000001',
-  'generated', 'Lifecycle Follow-up', 'cases/test/follow-up-lifecycle.pdf', 'reviewed',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001',
-  '10000000-0000-4000-8000-000000000001'
-);
-update public.pain_follow_up_notes
-set status = 'finalized', document_id = '70000000-0000-4000-8000-000000000005',
-    finalized_at = now(), finalized_by_user_id = '10000000-0000-4000-8000-000000000001'
-where id = '60000000-0000-4000-8000-000000000001';
-
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'an in-progress encounter cannot be unfinalized'
-);
-update public.clinical_encounters set status = 'completed', completed_at = now()
-where id = '50000000-0000-4000-8000-000000000001';
-update public.care_episodes set status = 'discharged', ended_at = now()
-where id = '40000000-0000-4000-8000-000000000001';
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'an inactive episode cannot be unfinalized'
-);
-update public.care_episodes set status = 'active', ended_at = null
-where id = '40000000-0000-4000-8000-000000000001';
-
-update public.cases set case_status = 'pending_settlement'
-where id = '30000000-0000-4000-8000-000000000001';
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'pending-settlement cases cannot be unfinalized'
-);
-update public.cases set case_status = 'closed'
-where id = '30000000-0000-4000-8000-000000000001';
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'closed cases cannot be unfinalized'
-);
-update public.cases set case_status = 'archived'
-where id = '30000000-0000-4000-8000-000000000001';
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'archived cases cannot be unfinalized'
-);
-update public.cases set case_status = 'active'
-where id = '30000000-0000-4000-8000-000000000001';
-
-select throws_ok(
-  $$select public.unfinalize_pain_follow_up(
-    '30000000-0000-4000-8000-000000000099',
-    '60000000-0000-4000-8000-000000000001')$$,
-  'P0001', 'Finalized note is not writable',
-  'unfinalize rejects a case ownership mismatch'
-);
-
+-- Signed-note reopening, retention, dependency and stale-reset checks now live
+-- in clinical_reset_test.sql and use the audited reset contract.
 select * from finish();
 rollback;

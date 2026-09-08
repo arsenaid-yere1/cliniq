@@ -1,5 +1,9 @@
 'use server'
 
+import { resetDraftClinicalNote } from '@/actions/clinical-reset'
+
+import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
+
 import { createClient } from '@/lib/supabase/server'
 import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
 import { revalidatePath } from 'next/cache'
@@ -25,7 +29,6 @@ import { resolveProcedureNarrativeDirective } from '@/lib/claude/narrative-direc
 import { computePlanAlignment } from '@/lib/procedures/compute-plan-alignment'
 import { parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
-import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 
 // --- Helper: compute source data hash ---
 
@@ -908,9 +911,6 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
     }
   }
 
-  // Clean up previous document if re-finalizing
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
-
   // Render PDF
   const { renderProcedureNotePdf } = await import('@/lib/pdf/render-procedure-note-pdf')
   const pdfBuffer = await renderProcedureNotePdf({
@@ -953,21 +953,20 @@ export async function finalizeProcedureNote(procedureId: string, caseId: string)
     .select('id')
     .single()
 
-  if (docError || !doc) return { error: 'Failed to create document record' }
+  if (docError || !doc) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    return { error: 'Failed to create document record' }
+  }
 
   // Update note as finalized
-  const { error: updateError } = await supabase
-    .from('procedure_notes')
-    .update({
-      status: 'finalized',
-      finalized_by_user_id: user.id,
-      finalized_at: new Date().toISOString(),
-      document_id: doc.id,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (updateError) return { error: 'Failed to finalize note' }
+  const { error: updateError } = await supabase.rpc('finish_clinical_note', {
+    p_kind: 'procedure_notes', p_note_id: note.id, p_case_id: caseId,
+    p_document_id: doc.id, p_expected_updated_at: note.updated_at,
+  })
+  if (updateError) {
+    await removeUnreferencedGeneratedDocument(supabase, doc.id, storagePath, user.id)
+    return { error: updateError.message.includes('changed') ? 'Note changed. Review it and finalize again.' : 'Failed to finalize note' }
+  }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
   revalidatePath(`/patients/${caseId}/documents`)
@@ -1006,42 +1005,9 @@ export async function acknowledgePlanDeviation(
 
 // --- Unfinalize note ---
 
-export async function unfinalizeProcedureNote(procedureId: string, caseId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const closedCheck = await assertCaseNotClosed(supabase, caseId)
-  if (closedCheck.error) return { error: closedCheck.error }
-
-  const { data: note } = await supabase
-    .from('procedure_notes')
-    .select('id, document_id')
-    .eq('procedure_id', procedureId)
-    .is('deleted_at', null)
-    .eq('status', 'finalized')
-    .maybeSingle()
-
-  if (!note) return { error: 'No finalized note to unfinalize' }
-
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
-
-  const { error } = await supabase
-    .from('procedure_notes')
-    .update({
-      status: 'draft',
-      finalized_by_user_id: null,
-      finalized_at: null,
-      document_id: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to unfinalize note' }
-
-  revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-  revalidatePath(`/patients/${caseId}/documents`)
-  return { data: { success: true } }
+export async function unfinalizeProcedureNote(_procedureId: string, _caseId: string) {
+  void _procedureId; void _caseId
+  return { error: 'Use the audited Edit control and provide a reason' }
 }
 
 // --- Reset note (clear AI content, keep row) ---
@@ -1067,43 +1033,7 @@ export async function resetProcedureNote(procedureId: string, caseId: string) {
     return { error: 'Only draft or failed notes can be reset' }
   }
 
-  const { error } = await supabase
-    .from('procedure_notes')
-    .update({
-      status: 'draft',
-      subjective: null,
-      past_medical_history: null,
-      allergies: null,
-      current_medications: null,
-      social_history: null,
-      review_of_systems: null,
-      objective_vitals: null,
-      objective_physical_exam: null,
-      assessment_summary: null,
-      procedure_indication: null,
-      procedure_preparation: null,
-      procedure_prp_prep: null,
-      procedure_anesthesia: null,
-      procedure_injection: null,
-      procedure_post_care: null,
-      procedure_followup: null,
-      assessment_and_plan: null,
-      patient_education: null,
-      prognosis: null,
-      clinician_disclaimer: null,
-      ai_model: null,
-      raw_ai_response: null,
-      generation_error: null,
-      generation_attempts: 0,
-      source_data_hash: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to reset note' }
-
-  revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
-  return { data: { success: true } }
+  return resetDraftClinicalNote(caseId, 'procedure_notes', note.id)
 }
 
 // --- Regenerate single section ---
@@ -1169,8 +1099,11 @@ export async function regenerateProcedureNoteSectionAction(
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
+    .eq('status', 'draft')
+    .eq('updated_at', note.updated_at)
+    .select('id').single()
 
-  if (updateError) return { error: 'Failed to update section' }
+  if (updateError) return { error: 'Note changed or could not be saved. Refresh and try again.' }
 
   revalidatePath(`/patients/${caseId}/procedures/${procedureId}/note`)
   return { data: { content: result.data } }

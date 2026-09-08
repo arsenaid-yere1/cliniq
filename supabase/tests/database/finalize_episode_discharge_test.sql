@@ -87,16 +87,19 @@ insert into public.procedure_series (
   '10000000-0000-4000-8000-000000000001'
 );
 
+update public.documents set uploaded_by_user_id='10000000-0000-4000-8000-000000000001' where id='60000000-0000-4000-8000-000000000001';
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
 set local role authenticated;
 
 select lives_ok(
-  $$select * from public.finalize_episode_discharge(
-    '30000000-0000-4000-8000-000000000001',
-    '40000000-0000-4000-8000-000000000001',
+  $$select public.finish_clinical_note(
+    'discharge_notes',
     '70000000-0000-4000-8000-000000000001',
-    '60000000-0000-4000-8000-000000000001'
+    '30000000-0000-4000-8000-000000000001',
+    '60000000-0000-4000-8000-000000000001',
+    (select updated_at from public.discharge_notes where id='70000000-0000-4000-8000-000000000001')
   )$$,
   'finalizing an episode with an active procedure series does not raise an ambiguous-column error'
 );

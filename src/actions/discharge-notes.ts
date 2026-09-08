@@ -1,5 +1,9 @@
 'use server'
 
+import { resetDraftClinicalNote } from '@/actions/clinical-reset'
+
+import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
+
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
@@ -20,7 +24,6 @@ import {
   type DischargeNoteVitalsValues,
 } from '@/lib/validations/discharge-note'
 import { assertCaseNotClosed, autoAdvanceFromIntake } from '@/actions/case-status'
-import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { computeAgeAtDate } from '@/lib/age'
 import { computePainToneLabel, computeSeriesVolatility, type PainToneContext } from '@/lib/claude/pain-tone'
 import { resolveDischargeNarrativeDirective } from '@/lib/claude/narrative-directive'
@@ -1065,9 +1068,6 @@ export async function finalizeDischargeNote(caseId: string) {
     }
   }
 
-  // Clean up previous document if re-finalizing
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
-
   // Render PDF
   const { renderDischargeNotePdf } = await import('@/lib/pdf/render-discharge-note-pdf')
   const pdfBuffer = await renderDischargeNotePdf({
@@ -1109,16 +1109,20 @@ export async function finalizeDischargeNote(caseId: string) {
     .select('id')
     .single()
 
-  if (docError || !doc) return { error: 'Failed to create document record' }
+  if (docError || !doc) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    return { error: 'Failed to create document record' }
+  }
 
-  const { error: updateError } = await supabase.rpc('finalize_episode_discharge', {
-    p_case_id: caseId, p_episode_id: episodeId, p_note_id: note.id, p_document_id: doc.id,
+  const { error: updateError } = await supabase.rpc('finish_clinical_note', {
+    p_kind: 'discharge_notes',
+    p_expected_updated_at: note.updated_at,
+    p_case_id: caseId, p_note_id: note.id, p_document_id: doc.id,
   })
 
   if (updateError) {
-    await supabase.storage.from('case-documents').remove([storagePath])
-    await supabase.from('documents').update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id }).eq('id', doc.id)
-    return { error: updateError.message.includes('Resolve open') ? updateError.message : 'Failed to finalize note' }
+    await removeUnreferencedGeneratedDocument(supabase, doc.id, storagePath, user.id)
+    return { error: (updateError.message.includes('Resolve open') || updateError.message.includes('changed; review')) ? updateError.message : 'Failed to finalize note' }
   }
 
   revalidatePath(`/patients/${caseId}/discharge`)
@@ -1148,7 +1152,7 @@ export async function getDischargeCorrectionContext(
   const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId })
   if (!identity.success) return { error: 'Invalid discharge correction identifiers' }
 
-  const [{ data: note }, authorization, { data: corrections }] = await Promise.all([
+  const [{ data: note }, authorization, { data: corrections }, { data: episode }] = await Promise.all([
     supabase.from('discharge_notes').select('id,encounter_id,status')
       .eq('id', noteId).eq('case_id', caseId).eq('episode_id', episodeId)
       .is('deleted_at', null).maybeSingle(),
@@ -1157,6 +1161,7 @@ export async function getDischargeCorrectionContext(
       .select('id,revision_number,reason,status,original_document_id,replacement_document_id,opened_at,opened_by_user_id,finalized_at,finalized_by_user_id,cancelled_at,cancelled_by_user_id')
       .eq('case_id', caseId).eq('episode_id', episodeId).eq('discharge_note_id', noteId)
       .order('revision_number', { ascending: true }),
+    supabase.from('care_episodes').select('status').eq('id', episodeId).eq('case_id', caseId).is('deleted_at', null).maybeSingle(),
   ])
 
   if (!note) return { error: 'Discharge note not found' }
@@ -1182,7 +1187,7 @@ export async function getDischargeCorrectionContext(
 
   return {
     data: {
-      canCorrect: authorization.allowed,
+      canCorrect: authorization.allowed && episode?.status === 'discharged',
       authorizationError: authorization.error,
       billingBlocked: Boolean(claims?.length),
       billingError: claims?.length
@@ -1352,11 +1357,7 @@ export async function finalizeDischargeCorrection(
     p_document_id: document.id,
   })
   if (error) {
-    await supabase.storage.from('case-documents').remove([storagePath])
-    await supabase.from('documents').update({
-      deleted_at: new Date().toISOString(),
-      updated_by_user_id: user.id,
-    }).eq('id', document.id)
+    await removeUnreferencedGeneratedDocument(supabase, document.id, storagePath, user.id)
     return { error: dischargeCorrectionRpcError(error.message, 'Unable to finalize discharge correction') }
   }
 
@@ -1438,13 +1439,15 @@ export async function regenerateDischargeNoteSectionAction(
   // both the trajectory columns and the raw_ai_response wrapper. The helper
   // gathers source data internally (skipped when inputData is supplied) so
   // generate, regen, and the save paths assemble the wrapper identically.
-  const { error: sectionUpdErr } = await supabase
+  const { data: savedSection, error: sectionUpdErr } = await supabase
     .from('discharge_notes')
     .update({ [section]: result.data, updated_by_user_id: user.id })
-    .eq('id', note.id)
-  if (sectionUpdErr) return { error: 'Failed to update section' }
+    .eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at)
+    .select('updated_at').single()
+  if (sectionUpdErr || !savedSection) return { error: 'Note changed or could not be saved. Refresh and try again.' }
 
   const refreshRes = await refreshDischargeTrajectory(caseId, note.id, {
+    expectedUpdatedAt: savedSection.updated_at,
     inputData,
     mergedSections: { [section]: result.data },
     rawSectionsToMerge: { [section]: result.data },
@@ -1483,35 +1486,7 @@ export async function resetDischargeNote(caseId: string) {
     return { error: 'Only draft or failed notes can be reset' }
   }
 
-  const { error } = await supabase
-    .from('discharge_notes')
-    .update({
-      status: 'draft',
-      subjective: null,
-      objective_vitals: null,
-      objective_general: null,
-      objective_cervical: null,
-      objective_lumbar: null,
-      objective_neurological: null,
-      diagnoses: null,
-      assessment: null,
-      plan_and_recommendations: null,
-      patient_education: null,
-      prognosis: null,
-      clinician_disclaimer: null,
-      ai_model: null,
-      raw_ai_response: null,
-      generation_error: null,
-      generation_attempts: 0,
-      source_data_hash: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to reset note' }
-
-  revalidatePath(`/patients/${caseId}/discharge`)
-  return { data: { success: true } }
+  return resetDraftClinicalNote(caseId, 'discharge_notes', note.id)
 }
 
 // --- Discharge-visit vital signs ---

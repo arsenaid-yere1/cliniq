@@ -28,12 +28,21 @@ export async function softDeleteFinalizedDocument(
 
   if (!doc) return
 
-  await supabase
-    .from('documents')
-    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: userId })
-    .eq('id', doc.id)
+  await removeUnreferencedGeneratedDocument(supabase, doc.id, doc.file_path, userId)
+}
 
-  if (doc.file_path) {
-    await supabase.storage.from('case-documents').remove([doc.file_path])
-  }
+/** Mark the output unreferenced before removing its file. The database guard
+ * serializes this update with finalization and refuses retained signed outputs.
+ * An uncertain or rejected update must never trigger storage deletion. */
+export async function removeUnreferencedGeneratedDocument(
+  supabase: SupabaseServerClient,
+  documentId: string,
+  filePath: string,
+  userId: string,
+): Promise<void> {
+  const { data, error } = await supabase.from('documents')
+    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: userId })
+    .eq('id', documentId).select('id').single()
+  if (error || !data) return
+  await supabase.storage.from('case-documents').remove([filePath])
 }

@@ -1,3 +1,4 @@
+import { getCaseReactivationStatus } from '@/actions/clinical-reset'
 import { notFound } from 'next/navigation'
 import { getPatientCase } from '@/actions/patients'
 import { getCaseDashboardStats } from '@/actions/dashboard'
@@ -15,13 +16,14 @@ export default async function CaseDashboardPage({
   params: Promise<{ caseId: string }>
 }) {
   const { caseId } = await params
-  const [caseResult, statsResult, timelineResult, summaryResult, stalenessResult, me] = await Promise.all([
+  const [caseResult, statsResult, timelineResult, summaryResult, stalenessResult, me, reactivation] = await Promise.all([
     getPatientCase(caseId),
     getCaseDashboardStats(caseId),
     getTimelineEvents(caseId),
     getCaseSummary(caseId),
     checkSummaryStaleness(caseId),
     getCurrentUserWithRole(),
+    getCaseReactivationStatus(caseId),
   ])
   const isAdmin = me?.role === 'admin'
 
@@ -32,7 +34,7 @@ export default async function CaseDashboardPage({
   return (
     <div className="space-y-6">
       <CaseStatCards stats={statsResult.data} />
-      <CaseOverview caseData={caseResult.data} isAdmin={isAdmin} />
+      <CaseOverview caseData={caseResult.data} isAdmin={isAdmin} reopenedEpisodeNumber={reactivation.episodeNumber} />
       <CaseSummaryCard
         caseId={caseId}
         summary={summaryResult.data ?? null}

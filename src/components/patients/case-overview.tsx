@@ -1,5 +1,7 @@
 'use client'
 
+import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
+
 import { useState } from 'react'
 import { format } from 'date-fns'
 import Link from 'next/link'
@@ -47,6 +49,7 @@ interface CaseOverviewProps {
       firm_name: string | null
     } | null
   }
+  reopenedEpisodeNumber?: number | null
   isAdmin?: boolean
 }
 
@@ -71,7 +74,7 @@ const quickActions = [
   { label: 'Create Invoice', icon: Receipt, href: 'billing' },
 ]
 
-export function CaseOverview({ caseData, isAdmin = false }: CaseOverviewProps) {
+export function CaseOverview({ caseData, isAdmin = false, reopenedEpisodeNumber }: CaseOverviewProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [generatingLien, setGeneratingLien] = useState(false)
   const [generatingConsent, setGeneratingConsent] = useState(false)
@@ -155,6 +158,10 @@ export function CaseOverview({ caseData, isAdmin = false }: CaseOverviewProps) {
           <CardTitle>Case Actions</CardTitle>
         </CardHeader>
         <CardContent>
+          {reopenedEpisodeNumber != null && <p className="mb-4 rounded-lg border p-3 text-sm">
+            Episode {reopenedEpisodeNumber} is Active after reactivation. Earlier discharge documentation remains in{' '}
+            <Link className="underline" href={`/patients/${caseData.id}/documents`}>document history</Link>.
+          </p>}
           {isLocked && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
               <Lock className="h-4 w-4 shrink-0" />
@@ -177,6 +184,7 @@ export function CaseOverview({ caseData, isAdmin = false }: CaseOverviewProps) {
                 </Button>
               )
             })}
+            {isAdmin && <ClinicalResetDialog caseId={caseData.id} />}
             <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} isAdmin={isAdmin} />
             <Button
               variant="outline"

@@ -1,11 +1,13 @@
 'use client'
 
+import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
+
 import { useEffect, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, RotateCcw } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Pencil, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -44,7 +46,6 @@ import {
   cancelDischargeCorrection,
   finalizeDischargeCorrection,
   regenerateDischargeNoteSectionAction,
-  resetDischargeNote,
   saveDischargeVitals,
   saveDischargeNoteToneHint,
   getDischargePainTimeline,
@@ -390,36 +391,7 @@ export function DischargeNoteEditor({
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Retry
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Discharge Summary</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetDischargeNote(caseId)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Discharge summary reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "discharge_notes", id: note.id }} disabled={isPending} />
         </div>
       </div>
     )
@@ -630,36 +602,7 @@ function DraftEditor({
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             {isCorrection ? 'Save Correction' : 'Save Draft'}
           </Button>
-          {!isCorrection && <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Discharge Summary</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetDischargeNote(caseId)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Discharge summary reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>}
+          {!isCorrection && <ClinicalResetDialog caseId={caseId} target={{ kind: "discharge_notes", id: note.id }} disabled={isPending} />}
           {!isCorrection && <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={isLocked || isPending || note.pain_score_max == null} title={note.pain_score_max == null ? 'Enter the discharge-visit pain score before finalizing.' : undefined}>
@@ -947,6 +890,7 @@ function FinalizedView({
               Download PDF
             </Button>
           )}
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "discharge_notes", id: note.id }} disabled={isPending} />
           {correctionContext?.canCorrect && <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button

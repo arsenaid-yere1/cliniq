@@ -1,8 +1,11 @@
 'use server'
 
+import { resetDraftClinicalNote } from '@/actions/clinical-reset'
+
+import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
+
 import { createClient } from '@/lib/supabase/server'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
-import { softDeleteFinalizedDocument } from '@/lib/supabase/finalize-document'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -788,16 +791,14 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     note.treatment_plan = renderPrpTreatmentPlan(
       stripPrpTargetBlock(note.treatment_plan ?? ''), checked.data, currentInput.prpTargetEvidence,
     )
-    const { error: targetUpdateError } = await supabase.from('initial_visit_notes').update({
+    const { data: updatedTarget, error: targetUpdateError } = await supabase.from('initial_visit_notes').update({
       treatment_plan: note.treatment_plan,
       prp_target_recommendations: checked.data,
       updated_by_user_id: user.id,
-    }).eq('id', note.id)
-    if (targetUpdateError) return { error: 'Failed to persist validated PRP targets' }
+    }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('updated_at').single()
+    if (targetUpdateError || !updatedTarget) return { error: 'Note changed. Review the PRP targets and finalize again.' }
+    note.updated_at = updatedTarget.updated_at
   }
-
-  // Clean up previous document if re-finalizing
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
 
   // Render PDF
   const { renderInitialVisitPdf } = await import('@/lib/pdf/render-initial-visit-pdf')
@@ -840,20 +841,19 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .select('id')
     .single()
 
-  if (docError || !doc) return { error: 'Failed to create document record' }
+  if (docError || !doc) {
+    await supabase.storage.from('case-documents').remove([storagePath])
+    return { error: 'Failed to create document record' }
+  }
 
-  const { error: updateError } = await supabase
-    .from('initial_visit_notes')
-    .update({
-      status: 'finalized',
-      finalized_by_user_id: user.id,
-      finalized_at: new Date().toISOString(),
-      document_id: doc.id,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (updateError) return { error: 'Failed to finalize note' }
+  const { error: updateError } = await supabase.rpc('finish_clinical_note', {
+    p_kind: 'initial_visit_notes', p_note_id: note.id, p_case_id: caseId,
+    p_document_id: doc.id, p_expected_updated_at: note.updated_at,
+  })
+  if (updateError) {
+    await removeUnreferencedGeneratedDocument(supabase, doc.id, storagePath, user.id)
+    return { error: updateError.message.includes('changed') ? 'Note changed. Review it and finalize again.' : 'Failed to finalize note' }
+  }
 
   revalidatePath(`/patients/${caseId}`)
   revalidatePath(`/patients/${caseId}/documents`)
@@ -862,43 +862,9 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
 
 // --- Unfinalize note ---
 
-export async function unfinalizeInitialVisitNote(caseId: string, visitType: NoteVisitType) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const closedCheck = await assertCaseNotClosed(supabase, caseId)
-  if (closedCheck.error) return { error: closedCheck.error }
-
-  const { data: note } = await supabase
-    .from('initial_visit_notes')
-    .select('id, document_id')
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .eq('status', 'finalized')
-    .maybeSingle()
-
-  if (!note) return { error: 'No finalized note to unfinalize' }
-
-  await softDeleteFinalizedDocument(supabase, note.document_id, user.id)
-
-  const { error } = await supabase
-    .from('initial_visit_notes')
-    .update({
-      status: 'draft',
-      finalized_by_user_id: null,
-      finalized_at: null,
-      document_id: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to unfinalize note' }
-
-  revalidatePath(`/patients/${caseId}`)
-  revalidatePath(`/patients/${caseId}/documents`)
-  return { data: { success: true } }
+export async function unfinalizeInitialVisitNote(_caseId: string, _visitType: NoteVisitType) {
+  void _caseId; void _visitType
+  return { error: 'Use the audited Edit control and provide a reason' }
 }
 
 // --- Reset note (discard all generated content) — scoped to one visit type ---
@@ -925,43 +891,7 @@ export async function resetInitialVisitNote(caseId: string, visitType: NoteVisit
     return { error: 'Only draft or failed notes can be reset' }
   }
 
-  // In-place update: null all AI-generated fields. Preserve provider_intake,
-  // visit_type, and visit_date.
-  const { error } = await supabase
-    .from('initial_visit_notes')
-    .update({
-      status: 'draft',
-      introduction: null,
-      history_of_accident: null,
-      post_accident_history: null,
-      chief_complaint: null,
-      past_medical_history: null,
-      social_history: null,
-      review_of_systems: null,
-      physical_exam: null,
-      imaging_findings: null,
-      medical_necessity: null,
-      diagnoses: null,
-      treatment_plan: null,
-      patient_education: null,
-      prognosis: null,
-      time_complexity_attestation: null,
-      clinician_disclaimer: null,
-      ai_model: null,
-      raw_ai_response: null,
-      generation_error: null,
-      generation_attempts: 0,
-      source_data_hash: null,
-      prp_target_recommendations: [],
-      prp_target_evidence_hash: null,
-      updated_by_user_id: user.id,
-    })
-    .eq('id', note.id)
-
-  if (error) return { error: 'Failed to reset note' }
-
-  revalidatePath(`/patients/${caseId}`)
-  return { data: { success: true } }
+  return resetDraftClinicalNote(caseId, 'initial_visit_notes', note.id)
 }
 
 // --- Regenerate single section ---
@@ -1086,8 +1016,11 @@ export async function regenerateNoteSection(
       updated_by_user_id: user.id,
     })
     .eq('id', note.id)
+    .eq('status', 'draft')
+    .eq('updated_at', note.updated_at)
+    .select('id').single()
 
-  if (updateError) return { error: 'Failed to update section' }
+  if (updateError) return { error: 'Note changed or could not be saved. Refresh and try again.' }
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { content: result.data } }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
 import { assertCaseNotClosed, assertCaseWritable, autoAdvanceFromIntake } from '@/actions/case-status'
+import { deriveClinicalRevisionStates } from '@/lib/documents/clinical-revision-state'
 import { deriveDischargeDocumentRevisionStates } from '@/lib/documents/discharge-revision-state'
 
 export async function listDocuments(caseId: string, filters?: {
@@ -51,7 +52,7 @@ export async function listDocuments(caseId: string, filters?: {
     })) }
   }
 
-  const [dischargeRes, initialVisitRes, painFollowUpRes, procedureNoteRes, clinicalOrderRes, correctionRes] = await Promise.all([
+  const [dischargeRes, initialVisitRes, painFollowUpRes, procedureNoteRes, clinicalOrderRes, correctionRes, resetRes] = await Promise.all([
     supabase.from('discharge_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('initial_visit_notes').select('document_id, visit_date').in('document_id', generatedIds),
     supabase.from('pain_follow_up_notes')
@@ -62,6 +63,7 @@ export async function listDocuments(caseId: string, filters?: {
     supabase.from('discharge_note_corrections')
       .select('revision_number,status,original_document_id,replacement_document_id')
       .or(`original_document_id.in.(${generatedIds.join(',')}),replacement_document_id.in.(${generatedIds.join(',')})`),
+    supabase.from('clinical_note_revisions').select('*').eq('case_id', caseId),
   ])
 
   const contentDateByDocId = new Map<string, string>()
@@ -95,12 +97,30 @@ export async function listDocuments(caseId: string, filters?: {
   void clinicalOrderRes
   const revisionStates = deriveDischargeDocumentRevisionStates(correctionRes.data ?? [])
 
+  if (resetRes.error) return { error: 'Unable to load signed document history', data: [] }
+  const resetStates = deriveClinicalRevisionStates(resetRes.data ?? [])
+  const operationIds = [...new Set((resetRes.data ?? []).map(r => r.operation_id))]
+  const { data: operations } = operationIds.length
+    ? await supabase.from('clinical_reset_operations').select('id,reason,created_at,actor_id').in('id', operationIds)
+    : { data: [] }
+  const { data: actors } = operations?.length
+    ? await supabase.from('users').select('id,full_name').in('id', [...new Set(operations.map(o => o.actor_id))])
+    : { data: [] }
+  const historyByDoc = new Map((resetRes.data ?? []).map(r => {
+    const operation = operations?.find(o => o.id === r.operation_id)
+    const snapshot = r.original_snapshot as Record<string, unknown>
+    const date = snapshot.visit_date ?? snapshot.procedure_date
+    if (typeof date === 'string') contentDateByDocId.set(r.original_document_id, date)
+    return [r.original_document_id, operation ? `${operation.reason} · ${actors?.find(a => a.id === operation.actor_id)?.full_name ?? 'Administrator'} · ${operation.created_at.slice(0, 10)}` : 'Signed revision retained']
+  }))
+
   return {
     data: rows.map((r) => ({
       ...r,
       content_date: contentDateByDocId.get(r.id) ?? null,
       procedure_number: procedureNumberByDocId.get(r.id) ?? null,
-      revision_status: revisionStates.get(r.id)?.revisionStatus ?? null,
+      revision_status: resetStates.get(r.id) ?? revisionStates.get(r.id)?.revisionStatus ?? null,
+      revision_history: historyByDoc.get(r.id) ?? null,
       revision_number: revisionStates.get(r.id)?.revisionNumber ?? null,
     })),
   }
@@ -229,6 +249,11 @@ export async function removeDocument(documentId: string) {
     .single()
 
   if (!docInfo) return { error: 'Document not found' }
+
+  const { data: retained, error: retentionError } = await supabase.from('clinical_note_revisions').select('id')
+    .or(`original_document_id.eq.${documentId},replacement_document_id.eq.${documentId}`).limit(1)
+  if (retentionError) return { error: 'Unable to verify document history' }
+  if (retained?.length) return { error: 'Signed revision documents are retained and cannot be removed.' }
 
   const { data: correctionDocument } = await supabase.from('discharge_note_corrections')
     .select('id')

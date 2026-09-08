@@ -1,12 +1,14 @@
 'use client'
 
+import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
+
 import { useState, useTransition, useEffect } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
-import { Sparkles, RefreshCw, RotateCcw, Loader2, AlertTriangle, Save, Lock, Pencil, Download, Heart, Plus, Trash2, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Download, Heart, Plus, Trash2, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,9 +50,7 @@ import {
   generateInitialVisitNote,
   saveInitialVisitNote,
   finalizeInitialVisitNote,
-  unfinalizeInitialVisitNote,
   regenerateNoteSection,
-  resetInitialVisitNote,
   saveInitialVisitVitals,
   saveProviderIntake,
   saveInitialVisitNoteToneHint,
@@ -525,36 +525,7 @@ function InitialVisitEditorInner({
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Retry
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Note</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings) and vitals will be preserved. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetInitialVisitNote(caseId, visitType)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
         </div>
       </div>
     )
@@ -1482,36 +1453,7 @@ function DraftEditor({
               })}
             />
           </div>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset Note</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will discard all generated note content and return to the pre-generation state. Your intake data (chief complaints, accident details, medical history, exam findings) and vitals will be preserved. Continue?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await resetInitialVisitNote(caseId, visitType)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note reset successfully')
-                    })
-                  }}
-                >
-                  Reset
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
           <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
@@ -1722,36 +1664,8 @@ function FinalizedView({
               Download PDF
             </Button>
           )}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isLocked || isPending}>
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
-                Edit
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unfinalize Note</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will re-open the note for editing and remove the current finalized PDF from the document repository. Re-finalizing will generate a fresh PDF. Continue?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  startTransition(async () => {
-                    const result = await unfinalizeInitialVisitNote(caseId, visitType)
-                    if (result.error) toast.error(result.error)
-                    else toast.success('Note reopened for editing')
-                  })
-                }}
-              >
-                Unfinalize
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-          </AlertDialog>
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} keepContent disabled={isPending} />
         </div>
       </div>
 

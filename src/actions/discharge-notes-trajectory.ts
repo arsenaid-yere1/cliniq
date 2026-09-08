@@ -16,6 +16,7 @@ import { gatherDischargeNoteSourceData } from '@/actions/discharge-notes'
 import { validateNarrative } from '@/lib/qc/narrative-validator'
 
 interface RefreshOptions {
+  expectedUpdatedAt?: string
   // When supplied, validator runs against this merged shape (for the regen
   // case where the freshly-regenerated section is not yet persisted on the
   // row). When omitted, validator reads section text straight from the row.
@@ -61,6 +62,9 @@ export async function refreshDischargeTrajectory(
     .maybeSingle()
   if (fetchErr || !rawNote) return { error: 'Note not found' }
   const note = rawNote as Record<string, unknown>
+  if (opts.expectedUpdatedAt && rawNote.updated_at !== opts.expectedUpdatedAt) {
+    return { error: 'Note changed. Refresh and try again.' }
+  }
 
   let inputData = opts.inputData
   if (!inputData) {
@@ -136,6 +140,8 @@ export async function refreshDischargeTrajectory(
     .from('discharge_notes')
     .update(update)
     .eq('id', noteId)
+    .eq('updated_at', rawNote.updated_at)
+    .select('id').single()
   if (updErr) return { error: 'Failed to refresh trajectory' }
 
   if (validation.warnings.length > 0) {

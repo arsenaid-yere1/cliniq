@@ -121,4 +121,14 @@ describe('finalizePainFollowUpNote', () => {
     expect(remove).toHaveBeenCalledOnce()
     expect(documentBuilder.update).toHaveBeenCalledOnce()
   })
+  it('preserves the file when cleanup cannot confirm the document is unreferenced', async () => {
+    mockSupabase.rpc.mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+    documentBuilder.single
+      .mockResolvedValueOnce({ data: { id: DOCUMENT_ID }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'Signed revision documents are retained' } })
+    await finalizePainFollowUpNote(CASE_ID, ENCOUNTER_ID)
+    expect(documentBuilder.update).toHaveBeenCalledOnce()
+    expect(remove).not.toHaveBeenCalled()
+  })
+
 })
