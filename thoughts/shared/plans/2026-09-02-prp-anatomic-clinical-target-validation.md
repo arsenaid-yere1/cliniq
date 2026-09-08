@@ -12,6 +12,28 @@ Implemented across all five phases. The resulting source-of-truth pipeline is:
 
 Production decisions finalized through commit `a76a1df`. The Supabase migration is applied in production and the Vercel deployment is live. Automated verification completed: focused target tests, the full 95-file/1,289-test suite, TypeScript checking, changed-file lint, and production builds. Full-repository lint remains blocked by a pre-existing `react-hooks/set-state-in-effect` error in `src/components/settings/invite-user-dialog.tsx:62`. Local database tests could not run because local Supabase was unavailable at `127.0.0.1:54322`. Existing drafts must regenerate the Treatment Plan to receive the current concise renderer output.
 
+## Wording follow-up status (2026-09-07)
+
+Implemented in `src/lib/clinical/render-prp-treatment-plan.ts` and its test file. Released in commit `095bef8ca4cceb35dfeed07fdd05198de644d33d`, pushed to `main` and `codex/complete-return-tele-visits` on 2026-09-07. Vercel production deployment `dpl_GoPE2M5bdtD6GVcWZbkhjasnVMXb` reached READY, and the existing `cliniq-nine.vercel.app` alias was verified to point to that deployment. Plan and research documentation remain local; the release commit contains the two application/test files.
+
+- `TARGET_INTRO` describes therapeutic goals of pain reduction and improved function. It does not automatically label PRP as diagnostic or promise a successful outcome.
+- `renderPrpTargetBlock()` adds `FACET_PURPOSE_CLARIFICATION` only when a selected recommendation has a spinal region and `target_structure` contains the word “facet” or “facets” (case-insensitive, including “facet-capsular”). This text match controls a clarification, not a clinical eligibility determination or diagnostic-block order.
+- The clarification requires separate documentation of any diagnostic facet block's indication, technique, injectate, and response assessment, and states that proposed PRP treatment does not itself establish a facet-mediated pain diagnosis.
+- `stripPrpTargetBlock()` recognizes the original, intermediate dual-purpose, and current therapeutic introductions, so recomposition replaces earlier blocks without duplicating them.
+
+### Automated verification completed
+
+- `npx vitest run src/lib/clinical/render-prp-treatment-plan.test.ts src/lib/claude/__tests__/generate-initial-visit.test.ts` — 30 tests passed across 2 files.
+- `npx eslint src/lib/clinical/render-prp-treatment-plan.ts src/lib/clinical/render-prp-treatment-plan.test.ts` — passed.
+- `npx tsc --noEmit` — passed.
+- `git diff --check` — passed.
+
+### Manual verification and limits
+
+- Reviewed the source report's Treatment Plan on pages 6–7: it explicitly states dual diagnostic/therapeutic intent for cervical and lumbar facet blocks with PRP. That is the report author's stated intent, not a universal PRP requirement.
+- Reviewed the renderer diff. No live generation, UI/PDF verification, or clinician/legal sign-off was performed for this follow-up. Production deployment was subsequently completed as recorded above.
+- The template does not certify legal compliance, medical necessity, consent, or coverage. See the coverage limitations below and `thoughts/shared/research/2026-09-07-prp-diagnostic-therapeutic-wording.md` for the research record.
+
 ## Final product decisions (authoritative)
 
 - Preserve the established Pain Evaluation Treatment Plan template. The target-safety change is limited to deciding and rendering PRP targets.
@@ -23,10 +45,19 @@ Production decisions finalized through commit `a76a1df`. The Supabase migration 
 - Use this fixed recommendation shape:
 
   ```text
-  Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections targeting the following regions:
+  Given the incomplete response to conservative measures, I am recommending a series of Platelet-Rich Plasma (PRP) injections for therapeutic purposes, with the goal of reducing pain and improving function, targeting the following regions:
   • [Region]: Ultrasound-guided PRP injection(s) at [validated location(s)] targeting [concise validated pain generator(s)/structure(s)], where [concise pathology support when appropriate].
   An initial staged course of one to three injection sessions is planned. The patient will be re-evaluated after each injection; extension beyond the initial stage will occur only if the documented response and persistent functional impairment support additional treatment.
   ```
+
+- Immediately before the staged-course paragraph, include the following only when a selected spinal target structure explicitly mentions facet(s). Omit it for disc-only, shoulder, and other targets without that selected facet structure:
+
+  ```text
+  For facet-directed treatment, any diagnostic facet block requires a separately documented indication, technique, injectate, and response assessment. The proposed PRP treatment does not itself establish a diagnosis of facet-mediated pain.
+  ```
+
+- Do not infer a diagnostic block from PRP selection, imaging findings, or the historical report's wording. Do not automatically emit “for diagnostic and therapeutic purposes” in the shared introduction.
+- Preserve replacement compatibility for the original introduction, the intermediate dual-purpose introduction, and the current therapeutic introduction.
 
 - Structured recommendations and evidence remain persisted for audit, evidence-hash invalidation, server-side recomposition, finalization checks, and downstream procedure defaults.
 - Existing drafts are not rewritten automatically; regenerate the Treatment Plan to apply the current renderer.
@@ -118,8 +149,9 @@ The Claude tool will return structured `prp_target_recommendations` in addition 
 The treatment plan will be assembled in TypeScript by replacing `[[PRP_TARGET_RECOMMENDATIONS]]` in the established template with:
 
 - the existing model-generated rationale, cost, supportive-care, medication, monitoring, and escalation paragraphs;
-- a short “Given the incomplete response…” introduction;
-- deterministic, region-grouped, ultrasound-guided bullets derived from eligible candidates; and
+- a short “Given the incomplete response…” introduction describing therapeutic goals;
+- deterministic, region-grouped, ultrasound-guided bullets derived from eligible candidates;
+- the conditional facet-purpose clarification specified above, without asserting that a diagnostic block is planned or has confirmed the pain source; and
 - the agreed staged one-to-three-session language requiring re-evaluation after each injection and documented support before extending treatment.
 
 When the recommendation array is empty, the marker is removed without adding a target-assessment paragraph. The formatter does not print full imaging findings, measurements, or stored audit evidence in the report.
@@ -202,7 +234,9 @@ This makes the structured recommendations—not prose parsing—the persisted so
 - Add a pure formatter, `src/lib/clinical/render-prp-treatment-plan.ts`.
   - Preserve the previous treatment-plan template around the target section.
   - Group eligible targets by region and laterality; group multiple spinal levels into one bullet.
-  - Always render “Ultrasound-guided PRP injection(s).”
+  - Always render “Ultrasound-guided PRP injection(s).” This describes the PRP workflow; it does not establish eligibility for covered diagnostic facet-block services.
+  - Use therapeutic-purpose wording in `TARGET_INTRO` and include `FACET_PURPOSE_CLARIFICATION` only for explicitly selected spinal facet structures.
+  - Recognize all three introduction versions in `stripPrpTargetBlock()` so regeneration removes the entire previous block, including its clarification, before rendering the replacement.
   - Summarize spine targets as concise facet-mediated/discogenic pain generators and summarize shoulder targets as concise structure lists.
   - Do not repeat full imaging descriptions, measurements, or evidence-verification prose.
   - Remove the marker without adding target text when no candidate is selected.
@@ -220,6 +254,9 @@ This makes the structured recommendations—not prose parsing—the persisted so
 - Test empty-target behavior when anatomy or current clinical support is missing.
 - Test that literal Initial Visit output cannot contain structured PRP targets.
 - Test mandatory ultrasound guidance, multi-level grouping, concise spine/shoulder summaries, and omission of full imaging measurements.
+- Test therapeutic-purpose wording and the conditional diagnostic-block clarification for selected spinal facet structures.
+- Test absence of diagnostic wording for disc-only and shoulder examples, and absence of the entire target block for empty selections.
+- Test replacement of original, intermediate dual-purpose, and current therapeutic blocks without duplicate introductions or clarifications; repeated rendering must be idempotent.
 - Test full and treatment-plan-only regeneration paths.
 - Run `npm test -- src/lib/claude/__tests__/generate-initial-visit.test.ts src/lib/clinical/render-prp-treatment-plan.test.ts src/lib/clinical/prp-target-evidence.test.ts`.
 
@@ -281,6 +318,14 @@ This makes the structured recommendations—not prose parsing—the persisted so
 - Create a procedure from a historical note and confirm the legacy prose parser still supplies existing defaults.
 - Confirm planned-versus-performed mismatch reporting continues to identify region, laterality, guidance, and level deviations.
 
+## Clinical and coverage boundaries for purpose wording
+
+The reviewed CMS [facet-intervention LCD L38765](https://www.cms.gov/medicare-coverage-database/view/lcd.aspx?lcdid=38765) distinguishes diagnostic anesthetic facet blocks from therapeutic interventions. Its coverage limitations require CT/fluoroscopic guidance and exclude ultrasound-guided facet interventions and biological injectates from that coverage framework. The existing ultrasound PRP workflow must not be represented as satisfying those diagnostic facet-block coverage criteria.
+
+[Noridian LCD L39058](https://www.cms.gov/medicare-coverage-database/view/lcd.aspx?lcdid=39058), which includes California, excludes musculoskeletal/joint PRP from Medicare coverage. These are payer coverage policies, not a conclusion that privately funded treatment is unlawful. The source report's wording and this template do not establish legal compliance or reimbursement eligibility. Actual procedures, diagnostic intent, consent, and applicable payer requirements require patient-specific review.
+
+This follow-up changes report wording only. It does not add a structured diagnostic-block order, change guidance modality, alter billing, or certify that the broader clinical recommendation pipeline satisfies those policies.
+
 ## Risks and rollback considerations
 
 - **Clinical-policy strictness:** Requiring both a current complaint and current exam match will reduce automatic recommendations when intake is incomplete. This is intentional fail-closed behavior; generation returns an actionable error for invalid selections without adding a confirmation UI.
@@ -303,4 +348,6 @@ This makes the structured recommendations—not prose parsing—the persisted so
 - Evidence changes after generation invalidate stale recommendations and require Treatment Plan regeneration before save/finalization.
 - New procedure defaults prefer structured validated targets; historical notes retain legacy parsing.
 - Every rendered recommendation is ultrasound-guided, grouped by region/laterality, concise, and followed by the agreed staged-course/re-evaluation language.
+- Shared PRP introduction states therapeutic goals; diagnostic-purpose clarification appears only for selected spinal facet structures and does not assert a diagnostic procedure or confirmed facet pain.
+- All three historical/current introduction versions recompose without duplication, and empty selections leave no purpose or target paragraph.
 - Database migration, generated types, focused unit/integration tests, full test suite, lint, build, and representative PDF/UI verification all pass.
