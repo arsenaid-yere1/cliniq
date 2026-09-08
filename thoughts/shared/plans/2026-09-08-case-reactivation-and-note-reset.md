@@ -356,8 +356,8 @@ because no application code changed.
 - [ ] Perform the manual role, browser, keyboard/narrow-layout, generation, PDF
   download, and original/replacement history checks described for each phase.
   No manual check is marked complete without user confirmation.
-- [ ] Apply the migration before deploying the dependent application. No remote
-  database was modified and the feature has not been deployed.
+- [x] Applied migration `20260908231215` to production, then promoted the ready
+  Vercel deployment on 2026-09-08 following the user’s explicit rollout request.
 
 ### Implementation refinements
 
@@ -367,3 +367,18 @@ Section regeneration also checks its input version so output generated before a
 reset cannot repopulate the reset note. PDF cleanup marks its document discarded
 before removing storage and stops if that update fails, including an uncertain
 finalization response. These safeguards support the accepted reset/retention contract.
+
+
+## Production release — 2026-09-08
+
+Release commit: `829899a` (`feat: add case reactivation and note reset`).
+Deployment: `dpl_2p37Ftt4wZ14mcSrUm7yLdnVCjJ6`, built from a clean archive of that
+commit with production settings, reached READY. Supabase confirmed the new reset
+migration was the only pending migration and applied it successfully before the
+Vercel promotion. `https://cliniq-nine.vercel.app` resolves to the new deployment;
+login returned 200 and unauthenticated `/patients` redirected to login.
+Production permission checks passed, unauthenticated reset was rejected, and the
+security advisor reported no errors. No patient records were reset during rollout.
+Manual clinical workflow and true concurrency checks remain pending as listed above.
+Automatic approval review blocked the separate push to `main`; the live deployment
+is complete, and pushing the shared default branch requires explicit approval.
