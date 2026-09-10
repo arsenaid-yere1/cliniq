@@ -47,7 +47,7 @@ select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
 
 do $$
-declare cid uuid:='31000000-0000-4000-8000-000000000001'; p jsonb; req jsonb; oid uuid; f record; n jsonb; replacement uuid; failed boolean; version timestamptz; invoice uuid; claim uuid; order_id uuid; signed_req jsonb; correction_id uuid;
+declare cid uuid:='31000000-0000-4000-8000-000000000001'; p jsonb; req jsonb; oid uuid; f record; n jsonb; replacement uuid; failed boolean; version timestamptz; invoice uuid; claim uuid; order_id uuid; signed_req jsonb; correction_id uuid; completed_order jsonb;
 begin
  -- An open documentation correction must be resolved before care reopens.
  p:=public.preview_clinical_reset(cid);
@@ -100,7 +100,16 @@ begin
  failed:=false;
  begin perform public.apply_clinical_reset(req); exception when raise_exception then failed:=true; end;
  if not failed then raise exception 'Dependent order did not block reset'; end if;
- update procedure_orders set deleted_at=now() where id=order_id;
+ p:=public.preview_clinical_reset(cid);
+ if not exists(select 1 from jsonb_array_elements(p->'notes') note, jsonb_array_elements(note->'blockers') blocker where blocker->>'id'=order_id::text) then raise exception 'Ordered dependency missing from preview'; end if;
+ update procedure_orders set status='scheduled' where id=order_id;
+ failed:=false;
+ begin perform public.apply_clinical_reset(req); exception when raise_exception then failed:=true; end;
+ if not failed then raise exception 'Scheduled order did not block reset'; end if;
+ update procedure_orders set status='completed' where id=order_id;
+ select to_jsonb(o) into completed_order from procedure_orders o where id=order_id;
+ p:=public.preview_clinical_reset(cid);
+ if exists(select 1 from jsonb_array_elements(p->'notes') note, jsonb_array_elements(note->'blockers') blocker where blocker->>'id'=order_id::text) then raise exception 'Completed order incorrectly blocks preview'; end if;
  -- A blocking claim aborts the entire bulk operation, leaving every signed row intact.
  insert into invoices(case_id,invoice_date,status) values(cid,current_date,'draft') returning id into invoice;
  insert into billing_source_claims(invoice_id,encounter_id,claim_kind) values(invoice,(select encounter_id from reset_fixture where kind='discharge_notes'),'visit') returning id into claim;
@@ -111,6 +120,7 @@ begin
  p:=public.preview_clinical_reset(cid);
  req:=req || jsonb_build_object('case_version',p->>'case_version','episode_version',p->>'episode_version');
  oid:=public.apply_clinical_reset(req);
+ if (select to_jsonb(o) from procedure_orders o where id=order_id) is distinct from completed_order then raise exception 'Reset changed completed order or its source links'; end if;
  if (select count(*) from clinical_note_revisions where operation_id=oid)<>4 then raise exception 'Signed revisions not captured'; end if;
  for f in select * from reset_fixture loop
   execute format('select to_jsonb(n) from public.%I n where id=$1',f.kind) into n using f.note_id;
@@ -118,6 +128,10 @@ begin
   if not exists(select 1 from documents where id=f.document_id and deleted_at is null) then raise exception 'Original PDF not retained'; end if;
  end loop;
  if exists(select 1 from clinical_encounters where case_id=cid and (status<>'in_progress' or provider_intake->>'history'<>'retain intake')) then raise exception 'Visit state or intake incorrect'; end if;
+ -- A completed order cannot be reopened against a pending replacement.
+ failed:=false;
+ begin update procedure_orders set status='ordered' where id=order_id; exception when raise_exception then failed:=true; end;
+ if not failed then raise exception 'Pending replacement allowed order reactivation'; end if;
  -- Audit and document protection.
  failed:=false;
  begin delete from clinical_note_revisions where case_id=cid; exception when insufficient_privilege then failed:=true; end;

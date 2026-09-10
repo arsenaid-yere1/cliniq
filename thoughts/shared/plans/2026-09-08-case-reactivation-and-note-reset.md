@@ -382,3 +382,22 @@ security advisor reported no errors. No patient records were reset during rollou
 Manual clinical workflow and true concurrency checks remain pending as listed above.
 Automatic approval review blocked the separate push to `main`; the live deployment
 is complete, and pushing the shared default branch requires explicit approval.
+
+## Completed-order reset correction — 2026-09-10
+
+The shared `private.clinical_reset_blockers` function treated completed procedure
+orders as active dependencies. Migration
+`20260910222136_allow_reset_with_completed_orders.sql` excludes completed orders
+from preview and transactional reset blockers. Completed order rows and their
+encounter/recommendation links remain unchanged. Ordered/scheduled orders and
+unreleased billing claims still block reset. The existing dependency-write guard
+continues to prevent reopening an order against a pending replacement note.
+
+Regression verification: the updated `clinical_reset_test.sql` failed on the old
+schema with “Completed order incorrectly blocks preview”, then passed with the new
+migration. All three reset/finalization PostgreSQL assertion suites passed in the
+isolated runtime using a clean committed-source snapshot, excluding concurrent
+unrelated workspace changes. This retains the runtime limitations recorded above.
+No TypeScript interface changed. The user authorized production rollout on
+2026-09-10. Only migration `20260910222136` was applied from the isolated snapshot;
+the unrelated patient-education migration and workspace edits were excluded.
