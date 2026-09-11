@@ -2,7 +2,7 @@
 
 ## Overview
 
-Status: **deployed to production; spacing fix accepted by the user; understanding draft-closing revision approved on 2026-09-11; prior release remains live**. The full clinician/browser/PDF checklist remains unconfirmed beyond the specific user feedback recorded below. The previous broad education/consent implementation was reverted on 2026-09-10 at the user's request. This plan supersedes the former procedure-consent and shared-generation infrastructure work. This plan is the single current planning document for this feature; the abandoned implementation does not constitute approval of this design.
+Status: **deployed to production; spacing fix accepted by the user; understanding draft-closing revision deployed on 2026-09-11**. The full clinician/browser/PDF checklist remains unconfirmed beyond the specific user feedback recorded below. The previous broad education/consent implementation was reverted on 2026-09-10 at the user's request. This plan supersedes the former procedure-consent and shared-generation infrastructure work. This plan is the single current planning document for this feature; the abandoned implementation does not constitute approval of this design.
 
 Add a visible Patient's decision regarding the treatment plan control to visit notes, defaulting to Accepted. Explicit clinician Save Draft or Sign confirms that the reviewed selection reflects the patient's actual response to the plan discussed at this visit. Opening a visit, generation, intake saves, and autosave do not confirm acceptance. This documents the patient's treatment decision; it is not implied legal consent or permission to perform a procedure.
 
@@ -294,3 +294,10 @@ Plan verification: **Ready.** The three generators already share `VISIT_DECISION
 Implementation verification: shared and visit-specific prompts now request the exact sentence once in the same paragraph, while retaining an exception for explicitly contradictory encounter facts. The shared editor guidance covers the accuracy of Patient Education and removal/correction of inaccurate understanding text. Full/section prompt tests cover both evaluation visit types, Discharge and Follow-up; parser tests permit the sentence and documented limitations while continuing to reject model-authored treatment agreement/consent. The Follow-up editor test proves edited education is submitted unchanged even when the treatment decision is Not documented.
 
 Checks: focused suites **113 tests passed**; `npm test` **113 files / 1,420 tests passed**; `npx tsc --noEmit --pretty false`, changed-file ESLint and `git diff --check` passed. No database change was needed. The revision is implemented locally, not committed, pushed or deployed. No new live model/clinician/browser/PDF verification is claimed.
+
+
+## Understanding closing production release — 2026-09-11
+
+The user authorized rollout with “push to prod.” Commit `99205e2` was built from a clean archive using the existing Vercel production project and reached READY before promotion. Deployment `dpl_HYu2hB9yApojksidFe6joJTCKme1` is now the production deployment resolved by `https://cliniq-nine.vercel.app`. Login returned HTTP 200; unauthenticated `/patients` returned HTTP 307 to `/login`. No database migration was required. No GitHub push was attempted.
+
+New full generation and Patient Education regeneration use the revised understanding-closing prompts and clinician review guidance. Existing notes are not rewritten automatically. Tests verify the prompt paths and edited-prose preservation; no live patient note was generated as a deployment test.
