@@ -2,7 +2,7 @@
 
 ## Overview
 
-Status: **Implemented and automated checks passed; production release in progress.**
+Status: **Implemented, verified automatically, and deployed to production on 2026-09-11.**
 
 Fix reproduced false rejections of documented telehealth consent and declining symptoms. Preserve the existing clinician-confirmed treatment-decision boundary and the standard Patient Education understanding sentence. This is a focused follow-up to the deployed Patient Education feature, not a replacement design.
 
@@ -151,3 +151,12 @@ Implemented both phases in the four planned source/test files. Telehealth-only a
 Regression-first run reproduced 23 failures. Final verification: all 22 generator suites passed (465 tests); the full suite passed (113 files, 1,482 tests). TypeScript, changed-file ESLint and diff whitespace checks passed. Repository-wide lint retains the previously recorded unrelated error in `src/components/settings/invite-user-dialog.tsx:62` and 40 warnings. Local production build was started but has not completed; deployment build verification remains pending.
 
 Manual clinician/browser/PDF and live model verification remain pending. No patient generation, data change, migration, or UI change was performed. User authorized production release in this implementation turn. No material scope deviation.
+
+
+## Production release — 2026-09-11
+
+Release commit `8530353` was deployed from a clean committed archive to the existing Vercel project. Deployment `dpl_4RuhsSYx9w5YYCJP2GASKj3237GR` completed its production build and reached Ready before promotion. Promotion succeeded. No migration was needed. Local `npm run build` failed fetching Google Fonts in the restricted environment; the Vercel production build succeeded.
+
+The live domain verification and authentication smoke checks are recorded below. No failed patient note was regenerated or rewritten. An unrelated untracked case-reset script appeared during release preparation and was excluded from the committed deployment archive. Source publication to GitHub was not part of this release.
+
+Postflight: inspecting `https://cliniq-nine.vercel.app` resolved to the new Ready deployment. `/login` returned HTTP 200; unauthenticated `/patients` returned HTTP 307 to `/login`. Clinician/live-model and visual PDF checks remain pending.
