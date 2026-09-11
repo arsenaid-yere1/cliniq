@@ -16,6 +16,7 @@ export interface PainFollowUpSourceData {
 }
 
 export const PAIN_FOLLOW_UP_SYSTEM_PROMPT = `You generate a pain-management follow-up note for a remote encounter.
+Telehealth consent is separate from treatment-plan acceptance and procedure consent. Mention affirmative telehealth consent only when the current encounter has modality "telehealth" and telehealth_consent_obtained is explicitly true. Prefer "Consent for the telehealth visit was obtained." Do not infer a consent method, date, or person from that boolean, or use consent from prior encounters as current consent. Patient-reported pain or symptom decline is not treatment refusal.
 State the modality explicitly. Separate patient-reported history from provider-observed video findings.
 Never invent palpation, strength grades, reflexes, measured range-of-motion degrees, procedure vitals, or other hands-on findings.
 The telehealth_observations section may contain only findings directly visible or audible by video, such as general appearance, alertness, speech, visible distress, and gross movement observed on camera.
@@ -91,7 +92,10 @@ export async function generatePainFollowUp(
       const guarded = validateTelehealthFollowUpOutput(parsed.data)
       return guarded.error
         ? { success: false, error: new z.ZodError([{ code: 'custom', path: ['telehealth_observations'], message: guarded.error }]) }
-        : validateVisitDecisionOutput(parsed.data)
+        : validateVisitDecisionOutput(parsed.data, {
+          telehealthConsentDocumented: source.encounter.modality === 'telehealth'
+            && source.encounter.telehealth_consent_obtained === true,
+        })
     },
   })
 }

@@ -116,3 +116,57 @@ describe('visit decision parser integration', () => {
     }
   })
 })
+
+describe.each([false, true])('consent source boundaries (regeneration=%s)', (regenerate) => {
+  async function parser(encounter: Record<string, unknown>) {
+    await generatePainFollowUp({
+      ...source,
+      encounter,
+      latestCompletedEncounter: { modality: 'telehealth', telehealth_consent_obtained: true },
+    }, regenerate ? { section: 'subjective', message: 'Review history', rationale: null } : undefined)
+    return (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+  }
+  function payload(subjective: string) {
+    return {
+      ...Object.fromEntries(Object.keys(painFollowUpNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : ''])),
+      subjective,
+      patient_education: 'The patient verbalized understanding.',
+    }
+  }
+  it.each([
+    { modality: 'telehealth', telehealth_consent_obtained: false },
+    { modality: 'telehealth', telehealth_consent_obtained: null },
+    { modality: 'telehealth' },
+    { modality: 'telehealth', telehealth_consent_obtained: 'true' },
+    { modality: 'in_person', telehealth_consent_obtained: true },
+  ])('does not invent current consent from %j', async (encounter) => {
+    const opts = await parser(encounter)
+    expect(opts.parse(payload('Consent for the telehealth visit was obtained.')).success).toBe(false)
+    expect(opts.parse(payload('The patient reports that pain has declined.')).success).toBe(true)
+  })
+  it('allows source-backed consent without changing the returned narrative', async () => {
+    const opts = await parser({ modality: 'telehealth', telehealth_consent_obtained: true })
+    const raw = payload('Verbal consent for telehealth was obtained. The patient reports that pain has declined.')
+    const result = opts.parse(raw)
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual(raw)
+    expect(opts.system).toContain('Telehealth consent is separate')
+    expect(opts.system).toContain('telehealth_consent_obtained is explicitly true')
+    expect(opts.system).toContain('The patient verbalized understanding.')
+    expect(opts.system).toContain('do not contradict the source')
+  })
+  it.each([
+    'The patient accepted PRP.',
+    'Procedure consent was obtained.',
+    'Consent for telehealth and PRP was obtained.',
+  ])('retains procedure and decision safeguards: %s', async (assessment) => {
+    const opts = await parser({ modality: 'telehealth', telehealth_consent_obtained: true })
+    expect(opts.parse({ ...payload('Consent for telehealth was obtained.'), assessment }).success).toBe(false)
+  })
+  it('retains examination and schema safeguards', async () => {
+    const opts = await parser({ modality: 'telehealth', telehealth_consent_obtained: true })
+    const raw = payload('Consent for telehealth was obtained.')
+    expect(opts.parse({ ...raw, telehealth_observations: 'Strength is 5/5.' }).success).toBe(false)
+    expect(opts.parse({ ...raw, subjective: null }).success).toBe(false)
+  })
+})
