@@ -1,3 +1,4 @@
+import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
 import Anthropic from '@anthropic-ai/sdk'
 import { createHash } from 'node:crypto'
 import { callClaudeTool } from '@/lib/claude/client'
@@ -81,7 +82,7 @@ export async function generatePainFollowUp(
     ? `\nRegenerate the ${regeneration.section} section to address this quality finding: ${regeneration.message}${regeneration.rationale ? ` (${regeneration.rationale})` : ''}. Keep all source boundaries and telehealth safeguards.`
     : ''
   return callClaudeTool<PainFollowUpNoteResult>({
-    model: 'claude-opus-4-6', fallbackModel: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT,
+    model: 'claude-opus-4-6', fallbackModel: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT + VISIT_DECISION_PROMPT,
     tools: [TOOL], toolName: 'generate_pain_follow_up',
     messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${regenerationInstruction}` }],
     parse: (raw) => {
@@ -90,7 +91,7 @@ export async function generatePainFollowUp(
       const guarded = validateTelehealthFollowUpOutput(parsed.data)
       return guarded.error
         ? { success: false, error: new z.ZodError([{ code: 'custom', path: ['telehealth_observations'], message: guarded.error }]) }
-        : { success: true, data: parsed.data }
+        : validateVisitDecisionOutput(parsed.data)
     },
   })
 }

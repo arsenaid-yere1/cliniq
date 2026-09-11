@@ -1,5 +1,7 @@
 'use server'
 
+import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
+
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
 
 import { createHash } from 'node:crypto'
@@ -127,7 +129,15 @@ export async function savePainFollowUpNote(caseId: string, values: PainFollowUpN
   if (!encounter) return { error: 'Visit not found' }
   try { await requireWritableEpisode(caseId, encounter.episode_id, supabase) }
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
-  const { encounter_id, ...note } = parsed.data
+  if (parsed.data.treatment_decision) {
+    const { encounter_id, ...patch } = parsed.data
+    const result = await saveVisitDecision(supabase, 'pain_follow_up_notes', caseId, { column: 'encounter_id', value: encounter_id }, patch)
+    if (result.error) return { error: result.error }
+    revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
+    return { data: { success: true, savedNote: result.savedNote } }
+  }
+  const { encounter_id, reviewed_visit_date: _date, treatment_decision: _decision, expected_updated_at: _version, ...note } = parsed.data
+  void _decision; void _version; void _date
   const { error } = await supabase.from('pain_follow_up_notes').update({ ...note, updated_by_user_id: user.id })
     .eq('case_id', caseId).eq('encounter_id', encounter_id).eq('status', 'draft').is('deleted_at', null)
   if (error) return { error: 'Unable to save note' }
@@ -169,7 +179,7 @@ export async function regeneratePainFollowUpSectionAction(
   return { data: { success: true } }
 }
 
-export async function finalizePainFollowUpNote(caseId: string, encounterId: string) {
+export async function finalizePainFollowUpNote(caseId: string, encounterId: string, expectedSavedVersion?: string) {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
   const supabase = await createClient()
@@ -178,6 +188,7 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   const { data: note } = await supabase.from('pain_follow_up_notes').select('*')
     .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
   if (!note) return { error: 'No draft follow-up note found' }
+  if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
   if (note.status === 'finalized') return { data: { success: true, replayed: true } }
   if (note.status !== 'draft') return { error: 'No draft follow-up note found' }
   const { renderPainFollowUpPdf } = await import('@/lib/pdf/render-pain-follow-up-pdf')
@@ -204,7 +215,7 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   })
   if (error) {
     await removeUnreferencedGeneratedDocument(supabase, document.id, path, user.id)
-    if (error.message.includes('changed; review and finalize again')) {
+    if (error.message.includes('changed')) {
       return { error: 'The follow-up note changed. Review it and try finalizing again.' }
     }
     return { error: error.message.includes('not writable') ? 'This visit is no longer writable' : 'Unable to finalize follow-up note' }

@@ -66,6 +66,12 @@ describe('finalizePainFollowUpNote', () => {
     vi.clearAllMocks()
   })
 
+  it('does not render or sign an intervening edit after explicit Save', async () => {
+    expect(await finalizePainFollowUpNote(CASE_ID, ENCOUNTER_ID, 'older-version')).toEqual({ error: 'The note changed after saving. Review it before finalizing.' })
+    expect(upload).not.toHaveBeenCalled()
+    expect(mockSupabase.rpc).not.toHaveBeenCalled()
+  })
+
   it('passes the rendered note version to finalization', async () => {
     mockSupabase.rpc.mockResolvedValueOnce({ data: null, error: null })
 

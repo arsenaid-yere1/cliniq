@@ -1,5 +1,10 @@
 'use client'
 
+import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
+import { visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
+import { useCaseStatus } from '@/components/patients/case-status-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
+
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
 import { useState } from 'react'
@@ -36,6 +41,7 @@ interface PainFollowUpEditorProps {
   seriesChoices?: ProcedureSeriesChoice[]
   procedureOrders?: ProcedureOrderSummary[]
   relationshipLoadError?: boolean
+  episodeWritable?: boolean
 }
 
 type ActionResult = { error?: string; data?: unknown }
@@ -47,6 +53,7 @@ export function PainFollowUpEditor({
   seriesChoices = [],
   procedureOrders = [],
   relationshipLoadError = false,
+  episodeWritable = true,
 }: PainFollowUpEditorProps) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -55,11 +62,13 @@ export function PainFollowUpEditor({
       painFollowUpNoteSections.map((section) => [section, initialNote?.[section] ?? '']),
     ) as Record<PainFollowUpSection, string>,
   )
+  const [decision, setDecision] = useState(() => visitDecisionDraft(initialNote?.visit_treatment_decision))
+  const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const recommendations = (
     initialNote?.procedure_recommendations ?? []
   ) as unknown as ProcedureRecommendation[]
   const editorState = getPainFollowUpEditorState(initialNote)
-  const visitWritable = encounter.status === 'in_progress'
+  const visitWritable = encounter.status === 'in_progress' && !caseLocked && episodeWritable
 
   async function run(action: () => Promise<ActionResult>, successMessage: string) {
     setPending(true)
@@ -158,6 +167,9 @@ export function PainFollowUpEditor({
   const actionDisabled = pending || !visitWritable
   const editValues = {
     encounter_id: encounter.id,
+    reviewed_visit_date: encounter.encounter_date,
+    treatment_decision: decision,
+    expected_updated_at: initialNote.updated_at,
     subjective: note.subjective,
     interval_history: note.interval_history,
     review_of_systems: note.review_of_systems,
@@ -203,7 +215,11 @@ export function PainFollowUpEditor({
               <Button
                 disabled={actionDisabled}
                 onClick={() => void run(
-                  () => finalizePainFollowUpNote(caseId, encounter.id),
+                  async () => {
+                    const saved = await savePainFollowUpNote(caseId, editValues)
+                    if ('error' in saved) return saved
+                    return finalizePainFollowUpNote(caseId, encounter.id, saved.data && 'savedNote' in saved.data ? saved.data.savedNote?.updated_at as string : undefined)
+                  },
                   'Follow-up note finalized successfully',
                 )}
               >
@@ -214,6 +230,10 @@ export function PainFollowUpEditor({
         </div>
       </div>
 
+      <VisitTreatmentDecisionFields value={decision} onChange={setDecision}
+        saved={initialNote.visit_treatment_decision} plan={note.treatment_plan}
+        visitDate={encounter.encounter_date} education={note.patient_education}
+        disabled={actionDisabled} historical={finalized} />
       <div className="grid gap-4">
         {painFollowUpNoteSections.map((section) => {
           const label = painFollowUpNoteSectionLabels[section]
@@ -240,7 +260,7 @@ export function PainFollowUpEditor({
                 <Textarea
                   id={section}
                   value={note[section]}
-                  disabled={finalized || !visitWritable}
+                  disabled={pending || finalized || !visitWritable}
                   rows={4}
                   onChange={(event) => setNote((current) => ({
                     ...current,

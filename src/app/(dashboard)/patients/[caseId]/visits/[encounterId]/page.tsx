@@ -18,6 +18,11 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
     listProcedureOrders(caseId),
   ])
   if(!encounter) notFound()
+  const [episodeResult, correctionResult] = await Promise.all([
+    supabase.from('care_episodes').select('status').eq('id', encounter.episode_id).eq('case_id', caseId).is('deleted_at', null).maybeSingle(),
+    supabase.from('discharge_note_corrections').select('id').eq('episode_id', encounter.episode_id).eq('status', 'open').limit(1),
+  ])
+  const episodeWritable = !episodeResult.error && episodeResult.data?.status === 'active' && !correctionResult.error && correctionResult.data?.length === 0
   const {data:seriesRows,error:seriesError}=await supabase.from('procedure_series')
     .select('id,episode_id,series_number,procedure_type,status,deleted_at,episode:care_episodes!inner(episode_number),procedures!procedures_series_ownership_fkey(procedure_number,deleted_at),procedure_orders(status,deleted_at)')
     .eq('case_id',caseId).order('created_at',{ascending:false})
@@ -33,5 +38,5 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
   })
   const seriesChoices=buildProcedureSeriesOptions(candidates,encounter.episode_id)
   const followUpNote=noteResult.data??null
-  return <div className="space-y-6"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">Pain Follow-Up</h1><Badge variant="outline">{encounter.status.replaceAll('_',' ')}</Badge></div><p className="text-sm text-muted-foreground capitalize">{encounter.modality} visit · {encounter.encounter_date??'Date pending'}</p></div><TelehealthIntakeCard caseId={caseId} encounter={encounter}/><PainFollowUpEditor key={buildPainFollowUpEditorKey(followUpNote)} caseId={caseId} encounter={encounter} initialNote={followUpNote} seriesChoices={seriesChoices} procedureOrders={(orderResult.data??[]).filter((order)=>order.source_encounter_id===encounterId)} relationshipLoadError={!!seriesError||!!orderResult.error}/></div>
+  return <div className="space-y-6"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">Pain Follow-Up</h1><Badge variant="outline">{encounter.status.replaceAll('_',' ')}</Badge></div><p className="text-sm text-muted-foreground capitalize">{encounter.modality} visit · {encounter.encounter_date??'Date pending'}</p></div><TelehealthIntakeCard caseId={caseId} encounter={encounter}/><PainFollowUpEditor key={buildPainFollowUpEditorKey(followUpNote)} caseId={caseId} encounter={encounter} initialNote={followUpNote} episodeWritable={episodeWritable} seriesChoices={seriesChoices} procedureOrders={(orderResult.data??[]).filter((order)=>order.source_encounter_id===encounterId)} relationshipLoadError={!!seriesError||!!orderResult.error}/></div>
 }

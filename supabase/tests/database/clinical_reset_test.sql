@@ -42,6 +42,12 @@ begin
  update care_episodes set status='discharged',ended_at=now(),end_reason='finalized_discharge' where id=eid;
  update cases set case_status='closed',case_close_date=current_date where id=cid;
 end $$;
+-- New field must survive signed snapshots/corrections but not wipe resets.
+do $$ declare k text; begin
+ foreach k in array array['initial_visit_notes','discharge_notes','pain_follow_up_notes'] loop
+  execute format('update public.%I set visit_treatment_decision='' {"schema_version":1,"decision":"declined","details":"Original response"}''::jsonb where case_id=''31000000-0000-4000-8000-000000000001''',k);
+ end loop;
+end $$;
 select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
@@ -58,6 +64,7 @@ begin
  begin perform public.apply_clinical_reset(req); exception when raise_exception then failed:=true; end;
  if not failed then raise exception 'Open discharge correction allowed reactivation'; end if;
  perform public.cancel_discharge_correction(cid,(p->>'episode_id')::uuid,(select note_id from reset_fixture where kind='discharge_notes'),correction_id);
+ if (select visit_treatment_decision->>'decision' from discharge_notes where case_id=cid) is distinct from 'declined' then raise exception 'Correction cancel lost decision'; end if;
  p:=public.preview_clinical_reset(cid);
  if jsonb_array_length(p->'notes')<>4 then raise exception 'Preview omitted notes'; end if;
  req:=jsonb_build_object('case_id',cid,'episode_id',p->>'episode_id','case_version',p->>'case_version','episode_version',p->>'episode_version',
@@ -119,11 +126,21 @@ begin
  update billing_source_claims set released_at=now(),release_reason='test' where id=claim;
  p:=public.preview_clinical_reset(cid);
  req:=req || jsonb_build_object('case_version',p->>'case_version','episode_version',p->>'episode_version');
+ -- First reopen the signed content for review, retaining all source decisions.
+ oid:=public.apply_clinical_reset(req || jsonb_build_object('notes',(select jsonb_agg(x||'{"keep_content":true}'::jsonb) from jsonb_array_elements(req->'notes') x)));
+ for f in select * from reset_fixture where kind<>'procedure_notes' loop
+  execute format('select to_jsonb(n) from public.%I n where id=$1',f.kind) into n using f.note_id;
+  if n->'visit_treatment_decision'->>'decision' is distinct from 'declined' then raise exception 'Keep-content lost decision'; end if;
+ end loop;
+ p:=public.preview_clinical_reset(cid);
+ req:=req||jsonb_build_object('request_key',gen_random_uuid(),'case_version',p->>'case_version','episode_version',p->>'episode_version','notes',(select jsonb_agg(jsonb_build_object('kind',x->>'kind','id',x->>'id','updated_at',x->>'updated_at')) from jsonb_array_elements(p->'notes') x));
  oid:=public.apply_clinical_reset(req);
  if (select to_jsonb(o) from procedure_orders o where id=order_id) is distinct from completed_order then raise exception 'Reset changed completed order or its source links'; end if;
- if (select count(*) from clinical_note_revisions where operation_id=oid)<>4 then raise exception 'Signed revisions not captured'; end if;
+ if exists(select 1 from clinical_note_revisions where case_id=cid and note_table<>'procedure_notes' and original_snapshot->'visit_treatment_decision'->>'decision' is distinct from 'declined') then raise exception 'Snapshot lost decision'; end if;
+ if (select count(*) from clinical_note_revisions where case_id=cid)<>4 then raise exception 'Signed revisions not captured'; end if;
  for f in select * from reset_fixture loop
   execute format('select to_jsonb(n) from public.%I n where id=$1',f.kind) into n using f.note_id;
+  if f.kind<>'procedure_notes' and n->>'visit_treatment_decision' is not null then raise exception 'Wipe retained decision'; end if;
   if n->>'status'<>'draft' or n->>'document_id' is not null or coalesce(n->>'subjective',n->>'introduction') is not null then raise exception 'Reset failed for %',f.kind; end if;
   if not exists(select 1 from documents where id=f.document_id and deleted_at is null) then raise exception 'Original PDF not retained'; end if;
  end loop;
@@ -191,6 +208,7 @@ begin
   values(cid,(p->>'episode_id')::uuid,f.encounter_id,'generated','Replacement','cases/test/'||f.kind||'-replacement.pdf','reviewed',auth.uid()) returning id into replacement;
   perform public.finish_clinical_note(f.kind,f.note_id,cid,replacement,version);
   if not exists(select 1 from clinical_note_revisions where note_id=f.note_id and replacement_document_id=replacement) then raise exception 'Replacement link missing for %',f.kind; end if;
+  if not exists(select 1 from clinical_encounters where id=f.encounter_id and status='completed' and completed_at is not null) then raise exception 'Finalization did not automatically complete encounter for %',f.kind; end if;
  end loop;
  if (select status from care_episodes where id=(p->>'episode_id')::uuid)<>'discharged' then raise exception 'Replacement discharge failed to close episode'; end if;
  -- A later active episode prevents historical reactivation even with a fresh preview.
@@ -206,7 +224,7 @@ reset role;
 do $$ declare doc record; failed boolean:=false; begin
  select d.* into doc from documents d join clinical_note_revisions r on r.original_document_id=d.id limit 1;
  insert into storage.objects(bucket_id,name) values('case-documents',doc.file_path);
- begin delete from storage.objects where name=doc.file_path; exception when raise_exception then failed:=true; end;
+ begin delete from storage.objects where name=doc.file_path; exception when raise_exception or insufficient_privilege then failed:=true; end;
  if not failed then raise exception 'Signed revision storage object could be deleted'; end if;
 end $$;
 select pass('Clinical reset permissions, preservation, state transitions, replay, and version checks');

@@ -1,5 +1,8 @@
 'use server'
 
+import { normalizeVisitPlan } from '@/lib/validations/visit-treatment-decision'
+import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
+
 import { resetDraftClinicalNote } from '@/actions/clinical-reset'
 
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
@@ -706,7 +709,7 @@ export async function saveInitialVisitNote(
   if (closedCheck.error) return { error: closedCheck.error }
 
   const validated = initialVisitNoteEditSchema.safeParse(values)
-  if (!validated.success) return { error: 'Invalid form data' }
+  if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid form data' }
 
   let valuesToSave = validated.data
   let recommendationsToSave: unknown = undefined
@@ -734,27 +737,43 @@ export async function saveInitialVisitNote(
     recommendationsToSave = checked.data
   }
 
-  const { error } = await supabase
-    .from('initial_visit_notes')
-    .update({
+  if (valuesToSave.treatment_decision && normalizeVisitPlan(valuesToSave.treatment_plan) !== normalizeVisitPlan(validated.data.treatment_plan)) {
+    return { error: 'The structured treatment plan changed. Regenerate the Treatment Plan and review it before confirming the patient decision.' }
+  }
+
+  let savedNote: Record<string, unknown> | undefined
+  if (valuesToSave.treatment_decision) {
+    const result = await saveVisitDecision(supabase, 'initial_visit_notes', caseId, { column: 'visit_type', value: visitType }, {
       ...valuesToSave,
       ...(recommendationsToSave === undefined ? {} : { prp_target_recommendations: recommendationsToSave }),
-      updated_by_user_id: user.id,
     })
-    .eq('case_id', caseId)
-    .eq('visit_type', visitType)
-    .is('deleted_at', null)
-    .eq('status', 'draft')
+    if (result.error) return { error: result.error }
+    savedNote = result.savedNote
+  } else {
+    const { treatment_decision: _decision, expected_updated_at: _version, ...legacyValues } = valuesToSave
+    void _decision; void _version
+    const { error } = await supabase
+      .from('initial_visit_notes')
+      .update({
+        ...legacyValues,
+        ...(recommendationsToSave === undefined ? {} : { prp_target_recommendations: recommendationsToSave }),
+        updated_by_user_id: user.id,
+      })
+      .eq('case_id', caseId)
+      .eq('visit_type', visitType)
+      .is('deleted_at', null)
+      .eq('status', 'draft')
 
-  if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save note' }
+    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save note' }
+  }
 
   revalidatePath(`/patients/${caseId}`)
-  return { data: { success: true } }
+  return { data: { success: true, savedNote } }
 }
 
 // --- Finalize note ---
 
-export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType) {
+export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType, expectedSavedVersion?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -773,6 +792,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
+  if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
 
   if (visitType === 'pain_evaluation_visit') {
     const { data: currentInput, error: gatherError } = await gatherSourceData(
@@ -901,6 +921,7 @@ export async function regenerateNoteSection(
   visitType: NoteVisitType,
   section: InitialVisitSection,
   findingFix?: { message: string; rationale: string | null },
+  expectedUpdatedAt?: string | null,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -919,6 +940,7 @@ export async function regenerateNoteSection(
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
+  if (expectedUpdatedAt && note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Reload before regenerating.' }
 
   const noteVisitDate = (note.visit_date as string | null | undefined) ?? null
   const { data: inputData, error: gatherError } = await gatherSourceData(
@@ -950,15 +972,15 @@ export async function regenerateNoteSection(
       checked.data,
       inputData.prpTargetEvidence,
     )
-    const { error: updateError } = await supabase.from('initial_visit_notes').update({
+    const { data: persisted, error: updateError } = await supabase.from('initial_visit_notes').update({
       treatment_plan: content,
       prp_target_recommendations: checked.data,
       prp_target_evidence_hash: computePrpTargetEvidenceHash(inputData),
       updated_by_user_id: user.id,
-    }).eq('id', note.id)
+    }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('*').single()
     if (updateError) return { error: 'Failed to update Treatment Plan' }
     revalidatePath(`/patients/${caseId}`)
-    return { data: { content } }
+    return { data: { content, savedNote: persisted as Record<string, unknown> } }
   }
 
   // Build otherSections context — every non-target section present on the
@@ -1008,7 +1030,7 @@ export async function regenerateNoteSection(
     [section]: result.data,
   }
 
-  const { error: updateError } = await supabase
+  const { data: persisted, error: updateError } = await supabase
     .from('initial_visit_notes')
     .update({
       [section]: result.data,
@@ -1018,12 +1040,12 @@ export async function regenerateNoteSection(
     .eq('id', note.id)
     .eq('status', 'draft')
     .eq('updated_at', note.updated_at)
-    .select('id').single()
+    .select('*').single()
 
   if (updateError) return { error: 'Note changed or could not be saved. Refresh and try again.' }
 
   revalidatePath(`/patients/${caseId}`)
-  return { data: { content: result.data } }
+  return { data: { content: persisted?.[section] as string ?? result.data, savedNote: persisted as Record<string, unknown> } }
 }
 
 // --- Check prerequisites ---

@@ -1,3 +1,4 @@
+import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { callClaudeTool } from '@/lib/claude/client'
@@ -489,7 +490,7 @@ Para 3: Return instructions — if symptoms recur, worsen, or new neurologic def
 Reference: "The PRP injection therapy is complete, and no additional PRP injections are indicated at this time..."
 
 10. patient_education (~1 paragraph):
-Detailed education on long-term recovery expectations, importance of continued rehab, activity modification, proper body mechanics. Red-flag symptoms counseling (worsening pain, numbness, weakness, gait changes, bowel/bladder dysfunction). Patient participation and understanding statement.
+Detailed education on long-term recovery expectations, importance of continued rehab, activity modification, proper body mechanics. Red-flag symptoms counseling (worsening pain, numbness, weakness, gait changes, bowel/bladder dysfunction). Describe participation or understanding only when explicitly documented for this encounter.
 Reference: "The patient received detailed education regarding long-term recovery expectations following PRP therapy..."
 
 11. prognosis (~2-3 sentences):
@@ -564,7 +565,7 @@ export async function generateDischargeNoteFromData(
   return callClaudeTool<DischargeNoteResult>({
     model: 'claude-opus-4-6',
     maxTokens: 16384,
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_PROMPT + VISIT_DECISION_PROMPT,
     cacheSystem: true,
     tools: [DISCHARGE_NOTE_TOOL],
     toolName: 'generate_discharge_note',
@@ -572,7 +573,7 @@ export async function generateDischargeNoteFromData(
     parse: (raw) => {
       const validated = dischargeNoteResultSchema.safeParse(raw)
       return validated.success
-        ? { success: true, data: validated.data }
+        ? validateVisitDecisionOutput(validated.data)
         : { success: false, error: validated.error }
     },
     onProgress,
@@ -636,7 +637,7 @@ export async function regenerateDischargeNoteSection(
     model: 'claude-opus-4-6',
     fallbackModel: 'claude-sonnet-4-6',
     maxTokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_PROMPT + VISIT_DECISION_PROMPT,
     cacheSystem: true,
     tools: [SECTION_REGEN_TOOL],
     toolName: 'regenerate_section',
@@ -644,7 +645,7 @@ export async function regenerateDischargeNoteSection(
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
       return validated.success
-        ? { success: true, data: validated.data }
+        ? validateVisitDecisionOutput(validated.data)
         : { success: false, error: validated.error }
     },
   })

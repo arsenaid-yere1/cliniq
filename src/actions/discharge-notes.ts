@@ -1,5 +1,7 @@
 'use server'
 
+import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
+
 import { resetDraftClinicalNote } from '@/actions/clinical-reset'
 
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
@@ -750,10 +752,10 @@ export async function generateDischargeNote(
     .is('deleted_at', null)
     .maybeSingle()
 
-  // Concurrent-generation guard. Discharge uses a soft-delete + re-insert
-  // pattern (not update-in-place), so the row-level lock helper does not
-  // apply directly. Instead, reject when the existing row is already in
-  // 'generating' state and was updated within the stale-recovery window.
+  // Keep the same visit row and its server-owned reviewed decision.
+  if (existingNote?.status === 'finalized') return { error: 'Reset the finalized note before regenerating.' }
+
+  // Reject active generation; stale attempts can be reclaimed by version.
   if (existingNote && existingNote.status === 'generating') {
     const updatedAt = existingNote.updated_at ? new Date(existingNote.updated_at) : null
     const staleBoundary = new Date(Date.now() - 5 * 60_000)
@@ -812,59 +814,51 @@ export async function generateDischargeNote(
     }
   }
 
-  // Soft-delete existing discharge note for this case
-  await supabase
-    .from('discharge_notes')
-    .update({ deleted_at: new Date().toISOString(), updated_by_user_id: user.id })
-    .eq('case_id', caseId)
-    .eq('episode_id', episodeId)
-    .is('deleted_at', null)
-
-  // Insert generating record — carry forward preserved vitals so the provider's
-  // entries survive regeneration.
+  // Claim an existing draft in place so regeneration retains the decision baseline.
   const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
     .eq('id', caseId).is('deleted_at', null).single()
   const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
     encounterDate: effectiveVisitDate, providerId: clinicalCase?.assigned_provider_id, userId: user.id,
   }, supabase)
   const sourceHash = computeSourceHash(inputData)
-  const { data: record, error: insertError } = await supabase
-    .from('discharge_notes')
-    .insert({
-      case_id: caseId,
-      episode_id: ownership.episodeId,
-      encounter_id: ownership.encounterId,
-      status: 'generating',
-      generation_attempts: 1,
-      source_data_hash: sourceHash,
-      sections_done: 0,
-      sections_total: DISCHARGE_NOTE_SECTIONS_TOTAL,
-      visit_date: effectiveVisitDate,
-      bp_systolic: preservedVitals?.bp_systolic ?? null,
-      bp_diastolic: preservedVitals?.bp_diastolic ?? null,
-      heart_rate: preservedVitals?.heart_rate ?? null,
-      respiratory_rate: preservedVitals?.respiratory_rate ?? null,
-      temperature_f: preservedVitals?.temperature_f ?? null,
-      spo2_percent: preservedVitals?.spo2_percent ?? null,
-      pain_score_min: preservedVitals?.pain_score_min ?? null,
-      pain_score_max: preservedVitals?.pain_score_max ?? null,
-      discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
-      discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
-      discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
-      pain_trajectory_text: inputData.painTrajectoryText,
-      tone_hint: effectiveToneHint,
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select('id')
-    .single()
+  const generationPatch = {
+    case_id: caseId,
+    episode_id: ownership.episodeId,
+    encounter_id: ownership.encounterId,
+    status: 'generating',
+    generation_attempts: 1,
+    source_data_hash: sourceHash,
+    sections_done: 0,
+    sections_total: DISCHARGE_NOTE_SECTIONS_TOTAL,
+    visit_date: effectiveVisitDate,
+    bp_systolic: preservedVitals?.bp_systolic ?? null,
+    bp_diastolic: preservedVitals?.bp_diastolic ?? null,
+    heart_rate: preservedVitals?.heart_rate ?? null,
+    respiratory_rate: preservedVitals?.respiratory_rate ?? null,
+    temperature_f: preservedVitals?.temperature_f ?? null,
+    spo2_percent: preservedVitals?.spo2_percent ?? null,
+    pain_score_min: preservedVitals?.pain_score_min ?? null,
+    pain_score_max: preservedVitals?.pain_score_max ?? null,
+    discharge_pain_estimate_min: inputData.dischargePainEstimateMin,
+    discharge_pain_estimate_max: inputData.dischargePainEstimateMax,
+    discharge_pain_estimated: inputData.dischargeVisitPainEstimated,
+    pain_trajectory_text: inputData.painTrajectoryText,
+    tone_hint: effectiveToneHint,
+    updated_by_user_id: user.id,
+  } as const
+  const claim = existingNote
+    ? supabase.from('discharge_notes').update(generationPatch)
+        .eq('id', existingNote.id).eq('updated_at', existingNote.updated_at)
+        .eq('status', existingNote.status).is('deleted_at', null)
+    : supabase.from('discharge_notes').insert({ ...generationPatch, created_by_user_id: user.id })
+  const { data: record, error: insertError } = await claim.select('id').single()
 
   if (insertError || !record) {
     revalidatePath(`/patients/${caseId}/discharge`)
     if (insertError?.code === '23505') {
       return { error: 'Generation already in progress — please wait a moment and try again.' }
     }
-    return { error: 'Failed to create note record' }
+    return { error: existingNote ? 'The note changed. Reload before regenerating.' : 'Failed to create note record' }
   }
 
   // Throttled progress writer — coalesce Anthropic SDK inputJson events to
@@ -989,24 +983,33 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   if (closedCheck.error) return { error: closedCheck.error }
 
   const validated = dischargeNoteEditSchema.safeParse(values)
-  if (!validated.success) return { error: 'Invalid form data' }
+  if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid form data' }
 
   const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
   if (!episodeId) return { error: 'Care episode not found' }
   const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
   if (correctionCheck.error) return { error: correctionCheck.error }
-  const { error } = await supabase
-    .from('discharge_notes')
-    .update({
-      ...validated.data,
-      updated_by_user_id: user.id,
-    })
-    .eq('case_id', caseId)
-    .eq('episode_id', episodeId)
-    .is('deleted_at', null)
-    .eq('status', 'draft')
+  let savedNote: Record<string, unknown> | undefined
+  if (validated.data.treatment_decision) {
+    const result = await saveVisitDecision(supabase, 'discharge_notes', caseId, { column: 'episode_id', value: episodeId }, validated.data)
+    if (result.error) return { error: result.error }
+    savedNote = result.savedNote
+  } else {
+    const { treatment_decision: _decision, expected_updated_at: _version, ...legacyValues } = validated.data
+    void _decision; void _version
+    const { error } = await supabase
+      .from('discharge_notes')
+      .update({
+        ...legacyValues,
+        updated_by_user_id: user.id,
+      })
+      .eq('case_id', caseId)
+      .eq('episode_id', episodeId)
+      .is('deleted_at', null)
+      .eq('status', 'draft')
 
-  if (error) return { error: 'Failed to save note' }
+    if (error) return { error: 'Failed to save note' }
+  }
 
   // Manual section edits can introduce off-chain pain values (e.g. a bare
   // "5/10" in subjective when the deterministic chain only contains "2-5",
@@ -1015,23 +1018,32 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   // also reasserted; on unchanged source data they settle to the same values.
   const { data: row } = await supabase
     .from('discharge_notes')
-    .select('id')
+    .select('*')
     .eq('case_id', caseId)
     .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .maybeSingle()
+  if (!row && savedNote) return { error: 'Draft saved, but the note is no longer editable. Reload before signing.' }
   if (row) {
-    await refreshDischargeTrajectory(caseId, row.id, { userId: user.id })
+    const refresh = await refreshDischargeTrajectory(caseId, row.id, {
+      userId: user.id,
+      ...(savedNote ? { expectedUpdatedAt: savedNote.updated_at as string } : {}),
+    })
+    if (savedNote) {
+      if (refresh.error || !refresh.data) return { error: 'Draft saved, but the note changed or its trajectory could not be refreshed. Reload before signing.' }
+      const { data: refreshed } = await supabase.from('discharge_notes').select('*').eq('id', row.id).eq('updated_at', refresh.data.updatedAt).single()
+      if (!refreshed) return { error: 'Draft saved, but the note changed again. Reload before signing.' }
+      savedNote = refreshed as unknown as Record<string, unknown>
+    }
   }
-
   revalidatePath(`/patients/${caseId}/discharge`)
-  return { data: { success: true } }
+  return { data: { success: true, savedNote } }
 }
 
 // --- Finalize note ---
 
-export async function finalizeDischargeNote(caseId: string) {
+export async function finalizeDischargeNote(caseId: string, expectedSavedVersion?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1053,6 +1065,7 @@ export async function finalizeDischargeNote(caseId: string) {
     .maybeSingle()
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
+  if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
   if (note.status === 'finalized') return { data: { success: true, replayed: true } }
   if (note.status !== 'draft') return { error: 'No draft note found to finalize' }
 
@@ -1122,7 +1135,7 @@ export async function finalizeDischargeNote(caseId: string) {
 
   if (updateError) {
     await removeUnreferencedGeneratedDocument(supabase, doc.id, storagePath, user.id)
-    return { error: (updateError.message.includes('Resolve open') || updateError.message.includes('changed; review')) ? updateError.message : 'Failed to finalize note' }
+    return { error: (updateError.message.includes('Resolve open') || updateError.message.includes('changed')) ? updateError.message : 'Failed to finalize note' }
   }
 
   revalidatePath(`/patients/${caseId}/discharge`)
@@ -1246,12 +1259,14 @@ export async function saveDischargeCorrection(
   const authorization = await getDischargeCorrectionAuthorization(supabase, caseId, user.id)
   if (!authorization.allowed) return { error: authorization.error ?? 'Not authorized' }
 
+  const { treatment_decision: _decision, expected_updated_at: _version, ...correctionValues } = validated.data
+  void _decision; void _version
   const { error } = await supabase.rpc('save_discharge_correction', {
     p_case_id: caseId,
     p_episode_id: episodeId,
     p_note_id: noteId,
     p_correction_id: correctionId,
-    p_values: validated.data as Json,
+    p_values: correctionValues as Json,
   })
   if (error) return { error: dischargeCorrectionRpcError(error.message, 'Unable to save discharge correction') }
 
@@ -1371,6 +1386,7 @@ export async function regenerateDischargeNoteSectionAction(
   caseId: string,
   section: DischargeNoteSection,
   findingFix?: { message: string; rationale: string | null },
+  expectedUpdatedAt?: string | null,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1394,6 +1410,7 @@ export async function regenerateDischargeNoteSectionAction(
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
+  if (expectedUpdatedAt && note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Reload before regenerating.' }
 
   // Gather fresh source data (preserve the note's existing visit_date).
   // Thread the row's provider-entered discharge vitals through as
@@ -1456,7 +1473,9 @@ export async function regenerateDischargeNoteSectionAction(
   if (refreshRes.error) return { error: refreshRes.error }
 
   revalidatePath(`/patients/${caseId}/discharge`)
-  return { data: { content: result.data } }
+  const { data: persisted } = await supabase.from('discharge_notes').select('*').eq('id', note.id).eq('updated_at', refreshRes.data!.updatedAt).single()
+  if (!persisted) return { error: 'Note changed after regeneration. Reload before saving.' }
+  return { data: { content: persisted[section] as string ?? result.data, savedNote: persisted as Record<string, unknown> } }
 }
 
 // --- Reset ---

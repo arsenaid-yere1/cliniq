@@ -1,3 +1,4 @@
+import { visitDecisionEditFields } from './visit-treatment-decision'
 import { z } from 'zod'
 import { prpTargetRecommendationSchema } from '@/lib/clinical/prp-target-evidence'
 
@@ -78,6 +79,7 @@ export type InitialVisitNoteResult = z.infer<typeof initialVisitNoteResultSchema
 // --- Provider edit form schema ---
 
 export const initialVisitNoteEditSchema = z.object({
+  ...visitDecisionEditFields,
   visit_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Visit date must be YYYY-MM-DD')

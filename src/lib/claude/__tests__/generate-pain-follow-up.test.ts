@@ -1,3 +1,4 @@
+import { painFollowUpNoteResultSchema } from '@/lib/validations/pain-follow-up-note'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 vi.mock('@/lib/claude/client', () => ({
@@ -79,5 +80,34 @@ describe('pain follow-up tool output normalization', () => {
     const secondId = (second.procedure_recommendations as Array<{ recommendation_id: string }>)[0].recommendation_id
     expect(firstId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
     expect(firstId).toBe(secondId)
+  })
+})
+
+
+describe('visit decision parser integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+  })
+  it('reserves current decisions for reviewed saves in full generation', async () => {
+    await generatePainFollowUp(source)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    const raw = Object.fromEntries(Object.keys(painFollowUpNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : '']))
+    for (const wording of ['The treatment plan was accepted by the patient.', 'The patient is agreeable to the proposed treatment plan.', 'The patient reviewed the options and has agreed to proceed.']) {
+      raw.patient_education = wording
+      expect(opts.parse(raw).success).toBe(false)
+    }
+    raw.patient_education = 'Review home exercise at follow-up.'
+    expect(opts.parse(raw).success).toBe(true)
+    expect(opts.system).toContain('Understanding is a separate fact')
+  })
+  it('also guards section regeneration', async () => {
+    await generatePainFollowUp(source, { section: 'patient_education', message: 'Review education', rationale: null })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    const raw = Object.fromEntries(Object.keys(painFollowUpNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : '']))
+    for (const wording of ['The treatment plan was accepted by the patient.', 'The patient is agreeable to the proposed treatment plan.', 'The patient reviewed the options and has agreed to proceed.']) {
+      raw.patient_education = wording
+      expect(opts.parse(raw).success).toBe(false)
+    }
   })
 })

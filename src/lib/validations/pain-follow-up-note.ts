@@ -1,3 +1,4 @@
+import { visitDecisionEditFields } from './visit-treatment-decision'
 import { z } from 'zod'
 import { SCHEDULABLE_PROCEDURE_TYPES } from '@/lib/constants/procedure-scheduling'
 
@@ -59,6 +60,8 @@ export const painFollowUpNoteResultSchema = z.object({
 })
 
 export const painFollowUpNoteEditSchema = painFollowUpNoteResultSchema.extend({
+  ...visitDecisionEditFields,
+  reviewed_visit_date: z.string().nullable().optional(),
   encounter_id: z.string().uuid(),
 }).superRefine((value, context) => {
   const recommendationIds = value.procedure_recommendations.map(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { createMockSupabase, mockTableResults, type MockSupabaseClient } from '@/test-utils/supabase-mock'
+import { createMockSupabase, createMockQueryBuilder, mockTableResults, type MockSupabaseClient } from '@/test-utils/supabase-mock'
 import { TEST_CASE_ID } from '@/test-utils/fixtures'
 
 // ---- Mocks ----
@@ -35,6 +35,7 @@ vi.mock('@/lib/claude/generate-discharge-note', async () => {
   )
   return {
     ...actual,
+    generateDischargeNoteFromData: vi.fn(async () => ({ data: { plan_and_recommendations: 'Changed plan', patient_education: 'New education' }, rawResponse: {} })),
     regenerateDischargeNoteSection: vi.fn(async () => ({ data: 'regen text', rawResponse: {} })),
   }
 })
@@ -47,7 +48,8 @@ vi.mock('@/actions/case-status', () => ({
 
 // ---- SUT ----
 
-import { regenerateDischargeNoteSectionAction } from '../discharge-notes'
+import { generateDischargeNote, regenerateDischargeNoteSectionAction } from '../discharge-notes'
+import { generateDischargeNoteFromData } from '@/lib/claude/generate-discharge-note'
 import { buildDischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 
 // ---- Tests ----
@@ -173,5 +175,47 @@ describe('regenerateDischargeNoteSectionAction — dischargeVitals wiring', () =
       .value as ReturnType<typeof buildDischargePainTrajectory>
     expect(builderResult.dischargeEstimated).toBe(false)
     expect(builderResult.dischargeEntry?.max).toBe(2)
+  })
+})
+
+// Exercise full generation against a stateful note row: mutations must retain
+// metadata by leaving it on the existing row, never copying it into an insert.
+vi.mock('@/lib/clinical/episode-context', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/clinical/episode-context')>('@/lib/clinical/episode-context')
+  return { ...actual, ensureEpisodeEncounter: vi.fn(async () => ({ episodeId: 'episode', encounterId: 'encounter' })) }
+})
+describe('full discharge regeneration preserves the reviewed response', () => {
+  beforeEach(() => { mockSupabase = createMockSupabase(); vi.clearAllMocks() })
+  it.each(['declined', 'deferred', 'partially_accepted', 'not_documented'])('retains %s and its old reviewed plan on the active row', async (decision) => {
+    const metadata = { schema_version: 1, decision, details: 'Exercise only', reviewed_plan: 'Old plan', reviewed_plan_hash: 'old-hash', confirmed_at: 'original confirmation' }
+    const row: Record<string, unknown> = { id: 'note-id', status: 'draft', updated_at: 'v1', visit_date: '2026-09-10', pain_score_max: 2, plan_and_recommendations: 'Old plan', visit_treatment_decision: metadata }
+    const updates: Record<string, unknown>[] = []
+    const inserts = vi.fn()
+    const noteQueries: ReturnType<typeof createMockQueryBuilder>[] = []
+    const results: Record<string, unknown> = {
+      care_episodes: { id: 'episode', case_id: TEST_CASE_ID, status: 'active' },
+      clinical_encounters: [{ id: 'completed-visit' }],
+      cases: { case_number: 'C-1', patient: { first_name: 'A', last_name: 'B' } },
+      procedures: [], mri_extractions: [],
+    }
+    mockSupabase.from.mockImplementation((table: string) => {
+      const builder = createMockQueryBuilder({ data: table === 'discharge_notes' ? { ...row } : results[table] ?? null, error: null })
+      if (table === 'discharge_notes') {
+        noteQueries.push(builder)
+        builder.insert.mockImplementation(inserts)
+        builder.update.mockImplementation((patch: Record<string, unknown>) => { updates.push(patch); Object.assign(row, patch); return builder })
+      }
+      return builder
+    })
+    const result = await generateDischargeNote(TEST_CASE_ID)
+    expect(result.error).toBeUndefined()
+    expect(result.data?.id).toBe('note-id')
+    expect(generateDischargeNoteFromData).toHaveBeenCalled()
+    expect(inserts).not.toHaveBeenCalled()
+    expect(updates.every(patch => !('deleted_at' in patch) && !('visit_treatment_decision' in patch))).toBe(true)
+    expect(row).toMatchObject({ status: 'draft', plan_and_recommendations: 'Changed plan', visit_treatment_decision: metadata })
+    const claim = noteQueries.find(query => query.update.mock.calls.some(([patch]: [Record<string, unknown>]) => patch.status === 'generating'))!
+    expect(claim.eq).toHaveBeenCalledWith('updated_at', 'v1')
+    expect(claim.eq).toHaveBeenCalledWith('status', 'draft')
   })
 })

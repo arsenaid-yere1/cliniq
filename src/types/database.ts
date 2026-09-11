@@ -1530,6 +1530,7 @@ export type Database = {
           updated_at: string
           updated_by_user_id: string | null
           visit_date: string | null
+          visit_treatment_decision: Json | null
         }
         Insert: {
           ai_model?: string | null
@@ -1578,6 +1579,7 @@ export type Database = {
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
+          visit_treatment_decision?: Json | null
         }
         Update: {
           ai_model?: string | null
@@ -1626,6 +1628,7 @@ export type Database = {
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
+          visit_treatment_decision?: Json | null
         }
         Relationships: [
           {
@@ -1924,6 +1927,7 @@ export type Database = {
           updated_at: string
           updated_by_user_id: string | null
           visit_date: string | null
+          visit_treatment_decision: Json | null
           visit_type: string
         }
         Insert: {
@@ -1969,6 +1973,7 @@ export type Database = {
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
+          visit_treatment_decision?: Json | null
           visit_type?: string
         }
         Update: {
@@ -2014,6 +2019,7 @@ export type Database = {
           updated_at?: string
           updated_by_user_id?: string | null
           visit_date?: string | null
+          visit_treatment_decision?: Json | null
           visit_type?: string
         }
         Relationships: [
@@ -2726,6 +2732,7 @@ export type Database = {
           treatment_plan: string | null
           updated_at: string
           updated_by_user_id: string | null
+          visit_treatment_decision: Json | null
         }
         Insert: {
           ai_model?: string | null
@@ -2761,6 +2768,7 @@ export type Database = {
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
+          visit_treatment_decision?: Json | null
         }
         Update: {
           ai_model?: string | null
@@ -2796,6 +2804,7 @@ export type Database = {
           treatment_plan?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
+          visit_treatment_decision?: Json | null
         }
         Relationships: [
           {
@@ -4503,6 +4512,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      save_visit_note_decision: {
+        Args: {
+          p_kind: string
+          p_note_id: string
+          p_case_id: string
+          p_expected_updated_at: string
+          p_patch: Json
+          p_decision: Json
+        }
+        Returns: Json
+      }
       preview_clinical_reset: { Args: { p_case_id: string; p_episode_id?: string }; Returns: Json }
       apply_clinical_reset: { Args: { p_request: Json }; Returns: string }
       finish_clinical_note: { Args: { p_kind: string; p_note_id: string; p_case_id: string; p_document_id: string; p_expected_updated_at: string }; Returns: string }

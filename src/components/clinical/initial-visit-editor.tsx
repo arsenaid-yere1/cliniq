@@ -1,8 +1,12 @@
 'use client'
 
+import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
+import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
+import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
+
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -77,6 +81,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
+  visit_treatment_decision?: unknown
   id: string
   case_id: string
   introduction: string | null
@@ -1380,6 +1385,8 @@ function DraftEditor({
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
     defaultValues: {
+      treatment_decision: visitDecisionDraft(note.visit_treatment_decision),
+      expected_updated_at: note.updated_at,
       visit_date: note.visit_date ?? new Date().toISOString().slice(0, 10),
       introduction: note.introduction || '',
       history_of_accident: note.history_of_accident || '',
@@ -1400,6 +1407,25 @@ function DraftEditor({
     },
   })
 
+  const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
+  const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
+  const acknowledgeVersion = useVisitNoteVersion(note, initialVisitSections, setVersion)
+  function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
+    if (!saved) return
+    acknowledgeVersion(saved)
+    setSavedDecision(saved.visit_treatment_decision)
+    form.setValue('expected_updated_at', saved.updated_at as string)
+    if (!regeneratedSection || regeneratedSection === 'patient_education') {
+      form.setValue('patient_education', saved.patient_education as string)
+    } else if (regeneratedSection === 'treatment_plan') {
+      const decision = parseVisitDecision(saved.visit_treatment_decision)
+      if (decision && normalizeVisitPlan(form.getValues('treatment_plan')) !== decision.reviewed_plan) {
+        // Preserve clinician prose; only remove our now-stale decision fragment.
+        const closing = visitDecisionClosing(decision)
+        if (closing) form.setValue('patient_education', form.getValues('patient_education').replace(closing, '').trim())
+      }
+    }
+  }
   const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
 
   function handleSave() {
@@ -1407,7 +1433,7 @@ function DraftEditor({
       const values = form.getValues()
       const result = await saveInitialVisitNote(caseId, visitType, values)
       if (result.error) toast.error(result.error)
-      else toast.success('Draft saved')
+      else { acceptSavedNote(result.data?.savedNote); toast.success('Draft saved') }
     })
   }
 
@@ -1420,11 +1446,12 @@ function DraftEditor({
   function handleRegenerate(section: InitialVisitSection) {
     setRegeneratingSection(section)
     startTransition(async () => {
-      const result = await regenerateNoteSection(caseId, visitType, section)
+      const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'))
       if (result.error) {
         toast.error(result.error)
       } else if (result.data?.content) {
         form.setValue(section, result.data.content)
+        acceptSavedNote(result.data.savedNote ?? undefined, section)
         toast.success(`${sectionLabels[section]} regenerated`)
       }
       setRegeneratingSection(null)
@@ -1484,7 +1511,8 @@ function DraftEditor({
                         toast.error(saveResult.error)
                         return
                       }
-                      const result = await finalizeInitialVisitNote(caseId, visitType)
+                      acceptSavedNote(saveResult.data?.savedNote)
+                      const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string)
                       if (result.error) toast.error(result.error)
                       else toast.success('Note finalized')
                     })
@@ -1513,6 +1541,12 @@ function DraftEditor({
         <TabsContent value="note" className="mt-4">
           <Form {...form}>
             <form className="space-y-6">
+              <VisitTreatmentDecisionFields
+                value={form.watch('treatment_decision') ?? visitDecisionDraft(savedDecision)}
+                onChange={(value) => form.setValue('treatment_decision', value)}
+                saved={savedDecision} plan={form.watch('treatment_plan')} visitDate={form.watch('visit_date')}
+                education={form.watch('patient_education')} disabled={isLocked || isPending} historical={false}
+              />
               <ToneDirectionCard
                 value={toneHint}
                 onChange={setToneHint}
@@ -1568,7 +1602,7 @@ function DraftEditor({
                           {...field}
                           rows={sectionRows[section]}
                           className="resize-y"
-                          disabled={isLocked}
+                          disabled={isLocked || isPending}
                         />
                       </FormControl>
                       <FormMessage />
@@ -1682,6 +1716,7 @@ function FinalizedView({
         </TabsList>
 
         <TabsContent value="note" className="mt-4">
+      <VisitTreatmentDecisionFields value={visitDecisionDraft(note.visit_treatment_decision)} onChange={() => {}} saved={note.visit_treatment_decision} plan={note.treatment_plan ?? ''} visitDate={note.visit_date} historical />
           {/* Document */}
           <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">
 

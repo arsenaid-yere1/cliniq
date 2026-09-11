@@ -1,3 +1,4 @@
+import { dischargeNoteResultSchema } from '@/lib/validations/discharge-note'
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 
 vi.mock('@/lib/claude/client', () => ({
@@ -436,5 +437,32 @@ describe('FINAL-INTERVAL REGRESSION OVERRIDE + SERIES VOLATILITY', () => {
     const opts = (callClaudeTool as unknown as Mock).mock.calls[0][0]
     const payload = opts.messages[0].content as string
     expect(payload).toContain('"seriesVolatility": "insufficient_data"')
+  })
+})
+
+
+describe('visit decision parser integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ data: {}, rawResponse: {} })
+  })
+  it('reserves current decisions for reviewed saves in full generation', async () => {
+    await generateDischargeNoteFromData(emptyInput)
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    const raw = Object.fromEntries(Object.keys(dischargeNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : '']))
+    for (const wording of ['The treatment plan was accepted by the patient.', 'The patient is agreeable to the proposed treatment plan.', 'The patient reviewed the options and has agreed to proceed.']) {
+      raw.patient_education = wording
+      expect(opts.parse(raw).success).toBe(false)
+    }
+    raw.patient_education = 'Review home exercise at follow-up.'
+    expect(opts.parse(raw).success).toBe(true)
+    expect(opts.system).toContain('Understanding is a separate fact')
+  })
+  it('also guards section regeneration', async () => {
+    await regenerateDischargeNoteSection(emptyInput, 'patient_education', '')
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    for (const content of ['The treatment plan was accepted by the patient.', 'The patient is agreeable to the proposed treatment plan.', 'The patient reviewed the options and has agreed to proceed.']) {
+      expect(opts.parse({ content }).success).toBe(false)
+    }
   })
 })

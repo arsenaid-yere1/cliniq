@@ -33,6 +33,7 @@ interface RefreshOptions {
 }
 
 interface RefreshResult {
+  updatedAt: string
   validation: TrajectoryValidationResult
   painTrajectoryText: string | null
 }
@@ -136,13 +137,13 @@ export async function refreshDischargeTrajectory(
   }
   if (opts.userId) update.updated_by_user_id = opts.userId
 
-  const { error: updErr } = await supabase
+  const { data: updated, error: updErr } = await supabase
     .from('discharge_notes')
     .update(update)
     .eq('id', noteId)
     .eq('updated_at', rawNote.updated_at)
-    .select('id').single()
-  if (updErr) return { error: 'Failed to refresh trajectory' }
+    .select('updated_at').single()
+  if (updErr || !updated) return { error: 'Failed to refresh trajectory' }
 
   if (validation.warnings.length > 0) {
     console.warn('[discharge-note] trajectory refresh warnings', {
@@ -161,6 +162,7 @@ export async function refreshDischargeTrajectory(
 
   return {
     data: {
+      updatedAt: updated.updated_at,
       validation,
       painTrajectoryText: inputData.painTrajectoryText ?? null,
     },

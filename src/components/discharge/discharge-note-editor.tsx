@@ -1,8 +1,12 @@
 'use client'
 
+import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
+import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
+import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
+
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -71,6 +75,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
+  visit_treatment_decision?: unknown
   id: string
   case_id: string
   subjective: string | null
@@ -462,12 +467,33 @@ function DraftEditor({
   const form = useForm<DischargeNoteEditValues>({
     resolver: zodResolver(dischargeNoteEditSchema),
     defaultValues: {
+      treatment_decision: visitDecisionDraft(note.visit_treatment_decision),
+      expected_updated_at: note.updated_at,
       visit_date: note.visit_date ?? new Date().toISOString().slice(0, 10),
       ...(Object.fromEntries(
         dischargeNoteSections.map((s) => [s, note[s] || ''])
-      ) as Omit<DischargeNoteEditValues, 'visit_date'>),
+      ) as Omit<DischargeNoteEditValues, 'visit_date' | 'treatment_decision' | 'expected_updated_at'>),
     },
   })
+  const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
+  const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
+  const acknowledgeVersion = useVisitNoteVersion(note, dischargeNoteSections, setVersion)
+  function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
+    if (!saved) return
+    acknowledgeVersion(saved)
+    setSavedDecision(saved.visit_treatment_decision)
+    form.setValue('expected_updated_at', saved.updated_at as string)
+    if (!regeneratedSection || regeneratedSection === 'patient_education') {
+      form.setValue('patient_education', saved.patient_education as string)
+    } else if (regeneratedSection === 'plan_and_recommendations') {
+      const decision = parseVisitDecision(saved.visit_treatment_decision)
+      if (decision && normalizeVisitPlan(form.getValues('plan_and_recommendations')) !== decision.reviewed_plan) {
+        // Preserve clinician prose; only remove our now-stale decision fragment.
+        const closing = visitDecisionClosing(decision)
+        if (closing) form.setValue('patient_education', form.getValues('patient_education').replace(closing, '').trim())
+      }
+    }
+  }
   const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
   const [timeline, setTimeline] = useState<{
     trajectory: DischargePainTrajectory | null
@@ -523,11 +549,13 @@ function DraftEditor({
   function handleSave() {
     startTransition(async () => {
       const values = form.getValues()
+      if (correction) { delete values.treatment_decision; delete values.expected_updated_at }
       const result = correction
         ? await saveDischargeCorrection(caseId, episodeId, note.id, correction.id, values)
         : await saveDischargeNote(caseId, values)
       if (result.error) toast.error(result.error)
       else {
+        if (!correction && result.data && 'savedNote' in result.data) acceptSavedNote(result.data.savedNote as Record<string, unknown> | undefined)
         toast.success(correction ? 'Correction saved' : 'Draft saved')
         // Visit-date on the form may have changed, which shifts the
         // discharge-entry day-offset in the trajectory. Refetch so the
@@ -546,11 +574,12 @@ function DraftEditor({
   function handleRegenerate(section: DischargeNoteSection) {
     setRegeneratingSection(section)
     startTransition(async () => {
-      const result = await regenerateDischargeNoteSectionAction(caseId, section)
+      const result = await regenerateDischargeNoteSectionAction(caseId, section, undefined, form.getValues('expected_updated_at'))
       if (result.error) {
         toast.error(result.error)
       } else if (result.data?.content) {
         form.setValue(section, result.data.content)
+        acceptSavedNote(result.data.savedNote ?? undefined, section)
         toast.success(`${dischargeNoteSectionLabels[section]} regenerated`)
         // Source data (vitals / procedures / extractions) may have
         // changed between generation and this regen; refresh the
@@ -628,7 +657,8 @@ function DraftEditor({
                         toast.error(saveResult.error)
                         return
                       }
-                      const result = await finalizeDischargeNote(caseId)
+                      acceptSavedNote(saveResult.data?.savedNote)
+                      const result = await finalizeDischargeNote(caseId, saveResult.data?.savedNote?.updated_at as string)
                       if (result.error) toast.error(result.error)
                       else toast.success('Discharge summary finalized')
                     })
@@ -739,7 +769,13 @@ function DraftEditor({
 
       <Form {...form}>
         <form className="space-y-6">
-          {!isCorrection && <ToneDirectionCard
+          <VisitTreatmentDecisionFields
+                value={form.watch('treatment_decision') ?? visitDecisionDraft(savedDecision)}
+                onChange={(value) => form.setValue('treatment_decision', value)}
+                saved={savedDecision} plan={form.watch('plan_and_recommendations')} visitDate={form.watch('visit_date')}
+                education={form.watch('patient_education')} disabled={editingDisabled || isCorrection} historical={isCorrection}
+              />
+              {!isCorrection && <ToneDirectionCard
             value={toneHint}
             onChange={setToneHint}
             onBlur={handleToneHintBlur}
@@ -1019,6 +1055,7 @@ function FinalizedView({
         </Card>
       )}
 
+      <VisitTreatmentDecisionFields value={visitDecisionDraft(note.visit_treatment_decision)} onChange={() => {}} saved={note.visit_treatment_decision} plan={note.plan_and_recommendations ?? ''} visitDate={note.visit_date} historical />
       {/* Document */}
       <div className="border rounded-lg p-8 bg-card text-card-foreground max-w-4xl mx-auto space-y-6">
 

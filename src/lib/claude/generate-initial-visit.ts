@@ -1,3 +1,4 @@
+import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { callClaudeTool } from '@/lib/claude/client'
@@ -242,7 +243,7 @@ Reference tone: "Re-evaluation following imaging to review results and reassess 
 Do NOT include PRP injection protocol. Do NOT include cost estimates. Do NOT collapse the sub-headings into a single paragraph. Do NOT emit additional sub-headings beyond these four.
 
 13. PATIENT EDUCATION (~1 paragraph):
-State that the patient was educated on: the biomechanics of their injury, the importance of diagnostic imaging for accurate diagnosis, red-flag symptoms to monitor (progressive neurological deficits, bowel/bladder changes, severe worsening), conservative care expectations, activity modification and ergonomic strategies, medication guidance, and the importance of compliance with the prescribed treatment program. End with "The patient verbalized understanding." Keep to ONE paragraph. Do NOT mention PRP or regenerative therapy education.
+State that the patient was educated on: the biomechanics of their injury, the importance of diagnostic imaging for accurate diagnosis, red-flag symptoms to monitor (progressive neurological deficits, bowel/bladder changes, severe worsening), conservative care expectations, activity modification and ergonomic strategies, medication guidance, and the importance of compliance with the prescribed treatment program. Include an understanding statement only if explicitly documented for this encounter. Keep to ONE paragraph. Do NOT mention PRP or regenerative therapy education.
 
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded but favorable given early clinical presentation and absence of neurological compromise. Outcome will depend on diagnostic imaging results, response to conservative treatment, and adherence to the prescribed rehabilitation program."
@@ -349,7 +350,7 @@ Para 4 — Medication management, monitoring, and escalation: In a single paragr
 The entire treatment plan should be approximately one full page.
 
 13. PATIENT EDUCATION (~1 paragraph):
-State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. End with "The patient verbalized understanding." Keep to ONE paragraph.
+State that the patient was advised on home exercises, conservative care, nature of injuries, PRP mechanism (briefly — do NOT name specific growth factors like PDGF, TGF-β, VEGF, IGF), expected post-injection course, ergonomic strategies, and prevention of chronic pain. Include an understanding statement only if explicitly documented for this encounter. Keep to ONE paragraph.
 
 14. PROGNOSIS (~2 sentences):
 "Prognosis is guarded to fair given ongoing symptoms and MRI-confirmed pathology. Outcome will depend on response to treatment and adherence to rehabilitation." That's the target length.
@@ -599,7 +600,7 @@ export async function generateInitialVisitFromData(
   rawResponse?: unknown
   error?: string
 }> {
-  const systemPrompt = buildSystemPrompt(visitType)
+  const systemPrompt = buildSystemPrompt(visitType) + VISIT_DECISION_PROMPT
 
   const visitLabel = visitType === 'initial_visit'
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
@@ -621,7 +622,7 @@ export async function generateInitialVisitFromData(
     parse: (raw) => {
       const validated = initialVisitNoteResultSchema.safeParse(raw)
       return validated.success
-        ? { success: true, data: validated.data }
+        ? validateVisitDecisionOutput(validated.data)
         : { success: false, error: validated.error }
     },
     onProgress,
@@ -654,7 +655,7 @@ export async function regenerateSection(
   otherSections?: Partial<Record<InitialVisitSection, string>>,
   findingFix?: { message: string; rationale: string | null },
 ): Promise<{ data?: string; error?: string }> {
-  const systemPrompt = buildSystemPrompt(visitType)
+  const systemPrompt = buildSystemPrompt(visitType) + VISIT_DECISION_PROMPT
   const sectionLabel = sectionLabels[section]
   const visitLabel = visitType === 'initial_visit'
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
@@ -698,7 +699,7 @@ export async function regenerateSection(
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
       return validated.success
-        ? { success: true, data: validated.data }
+        ? validateVisitDecisionOutput(validated.data)
         : { success: false, error: validated.error }
     },
   })
