@@ -10,7 +10,7 @@ select set_config('request.jwt.claim.sub','13000000-0000-4000-8000-000000000001'
 select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
 do $$
-declare cid uuid:='33000000-0000-4000-8000-000000000001'; eid uuid; enc uuid; nid uuid; k text; field text; n jsonb; saved jsonb; patch jsonb; version timestamptz; failed boolean; choice text; family text;
+declare cid uuid:='33000000-0000-4000-8000-000000000001'; eid uuid; enc uuid; nid uuid; k text; field text; n jsonb; saved jsonb; patch jsonb; version timestamptz; failed boolean; choice text; family text; repeat_save integer; expected_education text;
 begin
  select id into eid from care_episodes where case_id=cid;
  foreach family in array array['initial_visit','pain_evaluation_visit','discharge_notes','pain_follow_up_notes'] loop
@@ -46,6 +46,19 @@ begin
   failed:=false;
   begin execute format('update public.%I set visit_treatment_decision=null where id=$1',k) using nid; exception when insufficient_privilege then failed:=true; end;
   if not failed then raise exception 'Direct metadata mutation accepted'; end if;
+  -- Saving existing generated closings must not accumulate whitespace.
+  expected_education:='Home exercise was reviewed. The patient agreed to the treatment plan discussed at this visit, as outlined above.';
+  patch:=patch||jsonb_build_object('patient_education',E'Home exercise was reviewed.\r\n\n\t  '||private.visit_decision_closing(saved->'visit_treatment_decision'));
+  for repeat_save in 1..4 loop
+   saved:=public.save_visit_note_decision(k,nid,cid,(saved->>'updated_at')::timestamptz,patch,'{"decision":"accepted","details":null}');
+   if saved->>'patient_education' is distinct from expected_education then raise exception 'Decision spacing accumulated for % on save %',family,repeat_save; end if;
+   patch:=patch||jsonb_build_object('patient_education',saved->>'patient_education');
+  end loop;
+  -- Explicit unknown removes the closing and its separator, retaining prose.
+  saved:=public.save_visit_note_decision(k,nid,cid,(saved->>'updated_at')::timestamptz,patch,'{"decision":"not_documented","details":null}');
+  if saved->>'patient_education'<>'Home exercise was reviewed.' then raise exception 'Removing closing left whitespace'; end if;
+  patch:=patch||jsonb_build_object('patient_education',saved->>'patient_education');
+  saved:=public.save_visit_note_decision(k,nid,cid,(saved->>'updated_at')::timestamptz,patch,'{"decision":"accepted","details":null}');
   -- A generated section uses the existing decision only for its reviewed plan.
   execute format('update public.%I set patient_education=''Exercise reviewed.'',raw_ai_response='' {"patient_education":"Exercise reviewed."}''::jsonb where id=$1 returning to_jsonb(%I)',k,k) into n using nid;
   if n->>'patient_education' not like '%The patient agreed%' or n->'raw_ai_response'->>'patient_education' is distinct from n->>'patient_education' then raise exception 'Generated text/raw response lost parity'; end if;
