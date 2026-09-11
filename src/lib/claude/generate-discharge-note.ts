@@ -490,7 +490,7 @@ Para 3: Return instructions — if symptoms recur, worsen, or new neurologic def
 Reference: "The PRP injection therapy is complete, and no additional PRP injections are indicated at this time..."
 
 10. patient_education (~1 paragraph):
-Detailed education on long-term recovery expectations, importance of continued rehab, activity modification, proper body mechanics. Red-flag symptoms counseling (worsening pain, numbness, weakness, gait changes, bowel/bladder dysfunction). Describe participation or understanding only when explicitly documented for this encounter.
+Detailed education on long-term recovery expectations, importance of continued rehab, activity modification, proper body mechanics. Red-flag symptoms counseling (worsening pain, numbness, weakness, gait changes, bowel/bladder dysfunction). Describe participation only when explicitly documented for this encounter. Use the standard understanding draft closing specified in VISIT TREATMENT DECISION below.
 Reference: "The patient received detailed education regarding long-term recovery expectations following PRP therapy..."
 
 11. prognosis (~2-3 sentences):

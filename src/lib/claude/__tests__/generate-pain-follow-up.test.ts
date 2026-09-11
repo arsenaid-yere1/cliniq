@@ -100,10 +100,15 @@ describe('visit decision parser integration', () => {
     raw.patient_education = 'Review home exercise at follow-up.'
     expect(opts.parse(raw).success).toBe(true)
     expect(opts.system).toContain('Understanding is a separate fact')
+    expect(opts.system).toContain('The patient verbalized understanding.')
+    expect(opts.system).toContain('do not contradict the source')
+    expect(opts.system).not.toContain('Include an understanding statement only if explicitly documented')
   })
   it('also guards section regeneration', async () => {
     await generatePainFollowUp(source, { section: 'patient_education', message: 'Review education', rationale: null })
     const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    expect(opts.system).toContain('The patient verbalized understanding.')
+    expect(opts.system).toContain('in the same paragraph')
     const raw = Object.fromEntries(Object.keys(painFollowUpNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : '']))
     for (const wording of ['The treatment plan was accepted by the patient.', 'The patient is agreeable to the proposed treatment plan.', 'The patient reviewed the options and has agreed to proceed.']) {
       raw.patient_education = wording

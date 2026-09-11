@@ -43,6 +43,16 @@ describe('follow-up explicit decision workflow', () => {
     expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('partially_accepted')
     expect((screen.getByLabelText('Accepted treatments and limitations (required)') as HTMLTextAreaElement).value).toContain('Home exercise only')
   })
+  it.each([
+    'Home exercise reviewed. The patient verbalized understanding.',
+    'Home exercise reviewed. Further explanation is needed.',
+  ])('saves the reviewed education unchanged, independently of agreement: %s', async (education) => {
+    render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={{ ...initialNote, patient_education: 'The patient verbalized understanding.' }} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Patient Education' }), { target: { value: education } })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'not_documented' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('case', expect.objectContaining({ patient_education: education, treatment_decision: { decision: 'not_documented', details: null } })))
+  })
   it('locks the decision during an inactive episode or correction', () => {
     render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} episodeWritable={false} />)
     expect((screen.getByRole('button', { name: 'Save Draft' }) as HTMLButtonElement).disabled).toBe(true)

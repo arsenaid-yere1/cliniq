@@ -39,6 +39,6 @@ export function VisitTreatmentDecisionFields({ value, onChange, saved, plan, vis
         <Textarea id={`${id}-details`} value={value.details ?? ''} maxLength={2000} rows={2} onChange={(event) => onChange({ ...value, details: event.target.value || null })} />
       </div>}
     </fieldset>}
-    {!historical && <p className="text-xs text-muted-foreground">Saving or signing confirms that the selected decision accurately reflects the patient&apos;s response to the plan discussed at this visit. Select Not documented if the response was not established.</p>}
+    {!historical && <p className="text-xs text-muted-foreground">Saving or signing confirms that the selected decision accurately reflects the patient&apos;s response to the plan discussed at this visit. Select Not documented if the response was not established. Saving or signing also confirms that the Patient Education text is accurate, including any statement that the patient verbalized understanding. Review and correct or remove that statement if it does not reflect the encounter.</p>}
   </section>
 }

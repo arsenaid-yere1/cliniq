@@ -25,6 +25,8 @@ describe('model visit decision boundary', () => {
     'At the previous encounter, the treatment plan was accepted by the patient.',
     'The plan will be accepted only after the patient reviews it.',
     'Procedure consent was not obtained.',
+    'Home exercises were reviewed. The patient verbalized understanding.',
+    'The patient could not verbalize understanding; further education is needed.',
   ])('allows correctly attributed or prospective prose: %s', (text) => {
     expect(validateVisitDecisionOutput({ patient_education: text }).success).toBe(true)
   })

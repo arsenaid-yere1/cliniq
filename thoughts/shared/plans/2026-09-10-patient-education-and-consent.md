@@ -2,7 +2,7 @@
 
 ## Overview
 
-Status: **deployed to production; spacing fix accepted by the user; understanding wording retained; production-branch documentation synchronization authorized**. The full clinician/browser/PDF checklist remains unconfirmed beyond the specific user feedback recorded below. The previous broad education/consent implementation was reverted on 2026-09-10 at the user's request. This plan supersedes the former procedure-consent and shared-generation infrastructure work. This plan is the single current planning document for this feature; the abandoned implementation does not constitute approval of this design.
+Status: **deployed to production; spacing fix accepted by the user; understanding draft-closing revision approved on 2026-09-11; prior release remains live**. The full clinician/browser/PDF checklist remains unconfirmed beyond the specific user feedback recorded below. The previous broad education/consent implementation was reverted on 2026-09-10 at the user's request. This plan supersedes the former procedure-consent and shared-generation infrastructure work. This plan is the single current planning document for this feature; the abandoned implementation does not constitute approval of this design.
 
 Add a visible Patient's decision regarding the treatment plan control to visit notes, defaulting to Accepted. Explicit clinician Save Draft or Sign confirms that the reviewed selection reflects the patient's actual response to the plan discussed at this visit. Opening a visit, generation, intake saves, and autosave do not confirm acceptance. This documents the patient's treatment decision; it is not implied legal consent or permission to perform a procedure.
 
@@ -36,7 +36,7 @@ After the revert, application files match HEAD. No new clinical-discussion table
 | Partial acceptance | Require clinician-entered accepted/deferred treatment details |
 | Deferred/declined | Optional clinician-entered explanation; never invent a reason |
 | Not documented | No generated decision/agreement closing |
-| Understanding | Independent evidence; no default understanding checkbox or inference from acceptance |
+| Understanding | Generated Patient Education uses “The patient verbalized understanding.” as a clinician-reviewed draft closing; correct/remove if inaccurate; no new checkbox and no inference of treatment agreement |
 | Existing notes | Preserve saved prose and signed PDFs; no backfill or bulk regeneration |
 | Changed plan | Show review notice; retain the recorded decision as historical to its reviewed plan until explicit reconfirmation |
 
@@ -118,7 +118,7 @@ Check keyboard labels, mobile layout, all visit types, and partial/declined case
 
 - Add matching TypeScript/SQL visit-decision closing helpers, with database persistence reconciling explicit saves and the three visit generators. Exact application fragments are replaceable; no internal markers are needed. Do not add procedure consent fragments or a broad evidence subsystem.
 - Update `generate-initial-visit.ts`, `generate-discharge-note.ts`, and `generate-pain-follow-up.ts`, including regeneration. Preserve branch-specific counseling content and the initial-visit restriction on PRP education.
-- Source understanding independently from documented encounter text; remove unconditional understanding requirements where necessary. Acceptance does not establish that education occurred, questions were answered, or understanding was verbalized. Preserve existing clinician-authored wording unless the clinician edits it; surface contradictions for review rather than silently rewriting arbitrary prose.
+- Following the 2026-09-11 revision, request the exact understanding closing in generated Patient Education drafts, including regeneration, for clinician review. If supplied encounter facts explicitly contradict verbalized understanding, describe the limitation instead. Save/Sign confirms the accuracy of the visible education text; clinicians can correct/remove the sentence, and saving does not reinsert it. Understanding does not establish treatment agreement, questions answered, or procedure consent. Preserve clinician-authored wording and existing signed notes.
 - Keep application-generated closings replaceable without duplication. Updating the decision or choosing Not documented removes the previous application closing; legacy manual agreement wording is flagged for clinician review when inconsistent.
 - Keep section columns and raw generated output consistent, strip internal markers, and ensure exports use the saved reviewed text.
 - Reserve current decision assertions for the deterministic helper; model assertions elsewhere trigger a bounded repair or actionable failure. Historical/prospective exceptions must qualify the assertion itself, not exempt the entire sentence.
@@ -275,3 +275,22 @@ User reported accumulating blank lines before the agreement closing. Root cause:
 Local commit `e7e95a4` contains the new migration and repeated-save regression. The regression failed before the fix and passed afterward across all four visit types; reset lifecycle and 35 correction assertions also passed. Applied the single pending hotfix to production and verified the migration record, inline separator, newline trim and all three active guards. No app redeployment or GitHub push was required. Temporary branch `codex-visit-spacing-check` was deleted and its connection file removed.
 
 The user confirmed the missing sentence meant “The patient verbalized understanding,” then instructed “leave as is.” No automatic understanding assertion was restored; documented understanding remains separate from treatment-plan agreement. Production verification confirmed the spacing migration is installed, its three note guards are active, no migrations remain pending, and login returns HTTP 200. The user then reported “looks good” and requested that the plans be committed to production. This confirms acceptance of the reported correction, not completion of every earlier manual test scenario.
+
+
+## Understanding closing revision — 2026-09-11
+
+The user requested the exact sentence “The patient verbalized understanding.” and confirmed revising the earlier “leave as is” decision. Restore this as the standard generated Patient Education draft closing in Initial Visit, Pain Evaluation, Follow-up and Discharge, including section regeneration. Keep it in the same paragraph. Encounter facts explicitly contradicting this statement must be reflected accurately rather than overwritten.
+
+Clinician review remains through the existing Save Draft/Sign workflow, with guidance to correct or remove an inaccurate understanding statement. No new checkbox, modal, metadata field, or forced reinsertion on save. Understanding is independent of the selected treatment decision; changing Accepted to Not documented does not silently remove clinician-authored understanding. Historical notes and signed PDFs are not backfilled.
+
+Implementation phases:
+
+- [x] Update shared visit-generation guidance and remove conflicting Initial/Pain Evaluation and Discharge evidence-only wording.
+- [x] Update shared editor review guidance to cover Patient Education accuracy explicitly.
+- [x] Verify exact-sentence prompt coverage across all four visits/full and section generation, parser acceptance, existing decision/consent rejection, and preservation of clinician-edited prose on save. Run focused tests, TypeScript, changed-file ESLint and diff checks.
+
+Plan verification: **Ready.** The three generators already share `VISIT_DECISION_PROMPT`, including full/section paths; Initial/Pain Evaluation and Discharge also contain local wording that must be aligned. `VisitTreatmentDecisionFields` already appears in all covered editors. Existing save paths persist the edited education text, and the database manages only the separate decision closing, so no database migration or new confirmation field is needed. The previous unconditional evidence-only requirement is explicitly superseded for this reviewed draft default. Prompt-based generation remains subject to clinician review and is not an exhaustive semantic guarantee. This revision is local implementation work; deployment and GitHub publication are not part of this step.
+
+Implementation verification: shared and visit-specific prompts now request the exact sentence once in the same paragraph, while retaining an exception for explicitly contradictory encounter facts. The shared editor guidance covers the accuracy of Patient Education and removal/correction of inaccurate understanding text. Full/section prompt tests cover both evaluation visit types, Discharge and Follow-up; parser tests permit the sentence and documented limitations while continuing to reject model-authored treatment agreement/consent. The Follow-up editor test proves edited education is submitted unchanged even when the treatment decision is Not documented.
+
+Checks: focused suites **113 tests passed**; `npm test` **113 files / 1,420 tests passed**; `npx tsc --noEmit --pretty false`, changed-file ESLint and `git diff --check` passed. No database change was needed. The revision is implemented locally, not committed, pushed or deployed. No new live model/clinician/browser/PDF verification is claimed.

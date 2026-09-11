@@ -14,6 +14,8 @@ describe('visit decision fields', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByText(/Saving or signing also confirms that the Patient Education text is accurate/)).toBeTruthy()
+    expect(screen.getByText(/correct or remove that statement/)).toBeTruthy()
   })
   it('preserves a saved refusal and captures an explicit alternative', () => {
     const onChange = vi.fn()
