@@ -1,16 +1,17 @@
 import 'server-only'
 import { labelWithLaterality, parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { summarizeFollowUpIntake } from '@/lib/claude/summarize-follow-up-intake'
-import type { createClient } from '@/lib/supabase/server'
-import type { Tables } from '@/types/database'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database, Tables } from '@/types/database'
 import { buildIntakeHistory, initializeFollowUpIntake, intakeRecord, intakeText, type HistoricalVisit, type HistoricalDischarge, type IntakeHistoryResult } from './follow-up-intake-prefill'
 
-type Client = Awaited<ReturnType<typeof createClient>>
+type Client = SupabaseClient<Database>
 
 /** Read only: source suggestions are not persisted until the clinician saves intake. */
 export async function loadFollowUpIntakeHistory(
   client: Client,
   encounter: Tables<'clinical_encounters'>,
+  options: { summarizeSavedIntake?: boolean } = {},
 ): Promise<IntakeHistoryResult> {
   const date = encounter.encounter_date
   if (!date) return { data: null }
@@ -26,7 +27,7 @@ export async function loadFollowUpIntakeHistory(
       client.from('pain_follow_up_notes').select('id,encounter_id,subjective,interval_history,treatment_plan')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .eq('status', 'finalized').is('deleted_at', null),
-      client.from('procedures').select('id,procedure_date,procedure_type,sites,series_id')
+      client.from('procedures').select('id,procedure_date,procedure_type,sites,procedure_series_id')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .is('deleted_at', null).lt('procedure_date', date).order('procedure_date').order('id'),
       client.from('care_episodes').select('episode_number')
@@ -68,7 +69,7 @@ export async function loadFollowUpIntakeHistory(
     }
     const visit = visits[0] ?? null
     const history = buildIntakeHistory(visit, procedures.data ?? [], discharge)
-    if (!initializeFollowUpIntake(encounter, history).applied) return { data: history }
+    if (!options.summarizeSavedIntake && !initializeFollowUpIntake(encounter, history).applied) return { data: history }
     const summary = await summarizeFollowUpIntake({
       visitDate: date,
       previousVisit: visit ? {
@@ -77,7 +78,7 @@ export async function loadFollowUpIntakeHistory(
       } : null,
       procedures: (procedures.data ?? []).map((procedure) => ({
         date: procedure.procedure_date, type: procedure.procedure_type,
-        seriesId: procedure.series_id,
+        seriesId: procedure.procedure_series_id,
         sites: parseSitesJsonb(procedure.sites).map(labelWithLaterality),
       })),
       previousDischarge: discharge?.visit_date ? {

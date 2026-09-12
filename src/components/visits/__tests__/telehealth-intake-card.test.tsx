@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tables } from '@/types/database'
 import { buildIntakeHistory } from '@/lib/clinical/follow-up-intake-prefill'
-const { save, status, refresh, error } = vi.hoisted(() => ({ save: vi.fn(), status: vi.fn(), refresh: vi.fn(), error: vi.fn() }))
+const { save, status, refresh, error, loadHistory } = vi.hoisted(() => ({ save: vi.fn(), status: vi.fn(), refresh: vi.fn(), error: vi.fn(), loadHistory: vi.fn() }))
+vi.mock('@/actions/follow-up-intake-history', () => ({ requestFollowUpIntakeHistory: loadHistory }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error } }))
 vi.mock('@/actions/clinical-encounters', () => ({ updatePainFollowUpEncounter: save, changePainFollowUpStatus: status }))
@@ -55,6 +56,30 @@ describe('historical follow-up intake', () => {
     expect(input('Interval history').value).toBe('')
     expect(screen.queryByText('Historical sources')).toBeNull()
     expect(saveButton().disabled).toBe(false)
+  })
+  it('explicitly fills only empty fields, preserving saved findings and requiring review without saving', async () => {
+    loadHistory.mockResolvedValue({ data: { ...data, chiefComplaint: 'The patient presents for follow-up.', intervalHistory: 'Previously reported improvement.' } })
+    render(<TelehealthIntakeCard {...props} encounter={{ ...encounter, patient_reported_pain_min: 6, telehealth_consent_obtained: false, provider_intake: { chief_complaint: 'My existing complaint', interval_history: '', review_of_systems: 'Current findings' } }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Fill empty fields from history' }))
+    await waitFor(() => expect(input('Interval history').value).toBe('Previously reported improvement.'))
+    expect(loadHistory).toHaveBeenCalledWith('case', 'current', '2026-09-12')
+    expect(input('Chief complaint').value).toBe('My existing complaint')
+    expect(input('Review of systems').value).toBe('Current findings')
+    expect(input('Patient-reported pain minimum').value).toBe('6')
+    expect(input('Telehealth consent obtained').checked).toBe(false)
+    expect(saveButton().disabled).toBe(true)
+    expect(save).not.toHaveBeenCalled()
+  })
+  it('allows retry after an explicit history failure without losing input', async () => {
+    loadHistory.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data })
+    render(<TelehealthIntakeCard {...props} encounter={{ ...encounter, provider_intake: { chief_complaint: '' } }} />)
+    const fill = screen.getByRole('button', { name: 'Fill empty fields from history' })
+    fireEvent.click(fill)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('try again'))
+    expect(input('Chief complaint').value).toBe('')
+    fireEvent.click(fill)
+    await waitFor(() => expect(input('Chief complaint').value).toBe(data.chiefComplaint))
+    expect(screen.queryByRole('status')).toBeNull()
   })
   it('retains manual data and permits saving when history loading fails', async () => {
     render(<TelehealthIntakeCard {...props} history={{ data: null, error: 'History unavailable' }} />)

@@ -13,7 +13,7 @@ export type HistoricalVisit = {
   id: string; date: string; label: string; complaint: string | null; plan: string | null
   painMin: number | null; painMax: number | null; response?: string
 }
-export type HistoricalProcedure = Pick<Tables<'procedures'>, 'id' | 'procedure_date' | 'procedure_type' | 'sites'> & { series_id?: string | null }
+export type HistoricalProcedure = Pick<Tables<'procedures'>, 'id' | 'procedure_date' | 'procedure_type' | 'sites'> & Partial<Pick<Tables<'procedures'>, 'procedure_series_id'>>
 export type HistoricalDischarge = Pick<Tables<'discharge_notes'>, 'id' | 'visit_date' | 'assessment' | 'plan_and_recommendations'>
 export type FollowUpIntake = Record<string, unknown> & {
   chief_complaint: string; interval_history: string; review_of_systems: string; video_observations: string

@@ -48,6 +48,7 @@ describe('follow-up history loading', () => {
     expect(queries.pain_follow_up_notes.eq).toHaveBeenCalledWith('status', 'finalized')
     expect(queries.initial_visit_notes.lt).toHaveBeenCalledWith('visit_date', '2026-09-12')
     expect(queries.procedures.lt).toHaveBeenCalledWith('procedure_date', '2026-09-12')
+    expect(queries.procedures.select).toHaveBeenCalledWith('id,procedure_date,procedure_type,sites,procedure_series_id')
   })
   it('uses finalized initial evaluation complaint and plan when it is the latest eligible visit', async () => {
     const { client } = setup({ pain_follow_up_notes: [] })
@@ -96,7 +97,7 @@ describe('follow-up history loading', () => {
   it('passes documented response and procedure series/dates to support natural session wording', async () => {
     const { client, queries } = setup({
       pain_follow_up_notes: [{ id: 'follow', encounter_id: 'recent', subjective: 'The patient reports moderate improvement.', interval_history: 'Improvement followed the second PRP session.', treatment_plan: 'Continue therapy.' }],
-      procedures: [{ id: 'p1', procedure_date: '2026-09-02', procedure_type: 'prp', series_id: 'series', sites: [] }, { id: 'p2', procedure_date: '2026-09-08', procedure_type: 'prp', series_id: 'series', sites: [] }],
+      procedures: [{ id: 'p1', procedure_date: '2026-09-02', procedure_type: 'prp', procedure_series_id: 'series', sites: [] }, { id: 'p2', procedure_date: '2026-09-08', procedure_type: 'prp', procedure_series_id: 'series', sites: [] }],
     })
     await loadFollowUpIntakeHistory(client as never, encounter)
     const source = vi.mocked(summarizeFollowUpIntake).mock.calls[0][0]
@@ -118,6 +119,12 @@ describe('follow-up history loading', () => {
     const { client } = setup()
     await loadFollowUpIntakeHistory(client as never, { ...encounter, ...saved })
     expect(summarizeFollowUpIntake).not.toHaveBeenCalled()
+  })
+  it('summarizes saved intake only on explicit request', async () => {
+    const { client } = setup()
+    const result = await loadFollowUpIntakeHistory(client as never, { ...encounter, provider_intake: { chief_complaint: '' } }, { summarizeSavedIntake: true })
+    expect(summarizeFollowUpIntake).toHaveBeenCalledOnce()
+    expect(result.data?.chiefComplaint).toBe('Recent pain')
   })
   it('does not query without a visit date', async () => {
     const { client } = setup()

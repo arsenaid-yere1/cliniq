@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { changePainFollowUpStatus, updatePainFollowUpEncounter } from '@/actions/clinical-encounters'
+import { requestFollowUpIntakeHistory } from '@/actions/follow-up-intake-history'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,8 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
   const [intake, setIntake] = useState(initial.intake)
   const [sources, setSources] = useState(() => initial.applied ? history!.data!.sources : savedSources(initial.intake.history_prefill))
   const [reviewed, setReviewed] = useState(!initial.applied)
-  const [previousPain] = useState(history?.data?.previousPain ?? null)
+  const [historyError, setHistoryError] = useState(history?.error)
+  const [previousPain, setPreviousPain] = useState(history?.data?.previousPain ?? null)
   const [painMin, setPainMin] = useState(encounter.patient_reported_pain_min?.toString() ?? '')
   const [painMax, setPainMax] = useState(encounter.patient_reported_pain_max?.toString() ?? '')
   const [consent, setConsent] = useState(encounter.telehealth_consent_obtained ?? false)
@@ -67,6 +69,36 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
       router.refresh()
     } catch {
       toast.error('Something went wrong. Your intake has been kept; please try again.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function fillFromHistory() {
+    if (disabled || !visitDate) return
+    setPending(true)
+    try {
+      const result = await requestFollowUpIntakeHistory(caseId, encounter.id, visitDate)
+      if (result.error) { setHistoryError(result.error); return }
+      const suggestion = result.data
+      if (!suggestion || (!suggestion.chiefComplaint && !suggestion.intervalHistory)) {
+        setHistoryError('No earlier information is available to fill these fields.')
+        return
+      }
+      setHistoryError(undefined)
+      setPreviousPain(suggestion.previousPain)
+      const fillsComplaint = !intake.chief_complaint.trim() && !!suggestion.chiefComplaint
+      const fillsHistory = !intake.interval_history.trim() && !!suggestion.intervalHistory
+      if (fillsComplaint || fillsHistory) {
+        setIntake((value) => ({ ...value,
+          chief_complaint: value.chief_complaint.trim() ? value.chief_complaint : suggestion.chiefComplaint,
+          interval_history: value.interval_history.trim() ? value.interval_history : suggestion.intervalHistory,
+        }))
+        setSources((existing) => [...new Map([...existing, ...suggestion.sources].map((source) => [`${source.kind}:${source.id}`, source])).values()])
+        setReviewed(false)
+      }
+    } catch {
+      setHistoryError('Previous visit information could not be loaded. Please try again.')
     } finally {
       setPending(false)
     }
@@ -120,7 +152,10 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
           <Button size="sm" variant="outline" onClick={() => changeStatus('no_show')} disabled={pending}>Mark no-show</Button>
           <Button size="sm" variant="ghost" onClick={() => changeStatus('cancelled')} disabled={pending}>Cancel visit</Button>
         </div>}
-        {history?.error && <p role="status" className="text-sm text-muted-foreground">{history.error}</p>}
+        {historyError && <p role="status" className="text-sm text-muted-foreground">{historyError}</p>}
+        {!locked && (!intake.chief_complaint.trim() || !intake.interval_history.trim()) && <div>
+          <Button type="button" size="sm" variant="outline" disabled={disabled || !visitDate} onClick={fillFromHistory}>Fill empty fields from history</Button>
+        </div>}
         {sources.length > 0 && <div className="space-y-3 rounded-md border bg-muted/30 p-4">
           <div>
             <p className="text-sm font-medium">Historical sources</p>
