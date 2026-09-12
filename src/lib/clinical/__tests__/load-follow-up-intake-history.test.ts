@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase } from '@/test-utils/supabase-mock'
 import type { Tables } from '@/types/database'
+vi.mock('@/lib/claude/summarize-follow-up-intake', () => ({ summarizeFollowUpIntake: vi.fn() }))
+import { summarizeFollowUpIntake } from '@/lib/claude/summarize-follow-up-intake'
 import { loadFollowUpIntakeHistory } from '../load-follow-up-intake-history'
 
-const encounter = { id: 'current', case_id: 'case', episode_id: 'episode', encounter_date: '2026-09-12' } as Tables<'clinical_encounters'>
+beforeEach(() => { vi.clearAllMocks(); vi.mocked(summarizeFollowUpIntake).mockImplementation(async (source) => ({ data: source })) })
+
+const encounter = { status: 'in_progress', provider_intake: {}, id: 'current', case_id: 'case', episode_id: 'episode', encounter_date: '2026-09-12' } as Tables<'clinical_encounters'>
 function setup(overrides: Record<string, unknown> = {}, fail?: string) {
   const data: Record<string, unknown> = {
     clinical_encounters: [
@@ -70,13 +74,37 @@ describe('follow-up history loading', () => {
     expect(discharge.eq).toHaveBeenCalledWith('episode_id', 'previous')
     expect(discharge.eq).toHaveBeenCalledWith('status', 'finalized')
     expect(discharge.lt).toHaveBeenCalledWith('visit_date', '2026-09-12')
-    expect(result.data?.intervalHistory).toContain('Previous episode discharge on 2026-08-01 (background)')
+    expect(result.data?.intervalHistory).toContain('Previous episode (2026-08-01):')
   })
   it.each(['clinical_encounters', 'initial_visit_notes', 'pain_follow_up_notes', 'procedures', 'care_episodes'])('returns no partial prefill when %s fails', async (table) => {
     const { client } = setup({}, table)
     const result = await loadFollowUpIntakeHistory(client as never, encounter)
     expect(result.data).toBeNull()
     expect(result.error).toContain('manually')
+  })
+  it('uses concise summaries rather than the full source text', async () => {
+    const { client } = setup()
+    vi.mocked(summarizeFollowUpIntake).mockResolvedValue({ data: { complaint: 'Brief complaint', plan: 'Brief plan', discharge: '' } })
+    const result = await loadFollowUpIntakeHistory(client as never, encounter)
+    expect(summarizeFollowUpIntake).toHaveBeenCalledWith({ complaint: 'Recent pain', plan: 'Recent plan', discharge: '' })
+    expect(result.data?.chiefComplaint).toBe('Previous complaint (2026-09-09): Brief complaint')
+    expect(result.data?.intervalHistory).toBe('Prior plan (2026-09-09): Brief plan')
+    expect(result.data?.previousPain).toEqual({ date: '2026-09-09', min: 3, max: 6 })
+    expect(result.data?.sources[0].id).toBe('follow')
+  })
+  it('never falls back to full text when summaries fail', async () => {
+    const { client } = setup()
+    vi.mocked(summarizeFollowUpIntake).mockResolvedValue({ error: 'Unavailable' })
+    const result = await loadFollowUpIntakeHistory(client as never, encounter)
+    expect(result.error).toContain('summaries could not')
+    expect(result.data?.chiefComplaint).toBe('')
+    expect(result.data?.intervalHistory).toBe('')
+    expect(result.data?.previousPain?.min).toBe(3)
+  })
+  it.each([{ provider_intake: { chief_complaint: '' } }, { status: 'completed' }])('skips summary calls for existing or closed intake %j', async (saved) => {
+    const { client } = setup()
+    await loadFollowUpIntakeHistory(client as never, { ...encounter, ...saved })
+    expect(summarizeFollowUpIntake).not.toHaveBeenCalled()
   })
   it('does not query without a visit date', async () => {
     const { client } = setup()

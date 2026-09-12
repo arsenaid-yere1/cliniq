@@ -38,22 +38,32 @@ export function buildIntakeHistory(
   if (visit) {
     const label = `${visit.label} on ${visit.date}`
     sources.push({ id: visit.id, kind: 'visit', date: visit.date, label })
-    if (intakeText(visit.complaint)) chiefComplaint = `Previously documented — ${label}:\n${intakeText(visit.complaint)}`
-    if (intakeText(visit.plan)) history.push(`Previous plan — ${label}:\n${intakeText(visit.plan)}`)
+    if (intakeText(visit.complaint)) chiefComplaint = `Previous complaint (${visit.date}): ${intakeText(visit.complaint)}`
+    if (intakeText(visit.plan)) history.push(`Prior plan (${visit.date}): ${intakeText(visit.plan)}`)
   }
+  const groups = new Map<string, { dates: string[]; sites: Set<string> }>()
   for (const procedure of procedures) {
-    const sites = parseSitesJsonb(procedure.sites).map(labelWithLaterality).join(', ')
-    const label = `${procedure.procedure_type.toUpperCase()} on ${procedure.procedure_date}`
-    sources.push({ id: procedure.id, kind: 'procedure', date: procedure.procedure_date, label })
-    history.push(`Recorded procedure — ${label}${sites ? `: ${sites}` : ''}.`)
+    const type = procedure.procedure_type.toUpperCase()
+    sources.push({ id: procedure.id, kind: 'procedure', date: procedure.procedure_date, label: `${type} on ${procedure.procedure_date}` })
+    const group = groups.get(type) ?? { dates: [], sites: new Set<string>() }
+    group.dates.push(procedure.procedure_date)
+    for (const site of parseSitesJsonb(procedure.sites)) group.sites.add(labelWithLaterality(site))
+    groups.set(type, group)
+  }
+  for (const [type, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const dates = group.dates.sort()
+    const dateRange = dates[0] === dates.at(-1) ? dates[0] : `${dates[0]}–${dates.at(-1)}`
+    const sites = [...group.sites].sort()
+    const siteSummary = sites.slice(0, 3).join(', ') + (sites.length > 3 ? ` and ${sites.length - 3} other site${sites.length === 4 ? '' : 's'}` : '')
+    history.push(`${dates.length} prior ${type} procedure${dates.length === 1 ? '' : 's'} (${dateRange})${siteSummary ? `: ${siteSummary}` : ''}.`)
   }
   if (discharge?.visit_date && (intakeText(discharge.assessment) || intakeText(discharge.plan_and_recommendations))) {
     const label = `Previous episode discharge on ${discharge.visit_date}`
     sources.push({ id: discharge.id, kind: 'discharge', date: discharge.visit_date, label })
-    history.push(`${label} (background):\n${[intakeText(discharge.assessment), intakeText(discharge.plan_and_recommendations)].filter(Boolean).join('\n')}`)
+    history.push(`Previous episode (${discharge.visit_date}): ${[intakeText(discharge.assessment), intakeText(discharge.plan_and_recommendations)].filter(Boolean).join(' ')}`)
   }
   return {
-    chiefComplaint, intervalHistory: history.join('\n\n'), sources,
+    chiefComplaint, intervalHistory: history.join('\n'), sources,
     previousPain: visit && (visit.painMin != null || visit.painMax != null)
       ? { min: visit.painMin, max: visit.painMax, date: visit.date } : null,
   }

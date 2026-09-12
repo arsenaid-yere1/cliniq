@@ -7,12 +7,25 @@ const encounter = { status: 'scheduled', provider_intake: {}, patient_reported_m
 
 describe('follow-up history mapping', () => {
   it('labels complaints, plans, procedure sites and previous episode background', () => {
-    expect(history.chiefComplaint).toContain('Previously documented — Follow-up visit on 2026-09-01')
-    expect(history.intervalHistory).toContain('Previous plan — Follow-up visit on 2026-09-01:\nContinue therapy')
-    expect(history.intervalHistory).toContain('PRP on 2026-09-03: Right Knee')
-    expect(history.intervalHistory).toContain('Previous episode discharge on 2026-08-01 (background)')
+    expect(history.chiefComplaint).toContain('Previous complaint (2026-09-01): Knee pain')
+    expect(history.intervalHistory).toContain('Prior plan (2026-09-01): Continue therapy')
+    expect(history.intervalHistory).toContain('1 prior PRP procedure (2026-09-03): Right Knee')
+    expect(history.intervalHistory).toContain('Previous episode (2026-08-01): Improved Home exercise')
     expect(history.previousPain).toEqual({ min: 0, max: 4, date: '2026-09-01' })
     expect(history.sources.map((source) => source.id)).toEqual(['note', 'procedure', 'discharge'])
+  })
+  it('groups repeated procedures into one dated summary without losing source references', () => {
+    const result = buildIntakeHistory(null, Array.from({ length: 8 }, (_, index) => ({
+      id: `procedure-${index}`, procedure_date: `2026-09-0${index + 1}`, procedure_type: 'prp',
+      sites: [{ label: 'Knee', laterality: 'right', volume_ml: null, target_confirmed_imaging: null }],
+    })), null)
+    expect(result.intervalHistory).toBe('8 prior PRP procedures (2026-09-01–2026-09-08): Right Knee.')
+    expect(result.sources).toHaveLength(8)
+  })
+  it('keeps different procedure types separate and labels omitted site names', () => {
+    const result = buildIntakeHistory(null, [{ id: 'prp', procedure_date: '2026-09-01', procedure_type: 'prp', sites: ['A', 'B', 'C', 'D'].map((label) => ({ label, laterality: null, volume_ml: null, target_confirmed_imaging: null })) }, { id: 'botox', procedure_date: '2026-09-02', procedure_type: 'botox', sites: [] }], null)
+    expect(result.intervalHistory).toContain('1 prior BOTOX procedure (2026-09-02).')
+    expect(result.intervalHistory).toContain('A, B, C and 1 other site')
   })
   it('only prefills historical text, leaving current findings empty', () => {
     const result = initializeFollowUpIntake(encounter, history)
@@ -40,6 +53,6 @@ describe('follow-up history mapping', () => {
     const result = buildIntakeHistory(null, [{ id: 'p', procedure_date: '2026-09-01', procedure_type: 'prp', sites: { bad: 'shape' } }], null)
     expect(result.chiefComplaint).toBe('')
     expect(result.previousPain).toBeNull()
-    expect(result.intervalHistory).toBe('Recorded procedure — PRP on 2026-09-01.')
+    expect(result.intervalHistory).toBe('1 prior PRP procedure (2026-09-01).')
   })
 })

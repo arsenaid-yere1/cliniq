@@ -1,7 +1,8 @@
 import 'server-only'
+import { summarizeFollowUpIntake } from '@/lib/claude/summarize-follow-up-intake'
 import type { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types/database'
-import { buildIntakeHistory, intakeRecord, intakeText, type HistoricalVisit, type HistoricalDischarge, type IntakeHistoryResult } from './follow-up-intake-prefill'
+import { buildIntakeHistory, initializeFollowUpIntake, intakeRecord, intakeText, type HistoricalVisit, type HistoricalDischarge, type IntakeHistoryResult } from './follow-up-intake-prefill'
 
 type Client = Awaited<ReturnType<typeof createClient>>
 
@@ -63,7 +64,20 @@ export async function loadFollowUpIntakeHistory(
         discharge = result.data
       }
     }
-    return { data: buildIntakeHistory(visits[0] ?? null, procedures.data ?? [], discharge) }
+    const visit = visits[0] ?? null
+    const history = buildIntakeHistory(visit, procedures.data ?? [], discharge)
+    if (!initializeFollowUpIntake(encounter, history).applied) return { data: history }
+    const summary = await summarizeFollowUpIntake({
+      complaint: intakeText(visit?.complaint),
+      plan: intakeText(visit?.plan),
+      discharge: [intakeText(discharge?.assessment), intakeText(discharge?.plan_and_recommendations)].filter(Boolean).join('\n'),
+    })
+    if (!summary.data) return { data: { ...history, chiefComplaint: '', intervalHistory: '' }, error: 'Historical summaries could not be prepared. You can still enter intake manually.' }
+    return { data: buildIntakeHistory(
+      visit ? { ...visit, complaint: summary.data.complaint, plan: summary.data.plan } : null,
+      procedures.data ?? [],
+      discharge ? { ...discharge, assessment: summary.data.discharge, plan_and_recommendations: null } : null,
+    ) }
   } catch {
     return { data: null, error: 'Previous visit information could not be loaded. You can still enter intake manually.' }
   }
