@@ -1,4 +1,5 @@
 import 'server-only'
+import { labelWithLaterality, parseSitesJsonb } from '@/lib/procedures/sites-helpers'
 import { summarizeFollowUpIntake } from '@/lib/claude/summarize-follow-up-intake'
 import type { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types/database'
@@ -22,10 +23,10 @@ export async function loadFollowUpIntakeHistory(
       client.from('initial_visit_notes').select('id,encounter_id,visit_date,visit_type,chief_complaint,treatment_plan')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .eq('status', 'finalized').is('deleted_at', null).lt('visit_date', date),
-      client.from('pain_follow_up_notes').select('id,encounter_id,treatment_plan')
+      client.from('pain_follow_up_notes').select('id,encounter_id,subjective,interval_history,treatment_plan')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .eq('status', 'finalized').is('deleted_at', null),
-      client.from('procedures').select('id,procedure_date,procedure_type,sites')
+      client.from('procedures').select('id,procedure_date,procedure_type,sites,series_id')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .is('deleted_at', null).lt('procedure_date', date).order('procedure_date').order('id'),
       client.from('care_episodes').select('episode_number')
@@ -46,6 +47,7 @@ export async function loadFollowUpIntakeHistory(
         complaint: evaluation?.chief_complaint ?? intakeText(intakeRecord(row.provider_intake).chief_complaint),
         plan: evaluation?.treatment_plan ?? followUp?.treatment_plan ?? null,
         painMin: row.patient_reported_pain_min, painMax: row.patient_reported_pain_max,
+        response: [intakeText(followUp?.subjective), intakeText(followUp?.interval_history)].filter(Boolean).join('\n'),
       })
     }
     visits.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
@@ -68,16 +70,24 @@ export async function loadFollowUpIntakeHistory(
     const history = buildIntakeHistory(visit, procedures.data ?? [], discharge)
     if (!initializeFollowUpIntake(encounter, history).applied) return { data: history }
     const summary = await summarizeFollowUpIntake({
-      complaint: intakeText(visit?.complaint),
-      plan: intakeText(visit?.plan),
-      discharge: [intakeText(discharge?.assessment), intakeText(discharge?.plan_and_recommendations)].filter(Boolean).join('\n'),
+      visitDate: date,
+      previousVisit: visit ? {
+        date: visit.date, complaint: intakeText(visit.complaint),
+        response: intakeText(visit.response), plan: intakeText(visit.plan),
+      } : null,
+      procedures: (procedures.data ?? []).map((procedure) => ({
+        date: procedure.procedure_date, type: procedure.procedure_type,
+        seriesId: procedure.series_id,
+        sites: parseSitesJsonb(procedure.sites).map(labelWithLaterality),
+      })),
+      previousDischarge: discharge?.visit_date ? {
+        date: discharge.visit_date,
+        text: [intakeText(discharge.assessment), intakeText(discharge.plan_and_recommendations)].filter(Boolean).join('\n'),
+      } : null,
     })
     if (!summary.data) return { data: { ...history, chiefComplaint: '', intervalHistory: '' }, error: 'Historical summaries could not be prepared. You can still enter intake manually.' }
-    return { data: buildIntakeHistory(
-      visit ? { ...visit, complaint: summary.data.complaint, plan: summary.data.plan } : null,
-      procedures.data ?? [],
-      discharge ? { ...discharge, assessment: summary.data.discharge, plan_and_recommendations: null } : null,
-    ) }
+    // Model returns the final prose. Keep dates/IDs in the source panel, not repeated headings in the fields.
+    return { data: { ...history, ...summary.data } }
   } catch {
     return { data: null, error: 'Previous visit information could not be loaded. You can still enter intake manually.' }
   }

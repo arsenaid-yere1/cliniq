@@ -11,9 +11,9 @@ export type IntakeHistory = {
 export type IntakeHistoryResult = { data: IntakeHistory | null; error?: string }
 export type HistoricalVisit = {
   id: string; date: string; label: string; complaint: string | null; plan: string | null
-  painMin: number | null; painMax: number | null
+  painMin: number | null; painMax: number | null; response?: string
 }
-export type HistoricalProcedure = Pick<Tables<'procedures'>, 'id' | 'procedure_date' | 'procedure_type' | 'sites'>
+export type HistoricalProcedure = Pick<Tables<'procedures'>, 'id' | 'procedure_date' | 'procedure_type' | 'sites'> & { series_id?: string | null }
 export type HistoricalDischarge = Pick<Tables<'discharge_notes'>, 'id' | 'visit_date' | 'assessment' | 'plan_and_recommendations'>
 export type FollowUpIntake = Record<string, unknown> & {
   chief_complaint: string; interval_history: string; review_of_systems: string; video_observations: string
@@ -39,6 +39,7 @@ export function buildIntakeHistory(
     const label = `${visit.label} on ${visit.date}`
     sources.push({ id: visit.id, kind: 'visit', date: visit.date, label })
     if (intakeText(visit.complaint)) chiefComplaint = `Previous complaint (${visit.date}): ${intakeText(visit.complaint)}`
+    if (intakeText(visit.response)) history.push(intakeText(visit.response))
     if (intakeText(visit.plan)) history.push(`Prior plan (${visit.date}): ${intakeText(visit.plan)}`)
   }
   const groups = new Map<string, { dates: string[]; sites: Set<string> }>()
