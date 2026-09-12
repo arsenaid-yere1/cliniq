@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -10,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { buildSeriesOptionLabel, getSeriesRelationshipDescription, getSeriesUnavailableMessage, START_SEPARATE_SERIES_LABEL, type ProcedureSeriesChoice } from '@/lib/clinical/procedure-series-labels'
 import type { ProcedureRecommendation } from '@/lib/validations/pain-follow-up-note'
 
-type Selection = { relationship: 'current' | 'prior'; seriesId: string } | { relationship: 'separate'; seriesId: null }
+type Selection = { relationship: 'current' | 'prior' | 'reopen'; seriesId: string } | { relationship: 'separate'; seriesId: null }
 
 export function ProcedureOrderDialog({ caseId, episodeId, encounterId, recommendation, seriesChoices = [], seriesLoadError = false }: {
   caseId: string; episodeId: string; encounterId: string; recommendation: ProcedureRecommendation
@@ -22,12 +23,14 @@ export function ProcedureOrderDialog({ caseId, episodeId, encounterId, recommend
   const [selection, setSelection] = useState<Selection | null>(null)
   const matchingChoices = seriesChoices.filter((choice) => choice.procedureType === recommendation.procedure_type)
   function changeOpen(nextOpen: boolean) {
+    if (pending) return
     setOpen(nextOpen)
     if (!nextOpen) setSelection(null)
   }
 
   async function submit() {
-    if (!selection || seriesLoadError) return
+    if (pending || !selection || seriesLoadError) return
+    if (selection.seriesId && !matchingChoices.some(choice => choice.id === selection.seriesId && choice.eligible && choice.relationship === selection.relationship)) return
     setPending(true)
     try {
       const common = {
@@ -41,8 +44,9 @@ export function ProcedureOrderDialog({ caseId, episodeId, encounterId, recommend
         ? await createProcedureOrderFromRecommendation({ ...common, series_relationship: 'separate', selected_series_id: null })
         : await createProcedureOrderFromRecommendation({ ...common, series_relationship: selection.relationship, selected_series_id: selection.seriesId })
       if ('error' in result && result.error) return toast.error(result.error)
-      changeOpen(false)
-      toast.success('Procedure order created')
+      setOpen(false)
+      setSelection(null)
+      toast.success(selection.relationship === 'reopen' ? 'Series reopened and procedure order created' : 'Procedure order created')
       router.refresh()
     } catch {
       toast.error('Something went wrong. Please try again.')
@@ -56,17 +60,17 @@ export function ProcedureOrderDialog({ caseId, episodeId, encounterId, recommend
     <DialogContent className="sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>Create procedure order</DialogTitle>
-        <DialogDescription>Choose how this order relates to prior treatment. This choice is saved with the order; Save Draft does not save it.</DialogDescription>
+        <DialogDescription>Choose how this order relates to prior treatment. Reopening a completed series takes effect when you create the order.</DialogDescription>
       </DialogHeader>
       <div className="space-y-4">
         <div className="rounded-md border p-3 text-sm"><p className="font-medium uppercase">{recommendation.procedure_type}</p><p>{recommendation.sites.join(', ')}</p><p className="mt-2 text-muted-foreground">{recommendation.rationale}</p></div>
-        {seriesLoadError ? <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">Series choices could not be loaded. Refresh the page before creating this order.</div> : <RadioGroup aria-label="Series relationship" value={selection ? selection.seriesId ?? 'separate' : ''} onValueChange={(value) => {
+        {seriesLoadError ? <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">Series choices could not be loaded. Refresh the page before creating this order.</div> : <RadioGroup disabled={pending} aria-label="Series relationship" value={selection ? selection.seriesId ?? 'separate' : ''} onValueChange={(value) => {
           if (value === 'separate') setSelection({ relationship: 'separate', seriesId: null })
           else { const choice = matchingChoices.find((item) => item.id === value); if (choice?.eligible) setSelection({ relationship: choice.relationship, seriesId: choice.id }) }
         }}>
           {matchingChoices.map((choice) => <label key={choice.id} className="flex gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5 has-[[data-disabled]]:cursor-not-allowed has-[[data-disabled]]:opacity-60">
             <RadioGroupItem value={choice.id} disabled={!choice.eligible} data-disabled={!choice.eligible || undefined} className="mt-0.5" />
-            <span className="space-y-1"><span className="block text-sm font-medium">{buildSeriesOptionLabel(choice)}</span><span className="block text-xs text-muted-foreground">{choice.eligible ? getSeriesRelationshipDescription(choice) : getSeriesUnavailableMessage(choice.unavailableReason)}</span></span>
+            <span className="space-y-1"><span className="block text-sm font-medium">{buildSeriesOptionLabel(choice)}</span><span className="block text-xs text-muted-foreground">{choice.eligible ? getSeriesRelationshipDescription(choice) : getSeriesUnavailableMessage(choice.unavailableReason)}</span>{choice.blockingOrderId && <Link className="block text-xs underline" href={`/patients/${caseId}/procedures#order-${choice.blockingOrderId}`}>View blocking order</Link>}</span>
           </label>)}
           <label className="flex gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
             <RadioGroupItem value="separate" className="mt-0.5" />
@@ -74,7 +78,7 @@ export function ProcedureOrderDialog({ caseId, episodeId, encounterId, recommend
           </label>
         </RadioGroup>}
       </div>
-      <DialogFooter><Button onClick={submit} disabled={pending || !selection || seriesLoadError}>{pending ? 'Creating…' : 'Create Order'}</Button></DialogFooter>
+      <DialogFooter><Button onClick={submit} disabled={pending || !selection || seriesLoadError}>{pending ? 'Creating…' : selection?.relationship === 'reopen' ? 'Reopen Series and Create Order' : 'Create Order'}</Button></DialogFooter>
     </DialogContent>
   </Dialog>
 }

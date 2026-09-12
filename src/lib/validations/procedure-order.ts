@@ -29,7 +29,7 @@ export const createProcedureOrderFromRecommendationSchema = createProcedureOrder
   .omit({ procedure_series_id: true })
   .and(z.discriminatedUnion('series_relationship', [
     z.object({ series_relationship: z.literal('separate'), selected_series_id: z.null() }),
-    z.object({ series_relationship: z.enum(['current', 'prior']), selected_series_id: z.string().uuid() }),
+    z.object({ series_relationship: z.enum(['current', 'prior', 'reopen']), selected_series_id: z.string().uuid() }),
   ]))
 
 export type CreateProcedureOrderInput = z.infer<typeof createProcedureOrderSchema>

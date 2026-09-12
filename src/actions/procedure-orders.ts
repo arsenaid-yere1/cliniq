@@ -4,12 +4,19 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
 import { createProcedureOrderFromRecommendationSchema, type CreateProcedureOrderFromRecommendationInput } from '@/lib/validations/procedure-order'
-import { buildSavedSeriesRelationshipLabel, type ProcedureSeriesRelationship } from '@/lib/clinical/procedure-series-labels'
+import { buildSavedSeriesRelationshipLabel, type ProcedureSeriesRelationship, type ProcedureSeriesChoice } from '@/lib/clinical/procedure-series-labels'
 import type { Tables } from '@/types/database'
 
 export type ProcedureOrderSummary = Tables<'procedure_orders'> & {
   seriesRelationship: ProcedureSeriesRelationship | 'unknown'
   seriesRelationshipLabel: string
+}
+
+export async function previewProcedureSeriesChoices(caseId: string, episodeId: string): Promise<{ data: ProcedureSeriesChoice[]; error?: string }> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('preview_procedure_series_choices', { p_case_id: caseId, p_episode_id: episodeId })
+  if (error || !Array.isArray(data)) return { data: [], error: 'Unable to load procedure series choices' }
+  return { data: data as unknown as ProcedureSeriesChoice[] }
 }
 
 export async function listProcedureOrders(caseId:string, episodeId?:string) {
@@ -69,6 +76,9 @@ export async function createProcedureOrderFromRecommendation(input:CreateProcedu
   })
   if(error){
     const message=error.message
+    if (['40001', '40P01'].includes(error.code ?? '')) return {error:'The case changed while creating this order. Refresh and try again.'}
+    if(message.includes('Care episode is not writable'))return {error:'Reactivate this episode and finish any open discharge correction before ordering.'}
+    if(message.includes('Finalize the replacement note'))return {error:'Finish the replacement follow-up note before creating another order.'}
     if(message.includes('finalized recommendation'))return {error:'A finalized recommendation is required'}
     if(message.includes('recommendation_active')||message.includes('duplicate'))return {error:'This recommendation already has an order'}
     if(message.includes('already has an open order')||message.includes('one_open_per_series'))return {error:'This series already has an open procedure order. Refresh after it is completed or cancelled.'}

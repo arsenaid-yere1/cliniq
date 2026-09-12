@@ -112,7 +112,7 @@ export function ProcedureAppointmentTable({ caseId, orders, appointments, provid
       {orders.length === 0 ? <p className="text-sm text-muted-foreground">No procedure orders.</p> : <div className="space-y-3">{orders.map((order) => {
         const attempts = appointments.filter((attempt) => attempt.procedure_order_id === order.id)
         const active = attempts.find((attempt) => attempt.status === 'scheduled')
-        return <div key={order.id} className="rounded-md border p-4">
+        return <div key={order.id} id={`order-${order.id}`} className="scroll-mt-6 rounded-md border p-4 target:border-primary target:bg-primary/5">
           <div className="flex flex-wrap items-start justify-between gap-3"><div>
             <div className="flex items-center gap-2"><p className="font-medium uppercase">{order.procedure_type}</p><Badge variant="outline">{order.status}</Badge></div>
             <p className="text-sm text-muted-foreground">{orderSites(order.sites).map((site) => site.label).join(', ') || 'Sites on order'}</p>

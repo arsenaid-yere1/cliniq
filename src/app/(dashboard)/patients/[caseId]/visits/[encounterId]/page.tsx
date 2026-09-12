@@ -7,8 +7,7 @@ import { PainFollowUpEditor } from '@/components/visits/pain-follow-up-editor'
 import { Badge } from '@/components/ui/badge'
 import { TelehealthIntakeCard } from '@/components/visits/telehealth-intake-card'
 import { buildPainFollowUpEditorKey } from '@/lib/clinical/pain-follow-up-editor-key'
-import { buildProcedureSeriesOptions } from '@/lib/clinical/procedure-series-labels'
-import { listProcedureOrders } from '@/actions/procedure-orders'
+import { listProcedureOrders, previewProcedureSeriesChoices } from '@/actions/procedure-orders'
 
 export default async function VisitPage({params}:{params:Promise<{caseId:string;encounterId:string}>}) {
   requireReturnTeleVisitsPage()
@@ -25,20 +24,7 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
     loadFollowUpIntakeHistory(supabase, encounter),
   ])
   const episodeWritable = !episodeResult.error && episodeResult.data?.status === 'active' && !correctionResult.error && correctionResult.data?.length === 0
-  const {data:seriesRows,error:seriesError}=await supabase.from('procedure_series')
-    .select('id,episode_id,series_number,procedure_type,status,deleted_at,episode:care_episodes!inner(episode_number),procedures!procedures_series_ownership_fkey(procedure_number,deleted_at),procedure_orders(status,deleted_at)')
-    .eq('case_id',caseId).order('created_at',{ascending:false})
-  const candidates=(seriesRows??[]).flatMap((series)=>{
-    const episode=Array.isArray(series.episode)?series.episode[0]:series.episode
-    return episode?[{
-      id:series.id,
-      episodeId:series.episode_id,episodeNumber:episode.episode_number,seriesNumber:series.series_number,
-      procedureType:series.procedure_type,status:series.status,deletedAt:series.deleted_at,
-      procedureNumbers:series.procedures.filter((procedure)=>procedure.deleted_at===null).map((procedure)=>procedure.procedure_number),
-      orderStatuses:series.procedure_orders.map((order)=>({status:order.status,deletedAt:order.deleted_at})),
-    }]:[]
-  })
-  const seriesChoices=buildProcedureSeriesOptions(candidates,encounter.episode_id)
+  const {data:seriesChoices,error:seriesError}=await previewProcedureSeriesChoices(caseId,encounter.episode_id)
   const followUpNote=noteResult.data??null
   return <div className="space-y-6"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">Pain Follow-Up</h1><Badge variant="outline">{encounter.status.replaceAll('_',' ')}</Badge></div><p className="text-sm text-muted-foreground capitalize">{encounter.modality} visit · {encounter.encounter_date??'Date pending'}</p></div><TelehealthIntakeCard key={encounter.id} caseId={caseId} encounter={encounter} history={intakeHistory} episodeWritable={episodeWritable}/><PainFollowUpEditor key={buildPainFollowUpEditorKey(followUpNote)} caseId={caseId} encounter={encounter} initialNote={followUpNote} episodeWritable={episodeWritable} seriesChoices={seriesChoices} procedureOrders={(orderResult.data??[]).filter((order)=>order.source_encounter_id===encounterId)} relationshipLoadError={!!seriesError||!!orderResult.error}/></div>
 }

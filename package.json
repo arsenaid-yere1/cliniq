@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:clinical-workflow": "vitest run src/actions/__tests__/clinical-reset.test.ts src/actions/__tests__/pain-follow-up-notes-reset.test.ts src/actions/__tests__/procedure-orders.test.ts src/components/clinical/__tests__/clinical-reset-dialog.test.tsx src/components/procedures/__tests__/procedure-order-dialog.test.tsx src/lib/clinical/__tests__/procedure-series-labels.test.ts",
+    "check:clinical-workflow": "npm run test:clinical-workflow && tsc --noEmit && npm run db:test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "gen:types": "npx supabase gen types --lang=typescript --project-id=$SUPABASE_PROJECT_ID > src/types/database.ts",

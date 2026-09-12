@@ -101,7 +101,7 @@ export function ClinicalResetDialog({ caseId, target, keepContent = false, disab
                 {clinicalNoteLabel(n)} · {n.status}
               </label>
               {n.blockers.map(b => <p key={`${b.kind}:${b.id}`} className="mt-2">
-                {b.message}. <Link className="underline" href={b.kind === 'billing' ? `/patients/${caseId}/billing/${b.id}` : `/patients/${caseId}/procedures`}>View {b.kind === 'billing' ? 'invoice' : 'order'}</Link>
+                {b.message}. <Link className="underline" href={b.kind === 'billing' ? `/patients/${caseId}/billing/${b.id}` : `/patients/${caseId}/procedures#order-${b.id}`}>View {b.kind === 'billing' ? 'invoice' : 'order'}</Link>
               </p>)}
             </div>)}
           </fieldset>

@@ -4523,6 +4523,7 @@ export type Database = {
         }
         Returns: Json
       }
+      preview_procedure_series_choices: { Args: { p_case_id: string; p_episode_id: string }; Returns: Json }
       preview_clinical_reset: { Args: { p_case_id: string; p_episode_id?: string }; Returns: Json }
       apply_clinical_reset: { Args: { p_request: Json }; Returns: string }
       finish_clinical_note: { Args: { p_kind: string; p_note_id: string; p_case_id: string; p_document_id: string; p_expected_updated_at: string }; Returns: string }

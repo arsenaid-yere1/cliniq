@@ -67,4 +67,29 @@ describe('ProcedureOrderDialog', () => {
     expect(screen.getByRole('alert').textContent).toContain('could not be loaded')
     expect(screen.getByRole('button', { name: 'Create Order' })).toHaveProperty('disabled', true)
   })
+  it('explicitly selects reopening and submits the same series', async () => {
+    const user = userEvent.setup()
+    renderDialog({seriesChoices: [{id: '55555555-5555-4555-8555-555555555555', relationship: 'reopen',
+      episodeId: 'episode', episodeNumber: 1, seriesNumber: 1, procedureType: 'prp', latestProcedureNumber: 1,
+      hasOpenOrder: false, eligible: true, unavailableReason: null}]})
+    await user.click(screen.getByRole('button', {name: 'Create Procedure Order'}))
+    expect(screen.getByRole('button', {name: 'Create Order'})).toHaveProperty('disabled', true)
+    await user.click(screen.getByText(/Reopen and continue this series/))
+    await user.click(screen.getByRole('button', {name: 'Reopen Series and Create Order'}))
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({series_relationship: 'reopen', selected_series_id: '55555555-5555-4555-8555-555555555555'}))
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the dialog open when the selected series changed', async () => {
+    createOrder.mockResolvedValue({error: 'This series is no longer eligible. Refresh or choose another option.'})
+    const user = userEvent.setup()
+    renderDialog({seriesChoices: [{id: 'series', relationship: 'reopen', episodeId: 'episode', episodeNumber: 1,
+      seriesNumber: 1, procedureType: 'prp', latestProcedureNumber: 1, hasOpenOrder: false, eligible: true, unavailableReason: null}]})
+    await user.click(screen.getByRole('button', {name: 'Create Procedure Order'}))
+    await user.click(screen.getByText(/Reopen and continue this series/))
+    await user.click(screen.getByRole('button', {name: 'Reopen Series and Create Order'}))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
 })

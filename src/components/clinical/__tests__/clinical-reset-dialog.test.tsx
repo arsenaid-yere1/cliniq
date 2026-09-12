@@ -72,4 +72,11 @@ describe('clinical reset confirmation', () => {
     await waitFor(() => expect(applyClinicalReset).toHaveBeenCalledWith(expect.objectContaining({ reactivate: false, reason: '', notes: [expect.objectContaining({ id: preview.notes[0].id })] })))
   })
 
+  it('links directly to the order blocking a reset', async () => {
+    vi.mocked(previewClinicalReset).mockResolvedValue({data: {...preview, notes: [{...preview.notes[0], blockers: [{kind: 'order', id: 'order-1', message: 'Finish or cancel this order'}]}]}})
+    render(<ClinicalResetDialog caseId={preview.case_id} target={{kind: 'discharge_notes', id: preview.notes[0].id}} />)
+    await userEvent.click(screen.getByRole('button', {name: 'Reset'}))
+    expect(await screen.findByRole('link', {name: 'View order'})).toHaveProperty('hash', '#order-order-1')
+  })
+
 })
