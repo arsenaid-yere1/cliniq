@@ -27,7 +27,7 @@ export async function loadFollowUpIntakeHistory(
       client.from('pain_follow_up_notes').select('id,encounter_id,subjective,interval_history,treatment_plan')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .eq('status', 'finalized').is('deleted_at', null),
-      client.from('procedures').select('id,procedure_date,procedure_type,sites,procedure_series_id')
+      client.from('procedures').select('id,procedure_date,procedure_type,sites,procedure_series_id,patient_tolerance,complications,activity_restriction_hrs')
         .eq('case_id', encounter.case_id).eq('episode_id', encounter.episode_id)
         .is('deleted_at', null).lt('procedure_date', date).order('procedure_date').order('id'),
       client.from('care_episodes').select('episode_number')
@@ -67,8 +67,9 @@ export async function loadFollowUpIntakeHistory(
         discharge = result.data
       }
     }
+    const priorProcedures = (procedures.data ?? []).filter((procedure) => procedure.procedure_date < date)
     const visit = visits[0] ?? null
-    const history = buildIntakeHistory(visit, procedures.data ?? [], discharge)
+    const history = buildIntakeHistory(visit, priorProcedures, discharge)
     if (!options.summarizeSavedIntake && !initializeFollowUpIntake(encounter, history).applied) return { data: history }
     const summary = await summarizeFollowUpIntake({
       visitDate: date,
@@ -76,10 +77,16 @@ export async function loadFollowUpIntakeHistory(
         date: visit.date, complaint: intakeText(visit.complaint),
         response: intakeText(visit.response), plan: intakeText(visit.plan),
       } : null,
-      procedures: (procedures.data ?? []).map((procedure) => ({
+      procedures: priorProcedures.map((procedure) => ({
         date: procedure.procedure_date, type: procedure.procedure_type,
         seriesId: procedure.procedure_series_id,
         sites: parseSitesJsonb(procedure.sites).map(labelWithLaterality),
+        immediateOutcome: {
+          tolerance: intakeText(procedure.patient_tolerance) || null,
+          complications: intakeText(procedure.complications) || null,
+          activityRestrictionHours: typeof procedure.activity_restriction_hrs === 'number' && procedure.activity_restriction_hrs > 0
+            ? procedure.activity_restriction_hrs : null,
+        },
       })),
       previousDischarge: discharge?.visit_date ? {
         date: discharge.visit_date,

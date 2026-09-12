@@ -55,6 +55,17 @@ describe('natural intake summaries', () => {
     expect(callClaudeTool).toHaveBeenCalledOnce()
     expect(vi.mocked(callClaudeTool).mock.calls[0][0].parse({ chiefComplaint: summary.chiefComplaint, intervalHistory: '' }).success).toBe(true)
   })
+  it('accepts the approved procedure outcome example and supplies explicit immediate-only context', async () => {
+    const procedure = { ...source.procedures[1], immediateOutcome: { tolerance: 'tolerated_well', complications: 'None', activityRestrictionHours: 48 } }
+    await summarizeFollowUpIntake({ ...source, procedures: [source.procedures[0], procedure] })
+    const options = vi.mocked(callClaudeTool).mock.calls[0][0]
+    expect(JSON.parse(options.messages[0].content as string).procedures[1].immediateOutcome).toEqual(procedure.immediateOutcome)
+    expect(options.parse({ chiefComplaint: 'The patient presents for follow-up after the second PRP treatment session for left knee pain.', intervalHistory: 'The patient previously reported moderate pain improvement after the first session. The second procedure was tolerated well, with no immediate complications documented.' }).success).toBe(true)
+    expect(INTAKE_SUMMARY_PROMPT).toContain('latest performed procedure as the primary basis')
+    expect(INTAKE_SUMMARY_PROMPT).toContain('missing or blank complications field does not mean no complications')
+    expect(INTAKE_SUMMARY_PROMPT).toContain('Preserve "adverse_reaction"')
+    expect(INTAKE_SUMMARY_PROMPT).toContain('Do not say the patient complied')
+  })
   it('does not infer a complaint from a plan/discharge alone', async () => {
     await summarizeFollowUpIntake({ ...source, previousVisit: null, procedures: [], previousDischarge: { date: '2026-08-01', text: 'Previously improved.' } })
     expect(vi.mocked(callClaudeTool).mock.calls[0][0].parse(summary).success).toBe(false)

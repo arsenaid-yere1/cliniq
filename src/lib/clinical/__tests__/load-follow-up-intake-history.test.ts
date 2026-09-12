@@ -48,7 +48,7 @@ describe('follow-up history loading', () => {
     expect(queries.pain_follow_up_notes.eq).toHaveBeenCalledWith('status', 'finalized')
     expect(queries.initial_visit_notes.lt).toHaveBeenCalledWith('visit_date', '2026-09-12')
     expect(queries.procedures.lt).toHaveBeenCalledWith('procedure_date', '2026-09-12')
-    expect(queries.procedures.select).toHaveBeenCalledWith('id,procedure_date,procedure_type,sites,procedure_series_id')
+    expect(queries.procedures.select).toHaveBeenCalledWith('id,procedure_date,procedure_type,sites,procedure_series_id,patient_tolerance,complications,activity_restriction_hrs')
   })
   it('uses finalized initial evaluation complaint and plan when it is the latest eligible visit', async () => {
     const { client } = setup({ pain_follow_up_notes: [] })
@@ -103,8 +103,30 @@ describe('follow-up history loading', () => {
     const source = vi.mocked(summarizeFollowUpIntake).mock.calls[0][0]
     expect(source.previousVisit?.date).toBe('2026-09-09')
     expect(source.previousVisit?.response).toContain('moderate improvement')
-    expect(source.procedures).toEqual([{ date: '2026-09-02', type: 'prp', seriesId: 'series', sites: [] }, { date: '2026-09-08', type: 'prp', seriesId: 'series', sites: [] }])
+    expect(source.procedures).toEqual([{ date: '2026-09-02', type: 'prp', seriesId: 'series', sites: [], immediateOutcome: { tolerance: null, complications: null, activityRestrictionHours: null } }, { date: '2026-09-08', type: 'prp', seriesId: 'series', sites: [], immediateOutcome: { tolerance: null, complications: null, activityRestrictionHours: null } }])
     expect(queries.pain_follow_up_notes.select).toHaveBeenCalledWith('id,encounter_id,subjective,interval_history,treatment_plan')
+  })
+  it('passes immediate outcomes from performed procedures even without a prior note', async () => {
+    const { client } = setup({ clinical_encounters: [], initial_visit_notes: [], pain_follow_up_notes: [], procedures: [
+      { id: 'p1', procedure_date: '2026-09-08', procedure_type: 'prp', procedure_series_id: 'series', sites: [], patient_tolerance: 'adverse_reaction', complications: 'Transient dizziness', activity_restriction_hrs: 48 },
+    ] })
+    vi.mocked(summarizeFollowUpIntake).mockResolvedValue({ data: { chiefComplaint: 'The patient presents for follow-up after PRP treatment.', intervalHistory: 'Transient dizziness was documented during the procedure.' } })
+    const result = await loadFollowUpIntakeHistory(client as never, encounter)
+    expect(result.data?.intervalHistory).toBe('Transient dizziness was documented during the procedure.')
+    expect(vi.mocked(summarizeFollowUpIntake).mock.calls[0][0].procedures[0].immediateOutcome).toEqual({ tolerance: 'adverse_reaction', complications: 'Transient dizziness', activityRestrictionHours: 48 })
+    expect(result.data?.sources[0].id).toBe('p1')
+  })
+  it('keeps missing outcomes unknown and excludes same-day and future procedures from summaries and provenance', async () => {
+    const { client } = setup({ procedures: [
+      { id: 'past', procedure_date: '2026-09-08', procedure_type: 'prp', sites: [], patient_tolerance: ' ', complications: '', activity_restriction_hrs: 0 },
+      { id: 'today', procedure_date: '2026-09-12', procedure_type: 'prp', sites: [] },
+      { id: 'future', procedure_date: '2026-09-13', procedure_type: 'prp', sites: [] },
+    ] })
+    const result = await loadFollowUpIntakeHistory(client as never, encounter)
+    const procedures = vi.mocked(summarizeFollowUpIntake).mock.calls[0][0].procedures
+    expect(procedures).toHaveLength(1)
+    expect(procedures[0].immediateOutcome).toEqual({ tolerance: null, complications: null, activityRestrictionHours: null })
+    expect(result.data?.sources.filter((source) => source.kind === 'procedure').map((source) => source.id)).toEqual(['past'])
   })
   it('never falls back to full text when summaries fail', async () => {
     const { client } = setup()
