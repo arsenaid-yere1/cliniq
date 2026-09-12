@@ -29,6 +29,42 @@ describe('normalizeRegion', () => {
 })
 
 describe('computePlanAlignment', () => {
+  const performedCervical = {
+    injection_site: 'Bilateral Cervical Facet',
+    sites: [{ label: 'Cervical Facet', laterality: 'bilateral' as const,
+      volume_ml: 3, target_confirmed_imaging: null }],
+    guidance_method: 'ultrasound' as const,
+  }
+
+  it('aligns cervical PRP prose containing levels and generic injection sentences', () => {
+    const result = computePlanAlignment({
+      performed: performedCervical,
+      pmTreatmentPlan: null,
+      initialVisitTreatmentPlan:
+        'The persistence of symptoms establishes the basis for injection therapy.\n\n' +
+        'The following regions are recommended:\n• Cervical Spine: Ultrasound-guided PRP injections at C3-C4, C4-C5, C5-C6 and C6-C7 targeting pain generators at these levels.\n' +
+        'An initial staged course of one to three injection sessions is planned.',
+    })
+    expect(result.status).toBe('aligned')
+    expect(result.planned).toMatchObject({
+      source: 'initial_visit_note', body_region: 'cervical', guidance_hint: 'ultrasound',
+      target_levels: ['C3-C4', 'C4-C5', 'C5-C6', 'C6-C7'],
+    })
+    expect(result.mismatches).toEqual([])
+  })
+
+  it('still flags cervical treatment as unplanned against an actual lumbar plan', () => {
+    const result = computePlanAlignment({
+      performed: performedCervical,
+      pmTreatmentPlan: null,
+      initialVisitTreatmentPlan: 'Lumbar Spine: Ultrasound-guided PRP injections at L4-L5 and L5-S1 levels.',
+    })
+    expect(result.status).toBe('unplanned')
+    expect(result.mismatches).toEqual([
+      { field: 'body_region', planned: 'lumbar', performed: 'cervical' },
+    ])
+  })
+
   const performedLumbar = {
     injection_site: 'Lumbar L4-L5',
     sites: [

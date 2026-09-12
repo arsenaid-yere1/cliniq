@@ -13,6 +13,25 @@ const intake = {
 }
 
 describe('buildPrpTargetEvidence', () => {
+  it('keeps cervical imaging levels associated with cervical clinical evidence', () => {
+    const bundle = buildPrpTargetEvidence({
+      imagingRows: [{ ...imaging, body_region: 'Cervical spine levels',
+        findings: [{ level: 'C5-C6', description: 'Disc protrusion' }] }],
+      providerIntake: {
+        chief_complaints: { complaints: [{ body_region: 'Neck' }] },
+        exam_findings: { regions: [{ region: 'Cervical', palpation_findings: 'Tenderness' }] },
+      },
+    })
+    expect(bundle.candidates).toHaveLength(1)
+    expect(bundle.candidates[0]).toMatchObject({
+      region: 'cervical', level_or_location: 'C5-C6', eligible: true,
+      anatomic_evidence_ids: ['mri-1:anatomic:0'],
+      complaint_evidence_ids: ['current:complaint:0'],
+      exam_evidence_ids: ['current:exam:0'],
+      ineligibility_reasons: [],
+    })
+  })
+
   it('requires abnormal anatomy plus a current complaint and exam', () => {
     const bundle = buildPrpTargetEvidence({ imagingRows: [imaging], providerIntake: intake })
     expect(bundle.candidates).toHaveLength(1)

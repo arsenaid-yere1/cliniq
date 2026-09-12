@@ -43,7 +43,11 @@ export function normalizeRegion(raw: string | null | undefined): string | null {
   if (!cleaned) return null
   if (REGION_SYNONYMS[cleaned]) return REGION_SYNONYMS[cleaned]
   for (const [key, canonical] of Object.entries(REGION_SYNONYMS)) {
-    if (cleaned.includes(key)) return canonical
+    // Short anatomical abbreviations must not match ordinary words like levels or basis.
+    const matches = key === 'ls' ? /\bls\b/.test(cleaned)
+      : key === 'si' ? /\bsi\b/.test(cleaned)
+      : cleaned.includes(key)
+    if (matches) return canonical
   }
   const match = cleaned.match(/\b([ctls])\s*\d{1,2}\b/i)
   return match ? regionFromPrefix(match[1]) : cleaned
