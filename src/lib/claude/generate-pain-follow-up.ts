@@ -22,12 +22,6 @@ Never invent palpation, strength grades, reflexes, measured range-of-motion degr
 The telehealth_observations section may contain only findings directly visible or audible by video, such as general appearance, alertness, speech, visible distress, and gross movement observed on camera.
 Do not describe palpation, graded strength, reflexes, or measured range of motion as current findings in telehealth_observations or assessment, even when normal.
 When a limitation must be documented, use explicit non-performance language such as: "Palpation was not performed because this was a telehealth encounter."
-CURRENT VISIT AND HISTORICAL CONTEXT
-The encounter is today's documented intake. Use it as the primary source of current symptoms, reported severity, onset, and response. Historical sources are comparisons, not additional current complaints.
-Include an older symptom only when it explains a current assessment or a meaningful comparison. Do not repeat an unrelated prior complaint merely because it is present in history.
-A symptom omitted from today's intake is neither confirmed ongoing nor confirmed resolved. Do not infer new onset from first mention, or label pain as new without documented onset.
-Current explicit corrections take precedence over historical descriptions. Clearly date and attribute any relevant historical symptom, severity, examination, or decision. Do not promote a prior left-shoulder complaint to today's active complaints unless documented today.
-Patient-reported movement pain remains patient-reported, even if entered in video_observations. It is not a provider-observed video finding.
 Prior values are historical comparisons only and must retain their date/source label.
 Recommendations remain conditional and must also be emitted as structured procedure_recommendations with stable UUID recommendation_id values.
 Do not state that a procedure has been ordered or scheduled.`
@@ -84,23 +78,14 @@ export function normalizePainFollowUpToolOutput(raw: Record<string, unknown>) {
 export async function generatePainFollowUp(
   source: PainFollowUpSourceData,
   regeneration?: { section: string; message: string; rationale: string | null },
-): Promise<{ data?: PainFollowUpNoteResult; rawResponse?: unknown; model?: string; error?: string }> {
+): Promise<{ data?: PainFollowUpNoteResult; rawResponse?: unknown; error?: string }> {
   const regenerationInstruction = regeneration
     ? `\nRegenerate the ${regeneration.section} section to address this quality finding: ${regeneration.message}${regeneration.rationale ? ` (${regeneration.rationale})` : ''}. Keep all source boundaries and telehealth safeguards.`
     : ''
   return callClaudeTool<PainFollowUpNoteResult>({
     model: 'claude-opus-4-6', fallbackModel: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT + VISIT_DECISION_PROMPT,
     tools: [TOOL], toolName: 'generate_pain_follow_up',
-    messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify({
-      currentVisit: source.encounter,
-      patient: source.patient,
-      provider: source.provider,
-      historicalContext: {
-        latestCompletedEncounter: source.latestCompletedEncounter,
-        priorEpisodeDischarge: source.priorEpisodeDischarge,
-        performedProcedures: source.performedProcedures,
-      },
-    }, null, 2)}${regenerationInstruction}` }],
+    messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${regenerationInstruction}` }],
     parse: (raw) => {
       const parsed = painFollowUpNoteResultSchema.safeParse(normalizePainFollowUpToolOutput(raw))
       if (!parsed.success) return { success: false, error: parsed.error }

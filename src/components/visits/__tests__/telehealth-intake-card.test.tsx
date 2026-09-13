@@ -8,7 +8,6 @@ vi.mock('@/actions/follow-up-intake-history', () => ({ requestFollowUpIntakeHist
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error } }))
 vi.mock('@/actions/clinical-encounters', () => ({ updatePainFollowUpEncounter: save, changePainFollowUpStatus: status }))
-import { FollowUpWorkspace, useFollowUpWorkspace } from '../follow-up-workspace'
 import { TelehealthIntakeCard } from '../telehealth-intake-card'
 import { CaseStatusProvider } from '@/components/patients/case-status-context'
 
@@ -145,21 +144,4 @@ describe('historical follow-up intake', () => {
     rerender(<CaseStatusProvider status="closed"><TelehealthIntakeCard {...props} /></CaseStatusProvider>)
     expect(input('Chief complaint').disabled).toBe(true)
   })
-})
-
-function IntakeState() {
-  const { intakeDirty } = useFollowUpWorkspace()
-  return <p data-testid="intake-state">{intakeDirty ? 'unsaved' : 'saved'}</p>
-}
-it('coordinates unsaved intake with the note workspace and clears only after a successful save', async () => {
-  render(<FollowUpWorkspace><TelehealthIntakeCard caseId="case" encounter={{ ...encounter, provider_intake: { chief_complaint: 'Saved complaint' } }} /><IntakeState /></FollowUpWorkspace>)
-  expect(screen.getByTestId('intake-state').textContent).toBe('saved')
-  fireEvent.change(input('Patient-reported pain minimum'), { target: { value: '4' } })
-  expect(screen.getByTestId('intake-state').textContent).toBe('unsaved')
-  save.mockResolvedValueOnce({ error: 'Source conflict' })
-  fireEvent.click(saveButton())
-  await waitFor(() => expect(error).toHaveBeenCalledWith('Source conflict'))
-  expect(screen.getByTestId('intake-state').textContent).toBe('unsaved')
-  fireEvent.click(saveButton())
-  await waitFor(() => expect(screen.getByTestId('intake-state').textContent).toBe('saved'))
 })

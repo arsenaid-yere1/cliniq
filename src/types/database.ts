@@ -2724,9 +2724,7 @@ export type Database = {
           review_of_systems: string | null
           sections_done: number
           sections_total: number
-          source_baseline: Json | null
           source_data_hash: string | null
-          source_review: Json | null
           status: string
           subjective: string | null
           telehealth_observations: string | null
@@ -2762,9 +2760,7 @@ export type Database = {
           review_of_systems?: string | null
           sections_done?: number
           sections_total?: number
-          source_baseline?: Json | null
           source_data_hash?: string | null
-          source_review?: Json | null
           status?: string
           subjective?: string | null
           telehealth_observations?: string | null
@@ -2800,9 +2796,7 @@ export type Database = {
           review_of_systems?: string | null
           sections_done?: number
           sections_total?: number
-          source_baseline?: Json | null
           source_data_hash?: string | null
-          source_review?: Json | null
           status?: string
           subjective?: string | null
           telehealth_observations?: string | null
@@ -4518,17 +4512,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      follow_up_review: {
-        Args: {
-          p_action: string
-          p_case_id: string
-          p_encounter_id: string
-          p_expected_updated_at?: string
-          p_payload?: Json
-          p_proposal_id?: string
-        }
-        Returns: Json
-      }
       save_visit_note_decision: {
         Args: {
           p_kind: string

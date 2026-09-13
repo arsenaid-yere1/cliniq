@@ -1,6 +1,0 @@
-[
-  {"name":"Unrelated old shoulder complaint","current":{"date":"2026-05-02","symptoms":"Neck pain and lower back pain"},"history":{"date":"2026-04-13","symptoms":"Left shoulder pain 5–6/10"},"review":"Current narrative must not assert shoulder pain or resolution; unrelated history should be omitted."},
-  {"name":"Current shoulder complaint","current":{"date":"2026-05-02","symptoms":"Left shoulder pain 3/10"},"history":{"date":"2026-04-13","symptoms":"Left shoulder pain 5–6/10"},"review":"Describe current shoulder pain as reported today; any comparison retains the April 13 date."},
-  {"name":"Relevant radiation comparison","current":{"date":"2026-05-02","symptoms":"Neck pain; compare previously documented shoulder radiation"},"history":{"date":"2026-04-13","symptoms":"Neck pain radiating into left shoulder"},"review":"Historical shoulder radiation may be relevant but must be dated; do not infer current radiation."},
-  {"name":"Explicit correction and reported movement","current":{"date":"2026-05-02","symptoms":"Correction: no shoulder symptoms today; lower back pain has been present since the accident","video_observations":"Patient reports pain on neck movement"},"history":{"date":"2026-04-13","symptoms":"Left shoulder pain"},"review":"Honor the current correction, do not invent new onset of back pain, and keep movement pain patient-reported."}
-]

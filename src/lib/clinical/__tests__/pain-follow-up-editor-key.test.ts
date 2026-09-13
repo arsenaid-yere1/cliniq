@@ -12,7 +12,7 @@ describe('buildPainFollowUpEditorKey', () => {
     expect(generatedKey).not.toBe(emptyKey)
   })
 
-  it('preserves local editor state when persisted content changes', () => {
+  it('changes when persisted note content is regenerated', () => {
     const before = buildPainFollowUpEditorKey({
       id: 'note-1',
       updated_at: '2026-08-27T17:10:00Z',
@@ -22,7 +22,7 @@ describe('buildPainFollowUpEditorKey', () => {
       updated_at: '2026-08-27T17:11:00Z',
     })
 
-    expect(after).toBe(before)
+    expect(after).not.toBe(before)
   })
 
   it('stays stable during unrelated route refreshes', () => {

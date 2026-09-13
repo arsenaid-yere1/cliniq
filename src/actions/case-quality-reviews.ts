@@ -945,19 +945,6 @@ export async function fixFinding(caseId: string, findingHash: string) {
   const eligibility = findingFixEligibility(finding)
   if (!eligibility.fixable) return { error: eligibility.reason }
 
-  // Follow-up corrections remain proposals until a clinician accepts them in the visit editor.
-  // Do not mark the finding resolved or recheck unchanged saved prose.
-  if (finding.step === 'pain_follow_up') {
-    const { data: note } = await supabase.from('pain_follow_up_notes').select('updated_at')
-      .eq('case_id', caseId).eq('episode_id', episode.id).eq('encounter_id', finding.encounter_id as string)
-      .eq('status', 'draft').is('deleted_at', null).maybeSingle()
-    if (!note) return { error: 'Open a draft follow-up visit before preparing a correction' }
-    const proposed = await regeneratePainFollowUpSectionAction(caseId, finding.encounter_id as string,
-      finding.section_key as PainFollowUpSection, { message: finding.message, rationale: finding.rationale }, note.updated_at)
-    if ('error' in proposed && proposed.error) return { error: proposed.error }
-    return { data: { success: true, reviewUrl: `/patients/${caseId}/visits/${finding.encounter_id}` } }
-  }
-
   const overrides = (row.finding_overrides as FindingOverridesMap | null) ?? {}
   const existing = overrides[findingHash] ?? null
   if (existing?.status === 'fix_in_progress') {
@@ -1003,6 +990,14 @@ export async function fixFinding(caseId: string, findingHash: string) {
       caseId,
       visitType,
       finding.section_key as InitialVisitSection,
+      findingFix,
+    )
+    if ('error' in res && res.error) regenError = res.error
+  } else if (finding.step === 'pain_follow_up') {
+    const res = await regeneratePainFollowUpSectionAction(
+      caseId,
+      finding.encounter_id as string,
+      finding.section_key as PainFollowUpSection,
       findingFix,
     )
     if ('error' in res && res.error) regenError = res.error

@@ -1,13 +1,12 @@
 import { loadFollowUpIntakeHistory } from '@/lib/clinical/load-follow-up-intake-history'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getPainFollowUpNote, getPainFollowUpReview } from '@/actions/pain-follow-up-notes'
+import { getPainFollowUpNote } from '@/actions/pain-follow-up-notes'
 import { requireReturnTeleVisitsPage } from '@/lib/features/return-tele-visits'
 import { PainFollowUpEditor } from '@/components/visits/pain-follow-up-editor'
 import { Badge } from '@/components/ui/badge'
 import { TelehealthIntakeCard } from '@/components/visits/telehealth-intake-card'
 import { buildPainFollowUpEditorKey } from '@/lib/clinical/pain-follow-up-editor-key'
-import { FollowUpWorkspace } from '@/components/visits/follow-up-workspace'
 import { listProcedureOrders, previewProcedureSeriesChoices } from '@/actions/procedure-orders'
 
 export default async function VisitPage({params}:{params:Promise<{caseId:string;encounterId:string}>}) {
@@ -27,6 +26,5 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
   const episodeWritable = !episodeResult.error && episodeResult.data?.status === 'active' && !correctionResult.error && correctionResult.data?.length === 0
   const {data:seriesChoices,error:seriesError}=await previewProcedureSeriesChoices(caseId,encounter.episode_id)
   const followUpNote=noteResult.data??null
-  const review = followUpNote?.status === 'finalized' ? null : await getPainFollowUpReview(caseId,encounterId)
-  return <div className="space-y-6"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">Pain Follow-Up</h1><Badge variant="outline">{encounter.status.replaceAll('_',' ')}</Badge></div><p className="text-sm text-muted-foreground capitalize">{encounter.modality} visit · {encounter.encounter_date??'Date pending'}</p></div><FollowUpWorkspace><TelehealthIntakeCard key={encounter.id} caseId={caseId} encounter={encounter} history={intakeHistory} episodeWritable={episodeWritable}/><PainFollowUpEditor key={buildPainFollowUpEditorKey(followUpNote)} review={review?.data ?? null} caseId={caseId} encounter={encounter} initialNote={followUpNote} episodeWritable={episodeWritable} seriesChoices={seriesChoices} procedureOrders={(orderResult.data??[]).filter((order)=>order.source_encounter_id===encounterId)} relationshipLoadError={!!seriesError||!!orderResult.error}/></FollowUpWorkspace></div>
+  return <div className="space-y-6"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">Pain Follow-Up</h1><Badge variant="outline">{encounter.status.replaceAll('_',' ')}</Badge></div><p className="text-sm text-muted-foreground capitalize">{encounter.modality} visit · {encounter.encounter_date??'Date pending'}</p></div><TelehealthIntakeCard key={encounter.id} caseId={caseId} encounter={encounter} history={intakeHistory} episodeWritable={episodeWritable}/><PainFollowUpEditor key={buildPainFollowUpEditorKey(followUpNote)} caseId={caseId} encounter={encounter} initialNote={followUpNote} episodeWritable={episodeWritable} seriesChoices={seriesChoices} procedureOrders={(orderResult.data??[]).filter((order)=>order.source_encounter_id===encounterId)} relationshipLoadError={!!seriesError||!!orderResult.error}/></div>
 }

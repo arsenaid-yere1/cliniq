@@ -6,5 +6,5 @@ export interface PainFollowUpNoteVersion {
 export function buildPainFollowUpEditorKey(
   note: PainFollowUpNoteVersion | null | undefined,
 ): string {
-  return note ? `pain-follow-up:${note.id}` : 'pain-follow-up:new'
+  return note ? `pain-follow-up:${note.id}:${note.updated_at}` : 'pain-follow-up:new'
 }

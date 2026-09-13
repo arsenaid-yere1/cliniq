@@ -1,7 +1,6 @@
 'use client'
 
-import { useFollowUpWorkspace } from './follow-up-workspace'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { changePainFollowUpStatus, updatePainFollowUpEncounter } from '@/actions/clinical-encounters'
@@ -34,12 +33,10 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
   episodeWritable?: boolean
 }) {
   const router = useRouter()
-  const { setIntakeDirty } = useFollowUpWorkspace()
   const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const locked = !episodeWritable || caseLocked || !['scheduled', 'in_progress'].includes(encounter.status)
   // Snapshot per encounter: a router refresh must not overwrite local edits or clears.
   const [initial] = useState(() => initializeFollowUpIntake(encounter, locked ? null : history?.data ?? null))
-  useEffect(() => { if (initial.applied) setIntakeDirty(true) }, [initial.applied, setIntakeDirty])
   const [intake, setIntake] = useState(initial.intake)
   const [sources, setSources] = useState(() => initial.applied ? history!.data!.sources : savedSources(initial.intake.history_prefill))
   const [reviewed, setReviewed] = useState(!initial.applied)
@@ -70,7 +67,6 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
       if (result.error) { toast.error(result.error); return }
       toast.success(message)
       router.refresh()
-      return true
     } catch {
       toast.error('Something went wrong. Your intake has been kept; please try again.')
     } finally {
@@ -100,7 +96,6 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
         }))
         setSources((existing) => [...new Map([...existing, ...suggestion.sources].map((source) => [`${source.kind}:${source.id}`, source])).values()])
         setReviewed(false)
-        setIntakeDirty(true)
       }
     } catch {
       setHistoryError('Previous visit information could not be loaded. Please try again.')
@@ -113,7 +108,7 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
     if (sources.length > 0 && !reviewed) return toast.error('Review the historical suggestions before saving.')
     if (invalidHistoryDate) return toast.error('Clear the historical suggestions before saving an earlier visit date.')
     const start = scheduledStart ? new Date(scheduledStart) : null
-    const saved = await run(() => updatePainFollowUpEncounter(caseId, {
+    await run(() => updatePainFollowUpEncounter(caseId, {
       encounter_id: encounter.id,
       scheduled_start: start?.toISOString() ?? null,
       scheduled_end: start ? new Date(start.getTime() + 30 * 60_000).toISOString() : null,
@@ -130,7 +125,6 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
       provider_location: providerLocation || null,
       connection_method: connection || null,
     }), 'Visit intake saved')
-    if (saved) setIntakeDirty(false)
   }
 
   async function changeStatus(status: 'in_progress' | 'cancelled' | 'no_show') {
@@ -140,7 +134,6 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
   }
 
   function clearSuggestions() {
-    setIntakeDirty(true)
     setIntake((value) => {
       const next: FollowUpIntake = { ...value, chief_complaint: '', interval_history: '' }
       delete next.history_prefill
@@ -153,7 +146,7 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Encounter intake</CardTitle></CardHeader>
-      <CardContent className="grid gap-4" onChangeCapture={() => setIntakeDirty(true)}>
+      <CardContent className="grid gap-4">
         {encounter.status === 'scheduled' && !locked && <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => changeStatus('in_progress')} disabled={pending}>Start visit</Button>
           <Button size="sm" variant="outline" onClick={() => changeStatus('no_show')} disabled={pending}>Mark no-show</Button>
