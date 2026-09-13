@@ -1606,7 +1606,11 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
 export async function saveDischargeNoteToneHint(
   caseId: string,
   toneHint: string | null,
-): Promise<{ error?: string }> {
+  version: { noteId: string; expectedUpdatedAt: string },
+): Promise<{ data?: { updated_at: string; tone_hint: string | null }; error?: string }> {
+  if (!version?.noteId || !version.expectedUpdatedAt) {
+    return { error: 'Reload the note before saving tone guidance.' }
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1620,46 +1624,21 @@ export async function saveDischargeNoteToneHint(
   const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
   if (correctionCheck.error) return { error: correctionCheck.error }
 
-  // Upsert pattern: update active row if present, otherwise create a pre-generation
-  // draft row holding only the tone hint.
-  const { data: existing } = await supabase
+  const { data, error } = await supabase
     .from('discharge_notes')
-    .select('id, status')
+    .update({ tone_hint: normalized, updated_by_user_id: user.id })
+    .eq('id', version.noteId)
     .eq('case_id', caseId)
     .eq('episode_id', episodeId)
+    .eq('status', 'draft')
     .is('deleted_at', null)
+    .eq('updated_at', version.expectedUpdatedAt)
+    .select('updated_at,tone_hint')
     .maybeSingle()
 
-  if (existing) {
-    if (existing.status === 'finalized') {
-      return { error: 'Cannot edit tone hint on a finalized note' }
-    }
-    const { error } = await supabase
-      .from('discharge_notes')
-      .update({ tone_hint: normalized, updated_by_user_id: user.id })
-      .eq('id', existing.id)
-    if (error) return { error: 'Failed to save tone hint' }
-  } else {
-    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
-      .eq('id', caseId).is('deleted_at', null).single()
-    const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
-      encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id,
-    }, supabase)
-    const { error } = await supabase
-      .from('discharge_notes')
-      .insert({
-        case_id: caseId,
-        episode_id: ownership.episodeId,
-        encounter_id: ownership.encounterId,
-        status: 'draft',
-        tone_hint: normalized,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-    if (error) return { error: 'Failed to save tone hint' }
-  }
-
-  return {}
+  if (error) return { error: 'Failed to save tone hint' }
+  if (!data) return { error: 'Note changed. Reload before saving' }
+  return { data }
 }
 
 // --- Read-only pain timeline payload for the editor widget (R10) ---

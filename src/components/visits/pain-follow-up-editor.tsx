@@ -7,7 +7,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -63,14 +63,19 @@ export function PainFollowUpEditor({
     ) as Record<PainFollowUpSection, string>,
   )
   const [decision, setDecision] = useState(() => visitDecisionDraft(initialNote?.visit_treatment_decision))
+  const [savedNote, setSavedNote] = useState(initialNote)
+  const expectedVersion = useRef(initialNote?.updated_at)
+  const running = useRef(false)
   const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const recommendations = (
-    initialNote?.procedure_recommendations ?? []
+    savedNote?.procedure_recommendations ?? []
   ) as unknown as ProcedureRecommendation[]
   const editorState = getPainFollowUpEditorState(initialNote)
   const visitWritable = encounter.status === 'in_progress' && !caseLocked && episodeWritable
 
   async function run(action: () => Promise<ActionResult>, successMessage: string) {
+    if (running.current) return
+    running.current = true
     setPending(true)
     try {
       const result = await action()
@@ -83,6 +88,7 @@ export function PainFollowUpEditor({
     } catch {
       toast.error('Something went wrong. Please try again.')
     } finally {
+      running.current = false
       setPending(false)
     }
   }
@@ -169,7 +175,7 @@ export function PainFollowUpEditor({
     encounter_id: encounter.id,
     reviewed_visit_date: encounter.encounter_date,
     treatment_decision: decision,
-    expected_updated_at: initialNote.updated_at,
+    expected_updated_at: expectedVersion.current,
     subjective: note.subjective,
     interval_history: note.interval_history,
     review_of_systems: note.review_of_systems,
@@ -182,6 +188,25 @@ export function PainFollowUpEditor({
     follow_up: note.follow_up,
     clinician_disclaimer: note.clinician_disclaimer,
     procedure_recommendations: recommendations,
+  }
+
+  async function saveDraft() {
+    const result = await savePainFollowUpNote(caseId, {
+      ...editValues,
+      expected_updated_at: expectedVersion.current,
+    })
+    if ('error' in result) return { error: result.error }
+    const saved = result.data && 'savedNote' in result.data ? result.data.savedNote : undefined
+    if (!saved || saved.id !== initialNote?.id || typeof saved.updated_at !== 'string' || !saved.updated_at
+      || !painFollowUpNoteSections.every((section) => typeof saved[section] === 'string' || saved[section] === null)) {
+      return { error: 'Unable to confirm the saved note version. Reload before finalizing.' }
+    }
+    const row = saved as unknown as Tables<'pain_follow_up_notes'>
+    expectedVersion.current = row.updated_at
+    setSavedNote(row)
+    setNote(Object.fromEntries(painFollowUpNoteSections.map((section) => [section, row[section] ?? ''])) as Record<PainFollowUpSection, string>)
+    setDecision(visitDecisionDraft(row.visit_treatment_decision))
+    return { data: { updated_at: row.updated_at } }
   }
 
   return (
@@ -206,7 +231,7 @@ export function PainFollowUpEditor({
                 variant="outline"
                 disabled={actionDisabled}
                 onClick={() => void run(
-                  () => savePainFollowUpNote(caseId, editValues),
+                  saveDraft,
                   'Follow-up note saved',
                 )}
               >
@@ -216,9 +241,9 @@ export function PainFollowUpEditor({
                 disabled={actionDisabled}
                 onClick={() => void run(
                   async () => {
-                    const saved = await savePainFollowUpNote(caseId, editValues)
+                    const saved = await saveDraft()
                     if ('error' in saved) return saved
-                    return finalizePainFollowUpNote(caseId, encounter.id, saved.data && 'savedNote' in saved.data ? saved.data.savedNote?.updated_at as string : undefined)
+                    return finalizePainFollowUpNote(caseId, encounter.id, saved.data.updated_at)
                   },
                   'Follow-up note finalized successfully',
                 )}
@@ -231,7 +256,7 @@ export function PainFollowUpEditor({
       </div>
 
       <VisitTreatmentDecisionFields value={decision} onChange={setDecision}
-        saved={initialNote.visit_treatment_decision} plan={note.treatment_plan}
+        saved={savedNote?.visit_treatment_decision} plan={note.treatment_plan}
         visitDate={encounter.encounter_date} education={note.patient_education}
         disabled={actionDisabled} historical={finalized} />
       <div className="grid gap-4">

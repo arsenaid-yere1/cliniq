@@ -1,6 +1,7 @@
 'use client'
 
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
+import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
 import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
 
@@ -1409,10 +1410,10 @@ function DraftEditor({
 
   const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
   const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
-  const acknowledgeVersion = useVisitNoteVersion(note, initialVisitSections, setVersion)
+  const { acknowledgeSavedNote, acknowledgeMetadataVersion } = useVisitNoteVersion(note, initialVisitSections, setVersion)
   function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
     if (!saved) return
-    acknowledgeVersion(saved)
+    acknowledgeSavedNote(saved)
     setSavedDecision(saved.visit_treatment_decision)
     form.setValue('expected_updated_at', saved.updated_at as string)
     if (!regeneratedSection || regeneratedSection === 'patient_education') {
@@ -1427,34 +1428,44 @@ function DraftEditor({
     }
   }
   const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
+  const mutations = useDraftNoteMutations({
+    identity: `${caseId}:${visitType}:${note.id}`,
+    writable: !isLocked && note.status === 'draft',
+    toneHint,
+    initialTone: note.tone_hint,
+    getVersion: () => form.getValues('expected_updated_at'),
+    acknowledgeVersion: acknowledgeMetadataVersion,
+    saveTone: (tone, expected) => saveInitialVisitNoteToneHint(caseId, visitType, tone, { noteId: note.id, expectedUpdatedAt: expected }),
+    onError: (message) => toast.error(message),
+  })
 
   function handleSave() {
     startTransition(async () => {
-      const values = form.getValues()
-      const result = await saveInitialVisitNote(caseId, visitType, values)
-      if (result.error) toast.error(result.error)
-      else { acceptSavedNote(result.data?.savedNote); toast.success('Draft saved') }
-    })
-  }
-
-  function handleToneHintBlur() {
-    void saveInitialVisitNoteToneHint(caseId, visitType, toneHint || null).then((result) => {
-      if (result.error) toast.error(result.error)
+      await mutations.run(async () => {
+        const result = await saveInitialVisitNote(caseId, visitType, form.getValues())
+        if (result.error) toast.error(result.error)
+        else { acceptSavedNote(result.data?.savedNote); toast.success('Draft saved') }
+      })
     })
   }
 
   function handleRegenerate(section: InitialVisitSection) {
     setRegeneratingSection(section)
     startTransition(async () => {
-      const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'))
-      if (result.error) {
-        toast.error(result.error)
-      } else if (result.data?.content) {
-        form.setValue(section, result.data.content)
-        acceptSavedNote(result.data.savedNote ?? undefined, section)
-        toast.success(`${sectionLabels[section]} regenerated`)
+      try {
+        await mutations.run(async () => {
+          const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'))
+          if (result.error) {
+            toast.error(result.error)
+          } else if (result.data?.content) {
+            form.setValue(section, result.data.content)
+            acceptSavedNote(result.data.savedNote ?? undefined, section)
+            toast.success(`${sectionLabels[section]} regenerated`)
+          }
+        })
+      } finally {
+        setRegeneratingSection(null)
       }
-      setRegeneratingSection(null)
     })
   }
 
@@ -1504,17 +1515,19 @@ function DraftEditor({
                 <AlertDialogAction
                   onClick={() => {
                     startTransition(async () => {
-                      // Save current form values first
-                      const values = form.getValues()
-                      const saveResult = await saveInitialVisitNote(caseId, visitType, values)
-                      if (saveResult.error) {
-                        toast.error(saveResult.error)
-                        return
-                      }
-                      acceptSavedNote(saveResult.data?.savedNote)
-                      const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Note finalized')
+                      await mutations.run(async ({ isActive, finish }) => {
+                        const values = form.getValues()
+                        const saveResult = await saveInitialVisitNote(caseId, visitType, values)
+                        if (saveResult.error) {
+                          toast.error(saveResult.error)
+                          return
+                        }
+                        if (!isActive()) return
+                        acceptSavedNote(saveResult.data?.savedNote)
+                        const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string)
+                        if (result.error) toast.error(result.error)
+                        else { finish(); toast.success('Note finalized') }
+                      })
                     })
                   }}
                 >
@@ -1550,7 +1563,7 @@ function DraftEditor({
               <ToneDirectionCard
                 value={toneHint}
                 onChange={setToneHint}
-                onBlur={handleToneHintBlur}
+                onBlur={mutations.saveTone}
                 disabled={isLocked || isPending}
                 description="Edits apply to subsequent section regenerations. Saved automatically on blur."
               />

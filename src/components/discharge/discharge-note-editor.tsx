@@ -1,6 +1,7 @@
 'use client'
 
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
+import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
 import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
 
@@ -477,10 +478,10 @@ function DraftEditor({
   })
   const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
   const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
-  const acknowledgeVersion = useVisitNoteVersion(note, dischargeNoteSections, setVersion)
+  const { acknowledgeSavedNote, acknowledgeMetadataVersion } = useVisitNoteVersion(note, dischargeNoteSections, setVersion)
   function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
     if (!saved) return
-    acknowledgeVersion(saved)
+    acknowledgeSavedNote(saved)
     setSavedDecision(saved.visit_treatment_decision)
     form.setValue('expected_updated_at', saved.updated_at as string)
     if (!regeneratedSection || regeneratedSection === 'patient_education') {
@@ -495,6 +496,16 @@ function DraftEditor({
     }
   }
   const [toneHint, setToneHint] = useState<string>(note.tone_hint ?? '')
+  const mutations = useDraftNoteMutations({
+    identity: `${caseId}:${episodeId}:${note.id}:${correction?.id ?? "draft"}`,
+    writable: !isLocked && note.status === 'draft' && !correction,
+    toneHint,
+    initialTone: note.tone_hint,
+    getVersion: () => form.getValues('expected_updated_at'),
+    acknowledgeVersion: acknowledgeMetadataVersion,
+    saveTone: (tone, expected) => saveDischargeNoteToneHint(caseId, tone, { noteId: note.id, expectedUpdatedAt: expected }),
+    onError: (message) => toast.error(message),
+  })
   const [timeline, setTimeline] = useState<{
     trajectory: DischargePainTrajectory | null
     painObservations: PainObservation[]
@@ -548,46 +559,45 @@ function DraftEditor({
 
   function handleSave() {
     startTransition(async () => {
-      const values = form.getValues()
-      if (correction) { delete values.treatment_decision; delete values.expected_updated_at }
-      const result = correction
-        ? await saveDischargeCorrection(caseId, episodeId, note.id, correction.id, values)
-        : await saveDischargeNote(caseId, values)
-      if (result.error) toast.error(result.error)
-      else {
-        if (!correction && result.data && 'savedNote' in result.data) acceptSavedNote(result.data.savedNote as Record<string, unknown> | undefined)
-        toast.success(correction ? 'Correction saved' : 'Draft saved')
-        // Visit-date on the form may have changed, which shifts the
-        // discharge-entry day-offset in the trajectory. Refetch so the
-        // Pain Timeline table reflects the saved visit_date.
-        if (!correction) await refreshTimeline()
+      if (correction) {
+        const values = form.getValues()
+        delete values.treatment_decision
+        delete values.expected_updated_at
+        const result = await saveDischargeCorrection(caseId, episodeId, note.id, correction.id, values)
+        if (result.error) toast.error(result.error)
+        else toast.success('Correction saved')
+        return
       }
-    })
-  }
-
-  function handleToneHintBlur() {
-    void saveDischargeNoteToneHint(caseId, toneHint || null).then((result) => {
-      if (result.error) toast.error(result.error)
+      await mutations.run(async () => {
+        const result = await saveDischargeNote(caseId, form.getValues())
+        if (result.error) toast.error(result.error)
+        else {
+          acceptSavedNote(result.data?.savedNote)
+          toast.success('Draft saved')
+          await refreshTimeline()
+        }
+      })
     })
   }
 
   function handleRegenerate(section: DischargeNoteSection) {
     setRegeneratingSection(section)
     startTransition(async () => {
-      const result = await regenerateDischargeNoteSectionAction(caseId, section, undefined, form.getValues('expected_updated_at'))
-      if (result.error) {
-        toast.error(result.error)
-      } else if (result.data?.content) {
-        form.setValue(section, result.data.content)
-        acceptSavedNote(result.data.savedNote ?? undefined, section)
-        toast.success(`${dischargeNoteSectionLabels[section]} regenerated`)
-        // Source data (vitals / procedures / extractions) may have
-        // changed between generation and this regen; refresh the
-        // timeline widget so it tracks the same trajectory the regen
-        // just ran against.
-        await refreshTimeline()
+      try {
+        await mutations.run(async () => {
+          const result = await regenerateDischargeNoteSectionAction(caseId, section, undefined, form.getValues('expected_updated_at'))
+          if (result.error) {
+            toast.error(result.error)
+          } else if (result.data?.content) {
+            form.setValue(section, result.data.content)
+            acceptSavedNote(result.data.savedNote ?? undefined, section)
+            toast.success(`${dischargeNoteSectionLabels[section]} regenerated`)
+            await refreshTimeline()
+          }
+        })
+      } finally {
+        setRegeneratingSection(null)
       }
-      setRegeneratingSection(null)
     })
   }
 
@@ -651,16 +661,19 @@ function DraftEditor({
                 <AlertDialogAction
                   onClick={() => {
                     startTransition(async () => {
-                      const values = form.getValues()
-                      const saveResult = await saveDischargeNote(caseId, values)
-                      if (saveResult.error) {
-                        toast.error(saveResult.error)
-                        return
-                      }
-                      acceptSavedNote(saveResult.data?.savedNote)
-                      const result = await finalizeDischargeNote(caseId, saveResult.data?.savedNote?.updated_at as string)
-                      if (result.error) toast.error(result.error)
-                      else toast.success('Discharge summary finalized')
+                      await mutations.run(async ({ isActive, finish }) => {
+                        const values = form.getValues()
+                        const saveResult = await saveDischargeNote(caseId, values)
+                        if (saveResult.error) {
+                          toast.error(saveResult.error)
+                          return
+                        }
+                        if (!isActive()) return
+                        acceptSavedNote(saveResult.data?.savedNote)
+                        const result = await finalizeDischargeNote(caseId, saveResult.data?.savedNote?.updated_at as string)
+                        if (result.error) toast.error(result.error)
+                        else { finish(); toast.success('Discharge summary finalized') }
+                      })
                     })
                   }}
                 >
@@ -778,7 +791,7 @@ function DraftEditor({
               {!isCorrection && <ToneDirectionCard
             value={toneHint}
             onChange={setToneHint}
-            onBlur={handleToneHintBlur}
+            onBlur={mutations.saveTone}
             disabled={isLocked || isPending}
             description="Edits apply to subsequent section regenerations. Saved automatically on blur."
           />}

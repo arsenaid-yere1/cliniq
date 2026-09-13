@@ -13,7 +13,7 @@ vi.mock('@/actions/pain-follow-up-notes', () => ({ savePainFollowUpNote: save, f
 import { PainFollowUpEditor } from '../pain-follow-up-editor'
 const encounter = { id: 'encounter', status: 'in_progress', encounter_date: '2026-09-10' } as Tables<'clinical_encounters'>
 const initialNote = { ...Object.fromEntries(painFollowUpNoteSections.map((section) => [section, 'Reviewed text'])), id: 'note', status: 'draft', updated_at: 'v1', procedure_recommendations: [], visit_treatment_decision: null } as unknown as Tables<'pain_follow_up_notes'>
-beforeEach(() => { vi.clearAllMocks(); save.mockResolvedValue({ data: { success: true, savedNote: { updated_at: 'v2' } } }); finalize.mockResolvedValue({ data: { success: true } }) })
+beforeEach(() => { vi.clearAllMocks(); save.mockResolvedValue({ data: { success: true, savedNote: { ...initialNote, updated_at: 'v2' } } }); finalize.mockResolvedValue({ data: { success: true } }) })
 afterEach(cleanup)
 describe('follow-up explicit decision workflow', () => {
   it('does not save on mount and confirms unchanged Accepted on Save Draft', async () => {
@@ -58,4 +58,44 @@ describe('follow-up explicit decision workflow', () => {
     expect((screen.getByRole('button', { name: 'Save Draft' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByRole('combobox').closest('fieldset')?.disabled).toBe(true)
   })
+})
+
+it('saves and finalizes the acknowledged version without refreshed props', async () => {
+  save.mockResolvedValueOnce({ data: { savedNote: { ...initialNote, updated_at: 'v2', patient_education: 'Canonical education' } } })
+    .mockResolvedValueOnce({ data: { savedNote: { ...initialNote, updated_at: 'v3' } } })
+  render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+  await waitFor(() => expect((screen.getByRole('textbox', { name: 'Patient Education' }) as HTMLTextAreaElement).value).toBe('Canonical education'))
+  fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+  await waitFor(() => expect(finalize).toHaveBeenCalledWith('case', 'encounter', 'v3'))
+  expect(save.mock.calls[1][1]).toMatchObject({ expected_updated_at: 'v2', patient_education: 'Canonical education' })
+})
+
+it('retains a successful save version when signing fails and is retried', async () => {
+  finalize.mockResolvedValueOnce({ error: 'Upload failed' })
+  render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+  await waitFor(() => expect(error).toHaveBeenCalledWith('Upload failed'))
+  fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+  await waitFor(() => expect(finalize).toHaveBeenCalledTimes(2))
+  expect(save.mock.calls[1][1].expected_updated_at).toBe('v2')
+})
+
+it.each([undefined, {}, { updated_at: '' }])('does not sign without a valid saved row: %j', async (savedNote) => {
+  save.mockResolvedValue({ data: { savedNote } })
+  render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+  await waitFor(() => expect(error).toHaveBeenCalledWith('Unable to confirm the saved note version. Reload before finalizing.'))
+  expect(finalize).not.toHaveBeenCalled()
+})
+
+it('chains consecutive saves and displays the confirmed decision', async () => {
+  const confirmed = { schema_version: 1, decision: 'declined', details: 'Deferred injection', reviewed_plan: 'Reviewed text', reviewed_plan_hash: 'hash', visit_date: '2026-09-10', confirmed_by: '11111111-1111-4111-8111-111111111111', confirmed_at: '2026-09-10T12:00:00Z' }
+  save.mockResolvedValue({ data: { savedNote: { ...initialNote, updated_at: 'v2', visit_treatment_decision: confirmed } } })
+  render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+  await screen.findByText(/Declined · Saved/)
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+  expect(save.mock.calls[1][1].expected_updated_at).toBe('v2')
 })

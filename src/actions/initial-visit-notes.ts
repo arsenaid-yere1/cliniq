@@ -1280,7 +1280,11 @@ export async function saveInitialVisitNoteToneHint(
   caseId: string,
   visitType: NoteVisitType,
   toneHint: string | null,
-): Promise<{ error?: string }> {
+  version: { noteId: string; expectedUpdatedAt: string },
+): Promise<{ data?: { updated_at: string; tone_hint: string | null }; error?: string }> {
+  if (!version?.noteId || !version.expectedUpdatedAt) {
+    return { error: 'Reload the note before saving tone guidance.' }
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1290,15 +1294,20 @@ export async function saveInitialVisitNoteToneHint(
 
   const normalized = toneHint?.trim() ? toneHint.trim() : null
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('initial_visit_notes')
     .update({ tone_hint: normalized, updated_by_user_id: user.id })
+    .eq('id', version.noteId)
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
-    .in('status', ['draft', 'generating', 'failed'])
+    .eq('status', 'draft')
+    .eq('updated_at', version.expectedUpdatedAt)
+    .select('updated_at,tone_hint')
+    .maybeSingle()
 
   if (error) return { error: 'Failed to save tone hint' }
 
-  return {}
+  if (!data) return { error: 'Note changed. Reload before saving' }
+  return { data }
 }
