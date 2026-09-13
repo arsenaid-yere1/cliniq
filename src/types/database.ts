@@ -4512,6 +4512,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      read_initial_visit_generation_failures: {
+        Args: { p_case_id: string; p_limit?: number; p_offset?: number }
+        Returns: Json
+      }
+      record_initial_visit_generation_failure: {
+        Args: {
+          p_case_id: string
+          p_note_id: string
+          p_operation: string
+          p_payload: string
+          p_prompt_version: string
+          p_run_id: string
+          p_section: string | null // SQL requires null for full-note generation
+          p_source_hash: string
+          p_validator_version: string
+        }
+        Returns: string
+      }
       save_visit_note_decision: {
         Args: {
           p_kind: string

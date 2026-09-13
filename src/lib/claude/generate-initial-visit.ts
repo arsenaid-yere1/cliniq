@@ -1,3 +1,4 @@
+import type { ValidationFailureHook } from './validation-diagnostics'
 import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
@@ -106,7 +107,7 @@ Brief intro sentence, then "• " bullet per complaint with: region, persistent/
 Reference: "• Neck pain: Persistent, rated 7–8/10. There is no radiation. The pain is aggravated by activities and sleeping and alleviated with medication, therapy, and rest."
 
 5. PAST MEDICAL HISTORY (~4 bullet points):
-Simple bullets: Medical Problems, Surgeries, Medications Prior to Visit, Allergies. Fill from source data. Keep each to ONE line.
+Simple bullets: Medical Problems, Surgeries, Medications Prior to Visit, Allergies. Fill from source data. Keep each to ONE line. Preserve documented history with explicit prior-visit attribution when applicable. Do not add current treatment decisions or consent assertions, or move them here from another section.
 Reference: "• Medical Problems: None reported.\n• Surgeries: None.\n• Medications Prior to Visit: Advil/Ibuprofen as needed.\n• Allergies: No known drug allergies."
 
 6. SOCIAL HISTORY (~2 bullet points):
@@ -178,7 +179,7 @@ Reference tone: "Following the collision, the patient reports onset of neck pain
 State what imaging has been ORDERED at this visit, NOT findings (no imaging results exist yet). Format as:
 "MRI of [Region] – Ordered"
 for each affected body region. Then: "Imaging results pending. Diagnostic imaging has been ordered to further evaluate the patient's clinical presentation and guide treatment planning."
-Do NOT fabricate imaging findings. Do NOT use "[Pending]" brackets. Write it as a clinical statement of what was ordered.
+Do NOT add patient acceptance, refusal, deferral, or procedure/telehealth consent to this section. Do NOT fabricate imaging findings. Do NOT use "[Pending]" brackets. Write it as a clinical statement of what was ordered.
 
 10-ADDITIONAL. DIAGNOSES — FIRST VISIT SPECIFICS:
 Use clinical impression codes based on physical examination findings and mechanism of injury. These are NOT imaging-confirmed diagnoses. Use strain/sprain codes appropriate to the affected regions:
@@ -595,6 +596,7 @@ export async function generateInitialVisitFromData(
   visitType: NoteVisitType,
   toneHint?: string | null,
   onProgress?: (completedKeys: string[]) => void | Promise<void>,
+  options: { onValidationFailure?: ValidationFailureHook } = {},
 ): Promise<{
   data?: InitialVisitNoteResult
   rawResponse?: unknown
@@ -626,6 +628,7 @@ export async function generateInitialVisitFromData(
         : { success: false, error: validated.error }
     },
     onProgress,
+    onValidationFailure: options.onValidationFailure,
   })
 }
 
@@ -654,6 +657,7 @@ export async function regenerateSection(
   toneHint?: string | null,
   otherSections?: Partial<Record<InitialVisitSection, string>>,
   findingFix?: { message: string; rationale: string | null },
+  options: { onValidationFailure?: ValidationFailureHook } = {},
 ): Promise<{ data?: string; error?: string }> {
   const systemPrompt = buildSystemPrompt(visitType) + VISIT_DECISION_PROMPT
   const sectionLabel = sectionLabels[section]
@@ -698,10 +702,19 @@ export async function regenerateSection(
     messages: [{ role: 'user', content: userMessage }],
     parse: (raw) => {
       const validated = sectionRegenSchema.safeParse(raw)
-      return validated.success
-        ? validateVisitDecisionOutput(validated.data)
-        : { success: false, error: validated.error }
+      if (!validated.success) return { success: false, error: validated.error }
+      const checked = validateVisitDecisionOutput({ [section]: validated.data.content })
+      if (!checked.success) {
+        for (const issue of checked.error.issues) {
+          if (issue.code === 'custom' && issue.params?.visitDecision) {
+            issue.params.visitDecision.sourceKey = 'content'
+          }
+        }
+        return checked
+      }
+      return { success: true, data: validated.data }
     },
+    onValidationFailure: options.onValidationFailure,
   })
 
   if (result.error) return { error: result.error }

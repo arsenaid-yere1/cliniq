@@ -107,3 +107,39 @@ describe('coordinated consent qualifications', () => {
     expect(validateVisitDecisionOutput({ subjective }).success).toBe(true)
   })
 })
+
+describe('history formatting and qualified trends', () => {
+  it.each([
+    '• At the prior visit, the patient declined surgery.',
+    '• Surgeries: At the prior visit, the patient declined surgery.',
+    '  - SURGERIES: During the previous encounter, the patient accepted treatment.',
+    'The patient reports that pain has gradually declined.',
+    'The patient reports that symptoms have steadily declined.',
+    'MRI of the cervical spine – Ordered. Imaging results pending.',
+  ])('preserves supported text unchanged: %s', (text) => {
+    const note = { past_medical_history: text }
+    expect(validateVisitDecisionOutput(note)).toEqual({ success: true, data: note })
+  })
+  it.each([
+    '• At the prior visit, the patient declined surgery, but today the patient accepted treatment.',
+    '• Surgeries: The patient accepted treatment.',
+    'Pain has gradually declined, and the patient accepted treatment.',
+    'The patient has not agreed to treatment.',
+    'Procedure consent will be obtained. Procedure consent was obtained.',
+  ])('still rejects adjacent or current assertions: %s', (text) => {
+    expect(validateVisitDecisionOutput({ imaging_findings: text }).success).toBe(false)
+  })
+  it('reports original offsets after whitespace, prefixes and symptom masking', () => {
+    const text = '• Surgeries: Pain has gradually declined, and the  patient accepted treatment.'
+    const result = validateVisitDecisionOutput({ past_medical_history: text })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    const issue = result.error.issues[0]
+    expect(issue.code).toBe('custom')
+    if (issue.code !== 'custom') return
+    const { start, end, rule } = issue.params!.visitDecision
+    expect(text.slice(start, end)).toBe('patient accepted')
+    expect(rule).toBe('current_decision')
+    expect(issue.message).not.toContain(text)
+  })
+})

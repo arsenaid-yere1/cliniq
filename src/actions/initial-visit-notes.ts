@@ -1,5 +1,7 @@
 'use server'
 
+import { createInitialVisitFailureCapture } from '@/lib/clinical/initial-visit-generation-diagnostics'
+
 import { normalizeVisitPlan } from '@/lib/validations/visit-treatment-decision'
 import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
 
@@ -549,6 +551,7 @@ export async function generateInitialVisitNote(
     visitType,
     effectiveToneHint,
     (completedKeys) => writeProgress(completedKeys.length),
+    { onValidationFailure: createInitialVisitFailureCapture(supabase, { caseId, noteId: recordId, sourceHash }) },
   )
 
   if (result.error || !result.data) {
@@ -952,12 +955,17 @@ export async function regenerateNoteSection(
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
+  const diagnostics = { onValidationFailure: createInitialVisitFailureCapture(supabase, {
+    caseId, noteId: note.id, sourceHash: computeSourceHash(inputData), section,
+  }) }
 
   if (visitType === 'pain_evaluation_visit' && section === 'treatment_plan') {
     const regenerated = await generateInitialVisitFromData(
       inputData,
       visitType,
       (note.tone_hint as string | null) ?? null,
+      undefined,
+      diagnostics,
     )
     if (regenerated.error || !regenerated.data || !inputData.prpTargetEvidence) {
       return { error: regenerated.error ?? 'Treatment Plan regeneration failed' }
@@ -1016,7 +1024,7 @@ export async function regenerateNoteSection(
   }
 
   const toneHint = (note.tone_hint as string | null) ?? null
-  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, toneHint, otherSections, findingFix)
+  const result = await regenerateSectionAI(inputData, visitType, section, currentContent, toneHint, otherSections, findingFix, diagnostics)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
   }

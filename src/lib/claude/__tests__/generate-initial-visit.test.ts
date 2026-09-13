@@ -296,3 +296,17 @@ describe('visit decision parser integration', () => {
     }
   })
 })
+
+describe('section diagnostics identity', () => {
+  it.each(['past_medical_history', 'imaging_findings'] as const)('maps content failures to %s', async (section) => {
+    ;(callClaudeTool as unknown as Mock).mockResolvedValue({ error: 'rejected' })
+    const hook = vi.fn()
+    await regenerateSection(emptyInput, 'initial_visit', section, '', null, undefined, undefined, { onValidationFailure: hook })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    expect(opts.onValidationFailure).toBe(hook)
+    const parsed = opts.parse({ content: 'The patient accepted treatment.' })
+    expect(parsed.error.issues[0].path).toEqual([section])
+    expect(parsed.error.issues[0].params.visitDecision.sourceKey).toBe('content')
+    expect(opts.parse({ content: 'Imaging results pending.' })).toEqual({ success: true, data: { content: 'Imaging results pending.' } })
+  })
+})

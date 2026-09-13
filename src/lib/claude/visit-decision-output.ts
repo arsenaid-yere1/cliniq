@@ -17,7 +17,47 @@ const TELEHEALTH_CONSENT_ASSERTION = new RegExp(
   `^(?:(?:(?:verbal|written|informed) )?consent for ${TELEHEALTH_TARGET} (?:was|has been) obtained|(?:telehealth|telemedicine) consent (?:was|has been) obtained|(?:the patient|he|she|they) (?:consented to|agreed to participate in) ${TELEHEALTH_TARGET})(?=$|,? (?:and|but|however) (?:(?:the )?(?:patient|pain|symptoms)\\b|(?:he|she|they|has|have)\\b))`,
   'i',
 )
-const SYMPTOM_DECLINE = /\b((?:(?:his|her|their|the) )?(?:pain(?: (?:level|score))?|symptoms?|symptom severity) (?:has |have |had )?)declin(?:ed|es)\b/gi
+const SYMPTOM_DECLINE = /\b((?:(?:his|her|their|the) )?(?:pain(?: (?:level|score))?|symptoms?|symptom severity) (?:has |have |had )?(?:(?:gradually|steadily|slightly|significantly) )?)declin(?:ed|es)\b/gi
+export const VISIT_DECISION_VALIDATOR_VERSION = '2'
+
+const DECISION_MESSAGE = 'Remove current treatment-decision or procedure-consent assertions. The application inserts only the clinician-confirmed visit decision. Preserve supported historical facts and symptom trends.'
+const TELEHEALTH_MESSAGE = 'Omit affirmative telehealth consent assertions unless the current encounter explicitly records telehealth consent. Do not infer consent from attendance or prior visits.'
+
+// Order is stable: one issue per section, identifying the first applicable rule.
+const RULES = [
+  ['current_decision', /\b(?:patient|guardian|surrogate|he|she|they)\b[^.!?\n]{0,100}\b(?:agreed|agrees|accepted|accepts|declined|declines|deferred|defers|elected|elects|consented|consents)\b/i],
+  ['continued_decision', /^\s*(?:(?:today|now|currently) )?(?:(?:has|have|had) (?:already )?)?(?:agreed|accepted|declined|deferred|elected|consented)\b/i],
+  ['passive_decision', /\b(?:plan|treatment|therapy|injection|procedure|recommendation|options?)\b[^.!?\n]{0,100}\b(?:is|are|was|were|has been|have been) (?:accepted|declined|deferred|chosen|approved)\b/i],
+  ['agreement', /\b(?:patient|guardian|surrogate|he|she|they)\b[^.!?\n]{0,100}\b(?:is|are|was|were|remains?) (?:agreeable|amenable|in agreement|willing)\b/i],
+  ['procedure_consent', /\b(?:consent|assent)\b[^.!?\n]{0,40}\b(?:obtained|signed|secured)\b/i],
+] as const
+
+// All later masking is length-preserving. This map takes normalized UTF-16
+// offsets back to the original section, including repeated whitespace.
+function normalize(value: string, offset: number) {
+  let text = ''
+  const positions: number[] = []
+  for (const match of value.matchAll(/\s+|\S/g)) {
+    text += /\s/.test(match[0]) ? ' ' : match[0]
+    positions.push(offset + match.index)
+  }
+  positions.push(offset + value.length)
+  return { text, positions }
+}
+
+function* fragments(text: string, separator: RegExp) {
+  let start = 0
+  for (const match of text.matchAll(separator)) {
+    yield { text: text.slice(start, match.index), start }
+    start = match.index + match[0].length
+  }
+  yield { text: text.slice(start), start }
+}
+
+function maskPrefix(text: string) {
+  return text.replace(/^\s*(?:[•*-]\s+)?(?:(?:Medical Problems|Surgeries|Medications Prior to Visit|Allergies):\s*)?/i,
+    (prefix) => ' '.repeat(prefix.length))
+}
 
 /** Targeted parser guard, not a complete semantic assessment. Manual prose is
  * never passed through this rejecting model-output validator. */
@@ -28,51 +68,48 @@ export function validateVisitDecisionOutput<T extends Record<string, unknown>>(
   const issues: z.core.$ZodIssue[] = []
   for (const [section, value] of Object.entries(note)) {
     if (typeof value !== 'string') continue
-    let unsupportedTelehealthConsent = false
-    // Examine consent before splitting conjunctions, which can separate the
-    // objects in "consent for telehealth and PRP was obtained".
-    const checked = value.split(/(?<=[.!?;])\s+|\n+/).map((part) => {
-      const normalized = part.trim().replace(/\s+/g, ' ').replace(/[.!?;]$/, '')
-      const consentAssertion = normalized.match(TELEHEALTH_CONSENT_ASSERTION)
-      if (!consentAssertion) {
-        // Keep coordinated consent objects together for the existing consent
-        // check, including its historical, prospective and negative handling.
-        return part.replace(
+    const addIssue = (rule: string, start: number, end: number, message: string) => {
+      issues.push({ code: 'custom', path: [section], message, params: {
+        visitDecision: { rule, start, end },
+      } })
+    }
+    sentenceLoop: for (const part of fragments(value, /(?<=[.!?;])\s+|\n+/g)) {
+      const normalized = normalize(part.text, part.start)
+      let checked = maskPrefix(normalized.text)
+      const leading = checked.length - checked.trimStart().length
+      const consentAssertion = checked.trim().replace(/[.!?;]$/, '').match(TELEHEALTH_CONSENT_ASSERTION)
+      if (consentAssertion) {
+        if (context.telehealthConsentDocumented !== true) {
+          addIssue('unsupported_telehealth_consent', normalized.positions[leading],
+            normalized.positions[leading + consentAssertion[0].length], TELEHEALTH_MESSAGE)
+          break
+        }
+        checked = checked.slice(0, leading) + ' '.repeat(consentAssertion[0].length)
+          + checked.slice(leading + consentAssertion[0].length)
+      } else {
+        // Protect coordinated consent targets before splitting conjunctions.
+        checked = checked.replace(
           /\b(consent|assent) (for|to) ([^.!?;\n]+?) (?=(?:was|were|has been|have been|will be|must be|should be|would be) (?:not )?(?:obtained|signed|secured))/gi,
-          (match, kind: string, preposition: string, targets: string) =>
-            /\band\b|&/i.test(targets)
-              ? `${kind} ${preposition} ${targets.replace(/\band\b|&/gi, '\u0000and\u0000')} `
-              : match,
+          (match) => match.replace(/\band\b/gi, '\u0000\u0000\u0000'),
         )
       }
-      if (context.telehealthConsentDocumented !== true) {
-        unsupportedTelehealthConsent = true
-        return part
-      }
-      return normalized.slice(consentAssertion[0].length)
-    }).join('\n')
-    if (unsupportedTelehealthConsent) {
-      issues.push({ code: 'custom', path: [section], message: 'Omit affirmative telehealth consent assertions unless the current encounter explicitly records telehealth consent. Do not infer consent from attendance or prior visits.' })
-      continue
-    }
-    for (const fragment of checked.split(/(?<=[.!?;])\s+|\n+|,?\s+\b(?:but|and|however)\b\s+/i)) {
-      // Replace only the symptom's decline verb for matching; never discard
-      // another decision in the same fragment or change the returned note.
-      const sentence = fragment.replaceAll('\u0000', '').replace(SYMPTOM_DECLINE, '$1changed')
-      // A reference to a prior note somewhere in a sentence is not attribution.
-      const historical = /^(?:at|during) (?:the )?(?:prior|previous|earlier) (?:visit|encounter)[,: ]/i.test(sentence.trim())
-        && !/\b(?:and|but|however|today|now|currently)\b/i.test(sentence)
-      if (historical) continue
-      const decision = /\b(?:patient|guardian|surrogate|he|she|they)\b[^.!?\n]{0,100}\b(?:agreed|agrees|accepted|accepts|declined|declines|deferred|defers|elected|elects|consented|consents)\b/i.test(sentence)
-      const continuedDecision = /^(?:(?:today|now|currently) )?(?:(?:has|have|had) (?:already )?)?(?:agreed|accepted|declined|deferred|elected|consented)\b/i.test(sentence.trim())
-      const passiveDecision = /\b(?:plan|treatment|therapy|injection|procedure|recommendation|options?)\b[^.!?\n]{0,100}\b(?:is|are|was|were|has been|have been) (?:accepted|declined|deferred|chosen|approved)\b/i.test(sentence)
-      const agreeable = /\b(?:patient|guardian|surrogate|he|she|they)\b[^.!?\n]{0,100}\b(?:is|are|was|were|remains?) (?:agreeable|amenable|in agreement|willing)\b/i.test(sentence)
-      const consent = /\b(?:consent|assent)\b[^.!?\n]{0,40}\b(?:obtained|signed|secured)\b/i.test(sentence)
-        && !/\b(?:will|must|should|would) be (?:obtained|signed|secured)\b/i.test(sentence)
-        && !/\b(?:not obtained|not signed|not secured|no (?:procedure )?(?:consent|assent))\b/i.test(sentence)
-      if (decision || continuedDecision || passiveDecision || agreeable || consent) {
-        issues.push({ code: 'custom', path: [section], message: 'Remove current treatment-decision or procedure-consent assertions. The application inserts only the clinician-confirmed visit decision. Documented telehealth consent and symptom trends are separate; for documented telehealth consent use "Consent for the telehealth visit was obtained."' })
-        break
+      for (const fragment of fragments(checked, /,?\s+\b(?:but|and|however)\b\s+/gi)) {
+        const sentence = fragment.text.replaceAll('\u0000\u0000\u0000', 'and')
+          .replace(SYMPTOM_DECLINE, (match, subject: string) => subject + ' '.repeat(match.length - subject.length))
+        const historical = /^(?:at|during) (?:the )?(?:prior|previous|earlier) (?:visit|encounter)[,: ]/i.test(sentence.trim())
+          && !/\b(?:and|but|however|today|now|currently)\b/i.test(sentence)
+        if (historical) continue
+        for (const [rule, pattern] of RULES) {
+          const match = pattern.exec(sentence)
+          if (!match) continue
+          if (rule === 'procedure_consent' && (
+            /\b(?:will|must|should|would) be (?:obtained|signed|secured)\b/i.test(sentence)
+            || /\b(?:not obtained|not signed|not secured|no (?:procedure )?(?:consent|assent))\b/i.test(sentence)
+          )) continue
+          const start = fragment.start + match.index
+          addIssue(rule, normalized.positions[start], normalized.positions[start + match[0].length], DECISION_MESSAGE)
+          break sentenceLoop
+        }
       }
     }
   }
