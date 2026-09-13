@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/server'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
+import { psychologicalFinalizationError } from '@/lib/validations/psychological-assessment'
 import { z } from 'zod'
 import {
   generateInitialVisitFromData,
@@ -25,6 +26,7 @@ import {
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
   providerIntakeSchema,
+  defaultProviderIntake,
   type InitialVisitNoteEditValues,
   type InitialVisitSection,
   type InitialVisitVitalsValues,
@@ -650,6 +652,12 @@ export async function generateInitialVisitNote(
       status: 'draft',
       sections_done: INITIAL_VISIT_SECTIONS_TOTAL,
       source_data_hash: sourceHash,
+      ...(inputData.providerIntake?.psychological_assessment ? {
+        provider_intake: {
+          ...inputData.providerIntake,
+          psychological_assessment: { ...inputData.providerIntake.psychological_assessment, note_review_required: false },
+        },
+      } : {}),
       updated_by_user_id: user.id,
     })
     .eq('id', recordId)
@@ -796,6 +804,10 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
 
   if (fetchError || !note) return { error: 'No draft note found to finalize' }
   if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
+  const psychologicalError = psychologicalFinalizationError(
+    (note.provider_intake as ProviderIntakeValues | null)?.psychological_assessment,
+  )
+  if (psychologicalError) return { error: psychologicalError }
 
   if (visitType === 'pain_evaluation_visit') {
     const { data: currentInput, error: gatherError } = await gatherSourceData(
@@ -1210,6 +1222,7 @@ export async function saveProviderIntake(
   caseId: string,
   visitType: NoteVisitType,
   intake: ProviderIntakeValues,
+  section?: keyof ProviderIntakeValues,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1218,27 +1231,50 @@ export async function saveProviderIntake(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  const validated = providerIntakeSchema.safeParse(intake)
-  if (!validated.success) return { error: 'Invalid provider intake data' }
+  if (section && !Object.prototype.hasOwnProperty.call(providerIntakeSchema.shape, section)) return { error: 'Invalid intake section' }
+  if (section === 'psychological_assessment' && visitType !== 'initial_visit') return { error: 'Psychological intake is available for Initial Visit only.' }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('initial_visit_notes')
-    .select('id')
+    .select('id, status, updated_at, provider_intake, introduction, chief_complaint')
     .eq('case_id', caseId)
     .eq('visit_type', visitType)
     .is('deleted_at', null)
     .maybeSingle()
 
+  if (readError) return { error: 'Unable to load the current intake. Please retry.' }
+  if (existing && existing.status !== 'draft' && existing.status !== 'failed') {
+    return { error: 'Intake cannot be changed while the note is generating or finalized.' }
+  }
+  const stored = (existing?.provider_intake ?? {}) as Partial<ProviderIntakeValues>
+  const merged = section
+    ? { ...defaultProviderIntake, ...stored, [section]: intake?.[section] }
+    : { ...intake, ...(stored.psychological_assessment ? { psychological_assessment: stored.psychological_assessment } : {}) }
+  const validated = providerIntakeSchema.safeParse(merged)
+  if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid provider intake data' }
+  if (section === 'psychological_assessment' && !validated.data.psychological_assessment) return { error: 'Psychological assessment is required.' }
+  if (validated.data.psychological_assessment) {
+    validated.data.psychological_assessment.note_review_required =
+      stored.psychological_assessment?.note_review_required === true ||
+      (Boolean(section) && Boolean(existing?.introduction || existing?.chief_complaint))
+  }
+
   if (existing) {
-    const { error } = await supabase
+    const { data: saved, error } = await supabase
       .from('initial_visit_notes')
       .update({
         provider_intake: validated.data as unknown as Record<string, unknown>,
         updated_by_user_id: user.id,
       })
       .eq('id', existing.id)
+      .eq('status', existing.status)
+      .eq('updated_at', existing.updated_at)
+      .is('deleted_at', null)
+      .select('id')
+      .maybeSingle()
 
     if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
+    if (!saved) return { error: 'The note changed while saving. Your input is retained; retry saving.' }
   } else {
     const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
       .eq('id', caseId).is('deleted_at', null).single()
@@ -1272,6 +1308,28 @@ export async function saveProviderIntake(
 
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
+}
+
+export async function acknowledgePsychologicalReview(caseId: string, expectedUpdatedAt: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const closed = await assertCaseNotClosed(supabase, caseId)
+  if (closed.error) return { error: closed.error }
+  const { data: note, error } = await supabase.from('initial_visit_notes')
+    .select('id, provider_intake, updated_at').eq('case_id', caseId).eq('visit_type', 'initial_visit')
+    .eq('status', 'draft').is('deleted_at', null).single()
+  if (error || !note || note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Review the latest note before acknowledging.' }
+  const intake = providerIntakeSchema.safeParse(note.provider_intake)
+  if (!intake.success || !intake.data.psychological_assessment) return { error: 'No psychological assessment found.' }
+  intake.data.psychological_assessment.note_review_required = false
+  const { data: saved, error: saveError } = await supabase.from('initial_visit_notes')
+    .update({ provider_intake: intake.data, updated_by_user_id: user.id })
+    .eq('id', note.id).eq('status', 'draft').eq('updated_at', expectedUpdatedAt).is('deleted_at', null)
+    .select('updated_at').single()
+  if (saveError || !saved) return { error: 'The note changed. Review it again before acknowledging.' }
+  revalidatePath(`/patients/${caseId}`)
+  return { data: saved }
 }
 
 // --- Save tone hint (auto-save from draft editor) ---

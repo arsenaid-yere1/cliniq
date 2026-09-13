@@ -1,4 +1,5 @@
 import type { ValidationFailureHook } from './validation-diagnostics'
+import { PSYCHOLOGICAL_ASSESSMENT_PROMPT } from './psychological-assessment-prompt'
 import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
@@ -360,7 +361,7 @@ ${forbiddenPrognosisPromptBlock()}`
 
 function buildSystemPrompt(visitType: NoteVisitType): string {
   const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS
-  return `${voiceCharterPromptBlock()}\n${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}`
+  return `${voiceCharterPromptBlock()}\n${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}\n${PSYCHOLOGICAL_ASSESSMENT_PROMPT}`
 }
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
@@ -532,6 +533,7 @@ export interface InitialVisitInputData {
     practice_center_max: number
   } | null
   providerIntake: {
+    psychological_assessment?: import('@/lib/validations/psychological-assessment').PsychologicalAssessment
     chief_complaints: unknown
     accident_details: unknown
     past_medical_history: unknown

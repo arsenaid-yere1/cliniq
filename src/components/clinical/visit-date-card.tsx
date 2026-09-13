@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 interface VisitDateCardProps {
+  id?: string
   value: string
   onChange: (v: string) => void
   min?: string | null
@@ -15,6 +16,7 @@ interface VisitDateCardProps {
 }
 
 export function VisitDateCard({
+  id = 'visit-date-pre-gen',
   value,
   onChange,
   min,
@@ -29,11 +31,11 @@ export function VisitDateCard({
         <CardTitle className="text-base">{label}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        <Label htmlFor="visit-date-pre-gen" className="sr-only">
+        <Label htmlFor={id} className="sr-only">
           {label}
         </Label>
         <Input
-          id="visit-date-pre-gen"
+          id={id}
           type="date"
           className="w-[200px]"
           value={value}

@@ -1,5 +1,6 @@
 import { visitDecisionEditFields } from './visit-treatment-decision'
 import { z } from 'zod'
+import { psychologicalAssessmentSchema } from './psychological-assessment'
 import { prpTargetRecommendationSchema } from '@/lib/clinical/prp-target-evidence'
 
 // --- Section names (16 sections matching provider template) ---
@@ -178,6 +179,7 @@ export const examFindingsSchema = z.object({
 })
 
 export const providerIntakeSchema = z.object({
+  psychological_assessment: psychologicalAssessmentSchema.optional(),
   chief_complaints: chiefComplaintsSchema,
   accident_details: accidentDetailsSchema,
   past_medical_history: pastMedicalHistorySchema,

@@ -1,5 +1,7 @@
 'use client'
 
+import { IntakeDraftProvider, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
+import { PsychologicalAssessmentCard, psychologicalStatusLabels } from './psychological-assessment-card'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
@@ -7,7 +9,7 @@ import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDeci
 
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useState, useTransition, useEffect, useCallback } from 'react'
+import { useState, useTransition, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -57,7 +59,7 @@ import {
   finalizeInitialVisitNote,
   regenerateNoteSection,
   saveInitialVisitVitals,
-  saveProviderIntake,
+  acknowledgePsychologicalReview,
   saveInitialVisitNoteToneHint,
 } from '@/actions/initial-visit-notes'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
@@ -82,6 +84,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { formatReasonForVisit, formatVisitTypeLabel } from '@/lib/constants/clinical-note-header'
 
 interface NoteRow {
+  provider_intake?: ProviderIntakeValues | null
   visit_treatment_decision?: unknown
   id: string
   case_id: string
@@ -238,7 +241,8 @@ export function InitialVisitEditor({
           const note = (notesByVisitType[vt.value] ?? null) as NoteRow | null
           const showPainEvalBadge = vt.value === 'pain_evaluation_visit' && painEvalMissingPriorVitals
           return (
-            <TabsContent key={vt.value} value={vt.value} className="mt-4">
+            <TabsContent key={vt.value} value={vt.value} hidden={activeVisitType !== vt.value} forceMount className="mt-4 data-[state=inactive]:hidden">
+              <IntakeDraftProvider>
               {showPainEvalBadge && (
                 <div className="mb-4 flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -266,6 +270,7 @@ export function InitialVisitEditor({
                 initialIntake={intakesByVisitType[vt.value]}
                 siblingDate={siblingDatesByVisitType[vt.value]}
               />
+              </IntakeDraftProvider>
             </TabsContent>
           )
         })}
@@ -323,6 +328,8 @@ function InitialVisitEditorInner({
 }: InitialVisitEditorInnerProps) {
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
+  const intakeDrafts = useIntakeDrafts()
+  const [intakeTab, setIntakeTab] = useState('chief-complaints')
   const [toneHint, setToneHint] = useState('')
   const today = new Date().toISOString().slice(0, 10)
   const [preGenVisitDate, setPreGenVisitDate] = useState<string>(
@@ -335,9 +342,13 @@ function InitialVisitEditorInner({
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
-    setOptimisticStartedAt(new Date().toISOString())
-    setOptimisticGenerating(true)
     startTransition(async () => {
+      if (!await intakeDrafts.flush(section => setIntakeTab(section === 'past_medical_history' ? 'pmh' : section.replaceAll('_', '-')))) {
+        toast.error('Save the highlighted intake fields before generating.')
+        return
+      }
+      setOptimisticStartedAt(new Date().toISOString())
+      setOptimisticGenerating(true)
       try {
         const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg)
         if (result.error) toast.error(result.error)
@@ -352,7 +363,7 @@ function InitialVisitEditorInner({
   const hasGeneratedContent = note?.introduction || note?.chief_complaint
 
   // Parse initial intake data safely
-  const parsedIntake = (() => {
+  const parsedIntake = useMemo(() => {
     if (initialIntake) return initialIntake
     // Try to get from note row if it exists
     const noteIntake = (note as Record<string, unknown> | null)?.provider_intake
@@ -361,7 +372,7 @@ function InitialVisitEditorInner({
       if (result.success) return result.data
     }
     return null
-  })()
+  }, [initialIntake, note])
 
   // Optimistic generating state — entered on Generate click before the server
   // action has persisted status = 'generating'. Masks the 30–90s blocking gap
@@ -401,12 +412,13 @@ function InitialVisitEditorInner({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
 
-        <Tabs defaultValue="chief-complaints">
-          <TabsList className="flex-wrap h-auto gap-1 p-1">
+        <Tabs value={intakeTab} onValueChange={setIntakeTab}>
+          <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto gap-1 p-1">
             <TabsTrigger value="chief-complaints">
               <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
               Chief Complaints
             </TabsTrigger>
+            {visitType === 'initial_visit' && <TabsTrigger value="psychological-assessment">Psychological Assessment</TabsTrigger>}
             <TabsTrigger value="accident-details">
               <Car className="h-3.5 w-3.5 mr-1.5" />
               Accident Details
@@ -428,27 +440,38 @@ function InitialVisitEditorInner({
               Vital Signs
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="chief-complaints" className="mt-4">
+          <TabsContent value="chief-complaints" hidden={intakeTab !== 'chief-complaints'} forceMount className="mt-4 data-[state=inactive]:hidden">
+            {visitType === 'initial_visit' && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm">
+              <div>
+                <p>Patient report: {psychologicalStatusLabels[parsedIntake?.psychological_assessment?.symptom_status ?? 'not_assessed']}</p>
+                <p className="text-muted-foreground">Psychological assessment: {parsedIntake?.psychological_assessment?.assessment_status === 'assessed' ? 'Assessed today' : parsedIntake?.psychological_assessment?.assessment_status === 'partial' ? 'Partial assessment' : 'Not assessed'}</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setIntakeTab('psychological-assessment')}>Open assessment</Button>
+            </div>}
             <ChiefComplaintsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
-          <TabsContent value="accident-details" className="mt-4">
+          {visitType === 'initial_visit' && <TabsContent value="psychological-assessment" hidden={intakeTab !== 'psychological-assessment'} forceMount className="mt-4 data-[state=inactive]:hidden">
+            <PsychologicalAssessmentCard caseId={caseId} initialIntake={parsedIntake} isLocked={isLocked} onEditSleep={() => setIntakeTab('chief-complaints')} />
+          </TabsContent>}
+          <TabsContent value="accident-details" hidden={intakeTab !== 'accident-details'} forceMount className="mt-4 data-[state=inactive]:hidden">
             <AccidentDetailsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
-          <TabsContent value="pmh" className="mt-4">
+          <TabsContent value="pmh" hidden={intakeTab !== 'pmh'} forceMount className="mt-4 data-[state=inactive]:hidden">
             <PastMedicalHistoryCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
-          <TabsContent value="social-history" className="mt-4">
+          <TabsContent value="social-history" hidden={intakeTab !== 'social-history'} forceMount className="mt-4 data-[state=inactive]:hidden">
             <SocialHistoryCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
-          <TabsContent value="exam-findings" className="mt-4">
+          <TabsContent value="exam-findings" hidden={intakeTab !== 'exam-findings'} forceMount className="mt-4 data-[state=inactive]:hidden">
             <ExamFindingsCard caseId={caseId} visitType={visitType} initialIntake={parsedIntake} isLocked={isLocked} />
           </TabsContent>
-          <TabsContent value="vitals" className="mt-4">
+          <TabsContent value="vitals" hidden={intakeTab !== 'vitals'} forceMount className="mt-4 data-[state=inactive]:hidden">
             <VitalSignsCard caseId={caseId} visitType={visitType} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
 
         <VisitDateCard
+          id={`visit-date-pre-gen-${visitType}`}
           value={preGenVisitDate}
           onChange={setPreGenVisitDate}
           min={visitType === 'pain_evaluation_visit' ? siblingDate ?? undefined : undefined}
@@ -473,7 +496,7 @@ function InitialVisitEditorInner({
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            Generate {visitTypeLabel}
+            {intakeDrafts.dirty ? 'Save intake and generate' : 'Generate'} {visitTypeLabel}
           </Button>
         </div>
       </div>
@@ -585,21 +608,9 @@ interface IntakeCardProps {
   isLocked: boolean
 }
 
-// --- Helper: build full intake for saving (merges one section into defaults) ---
-
-function buildFullIntake(
-  initialIntake: ProviderIntakeValues | null,
-  section: keyof ProviderIntakeValues,
-  sectionData: ProviderIntakeValues[keyof ProviderIntakeValues],
-): ProviderIntakeValues {
-  const base = initialIntake ?? defaultProviderIntake
-  return { ...base, [section]: sectionData }
-}
-
 // --- Chief Complaints Card ---
 
 function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.chief_complaints ?? defaultProviderIntake.chief_complaints
   const form = useForm({
     defaultValues: { chief_complaints: defaults },
@@ -610,15 +621,8 @@ function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: Int
     name: 'chief_complaints.complaints',
   })
 
-  function handleSave() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const full = buildFullIntake(initialIntake, 'chief_complaints', values.chief_complaints)
-      const result = await saveProviderIntake(caseId, visitType, full)
-      if (result.error) toast.error(result.error)
-      else toast.success('Chief complaints saved')
-    })
-  }
+  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'chief_complaints', initialIntake)
+  function handleSave() { void save() }
 
   return (
     <Card>
@@ -757,21 +761,13 @@ function ChiefComplaintsCard({ caseId, visitType, initialIntake, isLocked }: Int
 // --- Accident Details Card ---
 
 function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.accident_details ?? defaultProviderIntake.accident_details
   const form = useForm({ defaultValues: { accident_details: defaults } })
 
   const erVisit = form.watch('accident_details.er_visit')
 
-  function handleSave() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const full = buildFullIntake(initialIntake, 'accident_details', values.accident_details)
-      const result = await saveProviderIntake(caseId, visitType, full)
-      if (result.error) toast.error(result.error)
-      else toast.success('Accident details saved')
-    })
-  }
+  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'accident_details', initialIntake)
+  function handleSave() { void save() }
 
   return (
     <Card>
@@ -873,19 +869,11 @@ function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: Int
 // --- Past Medical History Card ---
 
 function PastMedicalHistoryCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.past_medical_history ?? defaultProviderIntake.past_medical_history
   const form = useForm({ defaultValues: { past_medical_history: defaults } })
 
-  function handleSave() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const full = buildFullIntake(initialIntake, 'past_medical_history', values.past_medical_history)
-      const result = await saveProviderIntake(caseId, visitType, full)
-      if (result.error) toast.error(result.error)
-      else toast.success('Past medical history saved')
-    })
-  }
+  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'past_medical_history', initialIntake)
+  function handleSave() { void save() }
 
   return (
     <Card>
@@ -938,19 +926,11 @@ function PastMedicalHistoryCard({ caseId, visitType, initialIntake, isLocked }: 
 // --- Social History Card ---
 
 function SocialHistoryCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.social_history ?? defaultProviderIntake.social_history
   const form = useForm({ defaultValues: { social_history: defaults } })
 
-  function handleSave() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const full = buildFullIntake(initialIntake, 'social_history', values.social_history)
-      const result = await saveProviderIntake(caseId, visitType, full)
-      if (result.error) toast.error(result.error)
-      else toast.success('Social history saved')
-    })
-  }
+  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'social_history', initialIntake)
+  function handleSave() { void save() }
 
   return (
     <Card>
@@ -1026,7 +1006,6 @@ function SocialHistoryCard({ caseId, visitType, initialIntake, isLocked }: Intak
 // --- Exam Findings Card ---
 
 function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const [isSaving, startSaving] = useTransition()
   const defaults = initialIntake?.exam_findings ?? defaultProviderIntake.exam_findings
   const form = useForm({ defaultValues: { exam_findings: defaults } })
 
@@ -1035,15 +1014,8 @@ function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: Intake
     name: 'exam_findings.regions',
   })
 
-  function handleSave() {
-    startSaving(async () => {
-      const values = form.getValues()
-      const full = buildFullIntake(initialIntake, 'exam_findings', values.exam_findings)
-      const result = await saveProviderIntake(caseId, visitType, full)
-      if (result.error) toast.error(result.error)
-      else toast.success('Exam findings saved')
-    })
-  }
+  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'exam_findings', initialIntake)
+  function handleSave() { void save() }
 
   return (
     <Card>
@@ -1146,7 +1118,9 @@ function VitalSignsCard({
   initialVitals: VitalsData | null
   isLocked: boolean
 }) {
-  const [isSaving, startSaving] = useTransition()
+  const { register } = useIntakeDrafts()
+  const [isSaving, setSaving] = useState(false)
+  const inFlight = useRef<Promise<boolean> | null>(null)
   const vitalsForm = useForm<InitialVisitVitalsValues>({
     resolver: zodResolver(initialVisitVitalsSchema),
     defaultValues: {
@@ -1161,14 +1135,28 @@ function VitalSignsCard({
     },
   })
 
-  function handleSaveVitals() {
-    startSaving(async () => {
-      const values = vitalsForm.getValues()
-      const result = await saveInitialVisitVitals(caseId, visitType, values)
-      if (result.error) toast.error(result.error)
-      else toast.success('Vitals saved')
-    })
-  }
+  const handleSaveVitals = useCallback((): Promise<boolean> => {
+    if (inFlight.current) return inFlight.current
+    const save = async () => {
+      setSaving(true)
+      try {
+        if (!await vitalsForm.trigger()) return false
+        const values = vitalsForm.getValues()
+        const result = await saveInitialVisitVitals(caseId, visitType, values)
+        if (result.error) { toast.error(result.error); return false }
+        vitalsForm.reset(values)
+        toast.success('Vitals saved')
+        return true
+      } catch {
+        toast.error('Unable to save vitals. Your input is retained; please retry.')
+        return false
+      } finally { setSaving(false); inFlight.current = null }
+    }
+    inFlight.current = save()
+    return inFlight.current
+  }, [vitalsForm, caseId, visitType])
+  const { isDirty } = vitalsForm.formState
+  useEffect(() => register('vitals', { dirty: isDirty, saving: isSaving, save: handleSaveVitals }), [register, isDirty, isSaving, handleSaveVitals])
 
   return (
     <Card>
@@ -1383,6 +1371,13 @@ function DraftEditor({
   setRegeneratingSection: (s: InitialVisitSection | null) => void
   isLocked: boolean
 }) {
+  const intakeDrafts = useIntakeDrafts()
+  const [draftTab, setDraftTab] = useState('note')
+  const intake = useMemo(() => {
+    const parsed = providerIntakeSchema.safeParse(note.provider_intake)
+    return parsed.success ? parsed.data : null
+  }, [note.provider_intake])
+  const needsPsychReview = intake?.psychological_assessment?.note_review_required === true
   const form = useForm<InitialVisitNoteEditValues>({
     resolver: zodResolver(initialVisitNoteEditSchema),
     defaultValues: {
@@ -1450,6 +1445,7 @@ function DraftEditor({
   }
 
   function handleRegenerate(section: InitialVisitSection) {
+    if (intakeDrafts.dirty || intakeDrafts.busy) { toast.error('Save intake changes before regenerating.'); return }
     setRegeneratingSection(section)
     startTransition(async () => {
       try {
@@ -1469,6 +1465,22 @@ function DraftEditor({
     })
   }
 
+  function handlePsychReview() {
+    if (intakeDrafts.dirty || intakeDrafts.busy) return
+    startTransition(async () => {
+      await mutations.run(async () => {
+        const saved = await saveInitialVisitNote(caseId, visitType, form.getValues())
+        if (saved.error) { toast.error(saved.error); return }
+        acceptSavedNote(saved.data?.savedNote)
+        const expected = form.getValues('expected_updated_at')
+        if (!expected) return
+        const reviewed = await acknowledgePsychologicalReview(caseId, expected)
+        if (reviewed.error) toast.error(reviewed.error)
+        else if (reviewed.data) { acknowledgeMetadataVersion(expected, reviewed.data.updated_at); toast.success('Psychological note review recorded') }
+      })
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1478,11 +1490,11 @@ function DraftEditor({
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
-            <label htmlFor="visit-date-input" className="text-sm font-medium whitespace-nowrap">
+            <label htmlFor={`visit-date-input-${visitType}`} className="text-sm font-medium whitespace-nowrap">
               Date of Visit
             </label>
             <Input
-              id="visit-date-input"
+              id={`visit-date-input-${visitType}`}
               type="date"
               className="w-[160px]"
               disabled={isLocked || isPending}
@@ -1498,7 +1510,7 @@ function DraftEditor({
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isLocked || isPending}>
+              <Button disabled={isLocked || isPending || intakeDrafts.dirty || intakeDrafts.busy || needsPsychReview}>
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize
               </Button>
@@ -1516,6 +1528,7 @@ function DraftEditor({
                   onClick={() => {
                     startTransition(async () => {
                       await mutations.run(async ({ isActive, finish }) => {
+                        if (intakeDrafts.dirty || intakeDrafts.busy) { toast.error('Save intake changes first.'); return }
                         const values = form.getValues()
                         const saveResult = await saveInitialVisitNote(caseId, visitType, values)
                         if (saveResult.error) {
@@ -1539,19 +1552,29 @@ function DraftEditor({
         </div>
       </div>
 
-      <Tabs defaultValue="note">
-        <TabsList>
+      {needsPsychReview && <div className="space-y-2 rounded-lg border border-amber-500/50 bg-amber-500/5 p-4" role="status">
+        <p className="font-medium">Assessment updated; note needs review</p>
+        <p className="text-sm">Review symptoms/history, the psychiatric examination, diagnoses, medical necessity, treatment plan and education. Edit or regenerate affected sections before acknowledging.</p>
+        <Button type="button" variant="outline" disabled={isLocked || isPending || intakeDrafts.dirty || intakeDrafts.busy} onClick={handlePsychReview}>I reviewed the affected note sections</Button>
+      </div>}
+      {intakeDrafts.dirty && <p role="status" className="text-sm">Save intake changes before regenerating or finalizing this note.</p>}
+      <Tabs value={draftTab} onValueChange={setDraftTab}>
+        <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto gap-1">
           <TabsTrigger value="note">
             <FileText className="h-3.5 w-3.5 mr-1.5" />
             Note Sections
           </TabsTrigger>
+          {visitType === 'initial_visit' && <>
+            <TabsTrigger value="chief-complaints">Chief Complaints</TabsTrigger>
+            <TabsTrigger value="psychological-assessment">Psychological Assessment</TabsTrigger>
+          </>}
           <TabsTrigger value="vitals">
             <Heart className="h-3.5 w-3.5 mr-1.5" />
             Vital Signs
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="note" className="mt-4">
+        <TabsContent value="note" hidden={draftTab !== 'note'} forceMount className="mt-4 data-[state=inactive]:hidden">
           <Form {...form}>
             <form className="space-y-6">
               <VisitTreatmentDecisionFields
@@ -1627,7 +1650,13 @@ function DraftEditor({
           </Form>
         </TabsContent>
 
-        <TabsContent value="vitals" className="mt-4">
+        {visitType === 'initial_visit' && <TabsContent value="psychological-assessment" hidden={draftTab !== 'psychological-assessment'} forceMount className="mt-4 data-[state=inactive]:hidden">
+          <PsychologicalAssessmentCard caseId={caseId} initialIntake={intake} isLocked={isLocked || isPending} onEditSleep={() => setDraftTab('chief-complaints')} />
+        </TabsContent>}
+        {visitType === 'initial_visit' && <TabsContent value="chief-complaints" hidden={draftTab !== 'chief-complaints'} forceMount className="mt-4 data-[state=inactive]:hidden">
+          <ChiefComplaintsCard caseId={caseId} visitType={visitType} initialIntake={intake} isLocked={isLocked || isPending} />
+        </TabsContent>}
+        <TabsContent value="vitals" hidden={draftTab !== 'vitals'} forceMount className="mt-4 data-[state=inactive]:hidden">
           <VitalSignsCard caseId={caseId} visitType={visitType} initialVitals={initialVitals} isLocked={isLocked} />
         </TabsContent>
       </Tabs>
@@ -1716,6 +1745,10 @@ function FinalizedView({
         </div>
       </div>
 
+      {visitType === 'initial_visit' && note.provider_intake?.psychological_assessment && <details className="rounded-lg border p-4">
+        <summary className="cursor-pointer font-medium">Psychological assessment intake (read-only)</summary>
+        <div className="mt-4"><PsychologicalAssessmentCard caseId={caseId} initialIntake={note.provider_intake} isLocked /></div>
+      </details>}
       <Tabs defaultValue="note">
         <TabsList>
           <TabsTrigger value="note">
