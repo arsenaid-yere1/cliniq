@@ -19,6 +19,7 @@ const samplePng = Buffer.from(
 )
 
 function queryResult(table: string) {
+  if (table === 'provider_profiles') return { data: { signature_storage_path: 'signatures/provider.png' } }
   if (table === 'cases') {
     return { data: { patient: { first_name: 'Test', last_name: 'Patient', date_of_birth: '1980-01-02' } } }
   }
@@ -60,6 +61,7 @@ describe('renderPainFollowUpPdf', () => {
     vi.clearAllMocks()
     createClient.mockResolvedValue({
       from(table: string) {
+        if (table === 'cases' || table === 'clinical_encounters') throw new Error('Clinical fields must use the checked snapshot')
         const builder = {
           select: vi.fn(() => builder),
           eq: vi.fn(() => builder),
@@ -79,7 +81,14 @@ describe('renderPainFollowUpPdf', () => {
 
   it('passes clinic branding and the encounter signer snapshot into the PDF template', async () => {
     const { renderPainFollowUpPdf } = await import('../render-pain-follow-up-pdf')
-    await renderPainFollowUpPdf('case-1', 'encounter-1', { assessment: 'Improving' })
+    await renderPainFollowUpPdf('case-1', 'encounter-1', { assessment: 'Improving' }, {
+      schema_version: 1, fingerprint: 'a', manifest: [], data: {
+        encounter: { id: 'encounter-1', ...queryResult('clinical_encounters').data },
+        patient: { first_name: 'Test', last_name: 'Patient', date_of_birth: '1980-01-02' },
+        provider: { id: 'provider', display_name: 'Jordan Clinician', credentials: 'MD', npi_number: '1234567890' },
+        latestCompletedEncounter: null, priorEpisodeDischarge: null, performedProcedures: [],
+      },
+    })
 
     expect(renderToBuffer).toHaveBeenCalledOnce()
     const element = renderToBuffer.mock.calls[0][0] as unknown as {
@@ -98,4 +107,36 @@ describe('renderPainFollowUpPdf', () => {
     expect(element.props.data.clinicLogoBase64).toMatch(/^data:image\/png;base64,/)
     expect(element.props.data.providerSignatureBase64).toMatch(/^data:image\/png;base64,/)
   })
+  it('keeps the checked A snapshot when the live chart changes A → B → A during rendering', async () => {
+    const { renderPainFollowUpPdf } = await import('../render-pain-follow-up-pdf')
+    let liveName = 'Snapshot A'
+    const reads: string[] = []
+    createClient.mockResolvedValueOnce({
+      from(table: string) {
+        reads.push(table)
+        const builder = {
+          select: () => builder, eq: () => builder, is: () => builder,
+          maybeSingle: async () => { liveName = 'Intervening B'; return { data: null } },
+          single: async () => ({ data: { patient: { first_name: liveName, last_name: 'Patient' } } }),
+        }
+        return builder
+      },
+    })
+    renderToBuffer.mockImplementationOnce(async (element) => {
+      expect(liveName).toBe('Intervening B')
+      liveName = 'Snapshot A'
+      expect((element as { props: { data: { patientName: string } } }).props.data.patientName).toBe('Snapshot A Patient')
+      return Buffer.from('%PDF A')
+    })
+    await renderPainFollowUpPdf('case', 'encounter', {}, {
+      schema_version: 1, fingerprint: 'A', manifest: [], data: {
+        encounter: { id: 'encounter', encounter_date: '2026-05-02' },
+        patient: { first_name: 'Snapshot A', last_name: 'Patient' }, provider: null,
+        latestCompletedEncounter: null, priorEpisodeDischarge: null, performedProcedures: [],
+      },
+    })
+    expect(liveName).toBe('Snapshot A')
+    expect(reads).toEqual(['clinic_settings'])
+  })
+
 })

@@ -170,3 +170,26 @@ describe.each([false, true])('consent source boundaries (regeneration=%s)', (reg
     expect(opts.parse({ ...raw, subjective: null }).success).toBe(false)
   })
 })
+
+describe('current and historical symptom boundaries', () => {
+  it.each([
+    { current: 'Neck and lower back pain', history: 'Left shoulder pain 5–6', scenario: 'old shoulder omitted today' },
+    { current: 'Left shoulder pain 3', history: 'Left shoulder pain 5–6', scenario: 'shoulder confirmed today' },
+    { current: 'Neck pain with radiation', history: 'Pain radiated into shoulder', scenario: 'relevant historical comparison' },
+    { current: 'Correction: no shoulder symptoms today', history: 'Left shoulder pain', scenario: 'explicit current correction' },
+  ])('labels sources for $scenario', async ({ current, history }) => {
+    await generatePainFollowUp({ ...source,
+      encounter: { encounter_date: '2026-05-02', provider_intake: { symptoms: current } },
+      latestCompletedEncounter: { encounter_date: '2026-04-13', provider_intake: { symptoms: history } },
+    })
+    const opts = (callClaudeTool as unknown as Mock).mock.calls.at(-1)![0]
+    const payload = JSON.parse(opts.messages[0].content.split('\n').slice(1).join('\n'))
+    expect(payload.currentVisit.provider_intake.symptoms).toBe(current)
+    expect(payload.historicalContext.latestCompletedEncounter.provider_intake.symptoms).toBe(history)
+    expect(payload.currentVisit).not.toHaveProperty('latestCompletedEncounter')
+    expect(opts.system).toContain('neither confirmed ongoing nor confirmed resolved')
+    expect(opts.system).toContain('Do not infer new onset')
+    expect(opts.system).toContain('Current explicit corrections take precedence')
+    expect(opts.system).toContain('Patient-reported movement pain remains patient-reported')
+  })
+})

@@ -540,6 +540,20 @@ describe('fixFinding', () => {
     })
   }
 
+  it('prepares a version-bound follow-up correction and opens review without rechecking unchanged prose', async () => {
+    const { regeneratePainFollowUpSectionAction } = await import('@/actions/pain-follow-up-notes')
+    vi.mocked(regeneratePainFollowUpSectionAction).mockResolvedValueOnce({ data: { proposalId: 'proposal' } })
+    generateMock.mockClear()
+    const finding = makeAiFinding({ step: 'pain_follow_up', encounter_id: VALID_PROC_ID })
+    mockFixTables({
+      case_quality_reviews: { data: { id: 'review', findings: [finding], finding_overrides: {} }, error: null },
+      pain_follow_up_notes: { data: { updated_at: 'saved-version' }, error: null },
+    })
+    expect(await fixFinding(VALID_CASE_ID, computeFindingHash(finding))).toEqual({ data: { success: true, reviewUrl: `/patients/${VALID_CASE_ID}/visits/${VALID_PROC_ID}` } })
+    expect(regeneratePainFollowUpSectionAction).toHaveBeenCalledWith(VALID_CASE_ID, VALID_PROC_ID, 'subjective', { message: finding.message, rationale: finding.rationale }, 'saved-version')
+    expect(generateMock).not.toHaveBeenCalled()
+  })
+
   it('errors when not authenticated', async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null })
     const result = await fixFinding(VALID_CASE_ID, HASH)
@@ -695,6 +709,7 @@ describe('fixFinding', () => {
     })
     const hash = computeFindingHash(finding)
     mockFixTables({
+      pain_follow_up_notes: { data: { updated_at: 'v1' }, error: null },
       case_quality_reviews: {
         data: { id: 'review-1', findings: [finding], finding_overrides: {} },
         error: null,
@@ -709,6 +724,7 @@ describe('fixFinding', () => {
       VALID_PROC_ID,
       'telehealth_observations',
       { message: finding.message, rationale: finding.rationale },
+      'v1',
     )
   })
 })

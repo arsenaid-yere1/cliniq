@@ -1,7 +1,10 @@
 'use client'
 
+import { FollowUpSourceReview } from './follow-up-source-review'
+import { useFollowUpWorkspace } from './follow-up-workspace'
+import type { FollowUpReviewState } from '@/lib/clinical/pain-follow-up-source'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
-import { visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
+import { visitDecisionDraft, parseVisitDecision, normalizeVisitPlan } from '@/lib/validations/visit-treatment-decision'
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
@@ -13,6 +16,9 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  applyPainFollowUpProposal,
+  discardPainFollowUpProposal,
+  reviewPainFollowUpSources,
   finalizePainFollowUpNote,
   generatePainFollowUpNote,
   regeneratePainFollowUpSectionAction,
@@ -42,6 +48,7 @@ interface PainFollowUpEditorProps {
   procedureOrders?: ProcedureOrderSummary[]
   relationshipLoadError?: boolean
   episodeWritable?: boolean
+  review?: FollowUpReviewState | null
 }
 
 type ActionResult = { error?: string; data?: unknown }
@@ -49,13 +56,17 @@ type ActionResult = { error?: string; data?: unknown }
 export function PainFollowUpEditor({
   caseId,
   encounter,
-  initialNote,
+  initialNote: incomingNote,
+  review = null,
   seriesChoices = [],
   procedureOrders = [],
   relationshipLoadError = false,
   episodeWritable = true,
 }: PainFollowUpEditorProps) {
   const router = useRouter()
+  const { intakeDirty } = useFollowUpWorkspace()
+  const [initialNote, setBaseNote] = useState(incomingNote)
+  const [observed, setObserved] = useState(incomingNote)
   const [pending, setPending] = useState(false)
   const [note, setNote] = useState<Record<PainFollowUpSection, string>>(() =>
     Object.fromEntries(
@@ -63,11 +74,24 @@ export function PainFollowUpEditor({
     ) as Record<PainFollowUpSection, string>,
   )
   const [decision, setDecision] = useState(() => visitDecisionDraft(initialNote?.visit_treatment_decision))
+  const dirty = painFollowUpNoteSections.some((key) => note[key] !== (initialNote?.[key] ?? ''))
+    || JSON.stringify(decision) !== JSON.stringify(visitDecisionDraft(initialNote?.visit_treatment_decision))
+  function adopt(saved: Tables<'pain_follow_up_notes'> | null) {
+    setBaseNote(saved)
+    setNote(Object.fromEntries(painFollowUpNoteSections.map((key) => [key, saved?.[key] ?? ''])) as Record<PainFollowUpSection, string>)
+    setDecision(visitDecisionDraft(saved?.visit_treatment_decision))
+  }
+  // Only clean editors adopt external versions. Dirty text stays visible for reconciliation.
+  if (observed !== incomingNote) {
+    setObserved(incomingNote)
+    if (!dirty) adopt(incomingNote)
+  }
+  const conflict = initialNote?.updated_at !== incomingNote?.updated_at
   const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const recommendations = (
     initialNote?.procedure_recommendations ?? []
   ) as unknown as ProcedureRecommendation[]
-  const editorState = getPainFollowUpEditorState(initialNote)
+  const editorState = review?.proposal && initialNote ? 'draft' : getPainFollowUpEditorState(initialNote)
   const visitWritable = encounter.status === 'in_progress' && !caseLocked && episodeWritable
 
   async function run(action: () => Promise<ActionResult>, successMessage: string) {
@@ -75,9 +99,13 @@ export function PainFollowUpEditor({
     try {
       const result = await action()
       if (result.error) {
+        router.refresh()
         toast.error(result.error)
         return
       }
+      const data = result.data as { note?: Tables<'pain_follow_up_notes'>; savedNote?: Tables<'pain_follow_up_notes'> } | undefined
+      const saved = data?.note ?? data?.savedNote
+      if (saved) adopt({ ...initialNote, ...saved } as Tables<'pain_follow_up_notes'>)
       toast.success(successMessage)
       router.refresh()
     } catch {
@@ -99,11 +127,13 @@ export function PainFollowUpEditor({
           <p className="text-sm text-muted-foreground">
             Generate a draft from this visit and the current episode&apos;s clinical history.
           </p>
+        {intakeDirty && <p role="alert">Save encounter intake before generating the note.</p>}
+          {!review && <p role="alert">Visit information could not be checked. Save the visit date and refresh before generating.</p>}
           <Button
-            disabled={pending || !visitWritable}
+            disabled={pending || !visitWritable || intakeDirty || !review}
             onClick={() => void run(
-              () => generatePainFollowUpNote(caseId, encounter.id),
-              'Follow-up note generated successfully',
+              () => generatePainFollowUpNote(caseId, encounter.id, initialNote?.updated_at),
+              'Proposed draft ready for review',
             )}
           >
             {pending ? 'Generating…' : 'Generate Follow-Up Note'}
@@ -145,15 +175,7 @@ export function PainFollowUpEditor({
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              disabled={pending || !visitWritable}
-              onClick={() => void run(
-                () => generatePainFollowUpNote(caseId, encounter.id),
-                'Follow-up note generated successfully',
-              )}
-            >
-              {pending ? 'Retrying…' : 'Retry'}
-            </Button>
+            <p className="text-sm">Use Reset to clear the failed generation, then prepare a new proposed draft.</p>
             {resetDialog}
           </div>
         </CardContent>
@@ -164,7 +186,11 @@ export function PainFollowUpEditor({
   if (!initialNote) return null
 
   const finalized = editorState === 'finalized'
-  const actionDisabled = pending || !visitWritable
+  const actionDisabled = pending || !visitWritable || conflict
+  const reviewDisabled = actionDisabled || dirty || intakeDirty
+  const savedDecision = parseVisitDecision(initialNote.visit_treatment_decision)
+  const decisionNeedsReview = !savedDecision || savedDecision.reviewed_plan !== normalizeVisitPlan(note.treatment_plan) || savedDecision.visit_date !== encounter.encounter_date
+  const signingDisabled = decisionNeedsReview || reviewDisabled || !review?.reviewed || review.note_version !== initialNote.updated_at
   const editValues = {
     encounter_id: encounter.id,
     reviewed_visit_date: encounter.encounter_date,
@@ -213,13 +239,9 @@ export function PainFollowUpEditor({
                 Save Draft
               </Button>
               <Button
-                disabled={actionDisabled}
+                disabled={signingDisabled}
                 onClick={() => void run(
-                  async () => {
-                    const saved = await savePainFollowUpNote(caseId, editValues)
-                    if ('error' in saved) return saved
-                    return finalizePainFollowUpNote(caseId, encounter.id, saved.data && 'savedNote' in saved.data ? saved.data.savedNote?.updated_at as string : undefined)
-                  },
+                  () => finalizePainFollowUpNote(caseId, encounter.id, initialNote.updated_at),
                   'Follow-up note finalized successfully',
                 )}
               >
@@ -230,6 +252,18 @@ export function PainFollowUpEditor({
         </div>
       </div>
 
+      {!finalized && <>
+        {decisionNeedsReview && <p role="status">Review the patient’s treatment decision and Save Draft before signing.</p>}
+        {intakeDirty && <p role="alert">Save encounter intake before generating, reviewing, or signing the note.</p>}
+        {dirty && <p role="status">You have unsaved note edits. Save Draft before generating or confirming source review.</p>}
+        {conflict && <div role="alert" className="space-y-2 rounded border p-3"><p>A different saved version is available. Your local text has been kept. Copy any edits you want to retain before loading it.</p><Button variant="outline" onClick={() => adopt(incomingNote)}>Discard local edits and load saved version</Button></div>}
+        <FollowUpSourceReview key={`${review?.snapshot.fingerprint}:${initialNote.updated_at}:${review?.proposal?.id}:${dirty}:${intakeDirty}`} review={review} current={{ ...note, procedure_recommendations: recommendations }} disabled={reviewDisabled}
+          onApply={() => void run(() => applyPainFollowUpProposal(caseId, encounter.id, initialNote.updated_at, review!.proposal!.id), 'Reviewed replacement applied')}
+          onDiscard={() => void run(() => discardPainFollowUpProposal(caseId, encounter.id, initialNote.updated_at, review!.proposal!.id), 'Proposal discarded; saved text kept')}
+          onReview={() => void run(() => reviewPainFollowUpSources(caseId, encounter.id, initialNote.updated_at, review!.snapshot.fingerprint), 'Source review recorded')} />
+        <Button variant="outline" disabled={reviewDisabled || !review || !!review.proposal} onClick={() => void run(() => generatePainFollowUpNote(caseId, encounter.id, initialNote.updated_at), 'Proposed draft ready for review')}>Generate updated draft</Button>
+      </>}
+      {finalized && <p className="text-sm text-muted-foreground">{initialNote.source_review ? 'Source review was recorded with this signed note.' : 'This signed note predates source review tracking.'} Its saved PDF and historical record are preserved.</p>}
       <VisitTreatmentDecisionFields value={decision} onChange={setDecision}
         saved={initialNote.visit_treatment_decision} plan={note.treatment_plan}
         visitDate={encounter.encounter_date} education={note.patient_education}
@@ -245,10 +279,10 @@ export function PainFollowUpEditor({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={actionDisabled}
+                    disabled={reviewDisabled || !review || !!review.proposal}
                     onClick={() => void run(
-                      () => regeneratePainFollowUpSectionAction(caseId, encounter.id, section),
-                      `${label} regenerated`,
+                      () => regeneratePainFollowUpSectionAction(caseId, encounter.id, section, undefined, initialNote.updated_at),
+                      `${label} replacement ready for review`,
                     )}
                   >
                     Regenerate

@@ -4,11 +4,11 @@ import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
 
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
 
-import { createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireWritableEpisode, selectLatestCompletedEncounter } from '@/lib/clinical/episode-context'
+import { requireWritableEpisode } from '@/lib/clinical/episode-context'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
+import { followUpSourceSnapshotSchema, followUpReviewStateSchema, followUpPromptSource } from '@/lib/clinical/pain-follow-up-source'
 import { generatePainFollowUp } from '@/lib/claude/generate-pain-follow-up'
 import {
   painFollowUpNoteEditSchema,
@@ -16,7 +16,7 @@ import {
   type PainFollowUpNoteEditValues,
   type PainFollowUpSection,
 } from '@/lib/validations/pain-follow-up-note'
-import type { Json, Tables } from '@/types/database'
+import type { Json } from '@/types/database'
 
 export type { PainFollowUpSection } from '@/lib/validations/pain-follow-up-note'
 
@@ -27,93 +27,74 @@ export async function getPainFollowUpNote(caseId: string, encounterId: string) {
   return error ? { error: 'Unable to load follow-up note' } : { data }
 }
 
-async function gatherSource(caseId: string, encounterId: string) {
-  const supabase = await createClient()
-  const { data: encounter } = await supabase.from('clinical_encounters').select('*')
-    .eq('id', encounterId).eq('case_id', caseId).eq('encounter_type', 'pain_follow_up')
-    .is('deleted_at', null).maybeSingle()
-  if (!encounter) return { error: 'Visit not found' as const }
-  const [{ data: caseData }, { data: episode }, { data: episodeEncounters }, { data: procedures }] = await Promise.all([
-    supabase.from('cases').select('patient:patients(first_name,last_name,date_of_birth,gender)')
-      .eq('id', caseId).is('deleted_at', null).single(),
-    supabase.from('care_episodes').select('*').eq('id', encounter.episode_id).eq('case_id', caseId).single(),
-    supabase.from('clinical_encounters').select('*').eq('episode_id', encounter.episode_id)
-      .neq('id', encounterId).is('deleted_at', null),
-    supabase.from('procedures').select('procedure_date,procedure_type,sites,diagnoses,procedure_number')
-      .eq('episode_id', encounter.episode_id).is('deleted_at', null).order('procedure_date'),
-  ])
-  const previousEpisodeNumber = (episode?.episode_number ?? 1) - 1
-  let priorEpisodeDischarge: Record<string, unknown> | null = null
-  if (previousEpisodeNumber > 0) {
-    const { data: previousEpisode } = await supabase.from('care_episodes').select('id')
-      .eq('case_id', caseId).eq('episode_number', previousEpisodeNumber).is('deleted_at', null).maybeSingle()
-    if (previousEpisode) {
-      const { data } = await supabase.from('discharge_notes')
-        .select('visit_date,subjective,assessment,plan_and_recommendations,prognosis')
-        .eq('episode_id', previousEpisode.id).eq('status', 'finalized').is('deleted_at', null).maybeSingle()
-      priorEpisodeDischarge = data
-    }
-  }
-  let provider: Record<string, unknown> | null = null
-  if (encounter.provider_id) {
-    const { data } = await supabase.from('provider_profiles').select('display_name,credentials,npi_number')
-      .eq('id', encounter.provider_id).is('deleted_at', null).maybeSingle()
-    provider = data
-  }
-  return { data: {
-    encounter: encounter as unknown as Record<string, unknown>,
-    patient: (caseData?.patient ?? null) as unknown as Record<string, unknown> | null,
-    provider,
-    latestCompletedEncounter: selectLatestCompletedEncounter((episodeEncounters ?? []) as Tables<'clinical_encounters'>[]) as unknown as Record<string, unknown> | null,
-    priorEpisodeDischarge,
-    performedProcedures: (procedures ?? []) as unknown as Record<string, unknown>[],
-  }, encounter }
-}
-
-export async function generatePainFollowUpNote(caseId: string, encounterId: string) {
+async function reviewRpc(caseId: string, encounterId: string, action: string, version?: string | null, proposalId?: string, payload: Json = {}): Promise<{ error?: string; data?: Json }> {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-  const source = await gatherSource(caseId, encounterId)
-  if (!source.data || !source.encounter) return { error: source.error ?? 'Unable to gather visit data' }
-  if (source.encounter.status !== 'in_progress') return { error: 'Start the visit before generating its note' }
-  try { await requireWritableEpisode(caseId, source.encounter.episode_id, supabase) }
-  catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
+  const { data, error } = await supabase.rpc('follow_up_review', {
+    p_action: action, p_case_id: caseId, p_encounter_id: encounterId,
+    p_expected_updated_at: version ?? null, p_proposal_id: proposalId ?? null, p_payload: payload,
+  })
+  if (error) return { error: error.code === '55P03' ? 'Visit information is being edited. Refresh and try again.' : error.message }
+  return { data }
+}
 
-  const sourceHash = createHash('sha256').update(JSON.stringify(source.data)).digest('hex')
-  const { data: existing } = await supabase.from('pain_follow_up_notes').select('id,status,generation_attempts')
-    .eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
-  if (existing?.status === 'finalized') return { error: 'Finalized notes cannot be regenerated' }
-  let noteId = existing?.id
-  if (noteId && existing) {
-    await supabase.from('pain_follow_up_notes').update({ status: 'generating', generation_error: null,
-      generation_attempts: (existing.generation_attempts ?? 0) + 1, sections_done: 0,
-      sections_total: painFollowUpNoteSections.length, updated_by_user_id: user.id }).eq('id', noteId)
-  } else {
-    const { data: inserted, error } = await supabase.from('pain_follow_up_notes').insert({
-      case_id: caseId, episode_id: source.encounter.episode_id, encounter_id: encounterId,
-      status: 'generating', generation_attempts: 1, sections_total: painFollowUpNoteSections.length,
-      created_by_user_id: user.id, updated_by_user_id: user.id,
-    }).select('id').single()
-    if (error || !inserted) return { error: 'Unable to start note generation' }
-    noteId = inserted.id
+export async function getPainFollowUpReview(caseId: string, encounterId: string) {
+  try {
+    const result = await reviewRpc(caseId, encounterId, 'read')
+    if (result.error) return { error: result.error }
+    const parsed = followUpReviewStateSchema.safeParse(result.data)
+    return parsed.success ? { data: parsed.data } : { error: 'Unable to check visit information' }
+  } catch { return { error: 'Unable to check visit information' } }
+}
+
+async function propose(caseId: string, encounterId: string, version: string | undefined, scope: string,
+  findingFix?: { message: string; rationale: string | null }) {
+  const prepared = await reviewRpc(caseId, encounterId, 'prepare', version, undefined, { scope })
+  if (prepared.error) return prepared
+  if (!prepared.data || typeof prepared.data !== 'object' || !('snapshot' in prepared.data)) return { error: 'Unable to read visit sources' }
+  const preparation = prepared.data as { id: string; version: string; snapshot: unknown }
+  const source = followUpSourceSnapshotSchema.safeParse(preparation.snapshot)
+  if (!source.success) return { error: 'Unable to read visit sources' }
+  try {
+    const generated = await generatePainFollowUp(followUpPromptSource(source.data), findingFix ? { section: scope, ...findingFix } : undefined)
+    if (!generated.data) {
+      await reviewRpc(caseId, encounterId, 'fail', preparation.version, preparation.id)
+      return { error: generated.error ?? 'Unable to generate proposed draft' }
+    }
+    const result = await reviewRpc(caseId, encounterId, 'complete', preparation.version, preparation.id, {
+      content: generated.data as Json, raw_response: (generated.rawResponse ?? null) as Json,
+      model: generated.model ?? null,
+    })
+    return result.error ? result : { data: { proposalId: preparation.id } }
+  } catch {
+    await reviewRpc(caseId, encounterId, 'fail', preparation.version, preparation.id)
+    return { error: 'Generation failed. Your saved draft has been kept.' }
+  } finally {
+    revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
   }
-  const generated = await generatePainFollowUp(source.data)
-  if (!generated.data) {
-    await supabase.from('pain_follow_up_notes').update({ status: 'failed', generation_error: generated.error ?? 'Generation failed', updated_by_user_id: user.id }).eq('id', noteId)
-    return { error: generated.error ?? 'Unable to generate follow-up note' }
-  }
-  const { error } = await supabase.from('pain_follow_up_notes').update({
-    ...generated.data, status: 'draft', ai_model: 'claude-sonnet-4-6',
-    raw_ai_response: (generated.rawResponse ?? null) as Json | null,
-    source_data_hash: sourceHash, sections_done: painFollowUpNoteSections.length,
-    generation_error: null, updated_by_user_id: user.id,
-  }).eq('id', noteId)
-  if (error) return { error: 'Unable to save generated note' }
+}
+
+export async function generatePainFollowUpNote(caseId: string, encounterId: string, expectedVersion?: string) {
+  return propose(caseId, encounterId, expectedVersion, 'full')
+}
+
+export async function applyPainFollowUpProposal(caseId: string, encounterId: string, version: string, proposalId: string) {
+  const result = await reviewRpc(caseId, encounterId, 'apply', version, proposalId)
   revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
-  return { data: { noteId } }
+  return result
+}
+
+export async function discardPainFollowUpProposal(caseId: string, encounterId: string, version: string, proposalId: string) {
+  const result = await reviewRpc(caseId, encounterId, 'discard', version, proposalId)
+  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  return result
+}
+
+export async function reviewPainFollowUpSources(caseId: string, encounterId: string, version: string, fingerprint: string) {
+  const result = await reviewRpc(caseId, encounterId, 'review', version, undefined, { source_fingerprint: fingerprint })
+  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  return result
 }
 
 export async function savePainFollowUpNote(caseId: string, values: PainFollowUpNoteEditValues) {
@@ -136,47 +117,20 @@ export async function savePainFollowUpNote(caseId: string, values: PainFollowUpN
     revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
     return { data: { success: true, savedNote: result.savedNote } }
   }
-  const { encounter_id, reviewed_visit_date: _date, treatment_decision: _decision, expected_updated_at: _version, ...note } = parsed.data
-  void _decision; void _version; void _date
-  const { error } = await supabase.from('pain_follow_up_notes').update({ ...note, updated_by_user_id: user.id })
-    .eq('case_id', caseId).eq('encounter_id', encounter_id).eq('status', 'draft').is('deleted_at', null)
-  if (error) return { error: 'Unable to save note' }
+  const { encounter_id, reviewed_visit_date: _date, treatment_decision: _decision, expected_updated_at, ...note } = parsed.data
+  void _decision; void _date
+  const result = await reviewRpc(caseId, encounter_id, 'save', expected_updated_at, undefined, note)
+  if (result.error) return result
   revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
-  return { data: { success: true } }
+  return { data: { success: true, savedNote: (result.data as { note: Record<string, unknown> }).note } }
 }
 
 export async function regeneratePainFollowUpSectionAction(
-  caseId: string,
-  encounterId: string,
-  section: PainFollowUpSection,
-  findingFix?: { message: string; rationale: string | null },
+  caseId: string, encounterId: string, section: PainFollowUpSection,
+  findingFix?: { message: string; rationale: string | null }, expectedVersion?: string,
 ) {
-  const disabled = requireReturnTeleVisitsMutation()
-  if (disabled) return disabled
   if (!painFollowUpNoteSections.includes(section)) return { error: 'Invalid follow-up note section' }
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-  const source = await gatherSource(caseId, encounterId)
-  if (!source.data || !source.encounter) return { error: source.error ?? 'Unable to gather visit data' }
-  if (source.encounter.status !== 'in_progress') return { error: 'Only an in-progress visit can be regenerated' }
-  try { await requireWritableEpisode(caseId, source.encounter.episode_id, supabase) }
-  catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
-  const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status,updated_at')
-    .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
-  if (!note || note.status !== 'draft') return { error: 'No draft follow-up note found' }
-  const generated = await generatePainFollowUp(source.data, findingFix
-    ? { section, message: findingFix.message, rationale: findingFix.rationale }
-    : undefined)
-  if (!generated.data) return { error: generated.error ?? 'Unable to regenerate follow-up section' }
-  const { error } = await supabase.from('pain_follow_up_notes').update({
-    [section]: generated.data[section],
-    raw_ai_response: (generated.rawResponse ?? null) as Json | null,
-    updated_by_user_id: user.id,
-  }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('id').single()
-  if (error) return { error: 'Note changed or could not be saved. Refresh and try again.' }
-  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
-  return { data: { success: true } }
+  return propose(caseId, encounterId, expectedVersion, section, findingFix)
 }
 
 export async function finalizePainFollowUpNote(caseId: string, encounterId: string, expectedSavedVersion?: string) {
@@ -191,8 +145,10 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
   if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
   if (note.status === 'finalized') return { data: { success: true, replayed: true } }
   if (note.status !== 'draft') return { error: 'No draft follow-up note found' }
+  const review = await getPainFollowUpReview(caseId, encounterId)
+  if (!review.data || !review.data.reviewed || review.data.note_version !== note.updated_at) return { error: review.error ?? 'Review the saved note against current visit information before signing.' }
   const { renderPainFollowUpPdf } = await import('@/lib/pdf/render-pain-follow-up-pdf')
-  const buffer = await renderPainFollowUpPdf(caseId, encounterId, note as unknown as Record<string, unknown>)
+  const buffer = await renderPainFollowUpPdf(caseId, encounterId, note as unknown as Record<string, unknown>, review.data.snapshot)
   const path = `cases/${caseId}/pain-follow-up-${encounterId}-${Date.now()}.pdf`
   const { error: uploadError } = await supabase.storage.from('case-documents').upload(
     path, new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }),
@@ -209,10 +165,10 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
     await supabase.storage.from('case-documents').remove([path])
     return { error: 'Unable to create follow-up document' }
   }
-  const { error } = await supabase.rpc('finalize_pain_follow_up', {
-    p_case_id: caseId, p_encounter_id: encounterId, p_note_id: note.id, p_document_id: document.id,
-    p_expected_updated_at: note.updated_at,
+  const signed = await reviewRpc(caseId, encounterId, 'finalize', note.updated_at, undefined, {
+    document_id: document.id, source_fingerprint: review.data.snapshot.fingerprint,
   })
+  const error = signed.error ? { message: signed.error } : null
   if (error) {
     await removeUnreferencedGeneratedDocument(supabase, document.id, path, user.id)
     if (error.message.includes('changed')) {

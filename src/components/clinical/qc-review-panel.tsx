@@ -96,6 +96,8 @@ function findingDeepLink(caseId: string, finding: QualityFinding): string {
     case 'initial_visit':
     case 'pain_evaluation':
       return `/patients/${caseId}/initial-visit`
+    case 'pain_follow_up':
+      return `/patients/${caseId}/visits/${finding.encounter_id}`
     case 'procedure':
       return finding.procedure_id
         ? `/patients/${caseId}/procedures/${finding.procedure_id}/note`
@@ -540,7 +542,10 @@ function FindingCard({
       try {
         const r = await fixFinding(caseId, hash)
         if (r.error) toast.error(r.error)
-        else toast.success('Finding fix applied')
+        else if (r.data && 'reviewUrl' in r.data && r.data.reviewUrl) {
+          toast.success('Proposed correction ready. Review and apply it in the visit.')
+          router.push(r.data.reviewUrl)
+        } else toast.success('Finding fix applied')
       } finally {
         onFixEnd?.(hash)
         router.refresh()
@@ -618,7 +623,7 @@ function FindingCard({
             {status === 'fix_in_progress' && (
               <span className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Applying fix and rechecking…
+                {finding.step === 'pain_follow_up' ? 'Preparing a proposed correction…' : 'Applying fix and rechecking…'}
               </span>
             )}
             {!isLocked && status === 'pending' && (

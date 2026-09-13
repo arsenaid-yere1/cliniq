@@ -46,7 +46,7 @@ export async function schedulePainFollowUp(input: SchedulePainFollowUpInput) {
     created_by_user_id: user.id,
     updated_by_user_id: user.id,
   }).select('id').single()
-  if (error) return { error: 'Unable to schedule visit' }
+  if (error) return { error: error.code === '55P03' ? 'Visit information is being reviewed or edited. Your changes were not saved; try again.' : 'Unable to schedule visit' }
   revalidatePath(`/patients/${input.case_id}/visits`)
   return { data }
 }
@@ -92,7 +92,7 @@ export async function updatePainFollowUpEncounter(
   }
   const { error } = await supabase.from('clinical_encounters')
     .update({ ...normalizedChanges, updated_by_user_id: user.id }).eq('id', encounter_id)
-  if (error) return { error: 'Unable to update visit' }
+  if (error) return { error: error.code === '55P03' ? 'Visit information is being reviewed or edited. Your changes were not saved; try again.' : 'Unable to update visit' }
   revalidatePath(`/patients/${caseId}/visits`)
   revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
   return { data: { id: encounter_id } }
@@ -124,7 +124,7 @@ export async function changePainFollowUpStatus(
       : existing.provider_intake,
     updated_by_user_id: user.id,
   }).eq('id', encounterId)
-  if (error) return { error: 'Unable to change visit status' }
+  if (error) return { error: error.code === '55P03' ? 'Visit information is being reviewed or edited. Your changes were not saved; try again.' : 'Unable to change visit status' }
   revalidatePath(`/patients/${caseId}/visits`)
   return { data: { id: encounterId } }
 }

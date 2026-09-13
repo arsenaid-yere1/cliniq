@@ -1,3 +1,4 @@
+import { followUpReviewFixture } from '@/test-utils/follow-up-source'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createMockQueryBuilder,
@@ -29,6 +30,7 @@ vi.mock('@/lib/pdf/render-pain-follow-up-pdf', () => ({
   renderPainFollowUpPdf: vi.fn(async () => Buffer.from('follow-up pdf')),
 }))
 
+import { renderPainFollowUpPdf } from '@/lib/pdf/render-pain-follow-up-pdf'
 import { revalidatePath } from 'next/cache'
 import { finalizePainFollowUpNote } from '../pain-follow-up-notes'
 
@@ -54,6 +56,12 @@ function configureNote(status = 'draft') {
   })
 }
 
+function finalizationResult(result: unknown) {
+  mockSupabase.rpc.mockImplementation((_name: string, args: { p_action: string }) => Promise.resolve(
+    args.p_action === 'read' ? { data: followUpReviewFixture(UPDATED_AT, ENCOUNTER_ID), error: null } : result,
+  ))
+}
+
 describe('finalizePainFollowUpNote', () => {
   beforeEach(() => {
     const base = createMockSupabase()
@@ -64,6 +72,7 @@ describe('finalizePainFollowUpNote', () => {
     remove.mockResolvedValue({ error: null })
     configureNote()
     vi.clearAllMocks()
+    finalizationResult({ data: null, error: null })
   })
 
   it('does not render or sign an intervening edit after explicit Save', async () => {
@@ -73,19 +82,21 @@ describe('finalizePainFollowUpNote', () => {
   })
 
   it('passes the rendered note version to finalization', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({ data: null, error: null })
+    finalizationResult({ data: null, error: null })
 
     await expect(finalizePainFollowUpNote(CASE_ID, ENCOUNTER_ID)).resolves.toEqual({
       data: { success: true },
     })
-    expect(mockSupabase.rpc).toHaveBeenCalledWith('finalize_pain_follow_up', {
+    expect(mockSupabase.rpc).toHaveBeenCalledWith('follow_up_review', {
+      p_action: 'finalize',
+      p_proposal_id: null,
+      p_payload: { document_id: DOCUMENT_ID, source_fingerprint: 'current-source' },
       p_case_id: CASE_ID,
       p_encounter_id: ENCOUNTER_ID,
-      p_note_id: NOTE_ID,
-      p_document_id: DOCUMENT_ID,
       p_expected_updated_at: UPDATED_AT,
     })
     expect(revalidatePath).toHaveBeenCalledWith(`/patients/${CASE_ID}/documents`)
+    expect(renderPainFollowUpPdf).toHaveBeenCalledWith(CASE_ID, ENCOUNTER_ID, expect.objectContaining({ updated_at: UPDATED_AT }), followUpReviewFixture(UPDATED_AT, ENCOUNTER_ID).snapshot)
   })
 
   it('keeps the existing action-level replay for finalized notes', async () => {
@@ -99,7 +110,7 @@ describe('finalizePainFollowUpNote', () => {
   })
 
   it('cleans up a stale or competing finalization and returns a review message', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({
+    finalizationResult({
       data: null,
       error: { message: 'Follow-up note changed; review and finalize again' },
     })
@@ -116,7 +127,7 @@ describe('finalizePainFollowUpNote', () => {
   })
 
   it('retains cleanup and a generic error for unexpected RPC failures', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({
+    finalizationResult({
       data: null,
       error: { message: 'database internals' },
     })
@@ -128,7 +139,7 @@ describe('finalizePainFollowUpNote', () => {
     expect(documentBuilder.update).toHaveBeenCalledOnce()
   })
   it('preserves the file when cleanup cannot confirm the document is unreferenced', async () => {
-    mockSupabase.rpc.mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+    finalizationResult({ data: null, error: { message: 'response lost' } })
     documentBuilder.single
       .mockResolvedValueOnce({ data: { id: DOCUMENT_ID }, error: null })
       .mockResolvedValueOnce({ data: null, error: { message: 'Signed revision documents are retained' } })
@@ -136,5 +147,12 @@ describe('finalizePainFollowUpNote', () => {
     expect(documentBuilder.update).toHaveBeenCalledOnce()
     expect(remove).not.toHaveBeenCalled()
   })
+
+
+it('rejects unreviewed sources before rendering or uploading', async () => {
+  mockSupabase.rpc.mockResolvedValue({ data: { ...followUpReviewFixture(UPDATED_AT, ENCOUNTER_ID), reviewed: false, freshness: 'changed' }, error: null })
+  expect(await finalizePainFollowUpNote(CASE_ID, ENCOUNTER_ID)).toEqual({ error: 'Review the saved note against current visit information before signing.' })
+  expect(upload).not.toHaveBeenCalled()
+})
 
 })

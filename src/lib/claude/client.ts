@@ -59,6 +59,7 @@ export interface CallClaudeToolOptions<TOutput> {
 export interface CallClaudeToolSuccess<TOutput> {
   data: TOutput
   rawResponse: unknown
+  model?: string
   error?: undefined
 }
 export interface CallClaudeToolFailure {
@@ -196,7 +197,7 @@ async function callClaudeToolForModel<TOutput>(
     lastRaw = raw
     const parsed = opts.parse(raw)
     if (parsed.success) {
-      return { data: parsed.data, rawResponse: raw }
+      return { data: parsed.data, rawResponse: raw, model: apiResponse.model }
     }
 
     lastValidationError = parsed.error

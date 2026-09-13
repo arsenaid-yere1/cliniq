@@ -1,3 +1,4 @@
+import type { FollowUpSourceSnapshot } from '@/lib/clinical/pain-follow-up-source'
 import React from 'react'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { format } from 'date-fns'
@@ -21,23 +22,21 @@ async function imageToBase64(data: Blob, mime: string): Promise<string> {
   return `data:image/png;base64,${buffer.toString('base64')}`
 }
 
-export async function renderPainFollowUpPdf(caseId: string, encounterId: string, note: Record<string, unknown>) {
+export async function renderPainFollowUpPdf(caseId: string, encounterId: string, note: Record<string, unknown>, snapshot: FollowUpSourceSnapshot) {
+  void caseId
+  const encounter = snapshot.data.encounter
+  if (encounter.id !== encounterId || typeof encounter.encounter_date !== 'string') throw new Error('A checked visit date is required')
+  const patient = snapshot.data.patient as { first_name: string; last_name: string; date_of_birth: string | null } | null
+  const provider = snapshot.data.provider as { id: string; display_name: string; credentials: string | null; npi_number: string | null } | null
+  const date = encounter.encounter_date
   const supabase = await createClient()
-  const [{ data: caseData }, { data: encounter }, { data: clinicSettings }] = await Promise.all([
-    supabase.from('cases').select('patient:patients!inner(first_name,last_name,date_of_birth)')
-      .eq('id', caseId).is('deleted_at', null).single(),
-    supabase.from('clinical_encounters').select('*,provider:provider_profiles(display_name,credentials,npi_number,signature_storage_path)')
-      .eq('id', encounterId).eq('case_id', caseId).is('deleted_at', null).single(),
+  // Clinical fields come exclusively from the immutable checked snapshot.
+  // Branding and signature assets are captured once for this render.
+  const [{ data: clinicSettings }, signatureResult] = await Promise.all([
     supabase.from('clinic_settings').select('*').is('deleted_at', null).maybeSingle(),
+    provider ? supabase.from('provider_profiles').select('signature_storage_path').eq('id', provider.id).is('deleted_at', null).maybeSingle() : Promise.resolve({ data: null }),
   ])
-  const patient = caseData?.patient as unknown as { first_name: string; last_name: string; date_of_birth: string | null } | null
-  const provider = encounter?.provider as unknown as {
-    display_name: string
-    credentials: string | null
-    npi_number: string | null
-    signature_storage_path: string | null
-  } | null
-  const date = encounter?.encounter_date ?? encounter?.scheduled_start?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
+  const signaturePath = signatureResult.data?.signature_storage_path
 
   let clinicLogoBase64: string | undefined
   if (clinicSettings?.logo_storage_path) {
@@ -49,10 +48,10 @@ export async function renderPainFollowUpPdf(caseId: string, encounterId: string,
   }
 
   let providerSignatureBase64: string | undefined
-  if (provider?.signature_storage_path) {
-    const mime = getMimeType(provider.signature_storage_path)
+  if (signaturePath) {
+    const mime = getMimeType(signaturePath)
     if (mime) {
-      const { data: signatureData } = await supabase.storage.from('clinic-assets').download(provider.signature_storage_path)
+      const { data: signatureData } = await supabase.storage.from('clinic-assets').download(signaturePath)
       if (signatureData) providerSignatureBase64 = await imageToBase64(signatureData, mime)
     }
   }
@@ -78,11 +77,11 @@ export async function renderPainFollowUpPdf(caseId: string, encounterId: string,
     patientName: patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown',
     dob: patient?.date_of_birth ? format(new Date(`${patient.date_of_birth}T00:00:00`), 'MM/dd/yyyy') : '—',
     dateOfService: format(new Date(`${date}T00:00:00`), 'MM/dd/yyyy'),
-    modality: encounter?.modality === 'telehealth' ? 'Telehealth (audio/video)' : (encounter?.modality ?? 'Unknown'),
+    modality: encounter?.modality === 'telehealth' ? 'Telehealth (audio/video)' : (encounter.modality as string | null ?? 'Unknown'),
     consent: encounter?.telehealth_consent_obtained ? 'Obtained' : 'Not documented',
-    patientLocation: encounter?.patient_location_state ?? 'Not documented',
-    providerLocation: encounter?.provider_location ?? 'Not documented',
-    connectionMethod: encounter?.connection_method ?? 'Not documented',
+    patientLocation: encounter.patient_location_state as string | null ?? 'Not documented',
+    providerLocation: encounter.provider_location as string | null ?? 'Not documented',
+    connectionMethod: encounter.connection_method as string | null ?? 'Not documented',
     providerName: provider?.display_name ?? 'Provider not documented',
     providerCredentials: provider?.credentials,
     providerNpi: provider?.npi_number,
