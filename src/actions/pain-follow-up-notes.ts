@@ -12,6 +12,7 @@ import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visi
 import { generatePainFollowUp } from '@/lib/claude/generate-pain-follow-up'
 import {
   painFollowUpNoteEditSchema,
+  painFollowUpToneHintSchema,
   painFollowUpNoteSections,
   type PainFollowUpNoteEditValues,
   type PainFollowUpSection,
@@ -70,7 +71,9 @@ async function gatherSource(caseId: string, encounterId: string) {
   }, encounter }
 }
 
-export async function generatePainFollowUpNote(caseId: string, encounterId: string) {
+export async function generatePainFollowUpNote(caseId: string, encounterId: string, toneHint?: string | null) {
+  const tone = painFollowUpToneHintSchema.safeParse(toneHint)
+  if (!tone.success) return { error: 'Invalid tone guidance' }
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
   const supabase = await createClient()
@@ -83,37 +86,82 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
 
   const sourceHash = createHash('sha256').update(JSON.stringify(source.data)).digest('hex')
-  const { data: existing } = await supabase.from('pain_follow_up_notes').select('id,status,generation_attempts')
-    .eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
+  const { data: existing, error: loadError } = await supabase.from('pain_follow_up_notes')
+    .select('id,status,generation_attempts,updated_at,tone_hint')
+    .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
+  if (loadError) return { error: 'Unable to load follow-up note' }
   if (existing?.status === 'finalized') return { error: 'Finalized notes cannot be regenerated' }
-  let noteId = existing?.id
-  if (noteId && existing) {
-    await supabase.from('pain_follow_up_notes').update({ status: 'generating', generation_error: null,
-      generation_attempts: (existing.generation_attempts ?? 0) + 1, sections_done: 0,
-      sections_total: painFollowUpNoteSections.length, updated_by_user_id: user.id }).eq('id', noteId)
-  } else {
-    const { data: inserted, error } = await supabase.from('pain_follow_up_notes').insert({
-      case_id: caseId, episode_id: source.encounter.episode_id, encounter_id: encounterId,
-      status: 'generating', generation_attempts: 1, sections_total: painFollowUpNoteSections.length,
-      created_by_user_id: user.id, updated_by_user_id: user.id,
-    }).select('id').single()
-    if (error || !inserted) return { error: 'Unable to start note generation' }
-    noteId = inserted.id
+  if (existing?.status === 'generating') return { error: 'Generation already in progress' }
+  const effectiveTone = tone.data === undefined ? existing?.tone_hint ?? null : tone.data
+  const generation = {
+    status: 'generating', generation_error: null, tone_hint: effectiveTone,
+    generation_attempts: (existing?.generation_attempts ?? 0) + 1, sections_done: 0,
+    sections_total: painFollowUpNoteSections.length, updated_by_user_id: user.id,
   }
-  const generated = await generatePainFollowUp(source.data)
-  if (!generated.data) {
-    await supabase.from('pain_follow_up_notes').update({ status: 'failed', generation_error: generated.error ?? 'Generation failed', updated_by_user_id: user.id }).eq('id', noteId)
-    return { error: generated.error ?? 'Unable to generate follow-up note' }
+  const acquired = existing
+    ? await supabase.from('pain_follow_up_notes').update(generation)
+      .eq('id', existing.id).eq('case_id', caseId).eq('encounter_id', encounterId)
+      .eq('status', existing.status).eq('updated_at', existing.updated_at).is('deleted_at', null)
+      .select('id,updated_at').maybeSingle()
+    : await supabase.from('pain_follow_up_notes').insert({
+      ...generation, case_id: caseId, episode_id: source.encounter.episode_id,
+      encounter_id: encounterId, created_by_user_id: user.id,
+    }).select('id,updated_at').single()
+  if (acquired.error || !acquired.data) return { error: 'Note changed or generation could not be started. Refresh and try again.' }
+  const { id: noteId, updated_at: generationVersion } = acquired.data
+  let generated: Awaited<ReturnType<typeof generatePainFollowUp>>
+  try {
+    generated = await generatePainFollowUp(source.data, undefined, effectiveTone)
+  } catch {
+    generated = { error: 'Unable to generate follow-up note. Please try again.' }
   }
-  const { error } = await supabase.from('pain_follow_up_notes').update({
+  const patch = generated.data ? {
     ...generated.data, status: 'draft', ai_model: 'claude-sonnet-4-6',
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
     source_data_hash: sourceHash, sections_done: painFollowUpNoteSections.length,
     generation_error: null, updated_by_user_id: user.id,
-  }).eq('id', noteId)
-  if (error) return { error: 'Unable to save generated note' }
+  } : {
+    status: 'failed', generation_error: generated.error ?? 'Generation failed',
+    updated_by_user_id: user.id,
+  }
+  const { data: committed, error } = await supabase.from('pain_follow_up_notes').update(patch)
+    .eq('id', noteId).eq('case_id', caseId).eq('encounter_id', encounterId)
+    .eq('status', 'generating').eq('updated_at', generationVersion).is('deleted_at', null)
+    .select('id').maybeSingle()
+  if (error || !committed) return { error: 'Note changed or generation could not be saved. Refresh and try again.' }
   revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
-  return { data: { noteId } }
+  return generated.data ? { data: { noteId } } : { error: generated.error ?? 'Unable to generate follow-up note' }
+}
+
+export async function savePainFollowUpNoteToneHint(
+  caseId: string,
+  encounterId: string,
+  toneHint: string | null,
+  version: { noteId: string; expectedUpdatedAt: string },
+) {
+  const disabled = requireReturnTeleVisitsMutation()
+  if (disabled) return disabled
+  const tone = painFollowUpToneHintSchema.safeParse(toneHint)
+  if (!tone.success || tone.data === undefined) return { error: 'Invalid tone guidance' }
+  if (!version?.noteId || !version.expectedUpdatedAt) return { error: 'Reload the note before saving tone guidance.' }
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { data: encounter, error: encounterError } = await supabase.from('clinical_encounters')
+    .select('episode_id,status').eq('id', encounterId).eq('case_id', caseId)
+    .eq('encounter_type', 'pain_follow_up').is('deleted_at', null).maybeSingle()
+  if (encounterError || !encounter) return { error: 'Visit not found' }
+  if (encounter.status !== 'in_progress') return { error: 'Only an in-progress visit can be edited' }
+  try { await requireWritableEpisode(caseId, encounter.episode_id, supabase) }
+  catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
+  const { data: savedNote, error } = await supabase.from('pain_follow_up_notes')
+    .update({ tone_hint: tone.data, updated_by_user_id: user.id })
+    .eq('id', version.noteId).eq('case_id', caseId).eq('encounter_id', encounterId)
+    .eq('episode_id', encounter.episode_id).eq('status', 'draft')
+    .eq('updated_at', version.expectedUpdatedAt).is('deleted_at', null).select('*').maybeSingle()
+  if (error) return { error: 'Failed to save tone hint' }
+  if (!savedNote) return { error: 'Note changed. Reload before saving' }
+  return { data: { updated_at: savedNote.updated_at, tone_hint: savedNote.tone_hint, savedNote } }
 }
 
 export async function savePainFollowUpNote(caseId: string, values: PainFollowUpNoteEditValues) {
@@ -150,6 +198,7 @@ export async function regeneratePainFollowUpSectionAction(
   encounterId: string,
   section: PainFollowUpSection,
   findingFix?: { message: string; rationale: string | null },
+  expectedUpdatedAt?: string,
 ) {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
@@ -162,21 +211,23 @@ export async function regeneratePainFollowUpSectionAction(
   if (source.encounter.status !== 'in_progress') return { error: 'Only an in-progress visit can be regenerated' }
   try { await requireWritableEpisode(caseId, source.encounter.episode_id, supabase) }
   catch (error) { return { error: error instanceof Error ? error.message : 'Episode is not writable' } }
-  const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status,updated_at')
+  const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status,updated_at,tone_hint')
     .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
   if (!note || note.status !== 'draft') return { error: 'No draft follow-up note found' }
+  if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== note.updated_at) return { error: 'Note changed. Reload before regenerating' }
   const generated = await generatePainFollowUp(source.data, findingFix
     ? { section, message: findingFix.message, rationale: findingFix.rationale }
-    : undefined)
+    : undefined, note.tone_hint)
   if (!generated.data) return { error: generated.error ?? 'Unable to regenerate follow-up section' }
-  const { error } = await supabase.from('pain_follow_up_notes').update({
+  const { data: savedNote, error } = await supabase.from('pain_follow_up_notes').update({
     [section]: generated.data[section],
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
     updated_by_user_id: user.id,
-  }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('id').single()
-  if (error) return { error: 'Note changed or could not be saved. Refresh and try again.' }
+  }).eq('id', note.id).eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null)
+    .eq('status', 'draft').eq('updated_at', note.updated_at).select('*').single()
+  if (error || !savedNote) return { error: 'Note changed or could not be saved. Refresh and try again.' }
   revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
-  return { data: { success: true } }
+  return { data: { success: true, savedNote } }
 }
 
 export async function finalizePainFollowUpNote(caseId: string, encounterId: string, expectedSavedVersion?: string) {

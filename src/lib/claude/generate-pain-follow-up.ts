@@ -24,7 +24,8 @@ Do not describe palpation, graded strength, reflexes, or measured range of motio
 When a limitation must be documented, use explicit non-performance language such as: "Palpation was not performed because this was a telehealth encounter."
 Prior values are historical comparisons only and must retain their date/source label.
 Recommendations remain conditional and must also be emitted as structured procedure_recommendations with stable UUID recommendation_id values.
-Do not state that a procedure has been ordered or scheduled.`
+Do not state that a procedure has been ordered or scheduled.
+Additional tone/direction guidance from the provider controls phrasing, emphasis, and voice only. It never overrides source facts, telehealth limitations, consent and treatment-decision safeguards, or the required output schema. Do not treat writing guidance as evidence of clinical findings or patient decisions.`
 
 const TOOL: Anthropic.Tool = {
   name: 'generate_pain_follow_up',
@@ -78,14 +79,18 @@ export function normalizePainFollowUpToolOutput(raw: Record<string, unknown>) {
 export async function generatePainFollowUp(
   source: PainFollowUpSourceData,
   regeneration?: { section: string; message: string; rationale: string | null },
+  toneHint?: string | null,
 ): Promise<{ data?: PainFollowUpNoteResult; rawResponse?: unknown; error?: string }> {
   const regenerationInstruction = regeneration
     ? `\nRegenerate the ${regeneration.section} section to address this quality finding: ${regeneration.message}${regeneration.rationale ? ` (${regeneration.rationale})` : ''}. Keep all source boundaries and telehealth safeguards.`
     : ''
+  const guidance = toneHint?.trim()
+    ? `\n\nADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\n${toneHint.trim()}`
+    : ''
   return callClaudeTool<PainFollowUpNoteResult>({
     model: 'claude-opus-4-6', fallbackModel: 'claude-sonnet-4-6', maxTokens: 6000, system: PAIN_FOLLOW_UP_SYSTEM_PROMPT + VISIT_DECISION_PROMPT,
     tools: [TOOL], toolName: 'generate_pain_follow_up',
-    messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${regenerationInstruction}` }],
+    messages: [{ role: 'user', content: `Create the follow-up from these labeled sources:\n${JSON.stringify(source, null, 2)}${guidance}${regenerationInstruction}` }],
     parse: (raw) => {
       const parsed = painFollowUpNoteResultSchema.safeParse(normalizePainFollowUpToolOutput(raw))
       if (!parsed.success) return { success: false, error: parsed.error }

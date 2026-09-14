@@ -170,3 +170,21 @@ describe.each([false, true])('consent source boundaries (regeneration=%s)', (reg
     expect(opts.parse({ ...raw, subjective: null }).success).toBe(false)
   })
 })
+
+describe('provider guidance', () => {
+  it.each([undefined, null, '', '  '])('omits blank guidance: %j', async (tone) => {
+    await generatePainFollowUp(source, undefined, tone)
+    const opts = vi.mocked(callClaudeTool).mock.calls.at(-1)![0]
+    expect(opts.messages[0].content).not.toContain('ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:')
+  })
+  it('combines trimmed guidance and finding instructions while retaining clinical guards', async () => {
+    await generatePainFollowUp(source, { section: 'assessment', message: 'Clarify source', rationale: null }, '  Concise wording  ')
+    const opts = vi.mocked(callClaudeTool).mock.calls.at(-1)![0]
+    expect(opts.messages[0].content).toContain('ADDITIONAL TONE/DIRECTION GUIDANCE FROM THE PROVIDER:\nConcise wording')
+    expect(opts.messages[0].content).toContain('Clarify source')
+    expect(opts.system).toContain('It never overrides source facts')
+    const raw = Object.fromEntries(Object.keys(painFollowUpNoteResultSchema.shape).map((key) => [key, key === 'procedure_recommendations' ? [] : '']))
+    expect(opts.parse({ ...raw, telehealth_observations: 'Strength is 5/5.' }).success).toBe(false)
+    expect(opts.parse({ ...raw, assessment: 'The patient accepted PRP.' }).success).toBe(false)
+  })
+})

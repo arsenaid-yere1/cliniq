@@ -1,32 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { buildPainFollowUpEditorKey } from '../pain-follow-up-editor-key'
 
-describe('buildPainFollowUpEditorKey', () => {
-  it('changes when a generated note first becomes available', () => {
-    const emptyKey = buildPainFollowUpEditorKey(null)
-    const generatedKey = buildPainFollowUpEditorKey({
-      id: 'note-1',
-      updated_at: '2026-08-27T17:10:00Z',
-    })
-
-    expect(generatedKey).not.toBe(emptyKey)
+const note = { id: 'note', status: 'draft', subjective: 'Draft', procedure_recommendations: [], updated_at: 'v1' }
+const key = (row: typeof note | null = note, encounter = 'visit', caseId = 'case') => buildPainFollowUpEditorKey(caseId, encounter, row)
+describe('follow-up lifecycle identity', () => {
+  it('stays stable for ordinary draft writes', () => {
+    expect(key({ ...note, updated_at: 'v2', subjective: 'Regenerated' })).toBe(key())
   })
-
-  it('changes when persisted note content is regenerated', () => {
-    const before = buildPainFollowUpEditorKey({
-      id: 'note-1',
-      updated_at: '2026-08-27T17:10:00Z',
-    })
-    const after = buildPainFollowUpEditorKey({
-      id: 'note-1',
-      updated_at: '2026-08-27T17:11:00Z',
-    })
-
-    expect(after).not.toBe(before)
+  it('changes for a created note and navigation, including empty encounters', () => {
+    expect(key(null)).not.toBe(key())
+    expect(key(null, 'other')).not.toBe(key(null))
+    expect(key(null, 'visit', 'other')).not.toBe(key(null))
+    expect(key({ ...note, id: 'other' })).not.toBe(key())
   })
-
-  it('stays stable during unrelated route refreshes', () => {
-    const note = { id: 'note-1', updated_at: '2026-08-27T17:10:00Z' }
-    expect(buildPainFollowUpEditorKey(note)).toBe(buildPainFollowUpEditorKey(note))
+  it.each(['generating', 'failed', 'finalized'])('changes when %s becomes draft', (status) => {
+    expect(key({ ...note, status })).not.toBe(key())
+  })
+  it('changes for populated draft to reset empty draft', () => {
+    expect(key({ ...note, subjective: '' })).not.toBe(key())
   })
 })

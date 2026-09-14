@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   painFollowUpNoteEditSchema,
+  painFollowUpToneHintSchema,
   painFollowUpNoteResultSchema,
   painFollowUpNoteSectionLabels,
   painFollowUpNoteSections,
@@ -75,5 +76,14 @@ describe('pain follow-up section metadata', () => {
       ...sections,
       procedure_recommendations: [],
     }).success).toBe(true)
+  })
+})
+
+describe('follow-up guidance input', () => {
+  it.each([[undefined, undefined], [null, null], ['', null], ['   ', null], [' Concise ', 'Concise']])('normalizes %j to %j', (input, expected) => {
+    expect(painFollowUpToneHintSchema.parse(input)).toBe(expected)
+  })
+  it.each([12, false, {}, []])('rejects %j', (input) => {
+    expect(painFollowUpToneHintSchema.safeParse(input).success).toBe(false)
   })
 })

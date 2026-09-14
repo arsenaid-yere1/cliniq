@@ -12,7 +12,7 @@ vi.mock('@/components/procedures/procedure-order-dialog', () => ({ ProcedureOrde
 vi.mock('@/actions/pain-follow-up-notes', () => ({ savePainFollowUpNote: save, finalizePainFollowUpNote: finalize, generatePainFollowUpNote: vi.fn(), regeneratePainFollowUpSectionAction: vi.fn() }))
 import { PainFollowUpEditor } from '../pain-follow-up-editor'
 const encounter = { id: 'encounter', status: 'in_progress', encounter_date: '2026-09-10' } as Tables<'clinical_encounters'>
-const initialNote = { ...Object.fromEntries(painFollowUpNoteSections.map((section) => [section, 'Reviewed text'])), id: 'note', status: 'draft', updated_at: 'v1', procedure_recommendations: [], visit_treatment_decision: null } as unknown as Tables<'pain_follow_up_notes'>
+const initialNote = { ...Object.fromEntries(painFollowUpNoteSections.map((section) => [section, 'Reviewed text'])), id: 'note', case_id: 'case', encounter_id: 'encounter', tone_hint: null, status: 'draft', updated_at: 'v1', procedure_recommendations: [], visit_treatment_decision: null } as unknown as Tables<'pain_follow_up_notes'>
 beforeEach(() => { vi.clearAllMocks(); save.mockResolvedValue({ data: { success: true, savedNote: { ...initialNote, updated_at: 'v2' } } }); finalize.mockResolvedValue({ data: { success: true } }) })
 afterEach(cleanup)
 describe('follow-up explicit decision workflow', () => {

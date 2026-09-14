@@ -1,10 +1,9 @@
-export interface PainFollowUpNoteVersion {
-  id: string
-  updated_at: string
-}
+import { getPainFollowUpEditorState, type PainFollowUpEditorNote } from './pain-follow-up-editor-state'
 
 export function buildPainFollowUpEditorKey(
-  note: PainFollowUpNoteVersion | null | undefined,
+  caseId: string,
+  encounterId: string,
+  note: (PainFollowUpEditorNote & { id: string }) | null | undefined,
 ): string {
-  return note ? `pain-follow-up:${note.id}:${note.updated_at}` : 'pain-follow-up:new'
+  return `pain-follow-up:${caseId}:${encounterId}:${note?.id ?? 'new'}:${getPainFollowUpEditorState(note)}`
 }

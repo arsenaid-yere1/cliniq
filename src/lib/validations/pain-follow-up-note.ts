@@ -2,6 +2,10 @@ import { visitDecisionEditFields } from './visit-treatment-decision'
 import { z } from 'zod'
 import { SCHEDULABLE_PROCEDURE_TYPES } from '@/lib/constants/procedure-scheduling'
 
+// Omission preserves existing guidance; explicit blank/null clears it.
+export const painFollowUpToneHintSchema = z.string().trim().nullable().optional()
+  .transform((value) => value === undefined ? undefined : value || null)
+
 export const painFollowUpNoteSections = [
   'subjective',
   'interval_history',

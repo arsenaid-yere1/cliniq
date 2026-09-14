@@ -1,5 +1,6 @@
 'use client'
 
+import { useId } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -21,14 +22,17 @@ export function ToneDirectionCard({
   disabled,
   description,
 }: ToneDirectionCardProps) {
+  const id = useId()
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Tone & Direction (optional)</CardTitle>
-        <CardDescription>{description ?? DEFAULT_DESCRIPTION}</CardDescription>
+        <CardTitle id={`${id}-title`} className="text-base">Tone & Direction (optional)</CardTitle>
+        <CardDescription id={`${id}-description`}>{description ?? DEFAULT_DESCRIPTION}</CardDescription>
       </CardHeader>
       <CardContent>
         <Textarea
+          aria-labelledby={`${id}-title`}
+          aria-describedby={`${id}-description`}
           placeholder="e.g., Use assertive language about medical necessity, emphasize conservative treatment failure, keep prognosis cautious..."
           value={value}
           onChange={(e) => onChange(e.target.value)}
