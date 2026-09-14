@@ -87,7 +87,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
     try {
       const result = await generatePainFollowUpNote(caseId, encounter.id, toneHint.trim() || null)
       if (!mounted.current) return
-      if (result.error) toast.error(result.error)
+      if ('error' in result) toast.error(result.error)
       else toast.success('Follow-up note generated successfully')
       router.refresh()
     } catch {
