@@ -148,6 +148,21 @@ describe('follow-up history loading', () => {
     expect(summarizeFollowUpIntake).toHaveBeenCalledOnce()
     expect(result.data?.chiefComplaint).toBe('Recent pain')
   })
+  it('preserves mixed historical dates and keeps complaint, interval events and provenance separate', async () => {
+    const dates = ['2026-09-08', '2026-09-09', '2026-09-10', '2026-09-12', '2026-09-13']
+    const { client } = setup({ procedures: dates.map((date, index) => ({ id: `p${index}`, procedure_date: date, procedure_type: 'prp', procedure_series_id: 'series', sites: [] })) })
+    const summary = { chiefComplaint: 'Follow-up evaluation of previously documented knee pain.', intervalHistory: 'A PRP session was performed after the prior visit.' }
+    vi.mocked(summarizeFollowUpIntake).mockResolvedValue({ data: summary })
+    const result = await loadFollowUpIntakeHistory(client as never, encounter)
+    const supplied = vi.mocked(summarizeFollowUpIntake).mock.calls[0][0]
+    expect(supplied.previousVisit?.date).toBe('2026-09-09')
+    expect(supplied.visitDate).toBe('2026-09-12')
+    expect(supplied.procedures.map((procedure) => procedure.date)).toEqual(dates.slice(0, 3))
+    expect(result.data?.chiefComplaint).toBe(summary.chiefComplaint)
+    expect(result.data?.intervalHistory).toBe(summary.intervalHistory)
+    expect(result.data?.sources.filter((source) => source.kind === 'procedure').map((source) => source.id)).toEqual(['p0', 'p1', 'p2'])
+    expect(result.data?.sources.some((source) => source.id === 'follow')).toBe(true)
+  })
   it('does not query without a visit date', async () => {
     const { client } = setup()
     expect(await loadFollowUpIntakeHistory(client as never, { ...encounter, encounter_date: null })).toEqual({ data: null })

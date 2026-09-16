@@ -31,6 +31,24 @@ describe('historical follow-up intake', () => {
     expect(save).not.toHaveBeenCalled()
     expect(saveButton().disabled).toBe(true)
   })
+  it.each(['Since the prior evaluation, the patient underwent PRP treatment of the right shoulder.', ''])('keeps field roles separate on render and reviewed save with history %j', async (intervalHistory) => {
+    const chiefComplaint = 'Follow-up evaluation of previously documented neck and right shoulder pain.'
+    render(<TelehealthIntakeCard {...props} history={{ data: { ...data, chiefComplaint, intervalHistory } }} />)
+    expect(input('Chief complaint').value).toBe(chiefComplaint)
+    expect(input('Interval history').value).toBe(intervalHistory)
+    expect(input('Interval history').disabled).toBe(false)
+    expect(save).not.toHaveBeenCalled()
+    expect(saveButton().disabled).toBe(true)
+    review()
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(save).toHaveBeenCalledWith('case', expect.objectContaining({
+      provider_intake: expect.objectContaining({ chief_complaint: chiefComplaint, interval_history: intervalHistory }),
+    })))
+    fireEvent.change(input('Interval history'), { target: { value: 'Clinician-confirmed interval update' } })
+    expect(input('Chief complaint').value).toBe(chiefComplaint)
+    expect(input('Interval history').value).toBe('Clinician-confirmed interval update')
+    expect(saveButton().disabled).toBe(true)
+  })
   it('saves reviewed suggestions, dated provenance and explicit empty values', async () => {
     render(<TelehealthIntakeCard {...props} />)
     review()
