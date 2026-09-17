@@ -1,6 +1,7 @@
 'use client'
 
 import { ChiefComplaintsCard } from './chief-complaints-card'
+import { ExamFindingsCard } from './exam-findings-card'
 
 import { IntakeDraftProvider, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
 import { PsychologicalAssessmentCard, psychologicalStatusLabels } from './psychological-assessment-card'
@@ -12,12 +13,12 @@ import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDeci
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
 import { useState, useTransition, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useForm, useFieldArray } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { computeAgeAtDate, pickVisitAnchor } from '@/lib/age'
-import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Download, Heart, Plus, Trash2, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertTriangle, Save, Lock, Download, Heart, Trash2, FileText, ClipboardList, Car, History, UserRound, Stethoscope, FileImage, Bone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -846,108 +847,6 @@ function SocialHistoryCard({ caseId, visitType, initialIntake, isLocked }: Intak
               <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 Save Social History
-              </Button>
-            </div>
-          </div>
-        </Form>
-      </CardContent>
-    </Card>
-  )
-}
-
-// --- Exam Findings Card ---
-
-function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }: IntakeCardProps) {
-  const defaults = initialIntake?.exam_findings ?? defaultProviderIntake.exam_findings
-  const form = useForm({ defaultValues: { exam_findings: defaults } })
-
-  const regionsArray = useFieldArray({
-    control: form.control,
-    name: 'exam_findings.regions',
-  })
-
-  const { isSaving, save } = useIntakeSectionSave(form, caseId, visitType, 'exam_findings', initialIntake)
-  function handleSave() { void save() }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardDescription>
-          Document physical examination findings by body region — palpation, muscle spasm, and neurological assessment.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <div className="space-y-4">
-            <FormField control={form.control} name="exam_findings.general_appearance" render={({ field }) => (
-              <FormItem>
-                <FormLabel>General Appearance</FormLabel>
-                <FormControl><Textarea rows={2} placeholder="e.g., Alert and oriented, in no acute distress" value={field.value ?? ''} onChange={e => field.onChange(e.target.value || null)} /></FormControl>
-              </FormItem>
-            )} />
-
-            <Separator />
-
-            <div className="space-y-3">
-              <FormLabel>Examination Regions</FormLabel>
-              {regionsArray.fields.map((field, index) => (
-                <div key={field.id} className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <FormField control={form.control} name={`exam_findings.regions.${index}.region`} render={({ field: f }) => (
-                      <FormItem className="flex-1">
-                        <FormControl><Input placeholder="Region (e.g., Cervical Spine)" className="font-semibold" {...f} /></FormControl>
-                      </FormItem>
-                    )} />
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => regionsArray.remove(index)} disabled={isLocked}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <FormField control={form.control} name={`exam_findings.regions.${index}.palpation_findings`} render={({ field: f }) => (
-                    <FormItem>
-                      <FormLabel>Palpation Findings</FormLabel>
-                      <FormControl><Textarea rows={2} placeholder="e.g., Tenderness and muscle spasm at C3-C7 paraspinal musculature" {...f} /></FormControl>
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name={`exam_findings.regions.${index}.muscle_spasm`} render={({ field: f }) => (
-                    <FormItem>
-                      <FormLabel>Muscle Spasm</FormLabel>
-                      <FormControl>
-                        <select className="h-9 w-full border rounded-md px-3 text-sm" value={f.value ? 'yes' : 'no'} onChange={e => f.onChange(e.target.value === 'yes')}>
-                          <option value="no">No</option>
-                          <option value="yes">Yes</option>
-                        </select>
-                      </FormControl>
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name={`exam_findings.regions.${index}.additional_findings`} render={({ field: f }) => (
-                    <FormItem>
-                      <FormLabel>Additional Findings</FormLabel>
-                      <FormControl><Textarea rows={2} placeholder="Any other findings for this region..." value={f.value ?? ''} onChange={e => f.onChange(e.target.value || null)} /></FormControl>
-                    </FormItem>
-                  )} />
-                </div>
-              ))}
-
-              <Button type="button" variant="outline" size="sm" onClick={() => regionsArray.append({
-                region: '', palpation_findings: '', muscle_spasm: false, additional_findings: null,
-              })} disabled={isLocked}>
-                <Plus className="h-4 w-4 mr-1" /> Add Region
-              </Button>
-            </div>
-
-            <Separator />
-
-            <FormField control={form.control} name="exam_findings.neurological_notes" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Neurological Notes</FormLabel>
-                <FormControl><Textarea rows={2} placeholder="e.g., Motor strength 5/5 bilaterally, sensation intact, reflexes symmetric" value={field.value ?? ''} onChange={e => field.onChange(e.target.value || null)} /></FormControl>
-              </FormItem>
-            )} />
-
-            <div className="pt-2">
-              <Button type="button" variant="outline" size="sm" onClick={handleSave} disabled={isLocked || isSaving}>
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Exam Findings
               </Button>
             </div>
           </div>

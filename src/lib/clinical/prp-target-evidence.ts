@@ -1,3 +1,4 @@
+import { examSegments, parseExamPhrase, removeExamSegments } from './exam-finding-text'
 import { z } from 'zod'
 import {
   extractLaterality, isSpineRegion, lateralityCompatible, normalizeAnatomicLocation,
@@ -129,8 +130,13 @@ export function buildPrpTargetEvidence(input: {
   for (const [index, exam] of (providerIntake?.exam_findings?.regions ?? []).entries()) {
     const original = exam.region?.trim() ?? ''
     const region = normalizeRegion(original)
-    const details = [exam.palpation_findings?.trim(), exam.muscle_spasm ? 'Muscle spasm present' : null,
-      exam.additional_findings?.trim()].filter((v): v is string => Boolean(v))
+    const observedText = (field: 'palpation_findings' | 'additional_findings') => {
+      const text = exam[field] ?? ''
+      const unavailable = examSegments(text).filter(segment => parseExamPhrase(segment.text, field)?.unavailable)
+      return removeExamSegments(text, unavailable).trim()
+    }
+    const details = [observedText('palpation_findings'), exam.muscle_spasm === true ? 'Muscle spasm present' : null,
+      observedText('additional_findings')].filter((v): v is string => Boolean(v))
     if (region && original && details.length) clinical.push({ id: evidenceId('current', 'exam', index),
       source: 'current_exam', region, laterality: extractLaterality(`${original} ${details.join(' ')}`),
       description: `${original}: ${details.join('; ')}` })

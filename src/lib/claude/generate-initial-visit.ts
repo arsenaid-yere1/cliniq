@@ -123,12 +123,13 @@ Reference: "• General: Reports sleep disturbance.\n• Musculoskeletal: Ongoin
 
 8. PHYSICAL EXAMINATION (structured by affected region only):
 Start with "VITAL SIGNS:" sub-heading + bullets. If vital signs data is provided in the source data (vitalSigns object), use the actual values: Blood Pressure as {bp_systolic}/{bp_diastolic} mmHg, Heart Rate as {heart_rate} bpm, Respiratory Rate as {respiratory_rate} breaths/min, Temperature as {temperature_f}°F, SpO2 as {spo2_percent}%, Pain Score as {pain_score_min}-{pain_score_max}/10 (do NOT add "Numeric Rating Scale", "NRS", or any scale label — just the number and "/10"). If pain_score_min equals pain_score_max, display as a single value (e.g., "7/10"). If only one is provided, display that single value. For any individual vital sign that is null, use "[XX]" as placeholder. If vitalSigns is null entirely, use "[XX]" for all vitals.
-Then "GENERAL:" appearance statement (1-2 sentences).
-Then one sub-section per AFFECTED SPINE REGION that has source data (typically cervical + lumbar). Each includes: musculoskeletal exam findings with palpation levels.
-DO NOT include any "RANGE OF MOTION:" sub-heading or range-of-motion measurements in the physical exam.
-DO NOT include orthopedic testing (e.g., Spurling's test, Kemp's test, straight leg raise, foraminal compression) in the physical exam.
-DO NOT add shoulder exam or thoracic exam unless the patient has specific complaints AND the source data contains exam findings for those regions.
-End with a "NEUROLOGICAL:" sub-heading containing a brief paragraph (2-3 sentences) summarizing motor strength, sensation, and deep tendon reflexes for upper and lower extremities. Example: "Upper and lower extremities demonstrate normal motor strength bilaterally. Sensation is intact to light touch throughout all dermatomes. Deep tendon reflexes are normal and symmetric in all extremities." Do NOT do a dermatome-by-dermatome breakdown and do NOT mention Babinski sign.
+CURRENT EXAM DOCUMENTATION (overrides sparse-data inference for examination observations):
+Include "GENERAL:" only when current general appearance is explicitly documented, and only to the documented scope. Blank/null appearance does not mean normal.
+Use one sub-section per documented examined region, including limbs and thoracic regions, without requiring a duplicate chief complaint entry. A region name alone with no findings does not establish a completed examination. Do not infer exam findings from complaints, imaging, prior notes, or illustrative examples.
+For muscle_spasm: true = explicitly present; false = explicitly absent; null or missing = not assessed/not documented. Never convert null or missing to absent or present. Do not invent findings for empty regional text.
+Preserve explicitly documented movement limitations and range-of-motion measurements within the region prose, including side, movement, active/passive mode, value, and unit. Do not add a dedicated "RANGE OF MOTION:" sub-heading.
+Include explicitly documented orthopedic/special tests with their side, result, and actual observed response. Not performed and Unable to complete describe an unavailable assessment, never a negative test. Do not infer diagnoses from test selection.
+Include "NEUROLOGICAL:" only for explicitly documented current neurological observations. Preserve the examined scope, side, strength grades, sensory modalities/distributions, reflexes, and explicitly documented plantar/Babinski responses. Do not synthesize normal motor strength, intact sensation, symmetric reflexes, or a whole neurological examination from blank/null notes or a limited examination.
 
 10. DIAGNOSES (simple bullet list):
 Use "• ICD-10 — Description" format. NO justification text after each code. NO "supported by..." or "consistent with..." parentheticals.

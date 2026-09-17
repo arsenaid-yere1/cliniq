@@ -151,6 +151,51 @@ describe('psychological intake in the visit editor', () => {
     if (status === 'finalized') await waitFor(() => expect(screen.getByText('Finalized')).toBeTruthy())
   })
 
+  it('keeps nullable exam intake and encounter drafts separate, then flushes the active exam', async () => {
+    const user = userEvent.setup()
+    const stored = { ...structuredClone(defaultProviderIntake), exam_findings: {
+      general_appearance: 'Legacy appearance', neurological_notes: null,
+      regions: [{ region: 'Left knee', palpation_findings: 'Existing finding', muscle_spasm: null, additional_findings: null }],
+    } }
+    mount({ intakesByVisitType: { initial_visit: stored, pain_evaluation_visit: null } })
+    await user.click(screen.getByRole('tab', { name: 'Exam Findings' }))
+    expect((screen.getByRole('textbox', { name: 'General Appearance' }) as HTMLTextAreaElement).value).toBe('Legacy appearance')
+    expect((screen.getByLabelText('Not assessed') as HTMLInputElement).checked).toBe(true)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Palpation Findings' }), { target: { value: 'Initial visit observation' } })
+    await user.click(screen.getByRole('tab', { name: 'Pain Evaluation Visit' }))
+    await user.click(screen.getByRole('tab', { name: 'Exam Findings' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'General Appearance' }), { target: { value: 'Pain evaluation observation' } })
+    await user.click(screen.getByRole('tab', { name: 'Initial Visit' }))
+    expect((screen.getByRole('textbox', { name: 'Palpation Findings' }) as HTMLTextAreaElement).value).toBe('Initial visit observation')
+    await user.click(screen.getByRole('button', { name: /Save intake and generate Initial Visit Note/ }))
+    await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalledTimes(1))
+    expect(saveProviderIntake).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(saveProviderIntake).mock.calls[0]).toEqual(['case', 'initial_visit', expect.objectContaining({ exam_findings: {
+      ...stored.exam_findings, regions: [{ ...stored.exam_findings.regions[0], palpation_findings: 'Initial visit observation' }],
+    } }), 'exam_findings'])
+    expect(vi.mocked(saveProviderIntake).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateInitialVisitNote).mock.invocationCallOrder[0])
+  })
+
+  it('returns to Exam Findings on a failed flush and retains the exam', async () => {
+    const user = userEvent.setup(); mount()
+    await user.click(screen.getByRole('tab', { name: 'Exam Findings' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'General Appearance' }), { target: { value: 'Observed appearance' } })
+    await user.click(screen.getByRole('tab', { name: 'Chief Complaints' }))
+    vi.mocked(saveProviderIntake).mockResolvedValueOnce({ error: 'Exam save failed' })
+    await user.click(screen.getByRole('button', { name: /Save intake and generate Initial Visit Note/ }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Exam Findings' }).getAttribute('aria-selected')).toBe('true'))
+    expect((screen.getByRole('textbox', { name: 'General Appearance' }) as HTMLTextAreaElement).value).toBe('Observed appearance')
+    expect(generateInitialVisitNote).not.toHaveBeenCalled()
+  })
+
+  it.each(['initial_visit', 'pain_evaluation_visit'] as const)('does not add exam intake to generated %s notes', visitType => {
+    const note = { ...Object.fromEntries(initialVisitSections.map(section => [section, 'Saved narrative'])),
+      id: 'note', status: 'draft', updated_at: 'v1', visit_date: '2026-09-14', provider_intake: defaultProviderIntake }
+    mount({ defaultVisitType: visitType, notesByVisitType: { initial_visit: null, pain_evaluation_visit: null, [visitType]: note } })
+    expect(screen.queryByRole('tab', { name: 'Exam Findings' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'General Appearance' })).toBeNull()
+  })
+
   it('keeps finalized Initial Visit notes read-only', async () => {
     const note = { ...Object.fromEntries(initialVisitSections.map(section => [section, 'Saved narrative'])),
       id: 'note', status: 'finalized', updated_at: 'v1', visit_date: '2026-09-14', provider_intake: defaultProviderIntake }

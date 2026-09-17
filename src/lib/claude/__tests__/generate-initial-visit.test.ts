@@ -1,4 +1,4 @@
-import { initialVisitNoteResultSchema } from '@/lib/validations/initial-visit-note'
+import { defaultProviderIntake, initialVisitNoteResultSchema } from '@/lib/validations/initial-visit-note'
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 
 vi.mock('@/lib/claude/client', () => ({
@@ -308,5 +308,46 @@ describe('section diagnostics identity', () => {
     expect(parsed.error.issues[0].path).toEqual([section])
     expect(parsed.error.issues[0].params.visitDecision.sourceKey).toBe('content')
     expect(opts.parse({ content: 'Imaging results pending.' })).toEqual({ success: true, data: { content: 'Imaging results pending.' } })
+  })
+})
+
+describe('explicit current exam contract', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it.each(['initial_visit', 'pain_evaluation_visit'] as const)('retains scoped current findings for %s generation and regeneration', async visitType => {
+    const exam = {
+      general_appearance: null,
+      regions: [
+        { region: 'Left knee', palpation_findings: 'Tenderness at Left knee', muscle_spasm: null, additional_findings: 'Active flexion at Left knee: 45 degrees; Lachman test, Left: Negative — firm endpoint' },
+        { region: 'Right knee', palpation_findings: '', muscle_spasm: false, additional_findings: 'Lachman test, Right: Not performed — declined' },
+        { region: 'Cervical', palpation_findings: '', muscle_spasm: true, additional_findings: 'Spurling test, Left: Unable to complete — positioning' },
+      ],
+      neurological_notes: 'Light-touch sensation intact in Left hand; Light-touch sensation reduced in Right thumb; Plantar response, Left: flexor',
+    }
+    const input = { ...emptyInput, providerIntake: { ...defaultProviderIntake, exam_findings: exam } }
+    vi.mocked(callClaudeTool).mockResolvedValue({ data: { content: 'fresh' }, rawResponse: {} } as never)
+    await generateInitialVisitFromData(input, visitType)
+    await regenerateSection(input, visitType, 'physical_exam', 'old normal examination')
+    for (const [opts] of vi.mocked(callClaudeTool).mock.calls) {
+      const request = JSON.stringify(opts)
+      for (const row of exam.regions) {
+        expect(request).toContain(row.additional_findings)
+      }
+      expect(request).toContain('null or missing = not assessed/not documented')
+      expect(request).toContain('false = explicitly absent')
+      expect(request).toContain('true = explicitly present')
+      expect(request).toContain('Blank/null appearance does not mean normal')
+      expect(request).toContain('including limbs and thoracic regions')
+      expect(request).toContain('never a negative test')
+      expect(request).toContain('plantar/Babinski responses')
+      expect(request).not.toContain('AFFECTED SPINE REGION')
+      expect(request).not.toContain('DO NOT include orthopedic testing')
+      expect(request).not.toContain('Do NOT mention Babinski')
+      expect(request).not.toContain('Upper and lower extremities demonstrate normal motor strength bilaterally')
+      const messages = opts.messages.map(message => String(message.content)).join('\n')
+      expect(messages).toContain('"muscle_spasm": null')
+      expect(messages).toContain('"muscle_spasm": false')
+      expect(messages).toContain('"muscle_spasm": true')
+      expect(messages).toContain(exam.neurological_notes)
+    }
   })
 })

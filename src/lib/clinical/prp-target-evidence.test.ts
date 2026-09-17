@@ -103,3 +103,40 @@ describe('validatePrpTargetSelections', () => {
     expect(result.error).toContain('must use ultrasound guidance')
   })
 })
+
+describe('current exam assessment completeness', () => {
+  function evidence(palpation_findings: string, additional_findings: string, muscle_spasm: boolean | null = null) {
+    return buildPrpTargetEvidence({ imagingRows: [imaging], providerIntake: { ...intake, exam_findings: {
+      regions: [{ region: 'Lumbar spine', palpation_findings, additional_findings, muscle_spasm }],
+    } } })
+  }
+  it.each([null, false, true])('preserves the existing spasm-only evidence policy for %s', value => {
+    const bundle = evidence('', '', value)
+    expect(bundle.candidates[0].eligible).toBe(value === true)
+    expect(bundle.clinical_evidence.filter(item => item.source === 'current_exam')).toHaveLength(value === true ? 1 : 0)
+  })
+  it.each([
+    'Palpation of Left lumbar region limited by pain',
+    'Palpation of Left lumbar region not performed: declined',
+    'Examination of Left lumbar region limited by clothing',
+    'Active motion at Left lumbar region not assessed: pain',
+    'Squatting not assessed: declined',
+    'Straight leg raise, Left: Not performed — declined (symptom response: Not tested)',
+    'Straight leg raise, Right: Unable to complete — positioning (symptom response: Not tested)',
+  ])('does not count an unavailable assessment: %s', phrase => {
+    expect(evidence(phrase.startsWith('Palpation') ? phrase : '', phrase.startsWith('Palpation') ? '' : phrase).candidates[0].eligible).toBe(false)
+  })
+  it('retains actual findings from mixed rows without including unavailable segments', () => {
+    const bundle = evidence('Palpation of Left lumbar region limited by pain; Tenderness at Left lumbar region', 'Squatting not assessed: declined')
+    expect(bundle.candidates[0].eligible).toBe(true)
+    const exam = bundle.clinical_evidence.find(item => item.source === 'current_exam')!
+    expect(exam.description).toBe('Lumbar spine: Tenderness at Left lumbar region')
+  })
+  it('preserves the bytes and ordering of custom evidence text', () => {
+    const bundle = evidence('Custom;  spacing\n preserved', 'Additional;  text', true)
+    expect(bundle.clinical_evidence.find(item => item.source === 'current_exam')?.description).toBe('Lumbar spine: Custom;  spacing\n preserved; Muscle spasm present; Additional;  text')
+  })
+  it.each(['Custom prose: examination incomplete, focal tenderness observed', 'Straight leg raise, Left: Negative — no symptoms (symptom response: No symptoms)', 'Straight leg raise, Left: Positive — leg pain (symptom response: Leg symptoms)'])('retains documented findings: %s', phrase => {
+    expect(evidence('', phrase).candidates[0].eligible).toBe(true)
+  })
+})

@@ -5,6 +5,8 @@ import {
   initialVisitNoteResultSchema,
   initialVisitNoteEditSchema,
   initialVisitVitalsSchema,
+  providerIntakeSchema,
+  defaultProviderIntake,
 } from '../initial-visit-note'
 
 const validNoteData: Record<string, string> = {}
@@ -124,5 +126,23 @@ describe('initialVisitVitalsSchema', () => {
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, temperature_f: 111 }).success).toBe(false)
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, spo2_percent: -1 }).success).toBe(false)
     expect(initialVisitVitalsSchema.safeParse({ ...validVitals, spo2_percent: 101 }).success).toBe(false)
+  })
+})
+
+
+describe('exam assessment compatibility', () => {
+  it.each([null, false, true])('preserves spasm %s in a complete legacy intake', muscle_spasm => {
+    const input = structuredClone(defaultProviderIntake)
+    input.exam_findings = { general_appearance: 'Previously recorded appearance', neurological_notes: null,
+      regions: [{ region: 'Knee', palpation_findings: '', additional_findings: null, muscle_spasm }] }
+    expect(providerIntakeSchema.parse(input)).toEqual(input)
+  })
+  it.each([undefined, 'false', 0])('rejects invalid or missing spasm %s', muscle_spasm => {
+    const input = { ...defaultProviderIntake, exam_findings: { ...defaultProviderIntake.exam_findings,
+      regions: [{ region: 'Knee', palpation_findings: '', additional_findings: null, muscle_spasm }] } }
+    expect(providerIntakeSchema.safeParse(input).success).toBe(false)
+  })
+  it('starts without any recorded examination findings', () => {
+    expect(defaultProviderIntake.exam_findings).toEqual({ general_appearance: null, neurological_notes: null, regions: [] })
   })
 })

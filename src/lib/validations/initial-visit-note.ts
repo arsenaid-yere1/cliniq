@@ -168,7 +168,7 @@ export const socialHistorySchema = z.object({
 export const examRegionSchema = z.object({
   region: z.string(),
   palpation_findings: z.string(),
-  muscle_spasm: z.boolean(),
+  muscle_spasm: z.boolean().nullable(),
   additional_findings: z.string().nullable(),
 })
 
@@ -234,7 +234,7 @@ export const defaultProviderIntake: ProviderIntakeValues = {
     occupation: null,
   },
   exam_findings: {
-    general_appearance: 'Alert and oriented, in no acute distress',
+    general_appearance: null,
     regions: [],
     neurological_notes: null,
   },
