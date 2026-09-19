@@ -5,6 +5,7 @@ import { ctScanExtractionResultSchema } from '@/lib/validations/ct-scan-extracti
 import { xRayExtractionResultSchema } from '@/lib/validations/x-ray-extraction'
 import type { ZodType } from 'zod'
 import { buildReviewTrajectory } from './review-trajectory'
+import { MAX_REVIEW_COLLECTION_BYTES, MAX_REVIEW_SNAPSHOT_BYTES } from './review-input'
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
@@ -13,7 +14,6 @@ import { parseVisitDecision, normalizeVisitPlan } from '@/lib/validations/visit-
 import { REVIEW_VERSION, reviewSections, type ReviewDecision, type ReviewNote, type ReviewNoteStep, type ReviewSnapshot, type ReviewSource, type ReviewValue } from './review-types'
 
 type Row = Record<string, ReviewValue | undefined>
-const MAX_INPUT_BYTES = 240_000
 const PAGE_SIZE = 500
 const procedureColumns = ['id','case_id','episode_id','updated_at','procedure_date','procedure_number','procedure_type','diagnoses','injection_site','sites','guidance_method'] as const satisfies readonly (keyof Database['public']['Tables']['procedures']['Row'])[]
 const identity = 'id,case_id,episode_id,encounter_id,status,updated_at'
@@ -86,6 +86,7 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
   const limitations: string[] = []
   const versions: ReviewSnapshot['versions'] = []
   const sources: ReviewSource[] = []
+  let collectedBytes = 0
   function remember(table: string, row: Row) {
     const id = required(row.id, `${table}.id`)
     if (row.case_id !== caseId) throw new Error(`Wrong case in ${table} source`)
@@ -106,8 +107,9 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
       for (const row of page) {
         if (row.case_id !== caseId || (scoped && row.episode_id !== episodeId)) throw new Error(`Wrong episode or case in ${table} source`)
       }
+      collectedBytes += Buffer.byteLength(JSON.stringify(page))
+      if (collectedBytes > MAX_REVIEW_COLLECTION_BYTES) throw new Error('Quality Review sources exceed the 16 MB processing limit; no sources were truncated')
       result.push(...page)
-      if (Buffer.byteLength(JSON.stringify(result)) > MAX_INPUT_BYTES) throw new Error('Review input limit exceeded; no sources were truncated')
       if (page.length < PAGE_SIZE) return result
     }
   }
@@ -223,7 +225,7 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
       snapshot.coverage.limitations.sort()
     }
   }
-  if (Buffer.byteLength(canonicalReviewJson(snapshot)) > MAX_INPUT_BYTES) throw new Error('Review input limit exceeded; no sources were truncated')
+  if (Buffer.byteLength(canonicalReviewJson(snapshot)) > MAX_REVIEW_SNAPSHOT_BYTES) throw new Error('Quality Review snapshot exceeds the 32 MB processing limit; no sources were truncated')
   return structuredClone(snapshot)
 }
 

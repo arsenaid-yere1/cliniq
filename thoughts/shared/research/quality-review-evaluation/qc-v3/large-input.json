@@ -1,14 +1,7 @@
 {
-  "version": "qc-v3",
-  "evaluated_at": "2026-09-19T17:22:00.940Z",
-  "configured_model": "claude-opus-4-7",
-  "fixture": {
-    "rule": "anatomy_consistency",
-    "first": "Today pain and tenderness are exclusively in the left knee. The right knee is asymptomatic.",
-    "conflict": "The same current symptomatic knee is the right knee; the left knee is asymptomatic.",
-    "control": "The left knee remains symptomatic; the right knee is asymptomatic."
-  },
-  "conflict": {
+  "evaluated_at": "2026-09-19T17:23:07.857Z",
+  "input_bytes": 320951,
+  "result": {
     "findings": [
       {
         "severity": "critical",
@@ -17,10 +10,10 @@
         "procedure_id": null,
         "encounter_id": "22222222-2222-4222-8222-222222222222",
         "section_key": "assessment",
-        "message": "Laterality conflict: subjective localizes symptoms exclusively to the left knee, while the assessment states the symptomatic knee is the right knee and the left is asymptomatic.",
-        "rationale": "The subjective and assessment sections directly contradict each other regarding which knee is symptomatic.",
-        "suggested_tone_hint": "Reconcile the symptomatic side between subjective and assessment.",
-        "score": 8,
+        "message": "Laterality contradiction within the same follow-up note: the subjective states pain and tenderness are exclusively in the left knee with the right knee asymptomatic, while the assessment states the current symptomatic knee is the right knee with the left asymptomatic.",
+        "rationale": "Subjective localizes current symptoms to the left knee only; the assessment on the same date localizes the same current symptomatic knee to the right side. These directly conflict on laterality of the active symptomatic side.",
+        "suggested_tone_hint": null,
+        "score": 9,
         "rule_id": "anatomy_consistency",
         "entity_key": "",
         "evidence": [
@@ -39,10 +32,6 @@
         ]
       }
     ],
-    "coverage_limited": false
-  },
-  "control": {
-    "findings": [],
     "coverage_limited": false
   }
 }

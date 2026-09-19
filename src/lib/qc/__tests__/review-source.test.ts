@@ -5,6 +5,7 @@ import type { Database } from '@/types/database'
 import { createMockSupabase, createMockQueryBuilder } from '@/test-utils/supabase-mock'
 import { collectReviewSnapshot, collectStableReviewSnapshot, reviewSourceHash, reviewVersionHash, effectiveReviewFields, reviewDecision } from '../review-source'
 import { reviewSections } from '../review-types'
+import { MAX_REVIEW_COLLECTION_BYTES } from '../review-input'
 vi.mock('@/lib/supabase/server', () => ({createClient:vi.fn()}))
 const episode = {id:'episode',case_id:'case',status:'active',updated_at:'v1'}
 function setup() {
@@ -105,10 +106,20 @@ describe('authoritative review snapshot', () => {
     tables.vital_signs = [...tables.vital_signs as object[],{id:'two',case_id:'case',encounter_id:'enc-initial_visit',procedure_id:null,pain_score_max:6}]
     expect((await collectReviewSnapshot(client,'case','episode')).coverage.limitations).toContain('Ambiguous encounter vitals: initial_visit_notes:initial_visit')
   })
-  it('rejects oversized sources without truncation', async () => {
+  it('preserves sources larger than the former 240 KB input cap', async () => {
     const {client,tables} = setup()
-    tables.pain_follow_up_notes = [{...note('pain_follow_up'),subjective:'x'.repeat(250_000)}]
-    await expect(collectReviewSnapshot(client,'case','episode')).rejects.toThrow('input limit')
+    const subjective = 'Clinical narrative. '.repeat(15_000)
+    tables.pain_follow_up_notes = [{...note('pain_follow_up'),subjective}]
+    const snapshot = await collectReviewSnapshot(client,'case','episode')
+    expect(snapshot.notes[0].sections.subjective).toBe(subjective)
+    expect(snapshot.sources.find(source => source.type === 'pain_follow_up_notes')?.fields.subjective).toBe(subjective)
+  })
+  it('bounds aggregate collection memory across tables without truncation', async () => {
+    const {client,tables} = setup()
+    const subjective = 'x'.repeat(MAX_REVIEW_COLLECTION_BYTES / 2)
+    tables.pain_follow_up_notes = [{...note('pain_follow_up'),subjective}]
+    tables.discharge_notes = [{...note('discharge'),subjective}]
+    await expect(collectReviewSnapshot(client,'case','episode')).rejects.toThrow('16 MB processing limit; no sources were truncated')
   })
   it('detects changing versions during collection', async () => {
     const {client,mock,tables} = setup()
