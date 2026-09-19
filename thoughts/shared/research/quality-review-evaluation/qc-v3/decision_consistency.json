@@ -1,0 +1,76 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:06:14.397Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "decision_consistency",
+    "first": "Today the patient explicitly declined the proposed knee injection and consent was not given.",
+    "conflict": "The patient accepted that same proposed knee injection today without restrictions.",
+    "control": "The knee injection remains declined today; no acceptance is documented."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Subjective and assessment directly contradict each other regarding consent for the proposed knee injection on the same date.",
+        "rationale": "Subjective states the patient explicitly declined the knee injection and consent was not given, while the assessment states the patient accepted the same proposed knee injection today without restrictions. Both cannot be true for the same visit.",
+        "suggested_tone_hint": "Reconcile the consent status for today's proposed knee injection so subjective and assessment agree.",
+        "score": 9,
+        "rule_id": "consent_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "the patient explicitly declined the proposed knee injection and consent was not given",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "The patient accepted that same proposed knee injection today without restrictions",
+            "missing": false
+          }
+        ]
+      },
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Decision documentation conflict: same-day plan for the knee injection is recorded as both refused and accepted.",
+        "rationale": "The subjective records a refusal of the proposed knee injection today; the assessment records acceptance of that same injection today. These are mutually exclusive decisions about the reviewed plan and must be reconciled.",
+        "suggested_tone_hint": "Clarify whether the knee injection was accepted or declined today and align the plan accordingly.",
+        "score": 8,
+        "rule_id": "decision_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "declined the proposed knee injection",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "accepted that same proposed knee injection today without restrictions",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

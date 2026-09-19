@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:05:32.894Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "symptom_consistency",
+    "first": "Today the patient reports persistent severe neck pain with no improvement.",
+    "conflict": "Today the patient denies neck pain and all neck symptoms have completely resolved.",
+    "control": "Persistent neck pain continues today with no improvement."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Subjective and assessment directly contradict each other regarding neck pain status on the same date.",
+        "rationale": "The subjective states persistent severe neck pain with no improvement, while the assessment on the same visit states the patient denies neck pain and symptoms have completely resolved. These cannot both be true for the same encounter.",
+        "suggested_tone_hint": "Reconcile the current symptom status between subjective and assessment.",
+        "score": 9,
+        "rule_id": "symptom_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "persistent severe neck pain with no improvement",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "denies neck pain and all neck symptoms have completely resolved",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

@@ -1,5 +1,6 @@
 'use client'
 
+import { actOnQualityFinding } from '@/actions/case-quality-review-findings'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -18,11 +19,13 @@ import { editFinding } from '@/actions/case-quality-reviews'
 
 export function FindingEditDialog({
   caseId,
+  reviewId,
   hash,
   initialValues,
   onClose,
 }: {
   caseId: string
+  reviewId?: string
   hash: string
   initialValues: {
     edited_message: string
@@ -44,11 +47,12 @@ export function FindingEditDialog({
       return
     }
     startTransition(async () => {
-      const r = await editFinding(caseId, hash, {
+      const values = {
         edited_message: message.trim(),
         edited_rationale: rationale.trim() || null,
         edited_suggested_tone_hint: toneHint.trim() || null,
-      })
+      }
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'edit',values) : await editFinding(caseId,hash,values)
       if (r.error) toast.error(r.error)
       else {
         toast.success('Finding edited')

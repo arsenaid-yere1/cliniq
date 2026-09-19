@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:06:48.768Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "follow_up_consistency",
+    "first": "The agreed next follow-up appointment is in exactly two weeks; there are no other follow-ups.",
+    "conflict": "The same next follow-up appointment is in exactly six months, with no other follow-ups.",
+    "control": "Return in exactly two weeks for the agreed next follow-up."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Follow-up interval is internally contradictory: subjective states the next follow-up is in exactly two weeks, while assessment states the same next follow-up is in exactly six months.",
+        "rationale": "Both sections describe the same single next follow-up appointment but assign incompatible intervals (two weeks vs. six months), preventing a coherent return plan.",
+        "suggested_tone_hint": "Reconcile the two statements to a single, consistent follow-up interval.",
+        "score": 8,
+        "rule_id": "follow_up_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "The agreed next follow-up appointment is in exactly two weeks; there are no other follow-ups.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "The same next follow-up appointment is in exactly six months, with no other follow-ups.",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

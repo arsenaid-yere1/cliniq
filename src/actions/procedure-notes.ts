@@ -1,5 +1,7 @@
 'use server'
 
+import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
+
 import { resetDraftClinicalNote } from '@/actions/clinical-reset'
 
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
@@ -43,7 +45,15 @@ async function gatherProcedureNoteSourceData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   procedureId: string,
   caseId: string,
+  qcTarget?: ReviewFixTarget,
 ): Promise<{ data: ProcedureNoteInputData | null; error: string | null }> {
+  let originEncounterId: string | null = null
+  if (qcTarget) {
+    const origin = await supabase.from('initial_visit_notes').select('encounter_id,visit_type,visit_date')
+      .eq('case_id',caseId).eq('episode_id',qcTarget.episodeId).is('deleted_at',null).order('visit_date',{ascending:true})
+    if (origin.error) return {data:null,error:'Unable to load origin visit for Quality Review fix'}
+    originEncounterId = (origin.data?.find(n => n.visit_type === 'initial_visit') ?? origin.data?.find(n => n.visit_type === 'pain_evaluation_visit'))?.encounter_id ?? null
+  }
   const [
     procedureRes,
     vitalsRes,
@@ -68,6 +78,7 @@ async function gatherProcedureNoteSourceData(
       .from('vital_signs')
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('procedure_id', procedureId)
+      .match(qcTarget ? {encounter_id:qcTarget.encounterId,case_id:caseId} : {})
       .is('deleted_at', null)
       .limit(1)
       .maybeSingle(),
@@ -103,6 +114,7 @@ async function gatherProcedureNoteSourceData(
     supabase
       .from('procedures')
       .select('id, procedure_date, procedure_number, procedure_series_id')
+      .match(qcTarget ? {episode_id:qcTarget.episodeId} : {})
       .eq('case_id', caseId)
       .neq('id', procedureId)
       .is('deleted_at', null)
@@ -127,6 +139,7 @@ async function gatherProcedureNoteSourceData(
     supabase
       .from('vital_signs')
       .select('recorded_at, pain_score_min, pain_score_max')
+      .match(qcTarget ? {encounter_id:originEncounterId ?? '00000000-0000-0000-0000-000000000000'} : {})
       .eq('case_id', caseId)
       .is('procedure_id', null)
       .is('deleted_at', null)
@@ -155,6 +168,7 @@ async function gatherProcedureNoteSourceData(
       .maybeSingle(),
   ])
 
+  if (qcTarget && [vitalsRes,pmRes,mriRes,ivNoteRes,priorProceduresRes,clinicRes,chiroRes,intakeVitalsRes,caseSummaryRes,ptRes].some(result => result.error)) return {data:null,error:'Unable to load complete sources for Quality Review fix'}
   if (procedureRes.error || !procedureRes.data) {
     return { data: null, error: 'Failed to fetch procedure' }
   }
@@ -162,11 +176,12 @@ async function gatherProcedureNoteSourceData(
     return { data: null, error: 'Failed to fetch case details' }
   }
   const proc = procedureRes.data
+  if (qcTarget && (proc.case_id !== caseId || proc.episode_id !== qcTarget.episodeId || proc.encounter_id !== qcTarget.encounterId)) return {data:null,error:'Quality Review procedure target changed'}
   const initialVisitNote = (ivNoteRes.data ?? []).find((note) => note.episode_id === proc.episode_id) ?? null
 
   // Batch-fetch prior procedures' pain ranges in a single query
   const priorProcedureRows = (priorProceduresRes.data ?? []).filter((prior) =>
-    proc.procedure_series_id ? prior.procedure_series_id === proc.procedure_series_id : true,
+    (!qcTarget || prior.procedure_date < proc.procedure_date || (prior.procedure_date === proc.procedure_date && prior.procedure_number < proc.procedure_number)) && (proc.procedure_series_id ? prior.procedure_series_id === proc.procedure_series_id : true),
   )
   const priorProcedureIds = priorProcedureRows.map((p) => p.id)
   const priorVitalsByProcedureId = new Map<string, {
@@ -194,6 +209,7 @@ async function gatherProcedureNoteSourceData(
         .eq('status', 'finalized')
         .is('deleted_at', null),
     ])
+    if (qcTarget && (priorVitals.error || priorNotes.error)) return {data:null,error:'Unable to load prior procedure sources for Quality Review fix'}
     for (const row of priorVitals.data ?? []) {
       if (row.procedure_id) {
         priorVitalsByProcedureId.set(row.procedure_id, {
@@ -1043,6 +1059,7 @@ export async function regenerateProcedureNoteSectionAction(
   caseId: string,
   section: ProcedureNoteSection,
   findingFix?: { message: string; rationale: string | null },
+  qcTarget?: ReviewFixTarget,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1061,9 +1078,10 @@ export async function regenerateProcedureNoteSectionAction(
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
+  if (qcTarget && (note.id !== qcTarget.noteId || note.updated_at !== qcTarget.updatedAt)) return { error: 'Quality Review target changed; reload the note' }
 
   // Gather fresh source data
-  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId)
+  const { data: inputData, error: gatherError } = await gatherProcedureNoteSourceData(supabase, procedureId, caseId, qcTarget)
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
   const currentContent = (note[section] as string) || ''
@@ -1091,7 +1109,7 @@ export async function regenerateProcedureNoteSectionAction(
   }
 
   // Update target section + audit blob.
-  const { error: updateError } = await supabase
+  const { error: updateError } = qcTarget ? await commitReviewFix(supabase,'procedure_notes',qcTarget,{[section]:result.data,raw_ai_response:mergedRawResponse}) : await supabase
     .from('procedure_notes')
     .update({
       [section]: result.data,

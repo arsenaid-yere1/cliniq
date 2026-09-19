@@ -1,3 +1,4 @@
+import { computeFindingHash } from '@/lib/qc/review-finding-hash'
 import { describe, it, expect } from 'vitest'
 import {
   qualityReviewResultSchema,
@@ -6,7 +7,6 @@ import {
   findingOverridesMapSchema,
   findingEditFormSchema,
   findingDismissFormSchema,
-  computeFindingHash,
   findingFixEligibility,
   defaultScoreForSeverity,
   getFindingScore,

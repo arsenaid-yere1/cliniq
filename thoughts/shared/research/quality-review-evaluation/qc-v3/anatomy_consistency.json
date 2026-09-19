@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:05:40.504Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "anatomy_consistency",
+    "first": "Today pain and tenderness are exclusively in the left knee. The right knee is asymptomatic.",
+    "conflict": "The same current symptomatic knee is the right knee; the left knee is asymptomatic.",
+    "control": "The left knee remains symptomatic; the right knee is asymptomatic."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Laterality contradiction between subjective and assessment: subjective states pain/tenderness are exclusively in the left knee, while assessment states the current symptomatic knee is the right knee and the left is asymptomatic.",
+        "rationale": "Subjective localizes current symptoms to the left knee; assessment localizes them to the right knee. Both cannot be the current symptomatic side.",
+        "suggested_tone_hint": "Reconcile laterality so subjective and assessment agree on which knee is symptomatic today.",
+        "score": 9,
+        "rule_id": "anatomy_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "Today pain and tenderness are exclusively in the left knee. The right knee is asymptomatic.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "The same current symptomatic knee is the right knee; the left knee is asymptomatic.",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

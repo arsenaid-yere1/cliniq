@@ -1,5 +1,11 @@
 'use server'
 
+import { RETURN_TELE_VISITS_ENABLED } from '@/lib/features/return-tele-visits'
+import { computeFindingHash } from '@/lib/qc/review-finding-hash'
+import { qualityReviewV3Enabled } from '@/lib/qc/review-config'
+import { runGroundedReview, loadPublishedReview } from '@/lib/qc/review-service'
+import { collectReviewSnapshot, reviewSourceHash } from '@/lib/qc/review-source'
+import { deriveReviewAssessment } from '@/lib/qc/review-findings'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
@@ -11,7 +17,6 @@ import {
 import {
   findingDismissFormSchema,
   findingEditFormSchema,
-  computeFindingHash,
   findingFixEligibility,
   type FindingDismissFormValues,
   type FindingEditFormValues,
@@ -302,7 +307,7 @@ async function gatherSourceData(
   }
 }
 
-export async function runCaseQualityReview(caseId: string) {
+export async function runCaseQualityReview(caseId: string): Promise<{data?:{id:string};error?:string}> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -314,10 +319,19 @@ export async function runCaseQualityReview(caseId: string) {
   const episode = await getActiveOrLatestEpisode(caseId, supabase)
   if (!episode) return { error: 'Care episode not found' }
 
+  if (qualityReviewV3Enabled()) {
+    const result = await runGroundedReview(supabase,caseId,episode.id)
+    revalidatePath(`/patients/${caseId}/qc`)
+    return result
+  }
+
   const { data: inputData, error: gatherError } = await gatherSourceData(supabase, caseId)
   if (gatherError || !inputData) {
     return { error: gatherError || 'Failed to gather source data' }
   }
+
+  const published = await loadPublishedReview(supabase,caseId,episode.id)
+  if (published?.review_version === 'qc-v3') return {error:'Quality Review writes are paused; the last successful review is preserved'}
 
   // Capture prior overrides BEFORE soft-deleting the old row. Carry forward
   // the provider's review work into the new row (acks/edits/dismisses
@@ -497,7 +511,23 @@ export async function getCaseQualityReview(caseId: string) {
     .maybeSingle()
 
   if (error) return { error: 'Failed to fetch review' }
-  return { data: data || null }
+  if (!data) return {data:null}
+  let findings = ((data.findings ?? []) as QualityFinding[]).map(f => ({...f,key:computeFindingHash(f)}))
+  if (data.review_version === 'qc-v3') {
+    try {
+      const snapshot = await collectReviewSnapshot(supabase,caseId,episode.id)
+      findings = findings.map(f => {
+        const note = snapshot.notes.find(n => n.id === f.note_id)
+        const encounter = note?.context.encounter as {status?:string} | undefined
+        const reason = f.step === 'pain_follow_up' && !RETURN_TELE_VISITS_ENABLED ? 'Return tele-visits are not enabled' : !qualityReviewV3Enabled() ? 'Quality Review writes are paused' : !note || note.status !== 'draft' ? 'Only an existing draft note can be changed' : snapshot.episode_status !== 'active' || encounter?.status !== 'in_progress' ? 'The visit is not editable' : !f.section_key ? 'This finding needs a structured edit or clinician review' : null
+        return {...f,fix_blocked_reason:reason}
+      })
+    } catch {findings = findings.map(f => ({...f,fix_blocked_reason:'Current note state could not be verified'}))}
+    const coverage = data.review_coverage as {complete?:boolean} | null
+    const assessment = deriveReviewAssessment(findings,(data.finding_overrides ?? {}) as FindingOverridesMap,coverage?.complete === true,computeFindingHash)
+    return {data:{...data,findings,...assessment}}
+  }
+  return {data:{...data,findings}}
 }
 
 // Manual re-run alias — same body as runCaseQualityReview, kept distinct so
@@ -515,18 +545,25 @@ export async function checkQualityReviewStaleness(caseId: string) {
 
   const episode = await getActiveOrLatestEpisode(caseId, supabase)
   if (!episode) return { data: { isStale: false } }
-  const { data: review } = await supabase
+  const { data: review, error: reviewError } = await supabase
     .from('case_quality_reviews')
-    .select('source_data_hash')
+    .select('source_data_hash,review_version')
     .eq('case_id', caseId)
     .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
 
+  if (reviewError) return {data:{isStale:false,freshness:'unknown' as const}}
   if (!review) return { data: { isStale: false } }
 
+  if (review.review_version === 'qc-v3') {
+    try {
+      const snapshot = await collectReviewSnapshot(supabase,caseId,episode.id)
+      return {data:{isStale:reviewSourceHash(snapshot) !== review.source_data_hash,freshness:'known' as const}}
+    } catch { return {data:{isStale:true,freshness:'unknown' as const}} }
+  }
   const { data: inputData } = await gatherSourceData(supabase, caseId)
-  if (!inputData) return { data: { isStale: false } }
+  if (!inputData) return {data:{isStale:false,freshness:'unknown' as const}}
 
   const currentHash = computeSourceHash(inputData)
   return { data: { isStale: currentHash !== review.source_data_hash } }
@@ -549,12 +586,13 @@ async function loadActiveReviewForOverride(
   if (!episode) return { data: null, error: 'No active review' }
   const { data, error } = await supabase
     .from('case_quality_reviews')
-    .select('id, finding_overrides')
+    .select('id, finding_overrides,review_version')
     .eq('case_id', caseId)
     .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (error || !data) return { data: null, error: 'No active review' }
+  if (data.review_version === 'qc-v3') return {data:null,error:'Reload this review before changing a finding'}
   return {
     data: {
       id: data.id,
@@ -565,6 +603,7 @@ async function loadActiveReviewForOverride(
 }
 
 export async function acknowledgeFinding(caseId: string, findingHash: string) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -610,6 +649,7 @@ export async function dismissFinding(
   findingHash: string,
   values: FindingDismissFormValues,
 ) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -658,6 +698,7 @@ export async function editFinding(
   findingHash: string,
   values: FindingEditFormValues,
 ) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -702,6 +743,7 @@ export async function editFinding(
 }
 
 export async function clearFindingOverride(caseId: string, findingHash: string) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -735,6 +777,7 @@ export async function clearFindingOverride(caseId: string, findingHash: string) 
 //   - other steps → unsupported (provider uses Mark Resolved instead)
 
 export async function verifyFinding(caseId: string, findingHash: string) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -747,12 +790,13 @@ export async function verifyFinding(caseId: string, findingHash: string) {
 
   const { data: row } = await supabase
     .from('case_quality_reviews')
-    .select('id, findings, finding_overrides')
+    .select('id, findings, finding_overrides,review_version')
     .eq('case_id', caseId)
     .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (!row) return { error: 'No active review' }
+  if (row.review_version === 'qc-v3') return {error:'Reload this review before changing a finding'}
 
   const findings = (row.findings as QualityFinding[] | null) ?? []
   const finding = findings.find((f) => computeFindingHash(f) === findingHash)
@@ -872,6 +916,7 @@ export async function verifyFinding(caseId: string, findingHash: string) {
 }
 
 export async function markFindingResolved(caseId: string, findingHash: string) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -919,6 +964,7 @@ export async function markFindingResolved(caseId: string, findingHash: string) {
 // returns to pending.
 
 export async function fixFinding(caseId: string, findingHash: string) {
+  if (qualityReviewV3Enabled()) return {error:'Reload the review before updating this finding'}
   const supabase = await createClient()
   const {
     data: { user },
@@ -931,12 +977,13 @@ export async function fixFinding(caseId: string, findingHash: string) {
 
   const { data: row } = await supabase
     .from('case_quality_reviews')
-    .select('id, findings, finding_overrides')
+    .select('id, findings, finding_overrides,review_version')
     .eq('case_id', caseId)
     .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
   if (!row) return { error: 'No active review' }
+  if (row.review_version === 'qc-v3') return {error:'Reload this review before changing a finding'}
 
   const findings = (row.findings as QualityFinding[] | null) ?? []
   const finding = findings.find((f) => computeFindingHash(f) === findingHash)
@@ -1043,7 +1090,7 @@ export async function fixFinding(caseId: string, findingHash: string) {
     // exists now (the row id may have changed if recheck partially ran).
     const { data: latest } = await supabase
       .from('case_quality_reviews')
-      .select('id, finding_overrides')
+      .select('id, finding_overrides,review_version')
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
       .is('deleted_at', null)
@@ -1065,7 +1112,7 @@ export async function fixFinding(caseId: string, findingHash: string) {
   // Post-recheck cleanup. Read the new active review row.
   const { data: post } = await supabase
     .from('case_quality_reviews')
-    .select('id, findings, finding_overrides')
+    .select('id, findings, finding_overrides,review_version')
     .eq('case_id', caseId)
     .eq('episode_id', episode.id)
     .is('deleted_at', null)

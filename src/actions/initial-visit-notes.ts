@@ -1,5 +1,7 @@
 'use server'
 
+import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
+
 import { createInitialVisitFailureCapture } from '@/lib/clinical/initial-visit-generation-diagnostics'
 
 import { normalizeVisitPlan } from '@/lib/validations/visit-treatment-decision'
@@ -101,13 +103,14 @@ async function gatherSourceData(
   caseId: string,
   visitType: NoteVisitType,
   visitDateOverride?: string | null,
+  qcTarget?: ReviewFixTarget,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
   // provider-intake + vitals — no MRI/CT/PM data leaks into the prompt.
   const loadImagingContext = visitType === 'pain_evaluation_visit'
 
-  const priorVisitQuery = loadImagingContext
+  const priorVisitBuilder = loadImagingContext
     ? supabase
         .from('initial_visit_notes')
         .select(
@@ -117,8 +120,11 @@ async function gatherSourceData(
         .eq('visit_type', 'initial_visit')
         .eq('status', 'finalized')
         .is('deleted_at', null)
-        .maybeSingle()
-    : Promise.resolve({ data: null, error: null })
+
+    : null
+
+  if (qcTarget && priorVisitBuilder) priorVisitBuilder.eq('episode_id',qcTarget.episodeId)
+  const priorVisitQuery = priorVisitBuilder?.maybeSingle() ?? Promise.resolve({data:null,error:null})
 
   const summaryQuery = loadImagingContext
     ? supabase
@@ -142,6 +148,27 @@ async function gatherSourceData(
         .limit(1)
         .maybeSingle()
     : Promise.resolve({ data: null, error: null })
+
+  const vitalsQuery = supabase
+      .from('vital_signs')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+      .eq('case_id', caseId)
+      .is('procedure_id', null)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+
+  const intakeQuery = supabase
+      .from('initial_visit_notes')
+      .select('provider_intake, visit_date, finalized_at')
+      .eq('case_id', caseId)
+      .eq('visit_type', visitType)
+      .is('deleted_at', null)
+
+  if (qcTarget) {
+    vitalsQuery.eq('encounter_id',qcTarget.encounterId)
+    intakeQuery.eq('id',qcTarget.noteId).eq('episode_id',qcTarget.episodeId)
+  }
 
   const [
     caseRes,
@@ -170,23 +197,9 @@ async function gatherSourceData(
       .select('clinic_name, address_line1, address_line2, city, state, zip_code, phone, fax')
       .is('deleted_at', null)
       .maybeSingle(),
-    supabase
-      .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
-      .eq('case_id', caseId)
-      .is('procedure_id', null)
-      .is('deleted_at', null)
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    vitalsQuery.maybeSingle(),
     getFeeEstimateTotals(),
-    supabase
-      .from('initial_visit_notes')
-      .select('provider_intake, visit_date, finalized_at')
-      .eq('case_id', caseId)
-      .eq('visit_type', visitType)
-      .is('deleted_at', null)
-      .maybeSingle(),
+    intakeQuery.maybeSingle(),
     priorVisitQuery,
     loadImagingContext
       ? supabase.from('mri_extractions')
@@ -205,6 +218,10 @@ async function gatherSourceData(
       : Promise.resolve({ data: [], error: null }),
     pmQuery,
   ])
+
+  if (qcTarget && [summaryRes,clinicRes,vitalsRes,intakeRes,priorVisitRes,mriEvidenceRes,ctEvidenceRes,xRayEvidenceRes,pmRes].some(result => result.error)) {
+    return {data:null,error:'Unable to load complete sources for the Quality Review fix'}
+  }
 
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
@@ -937,6 +954,7 @@ export async function regenerateNoteSection(
   section: InitialVisitSection,
   findingFix?: { message: string; rationale: string | null },
   expectedUpdatedAt?: string | null,
+  qcTarget?: ReviewFixTarget,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -945,7 +963,7 @@ export async function regenerateNoteSection(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
-  const { data: note, error: fetchError } = await supabase
+  const { data: note, error: fetchError } = qcTarget ? await supabase.from('initial_visit_notes').select('*').eq('id',qcTarget.noteId).eq('case_id',caseId).eq('episode_id',qcTarget.episodeId).eq('visit_type',visitType).eq('status','draft').is('deleted_at',null).single() : await supabase
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
@@ -955,6 +973,7 @@ export async function regenerateNoteSection(
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
+  if (qcTarget && (note.id !== qcTarget.noteId || note.updated_at !== qcTarget.updatedAt || note.episode_id !== qcTarget.episodeId || note.encounter_id !== qcTarget.encounterId)) return { error: 'Quality Review target changed; reload the note' }
   if (expectedUpdatedAt && note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Reload before regenerating.' }
 
   const noteVisitDate = (note.visit_date as string | null | undefined) ?? null
@@ -963,6 +982,7 @@ export async function regenerateNoteSection(
     caseId,
     visitType,
     noteVisitDate,
+    qcTarget,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -992,7 +1012,7 @@ export async function regenerateNoteSection(
       checked.data,
       inputData.prpTargetEvidence,
     )
-    const { data: persisted, error: updateError } = await supabase.from('initial_visit_notes').update({
+    const { data: persisted, error: updateError } = qcTarget ? await commitReviewFix(supabase,'initial_visit_notes',qcTarget,{treatment_plan:content,prp_target_recommendations:checked.data,prp_target_evidence_hash:computePrpTargetEvidenceHash(inputData)}) : await supabase.from('initial_visit_notes').update({
       treatment_plan: content,
       prp_target_recommendations: checked.data,
       prp_target_evidence_hash: computePrpTargetEvidenceHash(inputData),
@@ -1050,7 +1070,7 @@ export async function regenerateNoteSection(
     [section]: result.data,
   }
 
-  const { data: persisted, error: updateError } = await supabase
+  const { data: persisted, error: updateError } = qcTarget ? await commitReviewFix(supabase,'initial_visit_notes',qcTarget,{[section]:result.data,raw_ai_response:mergedRawResponse}) : await supabase
     .from('initial_visit_notes')
     .update({
       [section]: result.data,

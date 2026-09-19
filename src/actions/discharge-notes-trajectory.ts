@@ -1,5 +1,7 @@
 'use server'
 
+import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
+
 import { createClient } from '@/lib/supabase/server'
 import { buildTrajectoryForValidator } from '@/lib/claude/pain-trajectory'
 import {
@@ -16,6 +18,7 @@ import { gatherDischargeNoteSourceData } from '@/actions/discharge-notes'
 import { validateNarrative } from '@/lib/qc/narrative-validator'
 
 interface RefreshOptions {
+  qcTarget?: ReviewFixTarget
   expectedUpdatedAt?: string
   // When supplied, validator runs against this merged shape (for the regen
   // case where the freshly-regenerated section is not yet persisted on the
@@ -137,7 +140,7 @@ export async function refreshDischargeTrajectory(
   }
   if (opts.userId) update.updated_by_user_id = opts.userId
 
-  const { data: updated, error: updErr } = await supabase
+  const { data: updated, error: updErr } = opts.qcTarget ? await commitReviewFix(supabase,'discharge_notes',opts.qcTarget,{...update,...opts.mergedSections,updated_by_user_id:undefined}) : await supabase
     .from('discharge_notes')
     .update(update)
     .eq('id', noteId)
@@ -162,7 +165,7 @@ export async function refreshDischargeTrajectory(
 
   return {
     data: {
-      updatedAt: updated.updated_at,
+      updatedAt: updated.updated_at as string,
       validation,
       painTrajectoryText: inputData.painTrajectoryText ?? null,
     },

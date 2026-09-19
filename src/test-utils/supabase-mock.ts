@@ -11,7 +11,7 @@ export function createMockQueryBuilder(defaultResult: QueryResult = { data: null
   const chainMethods = [
     'select', 'insert', 'update', 'delete', 'upsert',
     'eq', 'neq', 'gt', 'gte', 'lt', 'lte',
-    'like', 'ilike', 'is', 'in', 'or', 'not',
+    'match', 'like', 'ilike', 'is', 'in', 'or', 'not',
     'order', 'limit', 'range',
   ] as const
 

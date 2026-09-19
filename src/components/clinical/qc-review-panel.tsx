@@ -1,5 +1,8 @@
 'use client'
 
+import { actOnQualityFinding, getQualityReviewRuns } from '@/actions/case-quality-review-findings'
+import { isDeterministicReviewRule } from '@/lib/qc/review-rules'
+import { deriveReviewAssessment } from '@/lib/qc/review-findings'
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -20,7 +23,6 @@ import {
 } from '@/actions/case-quality-reviews'
 import {
   qcSeverityValues,
-  computeFindingHash,
   findingFixEligibility,
   getFindingScore,
   type QualityFinding,
@@ -48,10 +50,8 @@ import {
 import { FindingEditDialog } from './finding-edit-dialog'
 import { FindingDismissDialog } from './finding-dismiss-dialog'
 
-// Verify is supported only for steps where deterministic audit columns
-// exist: procedure (plan_alignment_status) and discharge (trajectory_warnings).
-// All other steps fall back to manual Mark Resolved.
-const VERIFIABLE_STEPS = new Set<QcStep>(['procedure', 'discharge'])
+// Only registered deterministic rules can be replayed by Verify.
+const canVerify = (finding: QualityFinding) => finding.provenance === 'deterministic' && !!finding.rule_id && isDeterministicReviewRule(finding.rule_id)
 
 const resolutionSourceLabels: Record<FindingResolutionSource, string> = {
   auto_recheck: 'Auto-resolved on Recheck',
@@ -61,6 +61,8 @@ const resolutionSourceLabels: Record<FindingResolutionSource, string> = {
 
 interface ReviewRow {
   id: string
+  review_version?: string | null
+  review_coverage?: {complete?:boolean;limitations?:string[]} | null
   generation_status: 'pending' | 'processing' | 'completed' | 'failed'
   generation_error: string | null
   findings: QualityFinding[] | null
@@ -100,6 +102,8 @@ function findingDeepLink(caseId: string, finding: QualityFinding): string {
       return finding.procedure_id
         ? `/patients/${caseId}/procedures/${finding.procedure_id}/note`
         : `/patients/${caseId}/procedures`
+    case 'pain_follow_up':
+      return finding.encounter_id ? `/patients/${caseId}/visits/${finding.encounter_id}` : `/patients/${caseId}/visits`
     case 'discharge':
       return `/patients/${caseId}/discharge`
     case 'case_summary':
@@ -114,10 +118,16 @@ export function QcReviewPanel({
   caseId,
   review,
   isStale,
+  modern = false,
+  freshnessUnknown = false,
+  attempts = [],
 }: {
   caseId: string
   review: ReviewRow | null
   isStale: boolean
+  modern?: boolean
+  freshnessUnknown?: boolean
+  attempts?: Awaited<ReturnType<typeof getQualityReviewRuns>>['data']
 }) {
   const [isPending, startTransition] = useTransition()
   // Optimistic local flag — flips on click so the panel shows the Reviewing
@@ -135,6 +145,17 @@ export function QcReviewPanel({
   const router = useRouter()
   const caseStatus = useCaseStatus()
   const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+  const writesPaused = review?.review_version === 'qc-v3' && !modern
+  const lastRun = attempts[0]
+  const attemptProcessing = lastRun?.status === 'processing'
+  const [olderAttempts,setOlderAttempts] = useState<typeof attempts>([])
+  const [hasOlder,setHasOlder] = useState(true)
+  const allAttempts = [...new Map([...olderAttempts,...attempts].map(run => [run.id,run])).values()].sort((a,b) => b.started_at.localeCompare(a.started_at) || b.id.localeCompare(a.id))
+  useEffect(() => {
+    if (!modern || (!attemptProcessing && !optimisticGenerating)) return
+    const timer = setInterval(() => router.refresh(),3000)
+    return () => clearInterval(timer)
+  },[modern,attemptProcessing,optimisticGenerating,router])
 
   // Poll the server component tree while a fix is in flight so the recheck's
   // mid-flight DB transitions (new review row, new findings, carry-over
@@ -175,14 +196,14 @@ export function QcReviewPanel({
     })
   }
 
-  const handleRun = () => runReview('QC review started', runCaseQualityReview)
+  const handleRun = () => runReview('Quality Review completed', runCaseQualityReview)
   const handleRecheck = () =>
-    runReview('QC review re-running', recheckCaseQualityReview)
+    runReview('Quality Review updated', recheckCaseQualityReview)
 
   // Optimistic generating — flipped on the moment the user clicks
   // Run/Recheck/Retry. Shown until the action returns and router.refresh()
   // brings back the real row in either processing/completed/failed state.
-  if (optimisticGenerating) {
+  if (optimisticGenerating && (!modern || !review || review.generation_status !== 'completed')) {
     return (
       <Card>
         <CardHeader>
@@ -213,9 +234,9 @@ export function QcReviewPanel({
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            Reviews the full case workflow chain. Reads finalized notes plus extractions.
+            {lastRun?.error_message ?? (attemptProcessing ? 'Review in progress…' : 'No completed review. Reviews current saved notes and supporting evidence.')}
           </p>
-          <Button onClick={handleRun} disabled={isPending || isLocked}>
+          <Button onClick={handleRun} disabled={isPending || isLocked || writesPaused || !!attemptProcessing}>
             Run Review
           </Button>
         </CardContent>
@@ -251,7 +272,7 @@ export function QcReviewPanel({
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-destructive">{review.generation_error || 'Unknown error'}</p>
-          <Button onClick={handleRun} disabled={isPending || isLocked}>
+          <Button onClick={handleRun} disabled={isPending || isLocked || writesPaused || !!attemptProcessing}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Retry
           </Button>
@@ -265,8 +286,9 @@ export function QcReviewPanel({
   const overrides: FindingOverridesMap = review.finding_overrides ?? {}
 
   const hydrated = findings.map((f) => {
-    const hash = computeFindingHash(f)
-    const override = overrides[hash] ?? null
+    const hash = f.key ?? ''
+    const savedOverride = overrides[hash] ?? null
+    const override = modern && savedOverride?.status === 'fix_in_progress' && !attempts.some(run => run.id === savedOverride.fix_run_id && run.status === 'processing') ? null : savedOverride
     return { finding: f, hash, override }
   })
 
@@ -302,6 +324,8 @@ export function QcReviewPanel({
     .filter((h) => !isDismissed(h.override) && !isResolved(h.override))
     .reduce((sum, h) => sum + getFindingScore(h.finding), 0)
 
+  const assessment = deriveReviewAssessment(findings,overrides,review.review_coverage?.complete ?? review.overall_assessment !== 'incomplete',f => f.key ?? '')
+
   // Sort each severity group descending by score so the heaviest finding renders first.
   for (const sev of qcSeverityValues) {
     grouped[sev].sort(
@@ -311,21 +335,27 @@ export function QcReviewPanel({
 
   return (
     <div className="space-y-4">
+      {writesPaused && <p role="status">Quality Review updates are paused. The completed review remains available.</p>}
+      {modern && review.review_version !== 'qc-v3' && <p role="status">Legacy review. Recheck to use the current review checks and finding actions.</p>}
+      {(optimisticGenerating || attemptProcessing) && <p role="status">Review in progress. The last completed review remains below.</p>}
+      {lastRun?.error_message && <p role="alert" className="text-sm text-destructive">Latest attempt: {lastRun.error_message}</p>}
+      {freshnessUnknown && <p role="status">Freshness could not be checked. Recheck when source data is available.</p>}
+      {!!review.review_coverage?.limitations?.length && <details><summary>Review coverage limitations</summary><ul className="list-disc pl-5">{review.review_coverage.limitations.map(item => <li key={item}>{item}</li>)}</ul></details>}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>
-              Review {review.overall_assessment === 'clean' ? 'clean' : 'complete'}
+              {assessment.overall_assessment === 'incomplete' ? 'Review incomplete' : assessment.active_count === 0 ? 'No outstanding findings' : 'Review complete'}
             </CardTitle>
-            {review.summary && (
-              <p className="mt-1 text-sm text-muted-foreground">{review.summary}</p>
+            {assessment.summary && (
+              <p className="mt-1 text-sm text-muted-foreground">{assessment.summary}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
             {isStale && <Badge variant="outline">Stale</Badge>}
             <Button
               onClick={handleRecheck}
-              disabled={isPending || isLocked}
+              disabled={isPending || isLocked || writesPaused || !!attemptProcessing}
               variant="outline"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -362,7 +392,7 @@ export function QcReviewPanel({
             )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Higher score = more clinical impact. Dismissed and resolved findings excluded. Recheck preserves your review work; findings that go away are auto-resolved.
+            Higher score = more clinical impact. Dismissed and resolved findings excluded. Recheck distinguishes findings not detected again from verified resolution. Recurring findings reopen.
           </p>
         </CardContent>
       </Card>
@@ -390,10 +420,11 @@ export function QcReviewPanel({
                   <FindingCard
                     key={h.hash}
                     caseId={caseId}
+                    reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                     hash={h.hash}
                     finding={h.finding}
                     override={h.override}
-                    isLocked={isLocked}
+                    isLocked={isLocked || writesPaused || (modern && review.review_version !== 'qc-v3')}
                     optimisticFixing={optimisticFixingHashes.has(h.hash)}
                     onFixStart={beginFix}
                     onFixEnd={endFix}
@@ -410,10 +441,11 @@ export function QcReviewPanel({
                         <FindingCard
                           key={h.hash}
                           caseId={caseId}
+                          reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                           hash={h.hash}
                           finding={h.finding}
                           override={h.override}
-                          isLocked={isLocked}
+                          isLocked={isLocked || writesPaused || (modern && review.review_version !== 'qc-v3')}
                         />
                       ))}
                     </div>
@@ -430,10 +462,11 @@ export function QcReviewPanel({
                         <FindingCard
                           key={h.hash}
                           caseId={caseId}
+                          reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                           hash={h.hash}
                           finding={h.finding}
                           override={h.override}
-                          isLocked={isLocked}
+                          isLocked={isLocked || writesPaused || (modern && review.review_version !== 'qc-v3')}
                         />
                       ))}
                     </div>
@@ -444,10 +477,26 @@ export function QcReviewPanel({
           )
         })}
 
+      {modern && allAttempts.length > 0 && <details>
+        <summary>Review history</summary>
+        <ul className="space-y-2 p-2">{allAttempts.map(attempt => <li key={attempt.id}>
+          <p>{new Date(attempt.started_at).toLocaleString()} · {attempt.status}</p>
+          {Array.isArray(attempt.finding_transitions) && attempt.finding_transitions.map((raw,index) => {
+            const transition = raw as {outcome?:string;finding?:{message?:string}}
+            return <p key={index} className="text-sm">{transition.outcome === 'not_detected' ? 'Not detected on recheck' : transition.outcome === 'recurring' ? 'Recurring' : 'Verified resolved'}: {transition.finding?.message}</p>
+          })}
+        </li>)}</ul>
+        {hasOlder && allAttempts.length >= 20 && <Button variant="outline" onClick={async () => {
+          const last = allAttempts.at(-1)!
+          const result = await getQualityReviewRuns(caseId,{startedAt:last.started_at,id:last.id})
+          if (result.error) toast.error(result.error)
+          else {setOlderAttempts(old => [...old,...result.data]);setHasOlder(result.data.length === 20)}
+        }}>Load older reviews</Button>}
+      </details>}
       {findings.length === 0 && (
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
-            No findings — chain is clean.
+            No findings detected in the reviewed sources. Check coverage limitations above.
           </CardContent>
         </Card>
       )}
@@ -457,6 +506,7 @@ export function QcReviewPanel({
 
 function FindingCard({
   caseId,
+  reviewId,
   hash,
   finding,
   override,
@@ -466,6 +516,7 @@ function FindingCard({
   onFixEnd,
 }: {
   caseId: string
+  reviewId?: string
   hash: string
   finding: QualityFinding
   override: FindingOverrideEntry | null
@@ -493,7 +544,7 @@ function FindingCard({
 
   const handleAck = () =>
     startTransition(async () => {
-      const r = await acknowledgeFinding(caseId, hash)
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'acknowledge') : await acknowledgeFinding(caseId, hash)
       if (r.error) toast.error(r.error)
       else {
         toast.success('Finding acknowledged')
@@ -502,7 +553,7 @@ function FindingCard({
     })
   const handleClear = () =>
     startTransition(async () => {
-      const r = await clearFindingOverride(caseId, hash)
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'clear') : await clearFindingOverride(caseId, hash)
       if (r.error) toast.error(r.error)
       else {
         toast.success('Override cleared')
@@ -511,7 +562,7 @@ function FindingCard({
     })
   const handleVerify = () =>
     startTransition(async () => {
-      const r = await verifyFinding(caseId, hash)
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'verify') : await verifyFinding(caseId, hash)
       if (r.error) {
         toast.error(r.error)
       } else if (r.data && 'resolved' in r.data && r.data.resolved) {
@@ -527,7 +578,7 @@ function FindingCard({
     })
   const handleMarkResolved = () =>
     startTransition(async () => {
-      const r = await markFindingResolved(caseId, hash)
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'resolve') : await markFindingResolved(caseId, hash)
       if (r.error) toast.error(r.error)
       else {
         toast.success('Finding marked resolved')
@@ -538,9 +589,10 @@ function FindingCard({
     onFixStart?.(hash)
     startTransition(async () => {
       try {
-        const r = await fixFinding(caseId, hash)
+        const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'fix') : await fixFinding(caseId, hash)
         if (r.error) toast.error(r.error)
-        else toast.success('Finding fix applied')
+        else if (r.data && 'outcome' in r.data && r.data.outcome === 'applied_but_still_present') toast.warning('Section updated; the finding is still present')
+        else toast.success('Section updated; finding not detected on recheck')
       } finally {
         onFixEnd?.(hash)
         router.refresh()
@@ -585,6 +637,8 @@ function FindingCard({
             )}
           </div>
           <p className="text-sm font-medium">{displayMessage}</p>
+          {!!finding.evidence?.length && <details><summary className="text-xs cursor-pointer">Source evidence</summary><ul className="space-y-2 text-xs break-words">{finding.evidence.map((e,index) => <li key={index}><span>{e.source_id.split(':')[0].replaceAll('_',' ')} · {e.field.replaceAll('_',' ')}{e.source_date ? ` · ${e.source_date.slice(0,10)}` : ' · Date unavailable'}</span><blockquote>{e.missing ? 'Not documented in this field' : e.quote}</blockquote></li>)}</ul></details>}
+          {finding.step === 'pain_follow_up' && !finding.encounter_id && <p className="text-xs">Exact visit unavailable; the editor link opens the visits list.</p>}
           {displayRationale && (
             <p className="text-xs text-muted-foreground">{displayRationale}</p>
           )}
@@ -666,7 +720,7 @@ function FindingCard({
                     Fix with AI
                   </Button>
                 )}
-                {VERIFIABLE_STEPS.has(finding.step) && (
+                {canVerify(finding) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -701,7 +755,7 @@ function FindingCard({
                     Fix with AI
                   </Button>
                 )}
-                {VERIFIABLE_STEPS.has(finding.step) && (
+                {canVerify(finding) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -751,6 +805,7 @@ function FindingCard({
       {editOpen && (
         <FindingEditDialog
           caseId={caseId}
+          reviewId={reviewId}
           hash={hash}
           initialValues={{
             edited_message: displayMessage,
@@ -763,6 +818,7 @@ function FindingCard({
       {dismissOpen && (
         <FindingDismissDialog
           caseId={caseId}
+          reviewId={reviewId}
           hash={hash}
           onClose={() => setDismissOpen(false)}
         />

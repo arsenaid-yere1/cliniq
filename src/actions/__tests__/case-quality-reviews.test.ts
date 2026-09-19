@@ -1,3 +1,4 @@
+import { computeFindingHash } from '@/lib/qc/review-finding-hash'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   createMockSupabase,
@@ -61,7 +62,7 @@ import {
   markFindingResolved,
   fixFinding,
 } from '../case-quality-reviews'
-import { computeFindingHash, type QualityFinding } from '@/lib/validations/case-quality-review'
+import { type QualityFinding } from '@/lib/validations/case-quality-review'
 
 const VALID_CASE_ID = '11111111-1111-4111-8111-111111111111'
 const VALID_USER_ID = 'test-user-id'

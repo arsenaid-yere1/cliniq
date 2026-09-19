@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:07:07.895Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "copied_narrative",
+    "first": "The note explicitly identifies the next sentence as accidentally copied visit-specific prose from the prior encounter: Today is January 1, 2026, and I just completed my first injection.",
+    "conflict": "Today is January 1, 2026, and I just completed my first injection.",
+    "control": "Historical quotation from January 1, 2026: “Today is January 1, 2026, and I just completed my first injection.” This describes the prior encounter."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "warning",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "The assessment repeats visit-specific prose that the subjective explicitly flags as accidentally copied from the prior encounter (\"Today is January 1, 2026, and I just completed my first injection.\"), yet the assessment presents the same sentence without any disclaimer or reconciliation, so the copied prose is carried forward unexplained into the clinical assessment of a 2026-01-02 follow-up.",
+        "rationale": "The subjective labels the sentence as accidentally copied prior-encounter prose, while the assessment reuses that identical sentence as its own content on a different date, meeting the copied_narrative criterion of unexplained copied visit-specific prose.",
+        "suggested_tone_hint": "Replace the copied sentence in the assessment with today's clinical assessment, or annotate it as historical.",
+        "score": 5,
+        "rule_id": "copied_narrative",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "The note explicitly identifies the next sentence as accidentally copied visit-specific prose from the prior encounter: Today is January 1, 2026, and I just completed my first injection.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "Today is January 1, 2026, and I just completed my first injection.",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

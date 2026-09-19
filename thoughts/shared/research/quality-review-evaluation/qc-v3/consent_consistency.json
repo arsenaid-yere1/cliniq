@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:06:57.319Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "consent_consistency",
+    "first": "The patient explicitly refused consent for today’s telehealth visit.",
+    "conflict": "The patient affirmatively consented to today’s telehealth visit; no refusal occurred.",
+    "control": "Consent for today’s telehealth visit was refused; the visit will be rescheduled."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Subjective and assessment give directly contradictory telehealth consent statements for the same visit.",
+        "rationale": "Subjective states the patient explicitly refused consent for today's telehealth visit, while the assessment states the patient affirmatively consented and no refusal occurred. Both cannot be true for the same encounter.",
+        "suggested_tone_hint": "Reconcile the consent statement so subjective and assessment reflect the same documented consent status.",
+        "score": 9,
+        "rule_id": "consent_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "The patient explicitly refused consent for today’s telehealth visit.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "The patient affirmatively consented to today’s telehealth visit; no refusal occurred.",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

@@ -1,3 +1,5 @@
+import { qualityReviewV3Enabled } from '@/lib/qc/review-config'
+import { getQualityReviewRuns } from '@/actions/case-quality-review-findings'
 import {
   getCaseQualityReview,
   checkQualityReviewStaleness,
@@ -11,9 +13,10 @@ export default async function CaseQcPage({
 }) {
   const { caseId } = await params
 
-  const [reviewResult, stalenessResult] = await Promise.all([
+  const [reviewResult, stalenessResult, attemptsResult] = await Promise.all([
     getCaseQualityReview(caseId),
     checkQualityReviewStaleness(caseId),
+    getQualityReviewRuns(caseId),
   ])
 
   return (
@@ -24,11 +27,15 @@ export default async function CaseQcPage({
           AI review of the full case workflow. Manual trigger only.
         </p>
       </div>
-      <QcReviewPanel
+      {attemptsResult.error && <p role="alert">{attemptsResult.error}</p>}
+      {reviewResult.error ? <p role="alert">{reviewResult.error}</p> : <QcReviewPanel
         caseId={caseId}
         review={reviewResult.data ?? null}
         isStale={stalenessResult.data?.isStale ?? false}
-      />
+        modern={qualityReviewV3Enabled()}
+        attempts={attemptsResult.data}
+        freshnessUnknown={'freshness' in (stalenessResult.data ?? {}) && stalenessResult.data?.freshness === 'unknown'}
+      />}
     </div>
   )
 }

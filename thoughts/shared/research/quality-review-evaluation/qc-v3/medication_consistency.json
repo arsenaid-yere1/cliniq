@@ -1,0 +1,48 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:05:49.848Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "medication_consistency",
+    "first": "Medication reconciliation today confirms no interval changes: gabapentin 300 mg orally nightly.",
+    "conflict": "Current reconciled gabapentin dose today is 900 mg orally three times daily; there have been no medication changes.",
+    "control": "Current gabapentin remains 300 mg orally nightly, unchanged."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Internal medication dose contradiction within the same follow-up note: subjective documents gabapentin 300 mg orally nightly with no interval changes, while assessment states the current reconciled dose is 900 mg orally three times daily, also with no changes. Both cannot be simultaneously correct for the same date.",
+        "rationale": "The subjective and assessment sections of the same dated note assert incompatible current gabapentin regimens (300 mg nightly vs 900 mg TID) while each denies any medication change, creating a direct medication reconciliation conflict.",
+        "suggested_tone_hint": "Reconcile the current gabapentin dose and frequency so subjective and assessment agree.",
+        "score": 8,
+        "rule_id": "medication_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "gabapentin 300 mg orally nightly",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "Current reconciled gabapentin dose today is 900 mg orally three times daily",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

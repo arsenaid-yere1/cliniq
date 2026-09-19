@@ -9,7 +9,15 @@
 import type { DischargeNoteResult } from '@/lib/validations/discharge-note'
 import type { DischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 
+export interface TrajectoryIssue {
+  code:'trajectory_value' | 'trajectory_endpoint' | 'trajectory_arrow'
+  section: keyof DischargeNoteResult
+  value: string
+  message: string
+}
+
 export interface TrajectoryValidationResult {
+  issues?: TrajectoryIssue[]
   warnings: string[]
   dischargeReadingsFound: Array<{ section: string; value: string }>
 }
@@ -64,12 +72,13 @@ export function validateDischargeTrajectoryConsistency(
   trajectory: DischargePainTrajectory,
 ): TrajectoryValidationResult {
   const warnings: string[] = []
+  const issues: TrajectoryIssue[] = []
   const dischargeReadingsFound: Array<{ section: string; value: string }> = []
 
   // When there is no deterministic trajectory there is nothing to check —
   // the legacy prompt path was used and free-form numbers are expected.
   if (trajectory.entries.length === 0 && !trajectory.dischargeDisplay) {
-    return { warnings, dischargeReadingsFound }
+    return { warnings, dischargeReadingsFound, issues }
   }
 
   const expected = collectExpectedValues(trajectory)
@@ -81,6 +90,7 @@ export function validateDischargeTrajectoryConsistency(
     for (const r of readings) {
       dischargeReadingsFound.push({ section, value: `${r}/10` })
       if (!expected.has(r)) {
+        issues.push({code:'trajectory_value',section,value:r,message:`Pain value ${r}/10 is absent from the current deterministic trajectory.`})
         warnings.push(
           `Section "${section}" contains pain value ${r}/10 that is not in the deterministic trajectory (expected one of: ${Array.from(expected).map((v) => `${v}/10`).join(', ')}).`,
         )
@@ -92,6 +102,7 @@ export function validateDischargeTrajectoryConsistency(
     const dischargeClause = `${dischargeValue}/10`
     const bullet = result.objective_vitals ?? ''
     if (bullet.trim().length > 0 && !bullet.includes(dischargeClause)) {
+      issues.push({code:'trajectory_endpoint',section:'objective_vitals',value:dischargeClause,message:`Expected discharge reading ${dischargeClause} is absent.`})
       warnings.push(
         `objective_vitals Pain bullet does not contain the deterministic discharge reading ${dischargeClause}.`,
       )
@@ -99,6 +110,7 @@ export function validateDischargeTrajectoryConsistency(
     for (const section of ['subjective', 'assessment', 'prognosis'] as const) {
       const content = result[section] ?? ''
       if (content.trim().length > 0 && !content.includes(dischargeClause)) {
+        issues.push({code:'trajectory_endpoint',section,value:dischargeClause,message:`Expected discharge reading ${dischargeClause} is absent.`})
         warnings.push(
           `Section "${section}" does not contain the deterministic discharge reading ${dischargeClause}.`,
         )
@@ -107,10 +119,11 @@ export function validateDischargeTrajectoryConsistency(
   }
 
   if (trajectory.arrowChain && result.subjective && !result.subjective.includes(trajectory.arrowChain)) {
+    issues.push({code:'trajectory_arrow',section:'subjective',value:'arrow',message:'The current deterministic pain trajectory is not reproduced verbatim.'})
     warnings.push(
       'subjective does not contain the verbatim painTrajectoryText arrow chain — LLM likely paraphrased.',
     )
   }
 
-  return { warnings, dischargeReadingsFound }
+  return { warnings, dischargeReadingsFound, issues }
 }

@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { reviewSections, type ReviewNoteStep } from '@/lib/qc/review-types'
 
 export const qcSeverityValues = ['info', 'warning', 'critical'] as const
 export type QcSeverity = (typeof qcSeverityValues)[number]
@@ -41,6 +41,11 @@ export const qualityFindingSchema = z.object({
 })
 export type QualityFinding = Omit<z.infer<typeof qualityFindingSchema>, 'encounter_id'> & {
   encounter_id?: string | null
+  key?: string
+  rule_id?: string
+  provenance?: 'ai' | 'deterministic'
+  evidence?: Array<{source_id:string;field:string;quote:string|null;missing:boolean;source_date?:string|null}>
+  fix_blocked_reason?: string | null
 }
 
 // Full AI tool output schema
@@ -89,6 +94,7 @@ export const findingOverrideEntrySchema = z.object({
   // fix_recheck_result: whether the targeted finding hash survived the
   // post-fix recheck. All nullable so existing rows persisted before this
   // change parse fine.
+  fix_run_id: z.string().uuid().optional(),
   fix_attempted_at: z.string().nullable().default(null),
   fix_section_regenerated: z.string().nullable().default(null),
   fix_recheck_result: z.enum(['resolved', 'still_present']).nullable().default(null),
@@ -132,27 +138,6 @@ export function getFindingScore(
   return defaultScoreForSeverity(finding.severity)
 }
 
-// Stable hash for a finding — used as the key into FindingOverridesMap.
-// Inputs are exactly the fields a regen would re-emit identically when the
-// underlying drift has not changed; messages reordered or slightly reworded
-// will hash differently, which is acceptable: the override layer is wiped
-// on regen anyway.
-export function computeFindingHash(finding: QualityFinding): string {
-  if (finding.encounter_id) {
-    const versioned = ['v2', finding.severity, finding.step, finding.note_id ?? '', finding.procedure_id ?? '', finding.encounter_id, finding.section_key ?? '', finding.message].join('|')
-    return createHash('sha256').update(versioned).digest('hex')
-  }
-  const parts = [
-    finding.severity,
-    finding.step,
-    finding.note_id ?? '',
-    finding.procedure_id ?? '',
-    finding.section_key ?? '',
-    finding.message,
-  ].join('|')
-  return createHash('sha256').update(parts).digest('hex')
-}
-
 // Steps for which Fix action is supported. cross_step + case_summary findings
 // have no single regenerable target, so Fix is not offered.
 const FIXABLE_STEPS = new Set<QcStep>([
@@ -178,6 +163,7 @@ export type FindingFixEligibility =
 // Pure predicate shared by server action gate and UI button gate. Returns the
 // reason when ineligible so the UI can surface it as a tooltip.
 export function findingFixEligibility(finding: QualityFinding): FindingFixEligibility {
+  if (finding.fix_blocked_reason) return {fixable:false,reason:finding.fix_blocked_reason}
   if (!FIXABLE_STEPS.has(finding.step)) {
     return {
       fixable: false,
@@ -193,6 +179,7 @@ export function findingFixEligibility(finding: QualityFinding): FindingFixEligib
       reason: 'Deterministic findings are not auto-fixable; use Verify',
     }
   }
+  if (finding.rule_id && !(reviewSections[finding.step as ReviewNoteStep] as readonly string[] | undefined)?.includes(finding.section_key)) return {fixable:false,reason:'Finding has no canonical note section'}
   if (finding.step === 'procedure' && !finding.procedure_id) {
     return { fixable: false, reason: 'Procedure finding missing procedure_id' }
   }

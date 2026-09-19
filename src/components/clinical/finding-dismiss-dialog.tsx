@@ -1,5 +1,6 @@
 'use client'
 
+import { actOnQualityFinding } from '@/actions/case-quality-review-findings'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -17,10 +18,12 @@ import { dismissFinding } from '@/actions/case-quality-reviews'
 
 export function FindingDismissDialog({
   caseId,
+  reviewId,
   hash,
   onClose,
 }: {
   caseId: string
+  reviewId?: string
   hash: string
   onClose: () => void
 }) {
@@ -30,9 +33,10 @@ export function FindingDismissDialog({
 
   const onConfirm = () =>
     startTransition(async () => {
-      const r = await dismissFinding(caseId, hash, {
+      const values = {
         dismissed_reason: reason.trim() || null,
-      })
+      }
+      const r = reviewId ? await actOnQualityFinding(caseId,reviewId,hash,'dismiss',values) : await dismissFinding(caseId,hash,values)
       if (r.error) toast.error(r.error)
       else {
         toast.success('Finding dismissed')

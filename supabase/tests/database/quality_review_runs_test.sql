@@ -1,0 +1,57 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(24);
+insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+values('91000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000000000','authenticated','authenticated','qc-test@test.local','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
+insert into public.patients(id,first_name,last_name,date_of_birth) values('92000000-0000-4000-8000-000000000001','Synthetic','QC','1980-01-01');
+insert into public.cases(id,case_number,patient_id,case_status) values('93000000-0000-4000-8000-000000000001','QC-RUN-TEST','92000000-0000-4000-8000-000000000001','active');
+update public.care_episodes set id='94000000-0000-4000-8000-000000000001' where case_id='93000000-0000-4000-8000-000000000001';
+select set_config('request.jwt.claim.sub','91000000-0000-4000-8000-000000000001',true);
+select set_config('request.jwt.claim.role','authenticated',true);
+set local role authenticated;
+select lives_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{}')$$,'begin creates attempt');
+select throws_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{}')$$,'P0001','A Quality Review operation is already in progress','second attempt is rejected');
+select lives_ok($$select public.quality_review_run('publish','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001',jsonb_build_object('run_id',(select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001'),'findings',jsonb_build_array(jsonb_build_object('key','a')),'finding_overrides','{}'::jsonb,'overall_assessment','minor_issues','coverage','{"complete":true}'::jsonb))$$,'publish succeeds atomically');
+select is((select count(*)::int from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),1,'one completed live review');
+select lives_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{}')$$,'recheck begins');
+select lives_ok($$select public.quality_review_run('fail','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001',jsonb_build_object('run_id',(select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'error_message','Synthetic model failure'))$$,'failure recorded');
+select is((select count(*)::int from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null and generation_status='completed'),1,'failed recheck preserves successful review');
+select lives_ok($$select public.quality_review_disposition((select id from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),'a',null,'{"status":"dismissed"}')$$,'per-finding disposition saved');
+select throws_ok($$select public.quality_review_disposition((select id from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),'a',null,'{"status":"acknowledged"}')$$,'P0001','Finding disposition changed; reload','stale disposition rejected');
+select throws_ok($$select public.quality_review_disposition((select id from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),'unknown',null,'{"status":"dismissed"}')$$,'P0001','Finding not found','unknown key rejected');
+select throws_ok($$insert into public.case_quality_review_runs(case_id,episode_id,actor_user_id) values('93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000001')$$,'42501',null,'direct attempt writes denied');
+select lives_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{}')$$,'next attempt begins');
+reset role;
+update public.case_quality_review_runs set lease_expires_at=clock_timestamp()-interval '1 second' where case_id='93000000-0000-4000-8000-000000000001' and status='processing';
+set local role authenticated;
+select throws_ok($$select public.quality_review_run('heartbeat','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001',jsonb_build_object('run_id',(select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing')))$$,'P0001','Review lease expired','expired attempt cannot renew');
+reset role;
+insert into public.clinical_encounters(id,case_id,episode_id,encounter_type,status,modality,encounter_date)
+values('95000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','pain_follow_up','in_progress','telehealth','2026-01-02');
+insert into public.pain_follow_up_notes(id,case_id,episode_id,encounter_id,status,subjective)
+values('96000000-0000-4000-8000-000000000001','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','95000000-0000-4000-8000-000000000001','draft','Original synthetic section');
+update public.case_quality_review_runs set kind='fix',lease_expires_at=clock_timestamp()+interval '2 minutes',fix_target=jsonb_build_object('table','pain_follow_up_notes','note_id','96000000-0000-4000-8000-000000000001','section','subjective','updated_at',(select updated_at from public.pain_follow_up_notes where id='96000000-0000-4000-8000-000000000001')) where case_id='93000000-0000-4000-8000-000000000001' and status='processing';
+set local role authenticated;
+select throws_ok($$select public.quality_review_save_fix((select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'cases','96000000-0000-4000-8000-000000000001',now(),'{}')$$,'P0001','Invalid note table','invalid target table rejected');
+select throws_ok($$select public.quality_review_save_fix((select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'pain_follow_up_notes','96000000-0000-4000-8000-000000000001',now()-interval '1 day','{"subjective":"New"}')$$,'P0001','Note changed or is not editable','stale note version rejected');
+select throws_ok($$select public.quality_review_save_fix((select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'pain_follow_up_notes','96000000-0000-4000-8000-000000000001',(select updated_at from public.pain_follow_up_notes where id='96000000-0000-4000-8000-000000000001'),' {"subjective":"New","status":"finalized"}')$$,'P0001','Invalid fix patch field','fix cannot change protected fields');
+reset role;
+update public.case_quality_review_runs set lease_expires_at=clock_timestamp()-interval '1 second' where case_id='93000000-0000-4000-8000-000000000001' and status='processing';
+set local role authenticated;
+select throws_ok($$select public.quality_review_save_fix((select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'pain_follow_up_notes','96000000-0000-4000-8000-000000000001',(select updated_at from public.pain_follow_up_notes where id='96000000-0000-4000-8000-000000000001'),' {"subjective":"Late write"}')$$,'P0001','Fix attempt expired or changed','expired fix cannot save even with unchanged note version');
+select is((select subjective from public.pain_follow_up_notes where id='96000000-0000-4000-8000-000000000001'),'Original synthetic section','expired fix left source note unchanged');
+reset role;
+update public.case_quality_review_runs set lease_expires_at=clock_timestamp()+interval '2 minutes' where case_id='93000000-0000-4000-8000-000000000001' and status='processing';
+set local role authenticated;
+select lives_ok($$select public.quality_review_save_fix((select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'pain_follow_up_notes','96000000-0000-4000-8000-000000000001',(select updated_at from public.pain_follow_up_notes where id='96000000-0000-4000-8000-000000000001'),' {"subjective":"Valid update"}')$$,'live fix updates the exact permitted section');
+
+select throws_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000002','{}')$$,'P0001','Care episode not found','case/episode mismatch rejected');
+select set_config('request.jwt.claim.sub','91000000-0000-4000-8000-000000000099',true);
+select throws_ok($$select public.quality_review_run('begin','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001','{}')$$,'42501','Active user account required','unauthorized actor rejected');
+select set_config('request.jwt.claim.sub','91000000-0000-4000-8000-000000000001',true);
+select throws_ok($$select public.quality_review_run('publish','93000000-0000-4000-8000-000000000001','94000000-0000-4000-8000-000000000001',jsonb_build_object('run_id',(select id from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),'expected_review_id',(select id from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),'expected_updated_at',(select updated_at from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null),'findings','[]'::jsonb,'finding_overrides','{}'::jsonb,'overall_assessment','invalid'))$$,'23514',null,'failed insertion rolls back publication');
+select is((select count(*)::int from public.case_quality_reviews where case_id='93000000-0000-4000-8000-000000000001' and deleted_at is null and generation_status='completed'),1,'rollback retains the published review');
+select is((select count(*)::int from public.case_quality_review_runs where case_id='93000000-0000-4000-8000-000000000001' and status='processing'),1,'rollback does not complete the failed publication attempt');
+select * from finish();
+rollback;

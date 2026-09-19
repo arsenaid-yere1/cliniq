@@ -1,5 +1,7 @@
 'use server'
 
+import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
+
 import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
 
 import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-document'
@@ -199,6 +201,7 @@ export async function regeneratePainFollowUpSectionAction(
   section: PainFollowUpSection,
   findingFix?: { message: string; rationale: string | null },
   expectedUpdatedAt?: string,
+  qcTarget?: ReviewFixTarget,
 ) {
   const disabled = requireReturnTeleVisitsMutation()
   if (disabled) return disabled
@@ -214,12 +217,13 @@ export async function regeneratePainFollowUpSectionAction(
   const { data: note } = await supabase.from('pain_follow_up_notes').select('id,status,updated_at,tone_hint')
     .eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null).maybeSingle()
   if (!note || note.status !== 'draft') return { error: 'No draft follow-up note found' }
+  if (qcTarget && (note.id !== qcTarget.noteId || note.updated_at !== qcTarget.updatedAt || source.encounter.episode_id !== qcTarget.episodeId || encounterId !== qcTarget.encounterId)) return { error: 'Quality Review target changed; reload the note' }
   if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== note.updated_at) return { error: 'Note changed. Reload before regenerating' }
   const generated = await generatePainFollowUp(source.data, findingFix
     ? { section, message: findingFix.message, rationale: findingFix.rationale }
     : undefined, note.tone_hint)
   if (!generated.data) return { error: generated.error ?? 'Unable to regenerate follow-up section' }
-  const { data: savedNote, error } = await supabase.from('pain_follow_up_notes').update({
+  const { data: savedNote, error } = qcTarget ? await commitReviewFix(supabase,'pain_follow_up_notes',qcTarget,{[section]:generated.data[section],raw_ai_response:generated.rawResponse ?? null}) : await supabase.from('pain_follow_up_notes').update({
     [section]: generated.data[section],
     raw_ai_response: (generated.rawResponse ?? null) as Json | null,
     updated_by_user_id: user.id,

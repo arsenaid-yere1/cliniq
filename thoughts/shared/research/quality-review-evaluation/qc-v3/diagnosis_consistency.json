@@ -1,0 +1,77 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:06:40.888Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "diagnosis_consistency",
+    "first": "The only current diagnosis is cervical strain. There is no lumbar condition or lumbar complaint.",
+    "conflict": "The only current diagnosis is lumbar strain; there is no cervical condition.",
+    "control": "The current diagnosis remains cervical strain, without a lumbar condition.",
+    "field": "diagnoses"
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "diagnoses",
+        "message": "Subjective and diagnoses sections directly contradict each other regarding the active diagnosis and anatomic site.",
+        "rationale": "Subjective states the only current diagnosis is cervical strain with no lumbar condition, while the diagnoses section states the only current diagnosis is lumbar strain with no cervical condition. Both cannot be true simultaneously.",
+        "suggested_tone_hint": "Reconcile which region (cervical vs lumbar) is the actual current diagnosis and align both sections.",
+        "score": 9,
+        "rule_id": "diagnosis_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "The only current diagnosis is cervical strain. There is no lumbar condition or lumbar complaint.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "diagnoses",
+            "quote": "The only current diagnosis is lumbar strain; there is no cervical condition.",
+            "missing": false
+          }
+        ]
+      },
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "diagnoses",
+        "message": "Anatomic site and laterality are inconsistent between subjective and diagnoses (cervical vs lumbar).",
+        "rationale": "The subjective anchors the complaint to the cervical region and explicitly excludes lumbar involvement, while the diagnoses section anchors the same encounter's sole diagnosis to the lumbar region and excludes cervical involvement.",
+        "suggested_tone_hint": "Clarify the correct anatomic site and remove the contradictory exclusion statements.",
+        "score": 8,
+        "rule_id": "anatomy_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "cervical strain",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "diagnoses",
+            "quote": "lumbar strain",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

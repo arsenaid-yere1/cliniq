@@ -39,6 +39,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      case_quality_review_runs: {
+        Row: {
+          actor_user_id: string
+          case_id: string
+          episode_id: string
+          error_category: string | null
+          error_message: string | null
+          finding_transitions: Json
+          finished_at: string | null
+          fix_target: Json | null
+          id: string
+          kind: string
+          lease_expires_at: string
+          published_review_id: string | null
+          sections_done: number
+          source_hash: string | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          actor_user_id: string
+          case_id: string
+          episode_id: string
+          error_category?: string | null
+          error_message?: string | null
+          finding_transitions?: Json
+          finished_at?: string | null
+          fix_target?: Json | null
+          id?: string
+          kind?: string
+          lease_expires_at?: string
+          published_review_id?: string | null
+          sections_done?: number
+          source_hash?: string | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          actor_user_id?: string
+          case_id?: string
+          episode_id?: string
+          error_category?: string | null
+          error_message?: string | null
+          finding_transitions?: Json
+          finished_at?: string | null
+          fix_target?: Json | null
+          id?: string
+          kind?: string
+          lease_expires_at?: string
+          published_review_id?: string | null
+          sections_done?: number
+          source_hash?: string | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_quality_review_runs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_quality_review_runs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_quality_review_runs_episode_id_case_id_fkey"
+            columns: ["episode_id", "case_id"]
+            isOneToOne: false
+            referencedRelation: "care_episodes"
+            referencedColumns: ["id", "case_id"]
+          },
+          {
+            foreignKeyName: "case_quality_review_runs_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "care_episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_quality_review_runs_published_review_id_fkey"
+            columns: ["published_review_id"]
+            isOneToOne: false
+            referencedRelation: "case_quality_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinical_note_revisions: {
         Row: {
           id: string
@@ -451,9 +544,12 @@ export type Database = {
           id: string
           overall_assessment: string | null
           raw_ai_response: Json | null
+          review_coverage: Json | null
+          review_version: string | null
           sections_done: number
           sections_total: number
           source_data_hash: string | null
+          source_versions: Json | null
           summary: string | null
           updated_at: string
           updated_by_user_id: string | null
@@ -474,9 +570,12 @@ export type Database = {
           id?: string
           overall_assessment?: string | null
           raw_ai_response?: Json | null
+          review_coverage?: Json | null
+          review_version?: string | null
           sections_done?: number
           sections_total?: number
           source_data_hash?: string | null
+          source_versions?: Json | null
           summary?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
@@ -497,9 +596,12 @@ export type Database = {
           id?: string
           overall_assessment?: string | null
           raw_ai_response?: Json | null
+          review_coverage?: Json | null
+          review_version?: string | null
           sections_done?: number
           sections_total?: number
           source_data_hash?: string | null
+          source_versions?: Json | null
           summary?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
@@ -4512,6 +4614,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      quality_review_save_fix: {
+        Args: {
+          p_expected_updated_at: string
+          p_note_id: string
+          p_patch: Json
+          p_run_id: string
+          p_table: string
+        }
+        Returns: Json
+      }
+      quality_review_disposition: {
+        Args: {
+          p_entry: Json
+          p_expected_entry: Json
+          p_finding_key: string
+          p_review_id: string
+        }
+        Returns: Json
+      }
+      quality_review_run: {
+        Args: {
+          p_action: string
+          p_case_id: string
+          p_episode_id: string
+          p_payload: Json
+        }
+        Returns: Json
+      }
       read_initial_visit_generation_failures: {
         Args: { p_case_id: string; p_limit?: number; p_offset?: number }
         Returns: Json

@@ -1,5 +1,7 @@
 'use server'
 
+import { type ReviewFixTarget } from '@/lib/qc/review-fix-target'
+
 import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
 
 import { resetDraftClinicalNote } from '@/actions/clinical-reset'
@@ -159,13 +161,16 @@ export async function gatherDischargeNoteSourceData(
   visitDate: string,
   dischargeVitals: DischargeNoteInputData['dischargeVitals'] = null,
   requestedEpisodeId?: string,
+  qcTarget?: ReviewFixTarget,
 ): Promise<{ data: DischargeNoteInputData | null; error: string | null }> {
   const episode = requestedEpisodeId
     ? await supabase.from('care_episodes').select('id').eq('id', requestedEpisodeId).eq('case_id', caseId).is('deleted_at', null).maybeSingle().then((result) => result.data)
     : await getActiveOrLatestEpisode(caseId, supabase)
   if (!episode) return { data: null, error: 'Care episode not found' }
-  const { data: episodeEncounterRows } = await supabase.from('clinical_encounters').select('id')
+  const { data: episodeEncounterRows, error: encountersError } = await supabase.from('clinical_encounters').select('id,encounter_type')
     .eq('episode_id', episode.id).eq('case_id', caseId).is('deleted_at', null)
+  if (qcTarget && encountersError) return {data:null,error:'Unable to load encounter sources for Quality Review fix'}
+  const originEncounterId = (episodeEncounterRows?.find(row => row.encounter_type === 'initial_evaluation') ?? episodeEncounterRows?.find(row => row.encounter_type === 'pain_evaluation'))?.id
   const episodeEncounterIds = (episodeEncounterRows ?? []).map((row) => row.id)
   const [
     caseRes,
@@ -205,6 +210,7 @@ export async function gatherDischargeNoteSourceData(
     supabase
       .from('initial_visit_notes')
       .select('chief_complaint, physical_exam, diagnoses, treatment_plan')
+      .match(qcTarget ? {encounter_id:originEncounterId ?? '00000000-0000-0000-0000-000000000000'} : {})
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
       .eq('status', 'finalized')
@@ -219,6 +225,7 @@ export async function gatherDischargeNoteSourceData(
     supabase
       .from('initial_visit_notes')
       .select('visit_date')
+      .match(qcTarget ? {encounter_id:originEncounterId ?? '00000000-0000-0000-0000-000000000000'} : {})
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
       .is('deleted_at', null)
@@ -277,12 +284,14 @@ export async function gatherDischargeNoteSourceData(
       .select('pain_score_min, pain_score_max, recorded_at')
       .eq('case_id', caseId)
       .is('procedure_id', null)
-      .in('encounter_id', episodeEncounterIds.length ? episodeEncounterIds : ['00000000-0000-0000-0000-000000000000'])
+      .in('encounter_id', qcTarget ? [originEncounterId ?? '00000000-0000-0000-0000-000000000000'] : episodeEncounterIds.length ? episodeEncounterIds : ['00000000-0000-0000-0000-000000000000'])
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
   ])
+
+  if (qcTarget && [proceduresRes,caseSummaryRes,ivNoteRes,ivNoteDateRes,ptRes,pmRes,mriRes,chiroRes,clinicRes,intakeVitalsRes].some(result => result.error)) return {data:null,error:'Unable to load complete sources for Quality Review fix'}
 
   if (caseRes.error || !caseRes.data) {
     return { data: null, error: 'Failed to fetch case details' }
@@ -311,7 +320,7 @@ export async function gatherDischargeNoteSourceData(
   // can attach per-procedure pain range to the summary array.
   const procRows = proceduresRes.data ?? []
   const procIds = procRows.map((p) => p.id)
-  const { data: allVitalsRows } = procIds.length
+  const { data: allVitalsRows, error: allVitalsError } = procIds.length
     ? await supabase
         .from('vital_signs')
         .select('procedure_id, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
@@ -327,8 +336,9 @@ export async function gatherDischargeNoteSourceData(
         spo2_percent: number | null
         pain_score_min: number | null
         pain_score_max: number | null
-      }> }
+      }>, error:null }
 
+  if (qcTarget && allVitalsError) return {data:null,error:'Unable to load procedure vitals for Quality Review fix'}
   const vitalsByProcedureId = new Map(
     (allVitalsRows ?? []).map((v) => [v.procedure_id, v]),
   )
@@ -1387,6 +1397,7 @@ export async function regenerateDischargeNoteSectionAction(
   section: DischargeNoteSection,
   findingFix?: { message: string; rationale: string | null },
   expectedUpdatedAt?: string | null,
+  qcTarget?: ReviewFixTarget,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1410,6 +1421,7 @@ export async function regenerateDischargeNoteSectionAction(
     .single()
 
   if (fetchError || !note) return { error: 'No draft note found' }
+  if (qcTarget && (note.id !== qcTarget.noteId || note.updated_at !== qcTarget.updatedAt || note.episode_id !== qcTarget.episodeId || note.encounter_id !== qcTarget.encounterId)) return { error: 'Quality Review target changed; reload the note' }
   if (expectedUpdatedAt && note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Reload before regenerating.' }
 
   // Gather fresh source data (preserve the note's existing visit_date).
@@ -1435,6 +1447,7 @@ export async function regenerateDischargeNoteSectionAction(
     visitDate,
     preservedVitals,
     episodeId,
+    qcTarget,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -1449,6 +1462,16 @@ export async function regenerateDischargeNoteSectionAction(
   const result = await regenerateSectionAI(inputData, section, currentContent, toneHint, otherSections, findingFix)
   if (result.error || !result.data) {
     return { error: result.error || 'Section regeneration failed' }
+  }
+
+  if (qcTarget) {
+    const saved = await refreshDischargeTrajectory(caseId,note.id,{
+      expectedUpdatedAt:note.updated_at,inputData,mergedSections:{[section]:result.data},
+      rawSectionsToMerge:{[section]:result.data},userId:user.id,qcTarget,
+    })
+    if (saved.error) return {error:saved.error}
+    revalidatePath(`/patients/${caseId}/discharge`)
+    return {data:{content:result.data}}
   }
 
   // Two-step write: persist the regenerated section text, then call the

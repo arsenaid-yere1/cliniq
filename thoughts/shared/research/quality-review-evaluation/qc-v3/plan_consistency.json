@@ -1,0 +1,76 @@
+{
+  "version": "qc-v3",
+  "evaluated_at": "2026-09-17T00:06:28.359Z",
+  "configured_model": "claude-opus-4-7",
+  "fixture": {
+    "rule": "plan_consistency",
+    "first": "The current agreed plan is supervised physical therapy only; no injection is planned or indicated.",
+    "conflict": "An injection is performed today solely because the current agreed plan requires it; there is no interval plan change.",
+    "control": "Supervised physical therapy continues under the unchanged plan; no injection is performed."
+  },
+  "conflict": {
+    "findings": [
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Assessment states an injection was performed today because the current agreed plan requires it, but the subjective explicitly documents that the current agreed plan is supervised physical therapy only with no injection planned or indicated.",
+        "rationale": "Internal contradiction: the note simultaneously claims the current plan is PT-only with no injection indicated and that today's injection was performed because the current plan requires it, with no documented interval plan change.",
+        "suggested_tone_hint": "Reconcile whether the current agreed plan includes an injection or is PT-only, and document any plan change if an injection was actually performed.",
+        "score": 9,
+        "rule_id": "plan_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "The current agreed plan is supervised physical therapy only; no injection is planned or indicated.",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "An injection is performed today solely because the current agreed plan requires it; there is no interval plan change.",
+            "missing": false
+          }
+        ]
+      },
+      {
+        "severity": "critical",
+        "step": "pain_follow_up",
+        "note_id": "11111111-1111-4111-8111-111111111111",
+        "procedure_id": null,
+        "encounter_id": "22222222-2222-4222-8222-222222222222",
+        "section_key": "assessment",
+        "message": "Assessment asserts no interval plan change while also describing performance of an injection that is not part of the documented PT-only plan, which itself represents a plan change or an unindicated procedure.",
+        "rationale": "Decision/plan inconsistency: performing an injection when the subjective states none is planned or indicated, while denying any interval plan change, cannot both be true.",
+        "suggested_tone_hint": "Clarify whether a plan change occurred authorizing the injection, or correct the assessment if no injection was actually performed.",
+        "score": 9,
+        "rule_id": "decision_consistency",
+        "entity_key": "",
+        "evidence": [
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "subjective",
+            "quote": "no injection is planned or indicated",
+            "missing": false
+          },
+          {
+            "source_id": "pain_follow_up_notes:11111111-1111-4111-8111-111111111111",
+            "field": "assessment",
+            "quote": "there is no interval plan change",
+            "missing": false
+          }
+        ]
+      }
+    ],
+    "coverage_limited": false
+  },
+  "control": {
+    "findings": [],
+    "coverage_limited": false
+  }
+}

@@ -1,3 +1,4 @@
+import { computeFindingHash } from '@/lib/qc/review-finding-hash'
 import { describe, expect, it } from 'vitest'
 import {
   validateExternalCauseChain,
@@ -5,7 +6,6 @@ import {
   SECTION_QC_EXTERNAL_CAUSE_CHAIN,
   SECTION_QC_SEVENTH_CHARACTER_INTEGRITY,
 } from '../diagnosis-validators'
-import { computeFindingHash } from '@/lib/validations/case-quality-review'
 import type { QualityReviewInputData } from '@/lib/claude/generate-quality-review'
 
 const IVN_ID = '11111111-1111-1111-1111-111111111111'

@@ -72,6 +72,8 @@ export interface ValidateNarrativeOptions {
   // Caller may pass a subset when a generator's schema has known overlap
   // (e.g. discharge subjective/assessment both cite the pain trajectory).
   duplicateScope?: string[]
+  // QC can independently exclude terse structured sections from length checks.
+  lengthScope?: string[]
 }
 
 export function validateNarrative(
@@ -136,7 +138,7 @@ export function validateNarrative(
   // Section length floor — catches sections where the model bailed out.
   // Boilerplate single-line sections (e.g. allergies "NKDA") are exempted by
   // scope: the duplicate-scope option doubles as the section-length filter.
-  const lengthScope = opts.duplicateScope ?? entries.map(([k]) => k)
+  const lengthScope = opts.lengthScope ?? opts.duplicateScope ?? entries.map(([k]) => k)
   for (const [section, text] of entries) {
     if (!lengthScope.includes(section)) continue
     if (text.trim().length < SECTION_MIN_CHARS) {
