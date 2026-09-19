@@ -15,6 +15,7 @@ import { REVIEW_VERSION, reviewSections, type ReviewDecision, type ReviewNote, t
 type Row = Record<string, ReviewValue | undefined>
 const MAX_INPUT_BYTES = 240_000
 const PAGE_SIZE = 500
+const procedureColumns = ['id','case_id','episode_id','updated_at','procedure_date','procedure_number','procedure_type','diagnoses','injection_site','sites','guidance_method'] as const satisfies readonly (keyof Database['public']['Tables']['procedures']['Row'])[]
 const identity = 'id,case_id,episode_id,encounter_id,status,updated_at'
 const selections = {
   initial_visit_notes: `${identity},visit_type,visit_date,provider_intake,rom_data,visit_treatment_decision,prp_target_recommendations,${reviewSections.initial_visit.join(',')}`,
@@ -116,7 +117,7 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
     pain_follow_up_notes: () => load('pain_follow_up_notes',selections.pain_follow_up_notes,true),
     discharge_notes: () => load('discharge_notes',selections.discharge_notes,true),
     clinical_encounters: () => load('clinical_encounters','id,case_id,episode_id,updated_at,encounter_type,encounter_date,status,modality,reason_for_visit,provider_intake,patient_reported_pain_min,patient_reported_pain_max,patient_reported_measurements,telehealth_consent_obtained',true),
-    procedures: () => load('procedures','id,case_id,episode_id,encounter_id,updated_at,procedure_date,procedure_number,procedure_type,diagnoses,injection_site,sites,guidance_method',true),
+    procedures: () => load('procedures',procedureColumns.join(','),true),
     vital_signs: () => load('vital_signs','id,case_id,encounter_id,procedure_id,updated_at,recorded_at,pain_score_min,pain_score_max,bp_systolic,bp_diastolic,heart_rate,respiratory_rate,temperature_f,spo2_percent'),
     case_summaries: () => load('case_summaries','id,case_id,updated_at,created_at,chief_complaint,imaging_findings,suggested_diagnoses,review_status',false,true),
     ...Object.fromEntries(Object.entries(extractionSelections).map(([table, columns]) => [table,() => load(table as keyof typeof extractionSelections,columns,false,true)])),
@@ -158,17 +159,21 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
       if (table === 'procedure_notes' && !proc) continue // Other episodes' procedure notes are not part of this snapshot.
       const step: ReviewNoteStep = table === 'initial_visit_notes' ? row.visit_type === 'initial_visit' ? 'initial_visit' : 'pain_evaluation' : table === 'procedure_notes' ? 'procedure' : table === 'discharge_notes' ? 'discharge' : 'pain_follow_up'
       if (table === 'initial_visit_notes' && !['initial_visit','pain_evaluation_visit'].includes(String(row.visit_type))) continue
-      const encounterId = string(proc?.encounter_id ?? row.encounter_id)
+      // Procedures belong to the episode directly. source_encounter_id is the
+      // ordering visit, not an encounter for the performed procedure.
+      const encounterId = proc ? null : string(row.encounter_id)
       const encounter = encounterId ? encounters.get(encounterId) : null
       const expectedEncounterType = {initial_visit:'initial_evaluation',pain_evaluation:'pain_evaluation',procedure:'procedure',discharge:'discharge',pain_follow_up:'pain_follow_up'}[step]
       if (encounter && encounter.encounter_type !== expectedEncounterType) throw new Error(`Wrong encounter type for ${table}:${row.id}`)
-      if (!encounter) limitations.push(`Missing encounter context: ${table}:${row.id}`)
+      if (!encounter && !proc) limitations.push(`Missing encounter context: ${table}:${row.id}`)
       const date = string(row.visit_date ?? proc?.procedure_date ?? encounter?.encounter_date)
       const sections = Object.fromEntries(reviewSections[step].map(key => [key,string(row[key])]))
       const context = fields(row,['provider_intake','rom_data','prp_target_recommendations','procedure_recommendations'])
       if (proc) Object.assign(context,fields(proc,['procedure_number','diagnoses','injection_site','sites','guidance_method']))
       if (encounter) context.encounter = fields(encounter,['encounter_date','status','modality','provider_intake','patient_reported_pain_min','patient_reported_pain_max','patient_reported_measurements','telehealth_consent_obtained','reason_for_visit'])
-      const matches = encounter ? collected.vital_signs.filter(v => v.encounter_id === encounterId && (proc ? v.procedure_id === proc.id : v.procedure_id == null)) : []
+      const matches = proc
+        ? collected.vital_signs.filter(v => v.procedure_id === proc.id)
+        : encounter ? collected.vital_signs.filter(v => v.encounter_id === encounterId && v.procedure_id == null) : []
       if (matches.length === 1) {
         context.vitals = fields(matches[0],['recorded_at','pain_score_min','pain_score_max','bp_systolic','bp_diastolic','heart_rate','respiratory_rate','temperature_f','spo2_percent'])
         if (!sources.some(s => s.id === `vital_signs:${matches[0].id}`)) addSource('vital_signs',matches[0],'episode',string(matches[0].recorded_at),context.vitals as Record<string,ReviewValue>)

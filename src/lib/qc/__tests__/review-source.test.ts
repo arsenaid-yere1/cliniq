@@ -28,7 +28,7 @@ describe('authoritative review snapshot', () => {
     tables.initial_visit_notes = [note('initial_visit'),note('pain_evaluation')]
     tables.pain_follow_up_notes = [note('pain_follow_up')]
     tables.discharge_notes = [note('discharge')]
-    tables.procedures = [{id:'proc',case_id:'case',episode_id:'episode',encounter_id:'enc-procedure',procedure_date:'2026-01-03'}]
+    tables.procedures = [{id:'proc',case_id:'case',episode_id:'episode',procedure_date:'2026-01-03'}]
     tables.procedure_notes = [{...note('procedure'),procedure_id:'proc'}]
     const snapshot = await collectReviewSnapshot(client,'case','episode')
     for (const item of snapshot.notes) expect(Object.keys(item.sections)).toEqual([...reviewSections[item.step]])
@@ -51,6 +51,25 @@ describe('authoritative review snapshot', () => {
     const next = await collectReviewSnapshot(client,'case','episode')
     expect(reviewSourceHash(next)).toBe(reviewSourceHash(baseline))
     expect(reviewVersionHash(next)).not.toBe(reviewVersionHash(baseline))
+  })
+  it.each([null, 'ordering-visit'])('loads procedures with source encounter %s and uses only their own vitals', async sourceEncounterId => {
+    const {tables,client,builders} = setup()
+    tables.procedures = [{id:'proc',case_id:'case',episode_id:'episode',source_encounter_id:sourceEncounterId,procedure_date:'2026-01-03'}]
+    tables.procedure_notes = [{id:'pn',case_id:'case',procedure_id:'proc',status:'draft'}]
+    tables.clinical_encounters = [{id:'ordering-visit',case_id:'case',episode_id:'episode',encounter_type:'pain_follow_up',encounter_date:'2026-01-02'}]
+    tables.vital_signs = [
+      {id:'ordering-vitals',case_id:'case',encounter_id:'ordering-visit',procedure_id:null,pain_score_max:9},
+      {id:'other-procedure',case_id:'case',encounter_id:null,procedure_id:'other',pain_score_max:8},
+      {id:'procedure-vitals',case_id:'case',encounter_id:null,procedure_id:'proc',pain_score_max:4},
+    ]
+    const snapshot = await collectReviewSnapshot(client,'case','episode')
+    expect(builders.procedures.select.mock.calls[0][0].split(',')).not.toContain('encounter_id')
+    expect(snapshot.notes[0]).toMatchObject({encounter_id:null,procedure_id:'proc',date:'2026-01-03',context:{vitals:{pain_score_max:4}}})
+    expect(snapshot.notes[0].context).not.toHaveProperty('encounter')
+    expect(snapshot.sources.filter(source => source.type === 'vital_signs').map(source => source.id)).toEqual(['vital_signs:procedure-vitals'])
+    expect(snapshot.coverage.limitations).not.toContain('Missing encounter context: procedure_notes:pn')
+    tables.vital_signs = [...tables.vital_signs as object[],{id:'duplicate',case_id:'case',procedure_id:'proc',pain_score_max:5}]
+    expect((await collectReviewSnapshot(client,'case','episode')).coverage.limitations).toContain('Ambiguous encounter vitals: procedure_notes:pn')
   })
   it('stabilizes database order but preserves meaningful nested array order', async () => {
     const {tables,client} = setup()
