@@ -27,6 +27,73 @@ async function tenderness(user: ReturnType<typeof userEvent.setup>, side = 'Left
 describe('ExamFindingsCard', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.mocked(saveProviderIntake).mockResolvedValue({ data: { success: true } }) })
   afterEach(cleanup)
+  it.each(['initial_visit', 'pain_evaluation_visit'] as const)('populates and saves paragraphs directly in %s without replacing existing text', async visitType => {
+    const user = userEvent.setup()
+    const data = intake('Neck')
+    data.exam_findings.regions[0].additional_findings = 'Existing movement observation'
+    data.chief_complaints.complaints = [{ ...defaultProviderIntake.chief_complaints.complaints[0], body_region: 'Cervical', severity_min: 4, severity_max: 6 }]
+    mount(data, false, visitType)
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(text('General Appearance').value).toContain('Alert and oriented')
+    expect(text('Neurological Notes').value).toBe('Upper-extremity motor and sensory examination grossly intact.')
+    expect(text().value).toContain('Moderate tenderness')
+    expect(text('Additional Findings').value).toBe('Existing movement observation')
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
+    expect(saveProviderIntake).not.toHaveBeenCalled()
+    fireEvent.change(text(), { target: { value: 'Clinician edit' } })
+    fireEvent.change(text('Neurological Notes'), { target: { value: 'Clinician neurological observation' } })
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(text().value).toBe('Clinician edit')
+    expect(text('Neurological Notes').value).toBe('Clinician neurological observation')
+    expect(screen.getAllByRole('region')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Save Exam Findings' }))
+    await waitFor(() => expect(saveProviderIntake).toHaveBeenCalledWith('case', visitType, expect.objectContaining({
+      exam_findings: expect.objectContaining({ neurological_notes: 'Clinician neurological observation', regions: [expect.objectContaining({ palpation_findings: 'Clinician edit', muscle_spasm: null })] }),
+    }), 'exam_findings'))
+  })
+  it('provides actionable feedback for missing complaints without dirtying fields', async () => {
+    const user = userEvent.setup(); mount(null)
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(screen.getByText('Add a body region in Chief Complaints first.')).toBeTruthy()
+    expect(screen.getByText('Not saved yet')).toBeTruthy()
+    expect(text('General Appearance').value).toBe('')
+  })
+  it('blocks population while locked', async () => {
+    const user = userEvent.setup(); mount(intake(), true)
+    const button = screen.getByRole('button', { name: 'Generate Example Findings' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    await user.click(button)
+    expect(text('General Appearance').value).toBe('')
+  })
+  it('adds missing regions only once and disables population during a pending save', async () => {
+    const user = userEvent.setup()
+    const data = intake()
+    data.chief_complaints.complaints = [{ ...defaultProviderIntake.chief_complaints.complaints[0], body_region: 'Right shoulder', severity_min: 2, severity_max: 5 }]
+    mount(data)
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(screen.getAllByRole('region')).toHaveLength(1)
+    expect(text().value).toBe('Moderate tenderness over the right shoulder.')
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(screen.getAllByRole('region')).toHaveLength(1)
+    let finish!: (value: { error: string }) => void
+    vi.mocked(saveProviderIntake).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await user.click(screen.getByRole('button', { name: 'Save Exam Findings' }))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Generate Example Findings' }) as HTMLButtonElement).disabled).toBe(true))
+    finish({ error: 'Save failed; retry.' })
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Save failed; retry.'))
+    expect(text().value).toBe('Moderate tenderness over the right shoulder.')
+  })
+  it.each([[8, 3], [2, 11]])('rejects invalid pain ranges (%s, %s) before applying any text', async (min, max) => {
+    const user = userEvent.setup()
+    const data = intake()
+    data.chief_complaints.complaints = [{ ...defaultProviderIntake.chief_complaints.complaints[0], body_region: 'Knee', severity_min: min, severity_max: max }]
+    mount(data)
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect(screen.getByText(/Check Chief Complaints pain levels/)).toBeTruthy()
+    expect(text('General Appearance').value).toBe('')
+    expect(screen.queryByRole('region')).toBeNull()
+    expect(screen.getByText('Saved')).toBeTruthy()
+  })
   it('starts empty and adds a named region with no invented findings', async () => {
     const user = userEvent.setup(); mount(null)
     expect(text('General Appearance').value).toBe('')

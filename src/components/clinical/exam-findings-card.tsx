@@ -2,14 +2,15 @@
 
 import { useId, useRef, useState } from 'react'
 import { useFieldArray, useForm, useWatch, type UseFormReturn } from 'react-hook-form'
-import { ChevronDown, ChevronRight, Loader2, Plus, Save, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@/components/ui/form'
-import { defaultProviderIntake, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
+import { chiefComplaintsSchema, defaultProviderIntake, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 import { examRegionOptions } from '@/lib/clinical/exam-finding-examples'
+import { populateExamFindings } from '@/lib/clinical/populate-exam-findings'
 import { useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
 import { ExamFindingField } from './exam-finding-field'
 
@@ -21,7 +22,7 @@ export function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }:
   const form = useForm<Values>({ defaultValues: { exam_findings: initialIntake?.exam_findings ?? defaultProviderIntake.exam_findings } })
   const regions = useFieldArray({ control: form.control, name: 'exam_findings.regions' })
   const { save, isSaving, isDirty, error, hasSaved } = useIntakeSectionSave(form, caseId, visitType, 'exam_findings', initialIntake)
-  const { busy } = useIntakeDrafts()
+  const { busy, readSection } = useIntakeDrafts()
   const disabled = isLocked || isSaving || busy
   const [newRowIndex, setNewRowIndex] = useState<number | null>(null)
   const [observedSaving, setObservedSaving] = useState(isSaving)
@@ -31,8 +32,41 @@ export function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }:
   }
   const [adding, setAdding] = useState(false)
   const [regionName, setRegionName] = useState('')
+  const [populateMessage, setPopulateMessage] = useState('')
   const addButton = useRef<HTMLButtonElement>(null)
   const container = useRef<HTMLDivElement>(null)
+  function populate() {
+    if (disabled) return
+    const complaints = chiefComplaintsSchema.safeParse(readSection('chief_complaints') ?? initialIntake?.chief_complaints ?? defaultProviderIntake.chief_complaints)
+    if (!complaints.success) {
+      setPopulateMessage('Check Chief Complaints pain levels: use whole numbers from 0–10.')
+      return
+    }
+    try {
+      const current = form.getValues('exam_findings')
+      const next = populateExamFindings(current, complaints.data.complaints)
+      if (JSON.stringify(current) === JSON.stringify(next)) {
+        setPopulateMessage('Matching areas already exist. Existing findings were kept; add pain levels for examples in empty fields.')
+        return
+      }
+      for (const key of ['general_appearance', 'neurological_notes'] as const) {
+        if (next[key] !== current[key]) form.setValue(`exam_findings.${key}`, next[key], { shouldDirty: true })
+      }
+      current.regions.forEach((row, index) => {
+        for (const key of ['palpation_findings', 'additional_findings'] as const) {
+          if (row[key] !== next.regions[index][key]) form.setValue(`exam_findings.regions.${index}.${key}`, next.regions[index][key], { shouldDirty: true })
+        }
+      })
+      const added = next.regions.slice(current.regions.length)
+      if (added.length) {
+        setNewRowIndex(current.regions.length)
+        regions.append(added, { focusName: `exam_findings.regions.${current.regions.length}.palpation_findings` })
+      }
+      setPopulateMessage('Example findings applied to the form. Existing text kept. Areas without a positive pain level remain blank.')
+    } catch (error) {
+      setPopulateMessage(error instanceof Error ? error.message : 'Could not populate example findings.')
+    }
+  }
   function add() {
     if (disabled || !regionName.trim()) return
     setNewRowIndex(regions.fields.length)
@@ -53,6 +87,11 @@ export function ExamFindingsCard({ caseId, visitType, initialIntake, isLocked }:
   return <Card>
     <CardHeader><CardDescription>Document observed findings. Choose a region for relevant examples, or write in your own words.</CardDescription></CardHeader>
     <CardContent ref={container}><Form {...form}><div className="space-y-5">
+      <div className="space-y-2">
+        <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={populate}><Sparkles className="size-4" />Generate Example Findings</Button>
+        <p className="text-xs text-muted-foreground">Fill empty fields from Chief Complaints and pain levels. Review examples against your examination before saving.</p>
+        {populateMessage && <p role="status" className="text-sm text-muted-foreground">{populateMessage}</p>}
+      </div>
       <FormField control={form.control} name="exam_findings.general_appearance" render={({ field }) => <ExamFindingField
         field={{ ...field, value: field.value ?? '', onChange: next => field.onChange(next || null) }} label="General Appearance" kind="general_appearance" disabled={disabled} isSaving={isSaving} />} />
       <div className="space-y-3 border-y py-4">

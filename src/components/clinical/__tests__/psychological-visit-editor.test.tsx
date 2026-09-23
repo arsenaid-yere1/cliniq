@@ -37,6 +37,32 @@ describe('psychological intake in the visit editor', () => {
   })
   afterEach(cleanup)
 
+  it('populates from the latest unsaved complaints independently for both visits and flushes before generation', async () => {
+    const user = userEvent.setup(); mount()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Body Region' }), { target: { value: 'Neck' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Severity Max (0-10)' }), { target: { value: '2' } })
+    // A second edit while already dirty must be read at click time.
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Severity Max (0-10)' }), { target: { value: '8' } })
+    await user.click(screen.getByRole('tab', { name: 'Exam Findings' }))
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect((screen.getByRole('textbox', { name: 'Palpation Findings' }) as HTMLTextAreaElement).value).toContain('Marked tenderness over the cervical')
+    expect(saveProviderIntake).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('tab', { name: 'Pain Evaluation Visit' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Body Region' }), { target: { value: 'Left knee' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Severity Min (0-10)' }), { target: { value: '3' } })
+    await user.click(screen.getByRole('tab', { name: 'Exam Findings' }))
+    await user.click(screen.getByRole('button', { name: 'Generate Example Findings' }))
+    expect((screen.getByRole('textbox', { name: 'Palpation Findings' }) as HTMLTextAreaElement).value).toBe('Mild tenderness over the left knee.')
+    await user.click(screen.getByRole('tab', { name: 'Initial Visit' }))
+    expect((screen.getByRole('textbox', { name: 'Palpation Findings' }) as HTMLTextAreaElement).value).toContain('Marked tenderness over the cervical')
+    await user.click(screen.getByRole('button', { name: /Save intake and generate Initial Visit Note/ }))
+    await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(saveProviderIntake).mock.calls.map(call => [call[1], call[3]])).toEqual([
+      ['initial_visit', 'chief_complaints'], ['initial_visit', 'exam_findings'],
+    ])
+    expect(Math.max(...vi.mocked(saveProviderIntake).mock.invocationCallOrder)).toBeLessThan(vi.mocked(generateInitialVisitNote).mock.invocationCallOrder[0])
+  })
+
   it('preserves psychological edits across intake and visit-type tabs without mixing encounters', async () => {
     const user = userEvent.setup()
     mount()

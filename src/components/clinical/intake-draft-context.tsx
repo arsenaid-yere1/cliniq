@@ -7,12 +7,13 @@ import { saveProviderIntake } from '@/actions/initial-visit-notes'
 import { defaultProviderIntake, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 
-type Draft = { dirty: boolean; saving: boolean; save: () => Promise<boolean> }
+type Draft = { dirty: boolean; saving: boolean; save: () => Promise<boolean>; read?: () => unknown }
 type DraftContext = {
   dirty: boolean
   busy: boolean
   flush: (onFailure?: (section: string) => void) => Promise<boolean>
   register: (key: string, value: Draft) => () => void
+  readSection: (key: keyof ProviderIntakeValues) => unknown
 }
 const IntakeDraftContext = createContext<DraftContext | null>(null)
 
@@ -25,6 +26,7 @@ export function IntakeDraftProvider({ children }: { children: ReactNode }) {
     setRevision(v => v + 1)
     return () => { drafts.current.delete(key); setRevision(v => v + 1) }
   }, [])
+  const readSection = useCallback((key: keyof ProviderIntakeValues) => drafts.current.get(key)?.read?.(), [])
   const flush = useCallback(async (onFailure?: (section: string) => void) => {
     setFlushing(true)
     try {
@@ -41,11 +43,11 @@ export function IntakeDraftProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => {
     void revision
     return {
-      register, flush,
+      register, flush, readSection,
       dirty: [...drafts.current.values()].some(d => d.dirty),
       busy: flushing || [...drafts.current.values()].some(d => d.saving),
     }
-  }, [revision, flushing, register, flush])
+  }, [revision, flushing, register, flush, readSection])
 
   useEffect(() => {
     if (!value.dirty && !value.busy) return
@@ -112,6 +114,7 @@ export function useIntakeSectionSave<T extends FieldValues>(
     inFlight.current = operation()
     return inFlight.current
   }, [form, caseId, visitType, section, initialIntake])
-  useEffect(() => register(section, { dirty: isDirty, saving: isSaving, save }), [register, section, isDirty, isSaving, save])
+  const read = useCallback(() => form.getValues()[section], [form, section])
+  useEffect(() => register(section, { dirty: isDirty, saving: isSaving, save, read }), [register, section, isDirty, isSaving, save, read])
   return { isSaving, error, save, isDirty, hasSaved }
 }
