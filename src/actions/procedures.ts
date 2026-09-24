@@ -179,6 +179,7 @@ export async function createPrpProcedure(
 // Fetch approved PM diagnoses + finalized Initial Visit Note diagnoses for this case (ICD-10 combobox source)
 export async function getCaseDiagnoses(caseId: string) {
   const supabase = await createClient()
+  const episode = await getActiveOrLatestEpisode(caseId, supabase)
 
   // Fetch PM extraction diagnoses and Initial Visit Note diagnoses in parallel.
   // Accept both 'approved' and 'edited' PM extractions. Prefer provider_overrides.diagnoses
@@ -198,6 +199,7 @@ export async function getCaseDiagnoses(caseId: string) {
       .from('initial_visit_notes')
       .select('diagnoses, visit_type, status')
       .eq('case_id', caseId)
+      .eq('episode_id', episode?.id ?? '00000000-0000-0000-0000-000000000000')
       .is('deleted_at', null)
       .in('status', ['draft', 'finalized'])
       .not('diagnoses', 'is', null),
@@ -483,10 +485,21 @@ export async function updateBotoxProcedure(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  const { data: existingProc } = await supabase
+    .from('procedures')
+    .select('procedure_number, episode_id')
+    .eq('id', procedureId)
+    .eq('case_id', caseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!existingProc) return { error: 'Procedure not found' }
+
   const { data: ivnRows } = await supabase
     .from('initial_visit_notes')
     .select('visit_date')
     .eq('case_id', caseId)
+    .eq('episode_id', existingProc.episode_id)
     .is('deleted_at', null)
     .not('visit_date', 'is', null)
 
@@ -500,15 +513,6 @@ export async function updateBotoxProcedure(
       error: `Procedure date cannot precede the Initial Visit date (${floorDate})`,
     }
   }
-
-  const { data: existingProc } = await supabase
-    .from('procedures')
-    .select('procedure_number')
-    .eq('id', procedureId)
-    .is('deleted_at', null)
-    .single()
-
-  if (!existingProc) return { error: 'Procedure not found' }
 
   const rewrittenDiagnoses = rewriteDiagnosesForProcedure(values.diagnoses, {
     procedureNumber: existingProc.procedure_number,

@@ -8,11 +8,14 @@ export async function saveVisitDecision(
   caseId: string,
   selector: { column: 'visit_type' | 'episode_id' | 'encounter_id'; value: string },
   values: Record<string, unknown> & { treatment_decision?: VisitTreatmentDecision; expected_updated_at?: string | null },
+  episodeId?: string,
 ) {
   const { treatment_decision, expected_updated_at, ...patch } = values
   if (!treatment_decision || !expected_updated_at) return { error: 'Reload the note before confirming the treatment decision.' }
-  const { data: note, error: loadError } = await client.from(kind).select('id')
-    .eq('case_id', caseId).eq(selector.column, selector.value).is('deleted_at', null).eq('status', 'draft').single()
+  const query = client.from(kind).select('id')
+    .eq('case_id', caseId).eq(selector.column, selector.value).is('deleted_at', null).eq('status', 'draft')
+  if (episodeId) query.eq('episode_id', episodeId)
+  const { data: note, error: loadError } = await query.single()
   if (loadError || !note) return { error: 'No draft visit note found.' }
   const { data, error } = await client.rpc('save_visit_note_decision', {
     p_kind: kind, p_note_id: note.id, p_case_id: caseId,

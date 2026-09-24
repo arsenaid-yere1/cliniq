@@ -49,7 +49,7 @@ describe('ExamFindingsCard', () => {
     await user.click(screen.getByRole('button', { name: 'Save Exam Findings' }))
     await waitFor(() => expect(saveProviderIntake).toHaveBeenCalledWith('case', visitType, expect.objectContaining({
       exam_findings: expect.objectContaining({ neurological_notes: 'Clinician neurological observation', regions: [expect.objectContaining({ palpation_findings: 'Clinician edit', muscle_spasm: null })] }),
-    }), 'exam_findings'))
+    }), 'exam_findings', undefined))
   })
   it('provides actionable feedback for missing complaints without dirtying fields', async () => {
     const user = userEvent.setup(); mount(null)
@@ -169,7 +169,7 @@ describe('ExamFindingsCard', () => {
     await waitFor(() => expect(screen.getByText('Saved')).toBeTruthy())
     expect(saveProviderIntake).toHaveBeenCalledWith('case', visitType, expect.objectContaining({ exam_findings: {
       general_appearance: null, neurological_notes: null, regions: [{ region: 'Knee', palpation_findings: '', muscle_spasm: false, additional_findings: null }],
-    } }), 'exam_findings')
+    } }), 'exam_findings', undefined)
   })
   it('retains edits on failed save, clears transient work, and supports retry', async () => {
     const user = userEvent.setup(); mount()

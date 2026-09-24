@@ -1,5 +1,7 @@
 'use server'
 
+import { resolveEvaluationEpisode } from '@/lib/clinical/evaluation-scope'
+
 import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
 
 import { createInitialVisitFailureCapture } from '@/lib/clinical/initial-visit-generation-diagnostics'
@@ -46,7 +48,7 @@ import {
 } from '@/lib/clinical/prp-target-evidence'
 import { renderPrpTreatmentPlan, stripPrpTargetBlock } from '@/lib/clinical/render-prp-treatment-plan'
 import {
-  ensureLegacyEpisodeEncounter,
+  ensureEpisodeEncounter,
   EpisodeContextError,
 } from '@/lib/clinical/episode-context'
 
@@ -78,6 +80,9 @@ function mapVisitDateOrderError(err: PgError): string | null {
   if (!err) return null
   if (err.code !== '23514') return null
   const msg = err.message ?? ''
+  if (msg.includes('Return evaluation date')) {
+    return 'The return evaluation date must be on or after the previous discharge and no later than subsequent visits.'
+  }
   if (msg.includes('Pain Evaluation Visit date')) {
     return 'The Pain Evaluation Visit date cannot be earlier than the Initial Visit date on this case.'
   }
@@ -104,10 +109,14 @@ async function gatherSourceData(
   visitType: NoteVisitType,
   visitDateOverride?: string | null,
   qcTarget?: ReviewFixTarget,
+  episodeId?: string,
+  episodeNumber = 1,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
   // provider-intake + vitals — no MRI/CT/PM data leaks into the prompt.
+  const sourceEpisodeId = qcTarget?.episodeId ?? episodeId
+  if (!sourceEpisodeId) return { data: null, error: 'Evaluation episode is required' }
   const loadImagingContext = visitType === 'pain_evaluation_visit'
 
   const priorVisitBuilder = loadImagingContext
@@ -118,6 +127,7 @@ async function gatherSourceData(
         )
         .eq('case_id', caseId)
         .eq('visit_type', 'initial_visit')
+        .eq('episode_id', sourceEpisodeId)
         .eq('status', 'finalized')
         .is('deleted_at', null)
 
@@ -151,18 +161,22 @@ async function gatherSourceData(
 
   const vitalsQuery = supabase
       .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+      .eq('clinical_encounters.episode_id', sourceEpisodeId)
       .eq('case_id', caseId)
       .is('procedure_id', null)
       .is('deleted_at', null)
       .order('recorded_at', { ascending: false })
       .limit(1)
 
+  if (episodeNumber > 1) vitalsQuery.eq('clinical_encounters.encounter_type', 'pain_evaluation')
+
   const intakeQuery = supabase
       .from('initial_visit_notes')
       .select('provider_intake, visit_date, finalized_at')
       .eq('case_id', caseId)
       .eq('visit_type', visitType)
+      .eq('episode_id', sourceEpisodeId)
       .is('deleted_at', null)
 
   if (qcTarget) {
@@ -219,8 +233,8 @@ async function gatherSourceData(
     pmQuery,
   ])
 
-  if (qcTarget && [summaryRes,clinicRes,vitalsRes,intakeRes,priorVisitRes,mriEvidenceRes,ctEvidenceRes,xRayEvidenceRes,pmRes].some(result => result.error)) {
-    return {data:null,error:'Unable to load complete sources for the Quality Review fix'}
+  if ([summaryRes,clinicRes,vitalsRes,intakeRes,priorVisitRes,mriEvidenceRes,ctEvidenceRes,xRayEvidenceRes,pmRes].some(result => result.error)) {
+    return {data:null,error:'Unable to load complete sources for the evaluation'}
   }
 
   if (caseRes.error || !caseRes.data) {
@@ -304,7 +318,8 @@ async function gatherSourceData(
   if (priorVisitRow && priorVisitFinalizedAt) {
     const { data: vitalsRow } = await supabase
       .from('vital_signs')
-      .select('recorded_at, pain_score_min, pain_score_max')
+      .select('recorded_at, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+      .eq('clinical_encounters.episode_id', sourceEpisodeId)
       .eq('case_id', caseId)
       .is('procedure_id', null)
       .is('deleted_at', null)
@@ -405,10 +420,15 @@ export async function generateInitialVisitNote(
   visitType: NoteVisitType,
   toneHint?: string | null,
   visitDate?: string | null,
+  episodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -416,15 +436,17 @@ export async function generateInitialVisitNote(
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
   // Find or create the note row for this (case, visit_type).
-  // The unique partial index on (case_id, visit_type) guarantees at most one
+  // The unique partial index on (episode_id, visit_type) guarantees at most one
   // live row per pair, so the other visit type's row is never touched.
-  const { data: existingNote } = await supabase
+  const { data: existingNote, error: existingError } = await supabase
     .from('initial_visit_notes')
     .select('id, provider_intake, visit_date, tone_hint')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
+
+  if (existingError) return { error: 'Unable to load the current evaluation note' }
 
   const today = new Date().toISOString().slice(0, 10)
   const normalizedVisitDate = visitDate?.trim() ? visitDate.trim() : null
@@ -436,6 +458,9 @@ export async function generateInitialVisitNote(
     caseId,
     visitType,
     effectiveVisitDate,
+    undefined,
+    selectedEpisodeId,
+    scope.episode.episode_number,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -500,12 +525,13 @@ export async function generateInitialVisitNote(
     recordId = existingNote.id
   } else {
     // No existing row for this visit type — create one. The unique partial
-    // index on (case_id, visit_type) protects against concurrent inserts:
+    // index on (episode_id, visit_type) protects against concurrent inserts:
     // a second racer gets a unique-violation error (code 23505).
-    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    let ownership: Awaited<ReturnType<typeof ensureEpisodeEncounter>>
     try {
-      ownership = await ensureLegacyEpisodeEncounter(
+      ownership = await ensureEpisodeEncounter(
         caseId,
+        selectedEpisodeId,
         visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
         { encounterDate: effectiveVisitDate, providerId: null, userId: user.id },
         supabase,
@@ -685,16 +711,20 @@ export async function generateInitialVisitNote(
 
 // --- Get a single note by (case, visit_type) ---
 
-export async function getInitialVisitNote(caseId: string, visitType: NoteVisitType) {
+export async function getInitialVisitNote(caseId: string, visitType: NoteVisitType, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, false)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const { data, error } = await supabase
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -705,15 +735,19 @@ export async function getInitialVisitNote(caseId: string, visitType: NoteVisitTy
 
 // --- Get ALL live notes for a case (both visit types) ---
 
-export async function getInitialVisitNotes(caseId: string) {
+export async function getInitialVisitNotes(caseId: string, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, undefined, false)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
+
   const { data, error } = await supabase
     .from('initial_visit_notes')
     .select('*')
-    .eq('case_id', caseId)
+    .eq('case_id', caseId).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .order('visit_type', { ascending: true })
 
@@ -728,10 +762,15 @@ export async function saveInitialVisitNote(
   caseId: string,
   visitType: NoteVisitType,
   values: InitialVisitNoteEditValues,
+  episodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -744,9 +783,9 @@ export async function saveInitialVisitNote(
   if (visitType === 'pain_evaluation_visit') {
     const { data: note } = await supabase.from('initial_visit_notes')
       .select('prp_target_recommendations, prp_target_evidence_hash')
-      .eq('case_id', caseId).eq('visit_type', visitType).is('deleted_at', null).eq('status', 'draft').single()
+      .eq('case_id', caseId).eq('visit_type', visitType).eq('episode_id', selectedEpisodeId).is('deleted_at', null).eq('status', 'draft').single()
     if (!note) return { error: 'No draft note found' }
-    const { data: currentInput, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, validated.data.visit_date)
+    const { data: currentInput, error: gatherError } = await gatherSourceData(supabase, caseId, visitType, validated.data.visit_date, undefined, selectedEpisodeId, scope.episode.episode_number)
     if (gatherError || !currentInput?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
     const currentHash = computePrpTargetEvidenceHash(currentInput)
     if (note.prp_target_evidence_hash !== currentHash) {
@@ -774,7 +813,7 @@ export async function saveInitialVisitNote(
     const result = await saveVisitDecision(supabase, 'initial_visit_notes', caseId, { column: 'visit_type', value: visitType }, {
       ...valuesToSave,
       ...(recommendationsToSave === undefined ? {} : { prp_target_recommendations: recommendationsToSave }),
-    })
+    }, selectedEpisodeId)
     if (result.error) return { error: result.error }
     savedNote = result.savedNote
   } else {
@@ -788,7 +827,7 @@ export async function saveInitialVisitNote(
         updated_by_user_id: user.id,
       })
       .eq('case_id', caseId)
-      .eq('visit_type', visitType)
+      .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
       .is('deleted_at', null)
       .eq('status', 'draft')
 
@@ -801,10 +840,14 @@ export async function saveInitialVisitNote(
 
 // --- Finalize note ---
 
-export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType, expectedSavedVersion?: string) {
+export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVisitType, expectedSavedVersion?: string, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -814,7 +857,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .single()
@@ -828,7 +871,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
 
   if (visitType === 'pain_evaluation_visit') {
     const { data: currentInput, error: gatherError } = await gatherSourceData(
-      supabase, caseId, visitType, note.visit_date as string | null,
+      supabase, caseId, visitType, note.visit_date as string | null, undefined, selectedEpisodeId, scope.episode.episode_number,
     )
     if (gatherError || !currentInput?.prpTargetEvidence) return { error: gatherError ?? 'Unable to validate PRP targets' }
     const currentHash = computePrpTargetEvidenceHash(currentInput)
@@ -921,10 +964,14 @@ export async function unfinalizeInitialVisitNote(_caseId: string, _visitType: No
 
 // --- Reset note (discard all generated content) — scoped to one visit type ---
 
-export async function resetInitialVisitNote(caseId: string, visitType: NoteVisitType) {
+export async function resetInitialVisitNote(caseId: string, visitType: NoteVisitType, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -934,7 +981,7 @@ export async function resetInitialVisitNote(caseId: string, visitType: NoteVisit
     .from('initial_visit_notes')
     .select('id, status')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -955,10 +1002,15 @@ export async function regenerateNoteSection(
   findingFix?: { message: string; rationale: string | null },
   expectedUpdatedAt?: string | null,
   qcTarget?: ReviewFixTarget,
+  episodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, qcTarget?.episodeId ?? episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -967,7 +1019,7 @@ export async function regenerateNoteSection(
     .from('initial_visit_notes')
     .select('*')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .single()
@@ -983,6 +1035,8 @@ export async function regenerateNoteSection(
     visitType,
     noteVisitDate,
     qcTarget,
+    selectedEpisodeId,
+    scope.episode.episode_number,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -1115,20 +1169,26 @@ export async function checkNotePrerequisites(
 
 // --- Get initial visit vitals ---
 
-export async function getInitialVisitVitals(caseId: string) {
+export async function getInitialVisitVitals(caseId: string, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data, error } = await supabase
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, undefined, false)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
+
+  const query = supabase
     .from('vital_signs')
-    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
+    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+    .eq('clinical_encounters.episode_id', selectedEpisodeId)
     .eq('case_id', caseId)
     .is('procedure_id', null)
     .is('deleted_at', null)
     .order('recorded_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
+  if (scope.episode.episode_number > 1) query.eq('clinical_encounters.encounter_type', 'pain_evaluation')
+  const { data, error } = await query.maybeSingle()
 
   if (error) return { error: 'Failed to fetch vitals' }
 
@@ -1137,20 +1197,21 @@ export async function getInitialVisitVitals(caseId: string) {
 
 // --- Save initial visit vitals ---
 //
-// Vitals live in a separate vital_signs table keyed by case_id. They are
-// shared across both visit types for a given case — the plan notes this
-// is acceptable because vitals are a snapshot in time, not a per-visit
-// editable artifact. A dedicated per-visit vitals column can be added
-// later if needed.
+// Vitals updates target the selected evaluation encounter, preserving prior episodes.
 
 export async function saveInitialVisitVitals(
   caseId: string,
   visitType: NoteVisitType,
   vitals: InitialVisitVitalsValues,
+  episodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -1160,10 +1221,11 @@ export async function saveInitialVisitVitals(
 
   const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
     .eq('id', caseId).is('deleted_at', null).single()
-  let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+  let ownership: Awaited<ReturnType<typeof ensureEpisodeEncounter>>
   try {
-    ownership = await ensureLegacyEpisodeEncounter(
+    ownership = await ensureEpisodeEncounter(
       caseId,
+      selectedEpisodeId,
       visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
       {
         encounterDate: new Date().toISOString().slice(0, 10),
@@ -1176,15 +1238,19 @@ export async function saveInitialVisitVitals(
     return { error: mapEpisodeOwnershipError(error) }
   }
 
-  const { data: existing } = await supabase
+  const vitalsQuery = supabase
     .from('vital_signs')
-    .select('id')
+    .select('id, clinical_encounters!inner(episode_id)')
     .eq('case_id', caseId)
+    .eq('clinical_encounters.episode_id', selectedEpisodeId)
     .is('procedure_id', null)
     .is('deleted_at', null)
     .order('recorded_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
+  if (scope.episode.episode_number > 1) vitalsQuery.eq('encounter_id', ownership.encounterId)
+  const { data: existing, error: vitalsReadError } = await vitalsQuery.maybeSingle()
+
+  if (vitalsReadError) return { error: 'Unable to load the current visit vitals' }
 
   if (existing) {
     const { error } = await supabase
@@ -1218,16 +1284,20 @@ export async function saveInitialVisitVitals(
 
 // --- Get provider intake, scoped per visit type ---
 
-export async function getProviderIntake(caseId: string, visitType: NoteVisitType) {
+export async function getProviderIntake(caseId: string, visitType: NoteVisitType, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, false)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const { data, error } = await supabase
     .from('initial_visit_notes')
     .select('provider_intake')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1243,10 +1313,15 @@ export async function saveProviderIntake(
   visitType: NoteVisitType,
   intake: ProviderIntakeValues,
   section?: keyof ProviderIntakeValues,
+  episodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -1258,7 +1333,7 @@ export async function saveProviderIntake(
     .from('initial_visit_notes')
     .select('id, status, updated_at, provider_intake, introduction, chief_complaint')
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
@@ -1298,10 +1373,11 @@ export async function saveProviderIntake(
   } else {
     const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
       .eq('id', caseId).is('deleted_at', null).single()
-    let ownership: Awaited<ReturnType<typeof ensureLegacyEpisodeEncounter>>
+    let ownership: Awaited<ReturnType<typeof ensureEpisodeEncounter>>
     try {
-      ownership = await ensureLegacyEpisodeEncounter(
+      ownership = await ensureEpisodeEncounter(
         caseId,
+        selectedEpisodeId,
         visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
         { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
         supabase,
@@ -1330,14 +1406,18 @@ export async function saveProviderIntake(
   return { data: { success: true } }
 }
 
-export async function acknowledgePsychologicalReview(caseId: string, expectedUpdatedAt: string) {
+export async function acknowledgePsychologicalReview(caseId: string, expectedUpdatedAt: string, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, 'initial_visit', true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
   const closed = await assertCaseNotClosed(supabase, caseId)
   if (closed.error) return { error: closed.error }
   const { data: note, error } = await supabase.from('initial_visit_notes')
-    .select('id, provider_intake, updated_at').eq('case_id', caseId).eq('visit_type', 'initial_visit')
+    .select('id, provider_intake, updated_at').eq('case_id', caseId).eq('visit_type', 'initial_visit').eq('episode_id', selectedEpisodeId)
     .eq('status', 'draft').is('deleted_at', null).single()
   if (error || !note || note.updated_at !== expectedUpdatedAt) return { error: 'The note changed. Review the latest note before acknowledging.' }
   const intake = providerIntakeSchema.safeParse(note.provider_intake)
@@ -1359,6 +1439,7 @@ export async function saveInitialVisitNoteToneHint(
   visitType: NoteVisitType,
   toneHint: string | null,
   version: { noteId: string; expectedUpdatedAt: string },
+  episodeId?: string,
 ): Promise<{ data?: { updated_at: string; tone_hint: string | null }; error?: string }> {
   if (!version?.noteId || !version.expectedUpdatedAt) {
     return { error: 'Reload the note before saving tone guidance.' }
@@ -1366,6 +1447,10 @@ export async function saveInitialVisitNoteToneHint(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const selectedEpisodeId = scope.episode.id
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
@@ -1377,7 +1462,7 @@ export async function saveInitialVisitNoteToneHint(
     .update({ tone_hint: normalized, updated_by_user_id: user.id })
     .eq('id', version.noteId)
     .eq('case_id', caseId)
-    .eq('visit_type', visitType)
+    .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .eq('status', 'draft')
     .eq('updated_at', version.expectedUpdatedAt)

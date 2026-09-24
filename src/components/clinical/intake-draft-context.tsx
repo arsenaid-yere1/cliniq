@@ -9,6 +9,7 @@ import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 
 type Draft = { dirty: boolean; saving: boolean; save: () => Promise<boolean>; read?: () => unknown }
 type DraftContext = {
+  episodeId?: string
   dirty: boolean
   busy: boolean
   flush: (onFailure?: (section: string) => void) => Promise<boolean>
@@ -17,7 +18,7 @@ type DraftContext = {
 }
 const IntakeDraftContext = createContext<DraftContext | null>(null)
 
-export function IntakeDraftProvider({ children }: { children: ReactNode }) {
+export function IntakeDraftProvider({ children, episodeId }: { children: ReactNode; episodeId?: string }) {
   const drafts = useRef(new Map<string, Draft>())
   const [revision, setRevision] = useState(0)
   const [flushing, setFlushing] = useState(false)
@@ -43,11 +44,11 @@ export function IntakeDraftProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => {
     void revision
     return {
-      register, flush, readSection,
+      register, flush, readSection, episodeId,
       dirty: [...drafts.current.values()].some(d => d.dirty),
       busy: flushing || [...drafts.current.values()].some(d => d.saving),
     }
-  }, [revision, flushing, register, flush, readSection])
+  }, [revision, flushing, register, flush, readSection, episodeId])
 
   useEffect(() => {
     if (!value.dirty && !value.busy) return
@@ -83,7 +84,7 @@ export function useIntakeSectionSave<T extends FieldValues>(
   form: UseFormReturn<T>, caseId: string, visitType: NoteVisitType,
   section: keyof ProviderIntakeValues, initialIntake: ProviderIntakeValues | null,
 ) {
-  const { register } = useIntakeDrafts()
+  const { register, episodeId } = useIntakeDrafts()
   const { isDirty } = form.formState
   const [isSaving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -98,7 +99,7 @@ export function useIntakeSectionSave<T extends FieldValues>(
         if (!await form.trigger()) return false
         const values = form.getValues()
         const full = { ...defaultProviderIntake, ...initialIntake, [section]: values[section] }
-        const result = await saveProviderIntake(caseId, visitType, full, section)
+        const result = await saveProviderIntake(caseId, visitType, full, section, episodeId)
         if (result.error) throw new Error(result.error)
         form.reset(values)
         setHasSaved(true)
@@ -113,7 +114,7 @@ export function useIntakeSectionSave<T extends FieldValues>(
     }
     inFlight.current = operation()
     return inFlight.current
-  }, [form, caseId, visitType, section, initialIntake])
+  }, [form, caseId, visitType, section, initialIntake, episodeId])
   const read = useCallback(() => form.getValues()[section], [form, section])
   useEffect(() => register(section, { dirty: isDirty, saving: isSaving, save, read }), [register, section, isDirty, isSaving, save, read])
   return { isSaving, error, save, isDirty, hasSaved }

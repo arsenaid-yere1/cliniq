@@ -160,6 +160,10 @@ interface VitalsData {
 }
 
 interface InitialVisitEditorOuterProps {
+  episodeId?: string
+  episodeNumber?: number
+  episodeWritable?: boolean
+  painEvaluationOnly?: boolean
   caseId: string
   notesByVisitType: Record<NoteVisitType, unknown>
   intakesByVisitType: Record<NoteVisitType, ProviderIntakeValues | null>
@@ -185,6 +189,7 @@ interface InitialVisitEditorOuterProps {
 }
 
 interface InitialVisitEditorInnerProps {
+  episodeWritable?: boolean
   caseId: string
   visitType: NoteVisitType
   note: NoteRow | null
@@ -207,6 +212,10 @@ interface InitialVisitEditorInnerProps {
 // either side.
 export function InitialVisitEditor({
   caseId,
+  episodeId,
+  episodeNumber,
+  episodeWritable = true,
+  painEvaluationOnly = false,
   notesByVisitType,
   intakesByVisitType,
   documentFilePathByVisitType,
@@ -225,12 +234,13 @@ export function InitialVisitEditor({
   const [activeVisitType, setActiveVisitType] = useState<NoteVisitType>(defaultVisitType)
 
   const visitTypes: Array<{ value: NoteVisitType; label: string }> = [
-    { value: 'initial_visit', label: 'Initial Visit' },
+    ...(!painEvaluationOnly ? [{ value: 'initial_visit' as const, label: 'Initial Visit' }] : []),
     { value: 'pain_evaluation_visit', label: 'Pain Evaluation Visit' },
   ]
 
   return (
     <div className="space-y-6">
+      {episodeNumber && <p className="text-sm text-muted-foreground">Episode {episodeNumber}{!episodeWritable && ' · Read only'}</p>}
       <Tabs value={activeVisitType} onValueChange={(v) => setActiveVisitType(v as NoteVisitType)}>
         <TabsList>
           {visitTypes.map((vt) => (
@@ -245,7 +255,7 @@ export function InitialVisitEditor({
           const showPainEvalBadge = vt.value === 'pain_evaluation_visit' && painEvalMissingPriorVitals
           return (
             <TabsContent key={vt.value} value={vt.value} hidden={activeVisitType !== vt.value} forceMount className="mt-4 data-[state=inactive]:hidden">
-              <IntakeDraftProvider>
+              <IntakeDraftProvider episodeId={episodeId}>
               {showPainEvalBadge && (
                 <div className="mb-4 flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -259,6 +269,7 @@ export function InitialVisitEditor({
               )}
               <InitialVisitEditorInner
                 caseId={caseId}
+                episodeWritable={episodeWritable}
                 visitType={vt.value}
                 note={note}
                 canGenerate={canGenerate}
@@ -315,6 +326,7 @@ const sectionRows: Record<InitialVisitSection, number> = {
 
 function InitialVisitEditorInner({
   caseId,
+  episodeWritable = true,
   visitType,
   note,
   canGenerate,
@@ -332,6 +344,7 @@ function InitialVisitEditorInner({
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<InitialVisitSection | null>(null)
   const intakeDrafts = useIntakeDrafts()
+  const { episodeId } = intakeDrafts
   const [intakeTab, setIntakeTab] = useState('chief-complaints')
   const [toneHint, setToneHint] = useState('')
   const today = new Date().toISOString().slice(0, 10)
@@ -341,7 +354,7 @@ function InitialVisitEditorInner({
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
-  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+  const isLocked = !episodeWritable || LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
@@ -353,7 +366,7 @@ function InitialVisitEditorInner({
       setOptimisticStartedAt(new Date().toISOString())
       setOptimisticGenerating(true)
       try {
-        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg)
+        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg, episodeId)
         if (result.error) toast.error(result.error)
         else toast.success('Note generated successfully')
       } finally {
@@ -557,7 +570,7 @@ function InitialVisitEditorInner({
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Retry
           </Button>
-          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isLocked || isPending} />
         </div>
       </div>
     )
@@ -869,7 +882,7 @@ function VitalSignsCard({
   initialVitals: VitalsData | null
   isLocked: boolean
 }) {
-  const { register } = useIntakeDrafts()
+  const { register, episodeId } = useIntakeDrafts()
   const [isSaving, setSaving] = useState(false)
   const inFlight = useRef<Promise<boolean> | null>(null)
   const vitalsForm = useForm<InitialVisitVitalsValues>({
@@ -893,7 +906,7 @@ function VitalSignsCard({
       try {
         if (!await vitalsForm.trigger()) return false
         const values = vitalsForm.getValues()
-        const result = await saveInitialVisitVitals(caseId, visitType, values)
+        const result = await saveInitialVisitVitals(caseId, visitType, values, episodeId)
         if (result.error) { toast.error(result.error); return false }
         vitalsForm.reset(values)
         toast.success('Vitals saved')
@@ -905,7 +918,7 @@ function VitalSignsCard({
     }
     inFlight.current = save()
     return inFlight.current
-  }, [vitalsForm, caseId, visitType])
+  }, [vitalsForm, caseId, visitType, episodeId])
   const { isDirty } = vitalsForm.formState
   useEffect(() => register('vitals', { dirty: isDirty, saving: isSaving, save: handleSaveVitals }), [register, isDirty, isSaving, handleSaveVitals])
 
@@ -1123,6 +1136,7 @@ function DraftEditor({
   isLocked: boolean
 }) {
   const intakeDrafts = useIntakeDrafts()
+  const { episodeId } = intakeDrafts
   const [draftTab, setDraftTab] = useState('note')
   const intake = useMemo(() => {
     const parsed = providerIntakeSchema.safeParse(note.provider_intake)
@@ -1181,14 +1195,14 @@ function DraftEditor({
     initialTone: note.tone_hint,
     getVersion: () => form.getValues('expected_updated_at'),
     acknowledgeVersion: acknowledgeMetadataVersion,
-    saveTone: (tone, expected) => saveInitialVisitNoteToneHint(caseId, visitType, tone, { noteId: note.id, expectedUpdatedAt: expected }),
+    saveTone: (tone, expected) => saveInitialVisitNoteToneHint(caseId, visitType, tone, { noteId: note.id, expectedUpdatedAt: expected }, episodeId),
     onError: (message) => toast.error(message),
   })
 
   function handleSave() {
     startTransition(async () => {
       await mutations.run(async () => {
-        const result = await saveInitialVisitNote(caseId, visitType, form.getValues())
+        const result = await saveInitialVisitNote(caseId, visitType, form.getValues(), episodeId)
         if (result.error) toast.error(result.error)
         else { acceptSavedNote(result.data?.savedNote); toast.success('Draft saved') }
       })
@@ -1201,7 +1215,7 @@ function DraftEditor({
     startTransition(async () => {
       try {
         await mutations.run(async () => {
-          const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'))
+          const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'), undefined, episodeId)
           if (result.error) {
             toast.error(result.error)
           } else if (result.data?.content) {
@@ -1220,12 +1234,12 @@ function DraftEditor({
     if (intakeDrafts.dirty || intakeDrafts.busy) return
     startTransition(async () => {
       await mutations.run(async () => {
-        const saved = await saveInitialVisitNote(caseId, visitType, form.getValues())
+        const saved = await saveInitialVisitNote(caseId, visitType, form.getValues(), episodeId)
         if (saved.error) { toast.error(saved.error); return }
         acceptSavedNote(saved.data?.savedNote)
         const expected = form.getValues('expected_updated_at')
         if (!expected) return
-        const reviewed = await acknowledgePsychologicalReview(caseId, expected)
+        const reviewed = await acknowledgePsychologicalReview(caseId, expected, episodeId)
         if (reviewed.error) toast.error(reviewed.error)
         else if (reviewed.data) { acknowledgeMetadataVersion(expected, reviewed.data.updated_at); toast.success('Psychological note review recorded') }
       })
@@ -1254,7 +1268,7 @@ function DraftEditor({
               })}
             />
           </div>
-          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isLocked || isPending} />
           <Button variant="outline" onClick={handleSave} disabled={isLocked || isPending}>
             {isPending && !regeneratingSection ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Save Draft
@@ -1281,14 +1295,14 @@ function DraftEditor({
                       await mutations.run(async ({ isActive, finish }) => {
                         if (intakeDrafts.dirty || intakeDrafts.busy) { toast.error('Save intake changes first.'); return }
                         const values = form.getValues()
-                        const saveResult = await saveInitialVisitNote(caseId, visitType, values)
+                        const saveResult = await saveInitialVisitNote(caseId, visitType, values, episodeId)
                         if (saveResult.error) {
                           toast.error(saveResult.error)
                           return
                         }
                         if (!isActive()) return
                         acceptSavedNote(saveResult.data?.savedNote)
-                        const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string)
+                        const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string, episodeId)
                         if (result.error) toast.error(result.error)
                         else { finish(); toast.success('Note finalized') }
                       })
@@ -1491,8 +1505,8 @@ function FinalizedView({
               Download PDF
             </Button>
           )}
-          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isPending} />
-          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} keepContent disabled={isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} disabled={isLocked || isPending} />
+          <ClinicalResetDialog caseId={caseId} target={{ kind: "initial_visit_notes", id: note.id }} keepContent disabled={isLocked || isPending} />
         </div>
       </div>
 
@@ -1639,6 +1653,7 @@ function CompanionDocumentsSection({
   noteFinalized: boolean
   patientLastName: string | null
 }) {
+  const { episodeId } = useIntakeDrafts()
   void startTransition
   const [orders, setOrders] = useState<Array<{
     id: string
@@ -1658,11 +1673,11 @@ function CompanionDocumentsSection({
   useEffect(() => {
     loadOrders()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visitType])
+  }, [caseId, visitType, episodeId])
 
   async function loadOrders() {
     const { getClinicalOrders } = await import('@/actions/clinical-orders')
-    const result = await getClinicalOrders(caseId, visitType)
+    const result = await getClinicalOrders(caseId, visitType, episodeId)
     if (result.data) {
       setOrders(result.data.map((o: Record<string, unknown>) => ({
         ...o,
@@ -1676,7 +1691,7 @@ function CompanionDocumentsSection({
     setLoadingType(orderType)
     try {
       const { generateClinicalOrder } = await import('@/actions/clinical-orders')
-      const result = await generateClinicalOrder(caseId, visitType, orderType)
+      const result = await generateClinicalOrder(caseId, visitType, orderType, episodeId)
       if (result.error) {
         toast.error(result.error)
       } else {

@@ -27,6 +27,12 @@ describe('explicit visit decision saves', () => {
     })
     expect(result).toEqual({ savedNote: { id: 'note', updated_at: 'v2' } })
   })
+  it('scopes identical visit types to the selected episode before the atomic save', async () => {
+    const mock = createMockSupabase({ data: { id: 'episode-2-note' }, error: null })
+    await saveVisitDecision(mock as unknown as SupabaseClient<Database>, 'initial_visit_notes', 'case', selector, values, 'episode-2')
+    expect(mock._builder.eq).toHaveBeenCalledWith('episode_id', 'episode-2')
+    expect(mock.rpc).toHaveBeenCalledWith('save_visit_note_decision', expect.objectContaining({ p_note_id: 'episode-2-note' }))
+  })
   it('propagates a stale-save failure without reporting a saved decision', async () => {
     const mock = createMockSupabase({ data: { id: 'note' }, error: null })
     mock.rpc.mockResolvedValue({ data: null, error: { message: 'Note changed. Reload before saving' } })

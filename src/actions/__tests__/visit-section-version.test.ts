@@ -1,3 +1,4 @@
+vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: 1 } }) }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockSupabase, mockTableResults, type MockSupabaseClient } from '@/test-utils/supabase-mock'
 let client: MockSupabaseClient

@@ -1038,6 +1038,9 @@ export async function fixFinding(caseId: string, findingHash: string) {
       visitType,
       finding.section_key as InitialVisitSection,
       findingFix,
+      undefined,
+      undefined,
+      episode.id,
     )
     if ('error' in res && res.error) regenError = res.error
   } else if (finding.step === 'pain_follow_up') {

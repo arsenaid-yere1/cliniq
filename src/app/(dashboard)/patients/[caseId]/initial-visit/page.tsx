@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import {
   getInitialVisitNotes,
@@ -16,9 +17,19 @@ function parseIntake(raw: unknown) {
   return parsed.success ? parsed.data : null
 }
 
-export default async function InitialVisitPage({ params }: { params: Promise<{ caseId: string }> }) {
+export default async function InitialVisitPage({ params, searchParams }: { params: Promise<{ caseId: string }>; searchParams: Promise<{ episode?: string; visitType?: string }> }) {
   const { caseId } = await params
+  const query = await searchParams
   const supabase = await createClient()
+  let episodeQuery = supabase.from('care_episodes').select('*').eq('case_id', caseId).is('deleted_at', null)
+  episodeQuery = query.episode ? episodeQuery.eq('id', query.episode) : episodeQuery.eq('episode_number', 1)
+  const { data: episode } = await episodeQuery.maybeSingle()
+  if (!episode) notFound()
+  const episodeId = episode.id
+  const painEvaluationOnly = episode.episode_number > 1
+  const { data: corrections, error: correctionError } = await supabase.from('discharge_note_corrections')
+    .select('id').eq('episode_id', episodeId).eq('status', 'open').limit(1)
+  const episodeWritable = episode.status === 'active' && !correctionError && corrections?.length === 0
 
   const caseRes = await supabase
     .from('cases')
@@ -40,15 +51,15 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
     initialIntakeResult,
     painEvalIntakeResult,
   ] = await Promise.all([
-    getInitialVisitNotes(caseId),
+    getInitialVisitNotes(caseId, episodeId),
     checkNotePrerequisites(caseId),
-    getInitialVisitVitals(caseId),
+    getInitialVisitVitals(caseId, episodeId),
     getClinicSettings(),
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
-    getProviderIntake(caseId, 'initial_visit'),
-    getProviderIntake(caseId, 'pain_evaluation_visit'),
+    painEvaluationOnly ? Promise.resolve({ data: null }) : getProviderIntake(caseId, 'initial_visit', episodeId),
+    getProviderIntake(caseId, 'pain_evaluation_visit', episodeId),
   ])
 
   const caseData = caseRes.data
@@ -98,8 +109,9 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
   if (priorIvStatus === 'finalized' && priorIvFinalizedAt) {
     const { data: priorVitalsRow } = await supabase
       .from('vital_signs')
-      .select('pain_score_max')
+      .select('pain_score_max, clinical_encounters!inner(episode_id)')
       .eq('case_id', caseId)
+      .eq('clinical_encounters.episode_id', episodeId)
       .is('procedure_id', null)
       .is('deleted_at', null)
       .lte('recorded_at', priorIvFinalizedAt)
@@ -135,11 +147,16 @@ export default async function InitialVisitPage({ params }: { params: Promise<{ c
 
   return (
     <InitialVisitEditor
+      key={episodeId}
       caseId={caseId}
+      episodeId={episodeId}
+      episodeNumber={episode.episode_number}
+      episodeWritable={episodeWritable}
+      painEvaluationOnly={painEvaluationOnly}
       notesByVisitType={notesByVisitType}
       intakesByVisitType={intakesByVisitType}
       documentFilePathByVisitType={documentFilePathByVisitType}
-      defaultVisitType="initial_visit"
+      defaultVisitType={painEvaluationOnly || query.visitType === 'pain_evaluation_visit' ? 'pain_evaluation_visit' : 'initial_visit'}
       canGenerate={prereqResult.data?.canGenerate ?? false}
       prerequisiteReason={prereqResult.data?.reason}
       initialVitals={vitalsResult.data ?? null}

@@ -681,6 +681,27 @@ describe('fixFinding', () => {
     )
   })
 
+  it.each([1, 2])('keeps legacy evaluation fixes in Episode %i when V3 is disabled', async episodeNumber => {
+    vi.stubEnv('QUALITY_REVIEW_V3_ENABLED', 'false')
+    try {
+      const { regenerateNoteSection } = await import('@/actions/initial-visit-notes')
+      vi.mocked(regenerateNoteSection).mockResolvedValue({ error: 'Synthetic regeneration stopped' })
+      const episodeId = `episode-${episodeNumber}`
+      const finding = makeAiFinding({ step: 'pain_evaluation', section_key: 'prognosis' })
+      mockFixTables({
+        care_episodes: { data: { ...activeEpisode, id: episodeId, episode_number: episodeNumber }, error: null },
+        case_quality_reviews: { data: { id: 'review', findings: [finding], finding_overrides: {} }, error: null },
+      })
+      expect((await fixFinding(VALID_CASE_ID, computeFindingHash(finding))).error).toBe('Synthetic regeneration stopped')
+      expect(regenerateNoteSection).toHaveBeenLastCalledWith(
+        VALID_CASE_ID, 'pain_evaluation_visit', 'prognosis',
+        { message: finding.message, rationale: finding.rationale }, undefined, undefined, episodeId,
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('dispatches encounter-scoped follow-up findings to the follow-up regenerator', async () => {
     const { regeneratePainFollowUpSectionAction } = await import(
       '@/actions/pain-follow-up-notes'

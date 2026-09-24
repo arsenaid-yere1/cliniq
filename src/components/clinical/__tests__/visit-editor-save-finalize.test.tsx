@@ -24,7 +24,7 @@ function mount(family: string) {
   const common = { caseId: 'case', episodeId: 'episode', note, canGenerate: true, clinicSettings: null, providerProfile: null, clinicLogoUrl: null, providerSignatureUrl: null, caseData: null, documentFilePath: null, defaultVitals: null, correctionContext: null, isStale: false, earliestDate: null }
   if (family === 'discharge') render(<DischargeNoteEditor {...common as unknown as ComponentProps<typeof DischargeNoteEditor>} />)
   else render(<InitialVisitEditor {...{ ...common, notesByVisitType: { [family]: note }, intakesByVisitType: {}, documentFilePathByVisitType: {}, defaultVisitType: family, initialVitals: null, siblingDatesByVisitType: {}, painEvalMissingPriorVitals: false } as unknown as ComponentProps<typeof InitialVisitEditor>} />)
-  save.mockImplementation(async (...args: unknown[]) => ({ data: { savedNote: { ...note, ...args.at(-1) as object, updated_at: 'v3' } } }))
+  save.mockImplementation(async (...args: unknown[]) => ({ data: { savedNote: { ...note, ...(family === 'discharge' ? args.at(-1) : args[2]) as object, updated_at: 'v3' } } }))
   return note
 }
 
@@ -34,7 +34,7 @@ function deferredTone() {
   tone.mockReturnValueOnce(promise)
   return resolve
 }
-function toneInput() { return screen.getByPlaceholderText(/Use assertive language/) }
+function toneInput() { return screen.getByRole('textbox', { name: 'Tone & Direction (optional)' }) }
 beforeEach(() => {
   vi.clearAllMocks()
   tone.mockResolvedValue({ data: { updated_at: 'v2', tone_hint: 'Concise' } })
@@ -53,9 +53,13 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     expect(save).not.toHaveBeenCalled()
     resolveTone({ data: { updated_at: 'v2', tone_hint: 'Concise' } })
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    expect(tone.mock.calls[0].at(-1)).toEqual({ noteId: 'note', expectedUpdatedAt: 'v1' })
-    expect(save.mock.calls[0].at(-1).expected_updated_at).toBe('v2')
+    expect((family === 'discharge' ? tone.mock.calls[0].at(-1) : tone.mock.calls[0][3])).toEqual({ noteId: 'note', expectedUpdatedAt: 'v1' })
+    expect((family === 'discharge' ? save.mock.calls[0].at(-1) : save.mock.calls[0][2]).expected_updated_at).toBe('v2')
     expect(tone).toHaveBeenCalledTimes(1)
+    if (family !== 'discharge') {
+      expect(tone.mock.calls[0].at(-1)).toBe('episode')
+      expect(save.mock.calls[0].at(-1)).toBe('episode')
+    }
   })
 
   it('waits for tone before saving and signing the saved version', async () => {
@@ -69,8 +73,8 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     expect(finalize).not.toHaveBeenCalled()
     resolveTone({ data: { updated_at: 'v2', tone_hint: 'Concise' } })
     await waitFor(() => expect(finalize).toHaveBeenCalledTimes(1))
-    expect(save.mock.calls[0].at(-1).expected_updated_at).toBe('v2')
-    expect(finalize.mock.calls[0].at(-1)).toBe('v3')
+    expect((family === 'discharge' ? save.mock.calls[0].at(-1) : save.mock.calls[0][2]).expected_updated_at).toBe('v2')
+    expect((family === 'discharge' ? finalize.mock.calls[0].at(-1) : finalize.mock.calls[0][2])).toBe('v3')
   })
 
   it('keeps unsaved prose and decision details after a tone-only save', async () => {
@@ -83,7 +87,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     await waitFor(() => expect(tone).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    expect(save.mock.calls[0].at(-1)).toMatchObject({
+    expect((family === 'discharge' ? save.mock.calls[0].at(-1) : save.mock.calls[0][2])).toMatchObject({
       patient_education: 'Unsaved counseling',
       treatment_decision: { decision: 'partially_accepted', details: 'Exercise only' },
       expected_updated_at: 'v2',
@@ -105,7 +109,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     await user.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
     expect(tone).toHaveBeenCalledTimes(2)
-    expect(tone.mock.calls[1].at(-1).expectedUpdatedAt).toBe('v1')
+    expect((family === 'discharge' ? tone.mock.calls[1].at(-1) : tone.mock.calls[1][3]).expectedUpdatedAt).toBe('v1')
   })
 
   it('does not write an unchanged tone and chains consecutive draft saves', async () => {
@@ -118,7 +122,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
     expect(tone).not.toHaveBeenCalled()
-    expect(save.mock.calls[1].at(-1).expected_updated_at).toBe('v3')
+    expect((family === 'discharge' ? save.mock.calls[1].at(-1) : save.mock.calls[1][2]).expected_updated_at).toBe('v3')
   })
 
   it('flushes tone before regeneration, then saves the regenerated version', async () => {
@@ -133,10 +137,10 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
     expect(regenerate).not.toHaveBeenCalled()
     resolveTone({ data: { updated_at: 'v2', tone_hint: 'Concise' } })
     await waitFor(() => expect(regenerate).toHaveBeenCalledTimes(1))
-    expect(regenerate.mock.calls[0].at(-1)).toBe('v2')
+    expect((family === 'discharge' ? regenerate.mock.calls[0].at(-1) : regenerate.mock.calls[0][4])).toBe('v2')
     await waitFor(() => expect((screen.getByRole('button', { name: 'Save Draft' }) as HTMLButtonElement).disabled).toBe(false))
     await user.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    expect(save.mock.calls[0].at(-1).expected_updated_at).toBe('v4')
+    expect((family === 'discharge' ? save.mock.calls[0].at(-1) : save.mock.calls[0][2]).expected_updated_at).toBe('v4')
   })
 })

@@ -1,10 +1,11 @@
+vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: 1 } }) }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase, type MockSupabaseClient } from '@/test-utils/supabase-mock'
 import { TEST_CASE_ID } from '@/test-utils/fixtures'
 import { defaultProviderIntake } from '@/lib/validations/initial-visit-note'
 
 let mockSupabase: MockSupabaseClient
-const mockEnsureLegacyEpisodeEncounter = vi.fn()
+const mockEnsureEpisodeEncounter = vi.fn()
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
@@ -23,7 +24,7 @@ vi.mock('@/lib/clinical/episode-context', async () => {
   )
   return {
     ...actual,
-    ensureLegacyEpisodeEncounter: (...args: unknown[]) => mockEnsureLegacyEpisodeEncounter(...args),
+    ensureEpisodeEncounter: (...args: unknown[]) => mockEnsureEpisodeEncounter(...args),
   }
 })
 
@@ -46,7 +47,7 @@ describe('saveProviderIntake', () => {
   })
 
   it('returns a readable error when Episode 1 is missing', async () => {
-    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(
+    mockEnsureEpisodeEncounter.mockRejectedValueOnce(
       new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit'),
     )
 
@@ -60,7 +61,7 @@ describe('saveProviderIntake', () => {
   })
 
   it('does not expose unexpected exception details', async () => {
-    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(new Error('database internals'))
+    mockEnsureEpisodeEncounter.mockRejectedValueOnce(new Error('database internals'))
 
     const result = await saveProviderIntake(
       TEST_CASE_ID,
@@ -95,7 +96,7 @@ describe('saveInitialVisitVitals', () => {
       }
       return createMockQueryBuilder()
     })
-    mockEnsureLegacyEpisodeEncounter.mockResolvedValue({
+    mockEnsureEpisodeEncounter.mockResolvedValue({
       episodeId: '110e8400-e29b-41d4-a716-446655440000',
       encounterId: '220e8400-e29b-41d4-a716-446655440000',
     })
@@ -110,8 +111,9 @@ describe('saveInitialVisitVitals', () => {
     )
 
     expect(result).toEqual({ data: { success: true } })
-    expect(mockEnsureLegacyEpisodeEncounter).toHaveBeenCalledWith(
+    expect(mockEnsureEpisodeEncounter).toHaveBeenCalledWith(
       TEST_CASE_ID,
+      'episode',
       'pain_evaluation',
       expect.objectContaining({ userId: 'test-user-id' }),
       mockSupabase,
@@ -122,8 +124,9 @@ describe('saveInitialVisitVitals', () => {
     const result = await saveInitialVisitVitals(TEST_CASE_ID, 'initial_visit', vitals)
 
     expect(result).toEqual({ data: { success: true } })
-    expect(mockEnsureLegacyEpisodeEncounter).toHaveBeenCalledWith(
+    expect(mockEnsureEpisodeEncounter).toHaveBeenCalledWith(
       TEST_CASE_ID,
+      'episode',
       'initial_evaluation',
       expect.objectContaining({ userId: 'test-user-id' }),
       mockSupabase,
@@ -156,7 +159,7 @@ describe('saveInitialVisitVitals', () => {
   })
 
   it('does not save vitals when encounter ownership cannot be prepared', async () => {
-    mockEnsureLegacyEpisodeEncounter.mockRejectedValueOnce(
+    mockEnsureEpisodeEncounter.mockRejectedValueOnce(
       new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit'),
     )
 

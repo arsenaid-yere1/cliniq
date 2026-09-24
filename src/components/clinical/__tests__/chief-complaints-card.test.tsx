@@ -155,7 +155,7 @@ describe('chief complaint hints', () => {
     await waitFor(() => expect(screen.getByText('Saved')).toBeTruthy())
     expect(saveProviderIntake).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ chief_complaints: {
       ...data.chief_complaints, complaints: [{ ...data.chief_complaints.complaints[0], alleviating_factors: 'Rest' }],
-    } }), 'chief_complaints')
+    } }), 'chief_complaints', undefined)
     expect(examples().getByRole('button', { name: 'Rest' }).getAttribute('aria-pressed')).toBe('true')
   })
 

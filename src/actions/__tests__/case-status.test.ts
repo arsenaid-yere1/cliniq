@@ -440,4 +440,14 @@ describe('startReturnCareEpisode', () => {
 
     expect(result.error).toBe('This case already has an active care episode')
   })
+
+  it.each([
+    'The latest care episode must be discharged before starting a return visit',
+    'A finalized discharge with a service date is required before starting a return visit',
+    'Return evaluation date cannot precede the previous discharge date',
+  ])('explains a return evaluation prerequisite: %s', async (message) => {
+    mockSupabase.rpc.mockResolvedValue({ data: null, error: { message } })
+    const result = await startReturnCareEpisode(TEST_CASE_ID, 'Pain returned', encounterInput, 'return-visit-002')
+    expect(result.error).toBe(message)
+  })
 })

@@ -20,6 +20,7 @@ const episode: CareEpisode = {
   id: EPISODE_ID,
   case_id: TEST_CASE_ID,
   episode_number: 2,
+  requires_pain_evaluation: false,
   status: 'active',
   opened_at: '2026-08-01T09:00:00.000Z',
   ended_at: null,

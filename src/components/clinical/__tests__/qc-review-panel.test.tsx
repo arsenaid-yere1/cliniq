@@ -52,6 +52,36 @@ describe('Quality Review clinical states',() => {
     render(<QcReviewPanel caseId="case" review={row} isStale={false} />)
     expect(screen.getByRole('link',{name:/View in editor/}).getAttribute('href')).toBe('/patients/case/visits')
   })
+  it.each(['qc-v3', null])('scopes evaluation and discharge links to the saved review episode (%s)', reviewVersion => {
+    const row = review()
+    row.review_version = reviewVersion
+    row.episode_id = 'episode-2'
+    row.findings = [
+      { ...finding, key: 'pain', step: 'pain_evaluation', encounter_id: null },
+      { ...finding, key: 'discharge', step: 'discharge', encounter_id: null },
+    ]
+    render(<QcReviewPanel caseId="case" modern={reviewVersion === 'qc-v3'} review={row} isStale={false} />)
+    expect(screen.getAllByRole('link', { name: /View in editor/ }).map(link => link.getAttribute('href'))).toEqual([
+      '/patients/case/initial-visit?episode=episode-2&visitType=pain_evaluation_visit',
+      '/patients/case/discharge?episode=episode-2',
+    ])
+  })
+  it('retains the correct initial-visit tab for historical reviews', () => {
+    const row = review()
+    row.episode_id = 'episode-1'
+    row.findings = [{ ...finding, step: 'initial_visit' }]
+    render(<QcReviewPanel caseId="case" modern review={row} isStale={false} />)
+    expect(screen.getByRole('link', { name: /View in editor/ }).getAttribute('href')).toBe('/patients/case/initial-visit?episode=episode-1&visitType=initial_visit')
+  })
+  it('preserves legacy routing when no review episode is available, with the correct evaluation tab', () => {
+    const row = review()
+    row.review_version = null
+    row.findings = [{ ...finding, key: 'pain', step: 'pain_evaluation' }, { ...finding, key: 'discharge', step: 'discharge' }]
+    render(<QcReviewPanel caseId="case" review={row} isStale={false} />)
+    expect(screen.getAllByRole('link', { name: /View in editor/ }).map(link => link.getAttribute('href'))).toEqual([
+      '/patients/case/initial-visit?visitType=pain_evaluation_visit', '/patients/case/discharge',
+    ])
+  })
   it('allows recovery after an expired fix',() => {
     const row=review();row.finding_overrides={finding:{status:'fix_in_progress',fix_run_id:'run',resolved_at:null,resolution_source:null,fix_attempted_at:null,fix_section_regenerated:null,fix_recheck_result:null,actor_user_id:'actor',set_at:'2026-01-01',dismissed_reason:null,edited_message:null,edited_rationale:null,edited_suggested_tone_hint:null}}
     render(<QcReviewPanel caseId="case" modern review={row} isStale={false} attempts={[{...attempt,status:'expired'}]} />)

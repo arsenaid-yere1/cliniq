@@ -32,7 +32,7 @@ describe('psychological assessment form', () => {
     fireEvent.change(screen.getByLabelText('Symptoms discussed today'), { target: { value: 'reported' } })
     fireEvent.click(screen.getByLabelText('Nightmares'))
     fireEvent.click(screen.getByRole('button', { name: 'Save Psychological Assessment' }))
-    await waitFor(() => expect(saveProviderIntake).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ psychological_assessment: expect.objectContaining({ symptoms: ['Nightmares'], assessment_status: 'not_assessed', confirmed_diagnoses: '' }) }), 'psychological_assessment'))
+    await waitFor(() => expect(saveProviderIntake).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ psychological_assessment: expect.objectContaining({ symptoms: ['Nightmares'], assessment_status: 'not_assessed', confirmed_diagnoses: '' }) }), 'psychological_assessment', undefined))
   })
   it('flushes dirty assessment before generation', async () => {
     mount()

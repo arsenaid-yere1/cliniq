@@ -1,5 +1,5 @@
 import { loadFollowUpIntakeHistory } from '@/lib/clinical/load-follow-up-intake-history'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getPainFollowUpNote } from '@/actions/pain-follow-up-notes'
 import { requireReturnTeleVisitsPage } from '@/lib/features/return-tele-visits'
@@ -13,11 +13,15 @@ export default async function VisitPage({params}:{params:Promise<{caseId:string;
   requireReturnTeleVisitsPage()
   const {caseId,encounterId}=await params; const supabase=await createClient()
   const [{data:encounter},noteResult,orderResult]=await Promise.all([
-    supabase.from('clinical_encounters').select('*').eq('id',encounterId).eq('case_id',caseId).eq('encounter_type','pain_follow_up').is('deleted_at',null).maybeSingle(),
+    supabase.from('clinical_encounters').select('*').eq('id',encounterId).eq('case_id',caseId).is('deleted_at',null).maybeSingle(),
     getPainFollowUpNote(caseId,encounterId),
     listProcedureOrders(caseId),
   ])
   if(!encounter) notFound()
+  if (encounter.encounter_type === 'pain_evaluation' || encounter.encounter_type === 'initial_evaluation') {
+    redirect(`/patients/${caseId}/initial-visit?episode=${encounter.episode_id}&visitType=${encounter.encounter_type === 'pain_evaluation' ? 'pain_evaluation_visit' : 'initial_visit'}`)
+  }
+  if (encounter.encounter_type !== 'pain_follow_up') notFound()
   const [episodeResult, correctionResult, intakeHistory] = await Promise.all([
     supabase.from('care_episodes').select('status').eq('id', encounter.episode_id).eq('case_id', caseId).is('deleted_at', null).maybeSingle(),
     supabase.from('discharge_note_corrections').select('id').eq('episode_id', encounter.episode_id).eq('status', 'open').limit(1),

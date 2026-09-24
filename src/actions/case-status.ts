@@ -233,6 +233,9 @@ export async function startReturnCareEpisode(
       'Case must be Active, Pending Settlement, or Closed to start a return visit',
       'This case already has an active care episode',
       'Idempotency key was already used with different input',
+      'The latest care episode must be discharged before starting a return visit',
+      'A finalized discharge with a service date is required before starting a return visit',
+      'Return evaluation date cannot precede the previous discharge date',
     ]
     const knownMessage = knownMessages.find((message) => error.message?.includes(message))
     return { error: knownMessage ?? 'Failed to start the return visit' }

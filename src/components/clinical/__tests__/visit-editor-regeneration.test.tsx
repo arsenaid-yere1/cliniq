@@ -44,7 +44,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s regen
     expect((screen.getByRole('textbox', { name: 'Patient Education' }) as HTMLTextAreaElement).value).toBe('Unsaved clinician counseling.')
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalled())
-    expect(save.mock.calls[0].at(-1)).toMatchObject({ patient_education: 'Unsaved clinician counseling.', prognosis: 'New prognosis', expected_updated_at: 'v2' })
+    expect((family === 'discharge' ? save.mock.calls[0].at(-1) : save.mock.calls[0][2])).toMatchObject({ patient_education: 'Unsaved clinician counseling.', prognosis: 'New prognosis', expected_updated_at: 'v2' })
   })
   it('removes only the stale application closing when the plan regenerates', async () => {
     const note = mount(family)

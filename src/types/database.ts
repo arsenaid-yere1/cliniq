@@ -468,6 +468,7 @@ export type Database = {
           episode_number: number
           id: string
           opened_at: string
+          requires_pain_evaluation: boolean
           return_reason: string | null
           status: string
           updated_at: string
@@ -483,6 +484,7 @@ export type Database = {
           episode_number: number
           id?: string
           opened_at?: string
+          requires_pain_evaluation?: boolean
           return_reason?: string | null
           status?: string
           updated_at?: string
@@ -498,6 +500,7 @@ export type Database = {
           episode_number?: number
           id?: string
           opened_at?: string
+          requires_pain_evaluation?: boolean
           return_reason?: string | null
           status?: string
           updated_at?: string

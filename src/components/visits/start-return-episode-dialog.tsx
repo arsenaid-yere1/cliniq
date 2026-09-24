@@ -48,7 +48,7 @@ export function StartReturnEpisodeDialog({ caseId, providers }: { caseId: string
   return <Dialog open={open} onOpenChange={setOpen}>
     <DialogTrigger asChild><Button>Start Return Visit</Button></DialogTrigger>
     <DialogContent>
-      <DialogHeader><DialogTitle>Start return visit</DialogTitle><DialogDescription>Creates a new care episode and its first pain-management visit together.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Start return visit</DialogTitle><DialogDescription>Starts a new care episode after discharge with a pain evaluation. Finalize the evaluation before follow-ups or discharge. Scheduling a future evaluation creates the episode now.</DialogDescription></DialogHeader>
       <div className="grid gap-4 py-2">
         <div className="grid gap-2"><Label htmlFor="return-reason">Reason for return</Label><Textarea id="return-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></div>
         <div className="grid gap-2"><Label>Modality</Label><Select value={modality} onValueChange={(v) => setModality(v as typeof modality)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="telehealth">Telehealth</SelectItem><SelectItem value="phone">Phone</SelectItem><SelectItem value="in_person">In person</SelectItem></SelectContent></Select></div>

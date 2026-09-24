@@ -7,7 +7,7 @@ import type { ComponentProps } from 'react'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/components/patients/case-status-context', () => ({ useCaseStatus: () => 'active' }))
-vi.mock('@/components/clinical/clinical-reset-dialog', () => ({ ClinicalResetDialog: () => null }))
+vi.mock('@/components/clinical/clinical-reset-dialog', () => ({ ClinicalResetDialog: ({ disabled }: { disabled?: boolean }) => <button disabled={disabled}>Reset note</button> }))
 vi.mock('@/components/clinical/generating-progress', () => ({ GeneratingProgress: () => <p>Generating note...</p> }))
 vi.mock('@/actions/documents', () => ({ getDocumentDownloadUrl: vi.fn() }))
 vi.mock('@/actions/clinical-orders', () => ({ getClinicalOrders: vi.fn(async () => ({ data: [] })) }))
@@ -36,6 +36,47 @@ describe('psychological intake in the visit editor', () => {
     vi.mocked(generateInitialVisitNote).mockResolvedValue({ data: { id: 'note' } })
   })
   afterEach(cleanup)
+
+  it('starts return episodes with only pain evaluation and scopes intake, vitals, and generation', async () => {
+    const user = userEvent.setup()
+    mount({ episodeId: 'return-episode', episodeNumber: 2, painEvaluationOnly: true, defaultVisitType: 'pain_evaluation_visit' })
+    expect(screen.queryByRole('tab', { name: 'Initial Visit' })).toBeNull()
+    expect(screen.getByText('Episode 2')).toBeTruthy()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Body Region' }), { target: { value: 'Neck' } })
+    await user.click(screen.getByRole('tab', { name: 'Vital Signs' }))
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Heart Rate' }), { target: { value: '72' } })
+    await user.click(screen.getByRole('button', { name: /Save intake and generate Pain Evaluation Visit Note/ }))
+    await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(saveProviderIntake).mock.calls[0].at(-1)).toBe('return-episode')
+    expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'pain_evaluation_visit', expect.objectContaining({ heart_rate: 72 }), 'return-episode')
+    expect(generateInitialVisitNote).toHaveBeenCalledWith('case', 'pain_evaluation_visit', null, expect.any(String), 'return-episode')
+  })
+
+  it('locks historical episode intake and generation', () => {
+    mount({ episodeId: 'ended-episode', episodeNumber: 2, episodeWritable: false, painEvaluationOnly: true, defaultVisitType: 'pain_evaluation_visit' })
+    expect((screen.getByRole('button', { name: 'Generate Pain Evaluation Visit Note' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Episode 2 · Read only')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Save Chief Complaints' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(saveProviderIntake).not.toHaveBeenCalled()
+  })
+
+  it('keeps ended episode downloads and navigation usable while blocking mutations', async () => {
+    const user = userEvent.setup()
+    const note = { ...Object.fromEntries(initialVisitSections.map(section => [section, 'Saved narrative'])),
+      id: 'historical-note', status: 'finalized', updated_at: 'v1', visit_date: '2026-09-14', provider_intake: defaultProviderIntake }
+    mount({ episodeId: 'ended', episodeNumber: 2, episodeWritable: false, painEvaluationOnly: true,
+      defaultVisitType: 'pain_evaluation_visit', notesByVisitType: { initial_visit: null, pain_evaluation_visit: note },
+      documentFilePathByVisitType: { initial_visit: null, pain_evaluation_visit: 'historical.pdf' } })
+    const download = screen.getByRole('button', { name: 'Download PDF' }) as HTMLButtonElement
+    expect(download.disabled).toBe(false)
+    expect(download.closest('fieldset')?.disabled).toBe(false)
+    expect(screen.getAllByRole('button', { name: 'Reset note' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true)
+    await user.click(screen.getByRole('tab', { name: 'Orders' }))
+    expect((screen.getByRole('button', { name: 'Generate Imaging Orders' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Generate Chiropractic Order' }) as HTMLButtonElement).disabled).toBe(true)
+    await user.click(screen.getByRole('tab', { name: 'Note' }))
+    expect(screen.getByRole('button', { name: 'Download PDF' })).toBeTruthy()
+  })
 
   it('populates from the latest unsaved complaints independently for both visits and flushes before generation', async () => {
     const user = userEvent.setup(); mount()
@@ -111,7 +152,7 @@ describe('psychological intake in the visit editor', () => {
     await user.click(screen.getByRole('tab', { name: 'Chief Complaints' }))
     await user.click(screen.getByRole('button', { name: /Save intake and generate Initial Visit Note/ }))
     await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalled())
-    expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ heart_rate: 72 }))
+    expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ heart_rate: 72 }), undefined)
   })
 
   it('keeps selected factors separate by complaint and encounter, and saves only this encounter before generation', async () => {
@@ -198,7 +239,7 @@ describe('psychological intake in the visit editor', () => {
     expect(saveProviderIntake).toHaveBeenCalledTimes(1)
     expect(vi.mocked(saveProviderIntake).mock.calls[0]).toEqual(['case', 'initial_visit', expect.objectContaining({ exam_findings: {
       ...stored.exam_findings, regions: [{ ...stored.exam_findings.regions[0], palpation_findings: 'Initial visit observation' }],
-    } }), 'exam_findings'])
+    } }), 'exam_findings', undefined])
     expect(vi.mocked(saveProviderIntake).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateInitialVisitNote).mock.invocationCallOrder[0])
   })
 

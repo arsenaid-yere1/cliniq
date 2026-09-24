@@ -24,6 +24,45 @@ function note(step: keyof typeof reviewSections, id = step as string) {
   return {id,case_id:'case',episode_id:'episode',encounter_id:`enc-${id}`,status:'draft',updated_at:'v1',visit_type:step === 'pain_evaluation' ? 'pain_evaluation_visit' : 'initial_visit',visit_date:'2026-01-02',...Object.fromEntries(reviewSections[step].map(s => [s,`${step}:${s}`]))}
 }
 describe('authoritative review snapshot', () => {
+  it('reviews a return series from its own evaluation, follow-ups and discharge without borrowing historical vitals', async () => {
+    const {client,tables,mock} = setup()
+    tables.care_episodes = {...episode, episode_number:2, requires_pain_evaluation:true}
+    const evaluation: Record<string,unknown> = note('pain_evaluation','return-eval')
+    tables.initial_visit_notes = [evaluation, {...note('pain_evaluation','previous-eval'),episode_id:'previous'}]
+    tables.pain_follow_up_notes = [note('pain_follow_up','return-follow-up')]
+    tables.discharge_notes = [note('discharge','return-discharge')]
+    tables.clinical_encounters = [
+      {id:'enc-return-eval',case_id:'case',episode_id:'episode',encounter_type:'pain_evaluation',encounter_date:'2026-01-02'},
+      {id:'enc-return-follow-up',case_id:'case',episode_id:'episode',encounter_type:'pain_follow_up',encounter_date:'2026-01-03'},
+      {id:'enc-return-discharge',case_id:'case',episode_id:'episode',encounter_type:'discharge',encounter_date:'2026-01-04'},
+      {id:'enc-previous-eval',case_id:'case',episode_id:'previous',encounter_type:'pain_evaluation',encounter_date:'2025-12-01'},
+    ]
+    tables.vital_signs = [
+      {id:'return-vitals',case_id:'case',encounter_id:'enc-return-eval',pain_score_max:7},
+      {id:'previous-vitals',case_id:'case',encounter_id:'enc-previous-eval',pain_score_max:2},
+    ]
+    // Execute equality filters so removing Episode scope exposes the historical row.
+    const original = mock.from.getMockImplementation()!
+    mock.from.mockImplementation((table: string) => {
+      const builder = original(table)
+      if (Array.isArray(tables[table])) {
+        const filters: Array<[string,unknown]> = []
+        builder.eq.mockImplementation((key: string,value: unknown) => { filters.push([key,value]); return builder })
+        builder.then = (resolve: (value: unknown) => void) => resolve({data:(tables[table] as Record<string,unknown>[]).filter(row => filters.every(([key,value]) => row[key] === value)),error:null})
+      }
+      return builder
+    })
+    const snapshot = await collectReviewSnapshot(client,'case','episode')
+    expect(snapshot.notes.map(n => n.id).sort()).toEqual(['return-discharge','return-eval','return-follow-up'])
+    expect(snapshot.notes.find(n => n.id === 'return-eval')?.context.vitals).toMatchObject({pain_score_max:7})
+    expect(snapshot.coverage.limitations).not.toContain('Missing origin note')
+    expect(snapshot.sources.some(s => s.id.includes('previous'))).toBe(false)
+    const sourceHash = reviewSourceHash(snapshot)
+    ;(tables.initial_visit_notes as Record<string,unknown>[])[1].chief_complaint = 'Historical correction'
+    expect(reviewSourceHash(await collectReviewSnapshot(client,'case','episode'))).toBe(sourceHash)
+    evaluation.chief_complaint = 'Current correction'
+    expect(reviewSourceHash(await collectReviewSnapshot(client,'case','episode'))).not.toBe(sourceHash)
+  })
   it('projects every canonical section for all note types, preserving empty sections', async () => {
     const {tables,client} = setup()
     tables.initial_visit_notes = [note('initial_visit'),note('pain_evaluation')]

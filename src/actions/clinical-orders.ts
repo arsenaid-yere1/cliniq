@@ -6,7 +6,7 @@ import { generateImagingOrders, generateChiropracticOrder, type ClinicalOrderInp
 import { type OrderType } from '@/lib/validations/clinical-orders'
 import { assertCaseNotClosed } from '@/actions/case-status'
 import { type NoteVisitType } from '@/lib/claude/generate-initial-visit'
-import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
+import { resolveEvaluationEpisode } from '@/lib/clinical/evaluation-scope'
 
 // --- Helper: gather input data from finalized note for a specific visit type ---
 
@@ -14,9 +14,11 @@ async function gatherOrderInputData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   caseId: string,
   visitType: NoteVisitType,
+  selectedEpisodeId?: string,
 ): Promise<{ data?: ClinicalOrderInputData; noteId?: string; episodeId?: string; encounterId?: string; error?: string }> {
-  const episode = await getActiveOrLatestEpisode(caseId, supabase)
-  if (!episode) return { error: 'Care episode not found' }
+  const scope = await resolveEvaluationEpisode(supabase, caseId, selectedEpisodeId, visitType, true)
+  if (!scope.episode) return { error: scope.error }
+  const episode = scope.episode
   // Fetch the note matching BOTH case_id and visit_type
   const { data: note, error: noteError } = await supabase
     .from('initial_visit_notes')
@@ -110,6 +112,7 @@ export async function generateClinicalOrder(
   caseId: string,
   visitType: NoteVisitType,
   orderType: OrderType,
+  selectedEpisodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -119,7 +122,7 @@ export async function generateClinicalOrder(
   if (closedCheck.error) return { error: closedCheck.error }
 
   // Gather input data from the visit-type-specific note
-  const { data: inputData, noteId, episodeId, encounterId, error: gatherError } = await gatherOrderInputData(supabase, caseId, visitType)
+  const { data: inputData, noteId, episodeId, encounterId, error: gatherError } = await gatherOrderInputData(supabase, caseId, visitType, selectedEpisodeId)
   if (gatherError || !inputData || !noteId || !episodeId) return { error: gatherError ?? 'Failed to gather order data' }
 
   // Create order row in generating state
@@ -259,16 +262,17 @@ export async function generateClinicalOrder(
 
 // --- Get clinical orders for a case scoped to a specific visit type ---
 
-export async function getClinicalOrders(caseId: string, visitType: NoteVisitType) {
+export async function getClinicalOrders(caseId: string, visitType: NoteVisitType, episodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
-  const episode = await getActiveOrLatestEpisode(caseId, supabase)
-  if (!episode) return { data: [] }
+  const scope = await resolveEvaluationEpisode(supabase, caseId, episodeId, visitType)
+  if (!scope.episode) return { error: scope.error }
+  const episode = scope.episode
 
   // Resolve the note row for this (case, visit_type). Orders are linked to
   // a specific note row so we use that id as the scope filter.
-  const { data: note } = await supabase
+  const { data: note, error: noteError } = await supabase
     .from('initial_visit_notes')
     .select('id')
     .eq('case_id', caseId)
@@ -276,6 +280,8 @@ export async function getClinicalOrders(caseId: string, visitType: NoteVisitType
     .eq('episode_id', episode.id)
     .is('deleted_at', null)
     .maybeSingle()
+
+  if (noteError) return { error: 'Unable to load evaluation orders' }
 
   // No note for this visit type yet — there can be no orders either.
   if (!note) return { data: [] }
@@ -313,6 +319,8 @@ export async function finalizeClinicalOrder(orderId: string, caseId: string) {
     .single()
 
   if (fetchError || !order) return { error: 'No completed order found to finalize' }
+  const scope = await resolveEvaluationEpisode(supabase, caseId, order.episode_id, undefined, true)
+  if (!scope.episode) return { error: scope.error }
 
   // Clean up previous document if re-finalizing
   if (order.document_id) {
@@ -438,13 +446,15 @@ export async function deleteClinicalOrder(orderId: string, caseId: string) {
   // Fetch the order to get linked document
   const { data: order } = await supabase
     .from('clinical_orders')
-    .select('id, document_id')
+    .select('id, document_id, episode_id')
     .eq('id', orderId)
     .eq('case_id', caseId)
     .is('deleted_at', null)
     .single()
 
   if (!order) return { error: 'Order not found' }
+  const scope = await resolveEvaluationEpisode(supabase, caseId, order.episode_id, undefined, true)
+  if (!scope.episode) return { error: scope.error }
 
   // Clean up linked document and storage file
   if (order.document_id) {

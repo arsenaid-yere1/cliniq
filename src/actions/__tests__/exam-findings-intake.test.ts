@@ -1,3 +1,4 @@
+vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: 1 } }) }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase } from '@/test-utils/supabase-mock'
 import { defaultProviderIntake } from '@/lib/validations/initial-visit-note'
@@ -6,7 +7,7 @@ let client: ReturnType<typeof createMockSupabase>
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: () => client }))
 vi.mock('@/actions/case-status', () => ({ assertCaseNotClosed: vi.fn(async () => ({ error: null })), autoAdvanceFromIntake: vi.fn() }))
-vi.mock('@/lib/clinical/episode-context', () => ({ ensureLegacyEpisodeEncounter: vi.fn(async () => ({ episodeId: 'episode', encounterId: 'encounter' })) }))
+vi.mock('@/lib/clinical/episode-context', () => ({ ensureEpisodeEncounter: vi.fn(async () => ({ episodeId: 'episode', encounterId: 'encounter' })) }))
 import { saveProviderIntake, acknowledgePsychologicalReview } from '../initial-visit-notes'
 import { assertCaseNotClosed } from '../case-status'
 const intake = (muscle_spasm: boolean | null) => ({ ...structuredClone(defaultProviderIntake),

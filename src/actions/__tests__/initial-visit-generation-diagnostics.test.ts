@@ -1,3 +1,4 @@
+vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: 1 } }) }))
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase } from '@/test-utils/supabase-mock'
 import { createInitialVisitFailureCapture } from '@/lib/clinical/initial-visit-generation-diagnostics'

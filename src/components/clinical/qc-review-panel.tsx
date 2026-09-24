@@ -61,6 +61,7 @@ const resolutionSourceLabels: Record<FindingResolutionSource, string> = {
 
 interface ReviewRow {
   id: string
+  episode_id?: string | null
   review_version?: string | null
   review_coverage?: {complete?:boolean;limitations?:string[]} | null
   generation_status: 'pending' | 'processing' | 'completed' | 'failed'
@@ -93,11 +94,13 @@ const stepLabels: Record<QcStep, string> = {
   cross_step: 'Cross-Step',
 }
 
-function findingDeepLink(caseId: string, finding: QualityFinding): string {
+function findingDeepLink(caseId: string, finding: QualityFinding, episodeId?: string | null): string {
+  // The persisted review owns its findings; model output does not select an episode.
+  const episodeQuery = episodeId ? `episode=${encodeURIComponent(episodeId)}` : ''
   switch (finding.step) {
     case 'initial_visit':
     case 'pain_evaluation':
-      return `/patients/${caseId}/initial-visit`
+      return `/patients/${caseId}/initial-visit?${episodeQuery ? `${episodeQuery}&` : ''}visitType=${finding.step === 'pain_evaluation' ? 'pain_evaluation_visit' : 'initial_visit'}`
     case 'procedure':
       return finding.procedure_id
         ? `/patients/${caseId}/procedures/${finding.procedure_id}/note`
@@ -105,7 +108,7 @@ function findingDeepLink(caseId: string, finding: QualityFinding): string {
     case 'pain_follow_up':
       return finding.encounter_id ? `/patients/${caseId}/visits/${finding.encounter_id}` : `/patients/${caseId}/visits`
     case 'discharge':
-      return `/patients/${caseId}/discharge`
+      return `/patients/${caseId}/discharge${episodeQuery ? `?${episodeQuery}` : ''}`
     case 'case_summary':
       return `/patients/${caseId}`
     case 'cross_step':
@@ -420,6 +423,7 @@ export function QcReviewPanel({
                   <FindingCard
                     key={h.hash}
                     caseId={caseId}
+                    episodeId={review.episode_id}
                     reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                     hash={h.hash}
                     finding={h.finding}
@@ -441,6 +445,7 @@ export function QcReviewPanel({
                         <FindingCard
                           key={h.hash}
                           caseId={caseId}
+                          episodeId={review.episode_id}
                           reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                           hash={h.hash}
                           finding={h.finding}
@@ -462,6 +467,7 @@ export function QcReviewPanel({
                         <FindingCard
                           key={h.hash}
                           caseId={caseId}
+                          episodeId={review.episode_id}
                           reviewId={review.review_version === 'qc-v3' ? review.id : undefined}
                           hash={h.hash}
                           finding={h.finding}
@@ -506,6 +512,7 @@ export function QcReviewPanel({
 
 function FindingCard({
   caseId,
+  episodeId,
   reviewId,
   hash,
   finding,
@@ -517,6 +524,7 @@ function FindingCard({
 }: {
   caseId: string
   reviewId?: string
+  episodeId?: string | null
   hash: string
   finding: QualityFinding
   override: FindingOverrideEntry | null
@@ -664,7 +672,7 @@ function FindingCard({
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Link
-              href={findingDeepLink(caseId, finding)}
+              href={findingDeepLink(caseId, finding, episodeId)}
               className="text-xs text-primary underline"
             >
               View in editor →
