@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
+import { formatInvoiceQuantity } from '@/lib/billing/format-quantity'
 
 export interface InvoicePdfData {
   // Clinic
@@ -127,8 +128,8 @@ const styles = StyleSheet.create({
   // Column widths
   colDate: { width: '12%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
   colCpt: { width: '11%', paddingLeft: 4, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colDesc: { width: '40%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
-  colQty: { width: '7%', textAlign: 'center', borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colDesc: { width: '36%', paddingLeft: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
+  colQty: { width: '11%', textAlign: 'center', borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
   colUnit: { width: '15%', textAlign: 'right', paddingRight: 6, borderRightWidth: 1, borderRightColor: borderColor, borderRightStyle: 'solid' },
   colAmount: { width: '15%', textAlign: 'right', paddingRight: 6 },
   thText: { fontFamily: 'Helvetica-Bold', fontSize: 9 },
@@ -266,7 +267,7 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
               <Text style={[styles.colDate, styles.tdText]}>{item.serviceDate}</Text>
               <Text style={[styles.colCpt, styles.tdText]}>{item.cptCode}</Text>
               <Text style={[styles.colDesc, styles.tdText]}>{item.description}</Text>
-              <Text style={[styles.colQty, styles.tdText]}>{item.quantity}</Text>
+              <Text style={[styles.colQty, styles.tdText]}>{formatInvoiceQuantity(item.quantity, item.cptCode, item.description, data.invoiceType)}</Text>
               <Text style={[styles.colUnit, styles.tdText]}>{formatCurrency(item.unitPrice)}</Text>
               <Text style={[styles.colAmount, styles.tdText]}>{formatCurrency(item.amount)}</Text>
             </View>

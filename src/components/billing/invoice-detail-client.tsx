@@ -36,6 +36,7 @@ import { LOCKED_STATUSES, PAYMENT_ALLOWED_LOCKED_STATUSES, CASE_STATUS_CONFIG, t
 import { useCaseStatus } from '@/components/patients/case-status-context'
 import type { InvoiceLineItemFormValues } from '@/lib/validations/invoice'
 import { PaymentDialog, type PaymentDialogMode } from './payment-dialog'
+import { formatInvoiceQuantity } from '@/lib/billing/format-quantity'
 
 interface InvoiceData {
   id: string
@@ -548,7 +549,7 @@ export function InvoiceDetailClient({
                 <TableHead className="w-[100px]">DATE</TableHead>
                 <TableHead className="w-[80px]">CPT</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead className="w-[60px] text-right">QTY</TableHead>
+                <TableHead className="w-[100px] text-right">QTY</TableHead>
                 <TableHead className="w-[120px] text-right">Amount</TableHead>
               </TableRow>
             </TableHeader>
@@ -558,7 +559,7 @@ export function InvoiceDetailClient({
                   <TableCell>{formatDate(item.service_date)}</TableCell>
                   <TableCell className="font-mono text-xs">{item.cpt_code}</TableCell>
                   <TableCell>{item.description}</TableCell>
-                  <TableCell className="text-right">{item.quantity}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">{formatInvoiceQuantity(item.quantity, item.cpt_code, item.description, invoice.invoice_type)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
                 </TableRow>
               ))}
