@@ -62,6 +62,16 @@ export default async function InitialVisitPage({ params, searchParams }: { param
     getProviderIntake(caseId, 'pain_evaluation_visit', episodeId),
   ])
 
+  // A failed query is not an empty visit. Do not allow blank defaults to
+  // overwrite saved measurements or feed generation after a read failure.
+  if (vitalsResult.error) {
+    return (
+      <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">
+        Vital signs could not be loaded. Reload this page to try again. Saved measurements have not been changed.
+      </div>
+    )
+  }
+
   const caseData = caseRes.data
     ? {
         case_number: caseRes.data.case_number,
@@ -109,7 +119,7 @@ export default async function InitialVisitPage({ params, searchParams }: { param
   if (priorIvStatus === 'finalized' && priorIvFinalizedAt) {
     const { data: priorVitalsRow } = await supabase
       .from('vital_signs')
-      .select('pain_score_max, clinical_encounters!inner(episode_id)')
+      .select('pain_score_max, clinical_encounters!vital_signs_encounter_id_fkey!inner(episode_id)')
       .eq('case_id', caseId)
       .eq('clinical_encounters.episode_id', episodeId)
       .is('procedure_id', null)

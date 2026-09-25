@@ -161,7 +161,7 @@ async function gatherSourceData(
 
   const vitalsQuery = supabase
       .from('vital_signs')
-      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+      .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!vital_signs_encounter_id_fkey!inner(episode_id,encounter_type)')
       .eq('clinical_encounters.episode_id', sourceEpisodeId)
       .eq('case_id', caseId)
       .is('procedure_id', null)
@@ -318,7 +318,7 @@ async function gatherSourceData(
   if (priorVisitRow && priorVisitFinalizedAt) {
     const { data: vitalsRow } = await supabase
       .from('vital_signs')
-      .select('recorded_at, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+      .select('recorded_at, pain_score_min, pain_score_max, clinical_encounters!vital_signs_encounter_id_fkey!inner(episode_id,encounter_type)')
       .eq('clinical_encounters.episode_id', sourceEpisodeId)
       .eq('case_id', caseId)
       .is('procedure_id', null)
@@ -1180,7 +1180,7 @@ export async function getInitialVisitVitals(caseId: string, episodeId?: string) 
 
   const query = supabase
     .from('vital_signs')
-    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!inner(episode_id,encounter_type)')
+    .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, clinical_encounters!vital_signs_encounter_id_fkey!inner(episode_id,encounter_type)')
     .eq('clinical_encounters.episode_id', selectedEpisodeId)
     .eq('case_id', caseId)
     .is('procedure_id', null)
@@ -1240,7 +1240,7 @@ export async function saveInitialVisitVitals(
 
   const vitalsQuery = supabase
     .from('vital_signs')
-    .select('id, clinical_encounters!inner(episode_id)')
+    .select('id, clinical_encounters!vital_signs_encounter_id_fkey!inner(episode_id)')
     .eq('case_id', caseId)
     .eq('clinical_encounters.episode_id', selectedEpisodeId)
     .is('procedure_id', null)

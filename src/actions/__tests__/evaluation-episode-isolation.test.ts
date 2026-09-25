@@ -12,7 +12,7 @@ vi.mock('@/actions/case-status', () => ({ assertCaseNotClosed: async () => ({}),
 vi.mock('@/actions/fee-estimate', () => ({ getFeeEstimateTotals: async () => ({ professional_max: 0, practice_center_max: 0 }) }))
 vi.mock('@/lib/supabase/generation-lock', () => ({ acquireGenerationLock: async () => ({ acquired: true }) }))
 vi.mock('@/lib/claude/generate-initial-visit', () => ({ generateInitialVisitFromData: generation, regenerateSection: vi.fn(), INITIAL_VISIT_SECTIONS_TOTAL: 16 }))
-import { generateInitialVisitNote, getInitialVisitNotes, saveProviderIntake, saveInitialVisitVitals } from '../initial-visit-notes'
+import { generateInitialVisitNote, getInitialVisitNotes, getInitialVisitVitals, saveProviderIntake, saveInitialVisitVitals } from '../initial-visit-notes'
 import { getClinicalOrders } from '../clinical-orders'
 
 // A small row store executes filters and writes, so accidental case-wide mutations
@@ -34,6 +34,9 @@ function tableQuery(table: string) {
   builder.limit.mockImplementation((value: number) => { limit = value; return builder })
   builder.update.mockImplementation((value: Row) => { patch = value; return builder })
   const execute = (single: boolean) => {
+    if (table === 'vital_signs' && builder.select.mock.calls.some(([columns]: [string]) => columns.includes('clinical_encounters!inner('))) {
+      return { data: null, error: { code: 'PGRST201', message: 'Ambiguous encounter relationship' } }
+    }
     let rows = (tables[table] ?? []).filter(row => filters.every(filter => filter(row)))
     if (order) rows = [...rows].sort((a,b) => String(b[order!]).localeCompare(String(a[order!])))
     if (limit) rows = rows.slice(0,limit)
@@ -64,6 +67,12 @@ describe('return evaluation isolation', () => {
   it('reads selected notes and preserves the legacy default', async () => {
     expect((await getInitialVisitNotes('case','episode-2')).data?.map(n => n.id)).toEqual(['note-2'])
     expect((await getInitialVisitNotes('case')).data?.map(n => n.id).sort()).toEqual(['note-1','old-initial'])
+  })
+  it('loads saved return vitals using an unambiguous join and keeps earlier episodes separate', async () => {
+    expect((await getInitialVisitVitals('case', 'episode-2')).data).toMatchObject({ pain_score_max: 7 })
+    expect((await getInitialVisitVitals('case', 'episode-1')).data).toMatchObject({ pain_score_max: 3 })
+    tables.vital_signs = tables.vital_signs.filter(row => row.encounter_id !== 'encounter-2')
+    expect((await getInitialVisitVitals('case', 'episode-2')).data).toBeNull()
   })
   it('merges intake only into the selected return note', async () => {
     const older = structuredClone(tables.initial_visit_notes[0])
