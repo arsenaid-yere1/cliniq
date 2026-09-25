@@ -15,6 +15,7 @@ function setup() {
   const errors: Record<string, unknown> = {}
   mock.from.mockImplementation((table: string) => {
     const builder = createMockQueryBuilder({data:tables[table] ?? [],error:errors[table] ?? null})
+    if (table === 'care_episodes') builder.then = (resolve: (value: unknown) => void) => resolve({ data: [], error: errors[table] ?? null })
     builders[table] = builder
     return builder
   })

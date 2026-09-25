@@ -1,5 +1,9 @@
 'use server'
 
+import { loadPriorEpisodeHistory } from '@/lib/clinical/load-prior-episode-history'
+import { historyServiceDate, historyEncounterDate } from '@/lib/clinical/prior-episode-history'
+import { validateLegacyReviewTarget } from '@/lib/qc/legacy-review-target'
+
 import { RETURN_TELE_VISITS_ENABLED } from '@/lib/features/return-tele-visits'
 import { computeFindingHash } from '@/lib/qc/review-finding-hash'
 import { qualityReviewV3Enabled } from '@/lib/qc/review-config'
@@ -80,7 +84,7 @@ async function gatherSourceData(
     supabase
       .from('case_summaries')
       .select(
-        'chief_complaint, imaging_findings, suggested_diagnoses, review_status, raw_ai_response',
+        'id, chief_complaint, imaging_findings, suggested_diagnoses, review_status, raw_ai_response',
       )
       .eq('case_id', caseId)
       .is('deleted_at', null)
@@ -90,7 +94,7 @@ async function gatherSourceData(
     supabase
       .from('initial_visit_notes')
       .select(
-        'id, visit_type, visit_date, status, diagnoses, chief_complaint, physical_exam, treatment_plan, medical_necessity, prognosis, raw_ai_response',
+        'id, encounter_id, clinical_encounters:clinical_encounters!initial_visit_notes_encounter_id_fkey(encounter_date), visit_type, visit_date, status, diagnoses, chief_complaint, physical_exam, treatment_plan, medical_necessity, prognosis, raw_ai_response',
       )
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
@@ -110,7 +114,7 @@ async function gatherSourceData(
     supabase
       .from('discharge_notes')
       .select(
-        'id, visit_date, status, subjective, objective_vitals, diagnoses, assessment, plan_and_recommendations, prognosis, pain_score_max, pain_trajectory_text, raw_ai_response',
+        'id, encounter_id, visit_date, status, subjective, objective_vitals, diagnoses, assessment, plan_and_recommendations, prognosis, pain_score_max, pain_trajectory_text, raw_ai_response',
       )
       .eq('case_id', caseId)
       .eq('episode_id', episode.id)
@@ -170,12 +174,25 @@ async function gatherSourceData(
     date_of_birth: string | null
   }
 
+  if ([summaryRes, ivRes, procedureNotesRes, followUpRes, dischargeRes].some(result => result.error)) {
+    return { data: null, error: 'Unable to load current episode review sources' }
+  }
   const ivRows = ivRes.data ?? []
   const initialVisit = ivRows.find((r) => r.visit_type === 'initial_visit') ?? null
   const painEval = ivRows.find((r) => r.visit_type === 'pain_evaluation_visit') ?? null
   // Pain-management-entry case: no initial_visit row, only a pain_evaluation row.
   // Reviewer must skip every initial_visit-anchored check.
   const painManagementStart = initialVisit === null && painEval !== null
+
+  let priorEpisodeHistory: QualityReviewInputData['priorEpisodeHistory']
+  if (episode.episode_number > 1 && painEval) {
+    try {
+      priorEpisodeHistory = (await loadPriorEpisodeHistory(supabase, caseId, episode.id,
+        historyServiceDate(painEval.visit_date, historyEncounterDate(painEval.clinical_encounters)))).history
+    } catch (error) {
+      return { data: null, error: error instanceof Error ? error.message : 'Unable to load previous episode history' }
+    }
+  }
 
   // Procedure-vitals lookup so each procedure note carries its pain numbers.
   const procIds = (procedureNotesRes.data ?? []).map((n) => n.procedure_id)
@@ -226,6 +243,7 @@ async function gatherSourceData(
 
   return {
     data: {
+      ...(priorEpisodeHistory ? { priorEpisodeHistory } : {}),
       caseDetails: {
         case_number: caseRes.data.case_number,
         accident_type: caseRes.data.accident_type,
@@ -239,6 +257,7 @@ async function gatherSourceData(
       },
       caseSummary: summaryRes.data
         ? {
+            id: summaryRes.data.id,
             chief_complaint: summaryRes.data.chief_complaint,
             imaging_findings: summaryRes.data.imaging_findings,
             suggested_diagnoses: summaryRes.data.suggested_diagnoses,
@@ -249,6 +268,7 @@ async function gatherSourceData(
       initialVisitNote: initialVisit
         ? {
             id: initialVisit.id,
+            encounter_id: initialVisit.encounter_id,
             visit_type: initialVisit.visit_type,
             visit_date: initialVisit.visit_date,
             status: initialVisit.status,
@@ -264,6 +284,7 @@ async function gatherSourceData(
       painEvaluationNote: painEval
         ? {
             id: painEval.id,
+            encounter_id: painEval.encounter_id,
             visit_date: painEval.visit_date,
             status: painEval.status,
             diagnoses: painEval.diagnoses,
@@ -280,6 +301,7 @@ async function gatherSourceData(
       dischargeNote: dischargeRes.data
         ? {
             id: dischargeRes.data.id,
+            encounter_id: dischargeRes.data.encounter_id,
             visit_date: dischargeRes.data.visit_date,
             status: dischargeRes.data.status,
             subjective: dischargeRes.data.subjective,
@@ -399,6 +421,8 @@ export async function runCaseQualityReview(caseId: string): Promise<{data?:{id:s
     writeProgress(completedKeys.length),
   )
 
+  const targetError = result.data?.findings.map(finding => validateLegacyReviewTarget(finding, inputData)).find(Boolean)
+  if (targetError) result.error = targetError
   if (result.error || !result.data) {
     await supabase
       .from('case_quality_reviews')
@@ -768,6 +792,29 @@ export async function clearFindingOverride(caseId: string, findingHash: string) 
   return { data: { success: true } }
 }
 
+async function validatePersistedLegacyTarget(
+  client: Awaited<ReturnType<typeof createClient>>, caseId: string, episodeId: string, finding: QualityFinding,
+): Promise<string | null> {
+  const invalid = 'Finding target does not match a current episode note. Reload the review.'
+  if (finding.step === 'cross_step') return finding.note_id || finding.procedure_id || finding.encounter_id || finding.section_key ? invalid : null
+  if (finding.step === 'case_summary') return finding.procedure_id || finding.encounter_id ? invalid : null
+  if (!finding.note_id) return invalid
+  if (finding.step === 'procedure') {
+    const result = await client.from('procedure_notes').select('id,procedure_id,procedures!inner(episode_id,deleted_at)')
+      .eq('id', finding.note_id).eq('case_id', caseId).eq('procedures.episode_id', episodeId)
+      .is('deleted_at', null).is('procedures.deleted_at', null).maybeSingle()
+    return result.error || !result.data || result.data.id !== finding.note_id || result.data.procedure_id !== finding.procedure_id || finding.encounter_id ? invalid : null
+  }
+  const table = finding.step === 'discharge' ? 'discharge_notes' : finding.step === 'pain_follow_up' ? 'pain_follow_up_notes' : 'initial_visit_notes'
+  let query = client.from(table).select('id,encounter_id').eq('id', finding.note_id).eq('case_id', caseId)
+    .eq('episode_id', episodeId).is('deleted_at', null)
+  if (table === 'initial_visit_notes') query = query.eq('visit_type', finding.step === 'initial_visit' ? 'initial_visit' : 'pain_evaluation_visit')
+  const result = await query.maybeSingle()
+  return result.error || !result.data || result.data.id !== finding.note_id || finding.procedure_id
+    || (finding.encounter_id != null && result.data.encounter_id !== finding.encounter_id)
+    || (finding.step === 'pain_follow_up' && result.data.encounter_id !== finding.encounter_id) ? invalid : null
+}
+
 // --- Resolution mutators ---
 // verifyFinding runs a deterministic check against persistent audit columns
 // kept current by existing regen paths. No recomputation of the underlying
@@ -801,6 +848,9 @@ export async function verifyFinding(caseId: string, findingHash: string) {
   const findings = (row.findings as QualityFinding[] | null) ?? []
   const finding = findings.find((f) => computeFindingHash(f) === findingHash)
   if (!finding) return { error: 'Finding not found in current review' }
+
+  const targetError = await validatePersistedLegacyTarget(supabase, caseId, episode.id, finding)
+  if (targetError) return { error: targetError }
 
   let resolved = false
   let reason: string | null = null
@@ -997,6 +1047,9 @@ export async function fixFinding(caseId: string, findingHash: string) {
   if (existing?.status === 'fix_in_progress') {
     return { error: 'A fix is already in progress for this finding' }
   }
+
+  const targetError = await validatePersistedLegacyTarget(supabase, caseId, episode.id, finding)
+  if (targetError) return { error: targetError }
 
   // Stamp fix_in_progress before kicking off the regen so the UI can show
   // a spinner across the round-trip.

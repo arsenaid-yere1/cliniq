@@ -7,7 +7,7 @@ export function buildReviewTrajectory(snapshot: ReviewSnapshot) {
   const discharge = snapshot.notes.find(n => n.step === 'discharge')
   const notes = snapshot.notes.filter(n => n.step === 'procedure').sort((a,b) => (a.date ?? '').localeCompare(b.date ?? '') || Number(a.context.procedure_number)-Number(b.context.procedure_number) || a.id.localeCompare(b.id))
   // Missing anchors cannot establish a numeric contradiction or prove resolution.
-  if (!discharge || !notes.length || notes.length !== snapshot.sources.filter(s => s.type === 'procedures').length || notes.some(n => !n.date || !n.context.vitals || numeric(object(n.context.vitals).pain_score_max) === null)) return null
+  if (!discharge || !notes.length || notes.length !== snapshot.sources.filter(s => s.type === 'procedures' && s.scope === 'episode').length || notes.some(n => !n.date || !n.context.vitals || numeric(object(n.context.vitals).pain_score_max) === null)) return null
   const procedures = notes.map(n => ({procedure_date:n.date!,procedure_number:Number(n.context.procedure_number),pain_score_min:numeric(object(n.context.vitals).pain_score_min),pain_score_max:numeric(object(n.context.vitals).pain_score_max)}))
   const first = procedures[0],last = procedures.at(-1)!
   const previous = procedures.slice(0,-1).reverse().find(p => p.pain_score_max !== null)

@@ -1,4 +1,6 @@
-vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: 1 } }) }))
+const historyState = vi.hoisted(() => ({ number: 1, load: vi.fn() }))
+vi.mock('@/lib/clinical/load-prior-episode-history', () => ({ loadPriorEpisodeHistory: historyState.load }))
+vi.mock('@/lib/clinical/evaluation-scope', () => ({ resolveEvaluationEpisode: async () => ({ episode: { id: 'episode', episode_number: historyState.number } }) }))
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase } from '@/test-utils/supabase-mock'
 import { createInitialVisitFailureCapture } from '@/lib/clinical/initial-visit-generation-diagnostics'
@@ -27,6 +29,7 @@ const asClient = () => db as unknown as Awaited<ReturnType<typeof createClient>>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  historyState.number = 1
   db = createMockSupabase()
   db.rpc.mockImplementation(() => ({ abortSignal: vi.fn().mockResolvedValue({ data: 'failure-id', error: null }) }))
   db.from.mockImplementation((table: string) => createMockQueryBuilder({ data:
@@ -94,5 +97,28 @@ describe('generation action integration', () => {
     expect(state.section).not.toHaveBeenCalled()
     expect(db.rpc.mock.calls[0][1]).toMatchObject({ p_operation: 'section', p_section: 'treatment_plan' })
     expect(JSON.parse(db.rpc.mock.calls[0][1].p_payload).issues[0].path).toEqual(['imaging_findings'])
+  })
+})
+
+
+describe('historical generation source hash', () => {
+  it('tracks prior corrections deterministically without changing current PRP evidence', async () => {
+    historyState.number = 2
+    const { historicalEpisode } = await import('@/test-utils/prior-episode-history')
+    const { projectPriorEpisodeHistory } = await import('@/lib/clinical/prior-episode-history')
+    const prior = historicalEpisode()
+    historyState.load.mockImplementation(async () => ({ history: projectPriorEpisodeHistory('case', 2, '2026-01-05', [prior]).history }))
+    state.full.mockImplementation(async (_input, _type, _tone, _progress, options) => {
+      await options.onValidationFailure(event)
+      return { error: 'Rejected' }
+    })
+    await generateInitialVisitNote('case', 'pain_evaluation_visit', null, '2026-01-05')
+    await generateInitialVisitNote('case', 'pain_evaluation_visit', null, '2026-01-05')
+    const first = db.rpc.mock.calls[0][1].p_source_hash
+    expect(db.rpc.mock.calls[1][1].p_source_hash).toBe(first)
+    prior.discharge_notes[0].assessment = 'Corrected prior discharge'
+    await generateInitialVisitNote('case', 'pain_evaluation_visit', null, '2026-01-05')
+    expect(db.rpc.mock.calls[2][1].p_source_hash).not.toBe(first)
+    expect(state.full.mock.calls[2][0].prpTargetEvidence).toEqual(state.full.mock.calls[0][0].prpTargetEvidence)
   })
 })

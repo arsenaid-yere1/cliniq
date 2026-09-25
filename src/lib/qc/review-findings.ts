@@ -35,6 +35,7 @@ export function validateGroundedFinding(finding: GroundedFinding, snapshot: Revi
   for (const evidence of finding.evidence) {
     const source = snapshot.sources.find(s => s.id === evidence.source_id)
     if (!source || source.fields.available === false) return 'Unavailable source reference'
+    if (source.scope === 'historical_episode' && !source.date) return 'Undated historical evidence is unavailable'
     const field = sourceField(source.fields,evidence.field)
     if (!field.exists) return 'Unknown evidence field'
     if (evidence.missing) {
@@ -43,7 +44,7 @@ export function validateGroundedFinding(finding: GroundedFinding, snapshot: Revi
       const text = typeof field.value === 'string' ? field.value : JSON.stringify(field.value)
       if (!evidence.quote || !text?.includes(evidence.quote)) return 'Evidence quote not found in current source'
     }
-    if (note?.date && source.date && source.scope === 'case' && source.date.slice(0,10) > note.date.slice(0,10)) return 'Later evidence cannot establish an earlier note contradiction'
+    if (note?.date && source.date && (source.scope === 'case' || source.scope === 'historical_episode') && source.date.slice(0,10) > note.date.slice(0,10)) return 'Later evidence cannot establish an earlier note contradiction'
   }
   if (provenance === 'ai') {
     const references = new Set(finding.evidence.map(e => `${e.source_id}:${e.field}:${e.quote}`))

@@ -351,3 +351,27 @@ describe('explicit current exam contract', () => {
     }
   })
 })
+
+describe('previous episode prompt contract', () => {
+  beforeEach(() => vi.clearAllMocks())
+  it('supplies untruncated dated history to full and section generation with recurrence safeguards', async () => {
+    const { historicalEpisode } = await import('@/test-utils/prior-episode-history')
+    const { projectPriorEpisodeHistory } = await import('@/lib/clinical/prior-episode-history')
+    const priorEpisodeHistory = projectPriorEpisodeHistory('case', 2, '2026-01-05', [historicalEpisode()]).history
+    const input = { ...emptyInput, priorEpisodeHistory }
+    vi.mocked(callClaudeTool).mockResolvedValue({ data: { content: 'fresh' } } as never)
+    await generateInitialVisitFromData(input, 'pain_evaluation_visit')
+    await regenerateSection(input, 'pain_evaluation_visit', 'post_accident_history', 'old')
+    for (const [options] of vi.mocked(callClaudeTool).mock.calls) {
+      expect(options.messages[0].content).toContain('Recovered; discharged')
+      expect(options.messages[0].content).toContain('"source_id": "dis1"')
+      expect(options.system).toContain('Successful discharge followed by recurrence is possible')
+      expect(options.system).toContain('Historical findings or recommendations cannot establish current findings')
+      expect(options.system).not.toContain('no prior Initial Visit exists on this case')
+      expect(options.system).not.toContain('State that conservative treatment to date')
+    }
+    const options = vi.mocked(callClaudeTool).mock.calls[1][0]
+    expect(options.parse({ content: 'At the previous visit on January 1, the patient accepted treatment.' }).success).toBe(true)
+    expect(options.parse({ content: 'The patient accepted treatment today.' }).success).toBe(false)
+  })
+})

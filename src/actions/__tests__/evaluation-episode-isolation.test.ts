@@ -29,6 +29,7 @@ function tableQuery(table: string) {
   builder.eq.mockImplementation((key: string, value: unknown) => { filters.push(row => field(row, key) === value); return builder })
   builder.is.mockImplementation((key: string, value: unknown) => { filters.push(row => (field(row, key) ?? null) === value); return builder })
   builder.in.mockImplementation((key: string, values: unknown[]) => { filters.push(row => values.includes(field(row, key))); return builder })
+  builder.lt.mockImplementation((key: string, value: number) => { filters.push(row => Number(row[key]) < value); return builder })
   builder.lte.mockImplementation((key: string, value: string) => { filters.push(row => String(row[key]) <= value); return builder })
   builder.order.mockImplementation((key: string) => { order = key; return builder })
   builder.limit.mockImplementation((value: number) => { limit = value; return builder })
@@ -84,11 +85,15 @@ describe('return evaluation isolation', () => {
   it('generates from this episode intake/vitals without a prior episode Initial Visit', async () => {
     const older = structuredClone(tables.initial_visit_notes[0])
     tables.clinical_encounters.push({ id: 'later-follow-up', case_id: 'case', episode_id: 'episode-2', encounter_type: 'pain_follow_up' })
+    tables.clinical_encounters.push({ id: 'prior-discharge', case_id: 'case', episode_id: 'episode-1', encounter_type: 'discharge', status: 'completed', encounter_date: '2026-08-01' })
+    tables.discharge_notes = [{ id: 'prior-discharge-note', case_id: 'case', episode_id: 'episode-1', encounter_id: 'prior-discharge', status: 'finalized', assessment: 'Recovered after prior care' }]
     tables.vital_signs.push({ id: 'later-vitals', case_id: 'case', encounter_id: 'later-follow-up', pain_score_max: 1, recorded_at: '2026-12-01' })
     await generateInitialVisitNote('case','pain_evaluation_visit',null,null,'episode-2')
     expect(generation).toHaveBeenCalled()
     expect(generation.mock.calls[0][0]).toMatchObject({ priorVisitData: null, providerIntake: { social_history: { occupation: 'Episode 2' } }, vitalSigns: { pain_score_max: 7 } })
+    expect(JSON.stringify(generation.mock.calls[0][0].priorEpisodeHistory)).toContain('Recovered after prior care')
     expect(tables.initial_visit_notes[0]).toEqual(older)
+    expect(tables.discharge_notes[0].assessment).toBe('Recovered after prior care')
     expect(tables.initial_visit_notes[1].status).toBe('failed')
   })
   it('updates return vitals without changing earlier episode vitals', async () => {

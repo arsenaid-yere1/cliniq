@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockQueryBuilder, createMockSupabase } from '@/test-utils/supabase-mock'
 import type { ReviewFixTarget } from '@/lib/qc/review-fix-target'
 
+const history = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/clinical/load-prior-episode-history', () => ({ loadPriorEpisodeHistory: history }))
 const ai = vi.hoisted(() => ({ full: vi.fn(), section: vi.fn() }))
 let db: ReturnType<typeof createMockSupabase>
 let note: Record<string, unknown>
@@ -12,11 +14,16 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/actions/case-status', () => ({ assertCaseNotClosed: async () => ({}), autoAdvanceFromIntake: vi.fn() }))
 vi.mock('@/actions/fee-estimate', () => ({ getFeeEstimateTotals: async () => ({ professional_max: 0, practice_center_max: 0 }) }))
 vi.mock('@/lib/claude/generate-initial-visit', () => ({ generateInitialVisitFromData: ai.full, regenerateSection: ai.section, INITIAL_VISIT_SECTIONS_TOTAL: 16 }))
-import { regenerateNoteSection } from '../initial-visit-notes'
+vi.mock('@/lib/pdf/render-initial-visit-pdf', () => ({ renderInitialVisitPdf: async () => new Uint8Array([1, 2]) }))
+import { createHash } from 'node:crypto'
+import { buildPrpTargetEvidence } from '@/lib/clinical/prp-target-evidence'
+import { initialVisitNoteEditSchema, initialVisitSections } from '@/lib/validations/initial-visit-note'
+import { regenerateNoteSection, saveInitialVisitNote, finalizeInitialVisitNote } from '../initial-visit-notes'
 const target = (): ReviewFixTarget => ({ runId: 'review-run', noteId: 'return-note', episodeId: 'episode-2', encounterId: 'return-encounter', updatedAt: 'v1', checkLease: vi.fn(async () => {}) })
 
 beforeEach(() => {
   vi.clearAllMocks()
+  history.mockResolvedValue({ history: { cutoff_date: '2026-09-24', episodes: [], coverage: { complete: false, limitations: ['Prior correction pending'] } }, fingerprint: 'history' })
   vi.stubEnv('QUALITY_REVIEW_V3_ENABLED', 'true')
   db = createMockSupabase()
   note = { id: 'return-note', case_id: 'case', episode_id: 'episode-2', encounter_id: 'return-encounter', visit_type: 'pain_evaluation_visit', status: 'draft', updated_at: 'v1', visit_date: '2026-09-24', prognosis: 'Original prognosis', provider_intake: null }
@@ -26,6 +33,7 @@ beforeEach(() => {
       : table === 'cases' ? { case_status: 'in_treatment', case_number: 'C1', patient: { first_name: 'Test', last_name: 'Patient', date_of_birth: null, gender: null } }
       : table === 'initial_visit_notes' ? note
       : table === 'vital_signs' ? { pain_score_max: 7 }
+      : table === 'documents' ? { id: 'document' }
       : table.endsWith('_extractions') ? [] : null
     const builder = createMockQueryBuilder({ data, error: null })
     if (table === 'initial_visit_notes') {
@@ -54,10 +62,30 @@ describe('V3 evaluation fix episode compatibility', () => {
     expect(vitalsQueries[0].eq.mock.calls).toEqual(expect.arrayContaining([['clinical_encounters.episode_id','episode-2'],['encounter_id','return-encounter']]))
     const input = section === 'treatment_plan' ? ai.full.mock.calls[0][0] : ai.section.mock.calls[0][0]
     expect(input.priorVisitData).toBeNull()
+    expect(input.priorEpisodeHistory.coverage.limitations).toContain('Prior correction pending')
+    expect(history).toHaveBeenCalledWith(db, 'case', 'episode-2', '2026-09-24')
   })
   it.each(['updated_at','encounter_id'] as const)('rejects changed %s before generation or RPC save', async field => {
     note[field] = 'changed'
     expect((await regenerateNoteSection('case','pain_evaluation_visit','prognosis',undefined,'v1',target())).error).toContain('target changed')
+    expect(ai.section).not.toHaveBeenCalled()
+    expect(db.rpc).not.toHaveBeenCalled()
+  })
+  it('keeps PRP save and sign independent of historical retrieval', async () => {
+    history.mockRejectedValue(new Error('History unavailable'))
+    const evidence = buildPrpTargetEvidence({ imagingRows: [], providerIntake: null, pmPhysicalExam: undefined })
+    note.prp_target_evidence_hash = createHash('sha256').update(JSON.stringify(evidence)).digest('hex')
+    note.prp_target_recommendations = []
+    const values = initialVisitNoteEditSchema.parse({ visit_date: '2026-09-24', ...Object.fromEntries(initialVisitSections.map(key => [key, 'Reviewed text'])) })
+    expect((await saveInitialVisitNote('case', 'pain_evaluation_visit', values, 'episode-2')).error).toBeUndefined()
+    Object.assign(db, { storage: { from: () => ({ upload: async () => ({ error: null }) }) } })
+    expect((await finalizeInitialVisitNote('case', 'pain_evaluation_visit', 'v1', 'episode-2')).error).toBeUndefined()
+    expect(db.rpc).toHaveBeenCalledWith('finish_clinical_note', expect.objectContaining({ p_note_id: 'return-note' }))
+    expect(history).not.toHaveBeenCalled()
+  })
+  it('fails history retrieval before AI or fenced save', async () => {
+    history.mockRejectedValue(new Error('History unavailable'))
+    expect((await regenerateNoteSection('case','pain_evaluation_visit','prognosis',undefined,'v1',target())).error).toBe('History unavailable')
     expect(ai.section).not.toHaveBeenCalled()
     expect(db.rpc).not.toHaveBeenCalled()
   })

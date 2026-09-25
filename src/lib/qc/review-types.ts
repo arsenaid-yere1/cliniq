@@ -16,7 +16,7 @@ export type ReviewValue = null | boolean | number | string | ReviewValue[] | { [
 export type ReviewSource = {
   id: string
   type: string
-  scope: 'episode' | 'case'
+  scope: 'episode' | 'case' | 'historical_episode'
   date: string | null
   fields: Record<string, ReviewValue>
 }
@@ -47,5 +47,5 @@ export type ReviewSnapshot = {
   notes: ReviewNote[]
   sources: ReviewSource[]
   coverage: { complete: boolean; limitations: string[] }
-  versions: Array<{ source_id: string; updated_at: string | null }>
+  versions: Array<{ source_id: string; updated_at: string | null; fingerprint?: string }>
 }

@@ -1,4 +1,6 @@
 import 'server-only'
+import { loadPriorEpisodeHistory } from '@/lib/clinical/load-prior-episode-history'
+import { historyServiceDate } from '@/lib/clinical/prior-episode-history'
 import { painManagementExtractionResultSchema } from '@/lib/validations/pain-management-extraction'
 import { mriExtractionResultSchema } from '@/lib/validations/mri-extraction'
 import { ctScanExtractionResultSchema } from '@/lib/validations/ct-scan-extraction'
@@ -209,6 +211,22 @@ export async function collectReviewSnapshot(client: SupabaseClient<Database>, ca
   if (!notes.some(n => n.step === 'initial_visit' || n.step === 'pain_evaluation')) limitations.push('Missing origin note')
   if (!notes.some(n => n.step === 'procedure')) limitations.push('Missing procedure note')
   if (!notes.some(n => n.step === 'discharge')) limitations.push(episode.status === 'active' ? 'Episode in progress: discharge note not yet available' : 'Missing discharge note')
+  const returnEvaluation = notes.find(note => note.step === 'pain_evaluation')
+  if (episode.episode_number > 1 && returnEvaluation) {
+    const historical = await loadPriorEpisodeHistory(client, caseId, episodeId, historyServiceDate(returnEvaluation.date))
+    for (const prior of historical.history.episodes) {
+      for (const fact of prior.facts) sources.push({
+        id: `historical:${fact.source_table}:${fact.source_id}`,
+        type: `prior_episode_${fact.source_table}`, scope: 'historical_episode', date: fact.date,
+        fields: { ...fact.fields, episode_id: fact.episode_id, episode_number: fact.episode_number, service_date: fact.date },
+      })
+    }
+    sources.push({ id: `historical:coverage:${episodeId}`, type: 'prior_episode_coverage', scope: 'historical_episode', date: historical.history.cutoff_date,
+      fields: { complete: historical.history.coverage.complete, limitations: historical.history.coverage.limitations,
+        episodes: historical.history.episodes.map(prior => ({ episode_id: prior.episode_id, episode_number: prior.episode_number, detail: prior.detail, eligible_follow_up_count: prior.eligible_follow_up_count })) } })
+    limitations.push(...historical.history.coverage.limitations)
+    if (historical.fingerprint) versions.push({ source_id: `historical:selection:${episodeId}`, updated_at: null, fingerprint: historical.fingerprint })
+  }
   notes.sort((a,b) => (a.date ?? '9999').localeCompare(b.date ?? '9999') || a.id.localeCompare(b.id))
   sources.sort((a,b) => a.id.localeCompare(b.id))
   versions.sort((a,b) => a.source_id.localeCompare(b.source_id))

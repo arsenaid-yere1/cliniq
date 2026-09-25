@@ -82,3 +82,28 @@ describe('grounded model contract', () => {
     expect(call).not.toHaveBeenCalled()
   })
 })
+
+describe('legacy historical source target boundary', () => {
+  it('allows current targets but rejects historical IDs and wrong encounter/procedure tuples', async () => {
+    const { generateQualityReviewFromData } = await import('../generate-quality-review')
+    const input = {
+      caseDetails: { case_number: 'C' }, patientInfo: {}, caseSummary: null, initialVisitNote: null,
+      painEvaluationNote: { id: noteId, encounter_id: encounterId }, painManagementStart: true,
+      procedureNotes: [], dischargeNote: null,
+      priorEpisodeHistory: { cutoff_date: '2026-01-01', episodes: [{ episode_id: 'old', episode_number: 1, facts: [{ source_id: '33333333-3333-4333-8333-333333333333' }] }], coverage: { complete: true, limitations: [] } },
+    } as unknown as import('../generate-quality-review').QualityReviewInputData
+    call.mockImplementation(async options => {
+      expect(options.system).toContain('historical evidence only')
+      const { evidence, rule_id, entity_key, ...base } = finding()
+      void evidence; void rule_id; void entity_key
+      const current = { ...base, step: 'pain_evaluation', section_key: 'chief_complaint' }
+      const result = (f: unknown) => options.parse({ findings: [f], summary: null, overall_assessment: 'minor_issues' })
+      expect(result(current).success).toBe(true)
+      expect(result({ ...current, note_id: input.priorEpisodeHistory!.episodes[0].facts[0].source_id }).success).toBe(false)
+      expect(result({ ...current, encounter_id: noteId }).success).toBe(false)
+      expect(result({ ...current, procedure_id: noteId }).success).toBe(false)
+      return { data: { findings: [], summary: null, overall_assessment: 'clean' } }
+    })
+    await generateQualityReviewFromData(input)
+  })
+})

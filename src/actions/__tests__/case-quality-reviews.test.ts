@@ -6,6 +6,9 @@ import {
   type MockSupabaseClient,
 } from '@/test-utils/supabase-mock'
 
+const historyMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/clinical/load-prior-episode-history', () => ({ loadPriorEpisodeHistory: historyMock }))
+
 // ---- Mocks ----
 
 let mockSupabase: MockSupabaseClient
@@ -228,6 +231,32 @@ describe('runCaseQualityReview', () => {
 
     const result = await runCaseQualityReview(VALID_CASE_ID)
     expect(result.error).toBe('API timeout')
+  })
+
+  it('passes separate historical context to legacy QC and preserves the pain-evaluation origin', async () => {
+    const history = { cutoff_date: '2026-02-01', episodes: [], coverage: { complete: false, limitations: ['Previous discharge reopened'] } }
+    historyMock.mockResolvedValue({ history, fingerprint: 'v1' })
+    mockTableResults(mockSupabase, {
+      ...defaultTableResults(), care_episodes: { data: { ...activeEpisode, episode_number: 2 }, error: null },
+      initial_visit_notes: { data: [{ id: 'current-eval', visit_type: 'pain_evaluation_visit', visit_date: '2026-02-01' }], error: null },
+    })
+    expect((await runCaseQualityReview(VALID_CASE_ID)).error).toBeUndefined()
+    expect(generateMock.mock.calls[0][0]).toMatchObject({ priorEpisodeHistory: history, painManagementStart: true, initialVisitNote: null })
+    expect(historyMock).toHaveBeenLastCalledWith(mockSupabase, VALID_CASE_ID, activeEpisode.id, '2026-02-01')
+  })
+
+  it('preserves published legacy review when history cannot be loaded', async () => {
+    historyMock.mockRejectedValue(new Error('History unavailable'))
+    mockTableResults(mockSupabase, {
+      ...defaultTableResults(), care_episodes: { data: { ...activeEpisode, episode_number: 2 }, error: null },
+      initial_visit_notes: { data: [{ id: 'current-eval', visit_type: 'pain_evaluation_visit', visit_date: '2026-02-01' }], error: null },
+    })
+    expect((await runCaseQualityReview(VALID_CASE_ID)).error).toBe('History unavailable')
+    expect(generateMock).not.toHaveBeenCalled()
+    for (const result of mockSupabase.from.mock.results) {
+      expect(result.value.update).not.toHaveBeenCalled()
+      expect(result.value.insert).not.toHaveBeenCalled()
+    }
   })
 
   it('returns concurrent-progress message on 23505', async () => {
@@ -537,6 +566,10 @@ describe('fixFinding', () => {
   ) {
     mockTableResults(mockSupabase, {
       care_episodes: { data: activeEpisode, error: null },
+      initial_visit_notes: { data: { id: VALID_NOTE_ID, encounter_id: null }, error: null },
+      discharge_notes: { data: { id: VALID_NOTE_ID, encounter_id: null }, error: null },
+      procedure_notes: { data: { id: VALID_NOTE_ID, procedure_id: VALID_PROC_ID }, error: null },
+      pain_follow_up_notes: { data: { id: VALID_NOTE_ID, encounter_id: VALID_PROC_ID }, error: null },
       ...tables,
     })
   }
@@ -679,6 +712,20 @@ describe('fixFinding', () => {
       'subjective',
       { message: finding.message, rationale: finding.rationale },
     )
+  })
+
+  it.each(['fix', 'verify'])('rejects persisted historical targets before %s mutation', async operation => {
+    const { regenerateNoteSection } = await import('@/actions/initial-visit-notes')
+    vi.mocked(regenerateNoteSection).mockClear()
+    const finding = makeAiFinding({ step: 'pain_evaluation', section_key: 'prognosis' })
+    mockFixTables({
+      initial_visit_notes: { data: { id: 'different-current-note', encounter_id: null }, error: null },
+      case_quality_reviews: { data: { id: 'review', findings: [finding], finding_overrides: {} }, error: null },
+    })
+    const result = await (operation === 'fix' ? fixFinding : verifyFinding)(VALID_CASE_ID, computeFindingHash(finding))
+    expect(result.error).toContain('current episode note')
+    expect(regenerateNoteSection).not.toHaveBeenCalled()
+    for (const result of mockSupabase.from.mock.results) expect(result.value.update).not.toHaveBeenCalled()
   })
 
   it.each([1, 2])('keeps legacy evaluation fixes in Episode %i when V3 is disabled', async episodeNumber => {

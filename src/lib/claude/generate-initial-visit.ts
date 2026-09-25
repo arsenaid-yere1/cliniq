@@ -1,3 +1,4 @@
+import { PRIOR_EPISODE_HISTORY_PROMPT, type PriorEpisodeHistory } from '@/lib/clinical/prior-episode-history'
 import type { ValidationFailureHook } from './validation-diagnostics'
 import { PSYCHOLOGICAL_ASSESSMENT_PROMPT } from './psychological-assessment-prompt'
 import { VISIT_DECISION_PROMPT, validateVisitDecisionOutput } from './visit-decision-output'
@@ -255,11 +256,11 @@ ${forbiddenPrognosisPromptBlock()}`
 
 const PAIN_EVALUATION_VISIT_SECTIONS = `
 === VISIT TYPE: PAIN EVALUATION VISIT ===
-This patient has completed a course of conservative treatment and has imaging results available. Generate the note as a comprehensive pain management evaluation with PRP treatment recommendations.
+Generate a comprehensive pain management evaluation using the available current evidence. The patient may have persistent symptoms after conservative care or may be returning with recurrence after a successful discharge. Do not assume imaging, failed treatment, or incomplete relief without supporting evidence.
 
 === PRIOR VISIT REFERENCE (READ-ONLY) ===
 
-If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter on this same case. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings or vitals into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
+If priorVisitData is provided in the source data, it contains the finalized Initial Visit note from an earlier encounter in this SAME episode. Treat it as READ-ONLY reference for interval comparison. DO NOT copy its physical exam findings or vitals into this note — those come from the CURRENT visit's providerIntake. Instead, use priorVisitData to:
 
 1. History of the Accident (Para 3): Reference the prior visit's documented findings and conservative care outcome. For the initial evaluation date, use priorVisitData.visit_date if it is non-null; otherwise fall back to priorVisitData.finalized_at. Format the date as MM/DD/YYYY (e.g., "03/20/2026"). Example: "Since the initial evaluation on [priorVisitData.visit_date ?? priorVisitData.finalized_at], the patient has continued conservative care including [reference priorVisitData.treatment_plan]. Despite these measures, symptoms persist, prompting today's pain management evaluation."
 
@@ -267,7 +268,7 @@ If priorVisitData is provided in the source data, it contains the finalized Init
 
 3. Physical Examination: Do NOT restate prior exam findings as current findings. Current findings come from the CURRENT visit's providerIntake.exam_findings. You MAY add one brief comparative sentence at the end of each region: "Compared to the initial evaluation, cervical examination findings have [improved/worsened/remained unchanged]." Use priorVisitData.physical_exam for the comparison basis only.
 
-4. Medical Necessity: Cite that conservative care was documented and attempted at the initial visit (reference priorVisitData.treatment_plan) and has failed to produce adequate relief, supporting the escalation to interventional treatment.
+4. Medical Necessity: Distinguish recommended conservative care from documented treatment received. Describe inadequate relief only when supported by current evidence; prior improvement or discharge does not imply failure.
 
 5. Prognosis: May reference the evolution from guarded-but-favorable (initial) to the current imaging-informed prognosis.
 
@@ -277,18 +278,18 @@ NUMERIC-ANCHOR (MANDATORY when priorVisitData.vitalSigns.pain_score_max is non-n
 • The delta direction must match what the numbers support. A ≥3 point drop is "pain has meaningfully decreased"; a ≤2 point drop is "pain is similar but modestly reduced"; a ≥2 point rise is "pain has increased". Thresholds match the procedure-note paintoneLabel semantics.
 • When priorVisitData.vitalSigns is null or pain_score_max is null, do NOT invent a numeric prior pain value. Fall back to qualitative comparative language tied to priorVisitData.chief_complaint narrative.
 
-If priorVisitData is null (no prior Initial Visit exists on this case), generate the Pain Evaluation Visit note without any interval-comparison language — it is a standalone evaluation.
+If priorVisitData is null, there is no same-episode Initial Visit reference. Use priorEpisodeHistory for dated earlier-episode history when available. If both references are absent, do not invent interval comparisons.
 
 2. HISTORY OF THE ACCIDENT (~2 short paragraphs):
 Para 1: Accident mechanism — vehicle position, point of impact, seatbelt/airbag, consciousness, immediate symptoms, paramedic/ER response. Short declarative sentences.
-Para 2: "Despite conservative treatment, [he/she] continues to complain of pain and functional deficits with activities of daily living. [His/Her] quality of life has been significantly affected as [he/she] experiences difficulties and limitations in [his/her] activities of daily living, including self-care."
+Para 2: Describe the current symptoms and documented functional limitations. Distinguish persistence from recurrence after discharge; do not assume prior treatment failed or symptoms continued throughout the interval.
 Reference tone: "The patient stated that she was the seat belted driver of a car that was struck on the front bumper by another car on the street. The airbag did not deploy. The patient did not lose consciousness."
 
 3. POST-ACCIDENT HISTORY (~2-3 short paragraphs, concise medical-legal history):
 Para 1 — Chronology of care: Establish the timeline of care following the accident in neutral, factual language. Note ER/urgent care evaluation, imaging obtained, and the sequence of conservative care leading to this evaluation. Use dates or relative intervals (e.g., "approximately one week post-accident"). Do NOT name specific providers, clinics, prescribers, or facilities; refer to care by type only (e.g., "emergency department evaluation," "conservative care," "diagnostic imaging").
 Para 2 — Symptom evolution: Describe how symptoms have persisted, worsened, or improved since the accident. Include imaging by modality and region (e.g., "MRI of the cervical spine") and any post-accident medications by class (e.g., "muscle relaxants, analgesics"); do not attribute them to a named provider.
 Para 3 — Functional limitations: State work status changes, activity restrictions, and impact on activities of daily living since the accident.
-Constraints: Use neutral, non-attributive language. Anchor every event temporally to the accident to establish accident-related chronology. Preserve timeline, symptoms, and imaging from the case summary. Do NOT introduce facts not present in the case summary. Do NOT repeat accident mechanism details (covered in History of the Accident). Do NOT include subjective characterizations of provider competence or treatment quality.
+Constraints: Use neutral, non-attributive language. Anchor every event temporally to the accident to establish accident-related chronology. Preserve timeline, symptoms, and imaging from the case summary. Use only supported facts from the case summary, current intake, same-episode reference, or dated priorEpisodeHistory. Do NOT repeat accident mechanism details (covered in History of the Accident). Do NOT include subjective characterizations of provider competence or treatment quality.
 Reference tone: "Following the collision, the patient was evaluated in the emergency department, where radiographs were obtained and analgesic and muscle relaxant medications were prescribed. Approximately one week post-accident, conservative care was initiated and has continued. MRI of the cervical and lumbar spine was subsequently obtained for further evaluation. Cervical and lumbar symptoms have persisted despite ongoing conservative care, with reported limitations in lifting, prolonged sitting, and return to full work duties."
 
 9. RADIOLOGICAL IMAGING FINDINGS:
@@ -335,12 +336,12 @@ DOWNGRADE-TO HONOR RULE: if a caseSummary.suggested_diagnoses entry carries a no
 Select codes that correspond to actual MRI findings in the source data. Do NOT add codes for pathology not documented on imaging. If the patient reports sleep disturbance in chief complaints or review of systems, include G47.9.
 
 11. MEDICAL NECESSITY (~3-5 sentences):
-Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) notes persistent symptoms despite conservative care, (d) concludes that interventional pain management consideration is warranted.
+Write a concise paragraph that: (a) correlates clinical exam findings with imaging, (b) names the injury pattern, (c) describes the supported course of symptoms, including recurrence if documented, (d) explains whether current evidence warrants interventional pain management consideration.
 Do NOT restate the mechanism of injury. Do NOT list specific MRI findings (already in imaging section). Do NOT describe PRP mechanism or growth factors. Do NOT restate conservative care timeline/visits.
 Reference: "The clinical examination and imaging findings support post-traumatic cervical and lumbar spine injury with associated cervical facet-mediated pain and lumbar discogenic pain, consistent with trauma sustained during the motor vehicle accident of 03/12/2025. Persistent symptoms despite conservative care warrant interventional pain management consideration."
 
 12. TREATMENT PLAN (~3-4 paragraphs + cost estimate):
-Para 1 — Clinical rationale and medical necessity: Open by summarizing the patient's persistent post-traumatic pain by affected region and citing the MRI-confirmed pathology that supports intervention. State that conservative treatment to date (chiropractic care, physical therapy, medication) has provided incomplete relief, establishing the clinical basis for escalation to regenerative injection therapy.
+Para 1 — Clinical rationale and medical necessity: Summarize the patient's current pain by affected region and the current evidence supporting intervention. Describe documented prior treatment and response accurately; do not assume incomplete relief, failed treatment, or continuous symptoms after a successful discharge.
 Para 2 — PRP injection protocol: Output the exact marker [[PRP_TARGET_RECOMMENDATIONS]] on its own line. Do NOT write any other PRP target or injection-session prose in treatment_plan; the server replaces this marker with the prior-format recommendation paragraph, region-grouped bullets, and medical-legal staged-treatment language requiring documented reassessment, continued medical necessity, and renewed informed consent before any subsequent injection.
 PRP TARGET SELECTION (ABSOLUTE): prpTargetEvidence.candidates is the only allowed target source. An anatomic abnormality alone is not a treatment target, and symptoms alone do not establish abnormal anatomy. Select only candidate IDs where eligible=true. Never create a region, level, location, laterality, target structure, or pathology that is absent from the candidate's attached evidence. Return one prp_target_recommendations entry per selected candidate with its candidate_id, an evidence-specific target_structure, guidance_method="ultrasound", approach, and a concise clinical_rationale. The rationale must explain why the documented abnormality is clinically concordant; it must not invent evidence. When there are no eligible candidates, return an empty array and do not invent target details in treatment_plan.
 Cost estimate sub-section: If feeEstimate data is provided in the source data, use the exact values:
@@ -362,7 +363,7 @@ ${forbiddenPrognosisPromptBlock()}`
 
 function buildSystemPrompt(visitType: NoteVisitType): string {
   const visitSpecificSections = visitType === 'initial_visit' ? INITIAL_VISIT_SECTIONS : PAIN_EVALUATION_VISIT_SECTIONS
-  return `${voiceCharterPromptBlock()}\n${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}\n${PSYCHOLOGICAL_ASSESSMENT_PROMPT}`
+  return `${voiceCharterPromptBlock()}\n${buildPreamble(visitType)}\n${buildCommonSections(visitType)}\n${visitSpecificSections}\n${visitType === 'pain_evaluation_visit' ? PRIOR_EPISODE_HISTORY_PROMPT : ''}\n${PSYCHOLOGICAL_ASSESSMENT_PROMPT}`
 }
 
 const INITIAL_VISIT_TOOL: Anthropic.Tool = {
@@ -541,8 +542,10 @@ export interface InitialVisitInputData {
     social_history: unknown
     exam_findings: unknown
   } | null
+  /** Dated read-only context from earlier discharged episodes. */
+  priorEpisodeHistory?: PriorEpisodeHistory
   /**
-   * Read-only reference data from a prior finalized Initial Visit on the same case.
+   * Read-only reference data from a prior finalized Initial Visit in the same episode.
    * Populated only when generating a Pain Evaluation Visit. Null otherwise.
    */
   priorVisitData: {
@@ -609,7 +612,7 @@ export async function generateInitialVisitFromData(
 
   const visitLabel = visitType === 'initial_visit'
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
-    : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
+    : 'PAIN EVALUATION VISIT (current evidence with dated prior care when available)'
   const curated = curateInputDataForPrompt(inputData as unknown as Record<string, unknown>)
   let userMessage = `Generate a comprehensive Initial Visit note from the following case data.\n\nVisit type: ${visitLabel}\n\n${JSON.stringify(curated, null, 2)}`
   if (toneHint?.trim()) {
@@ -666,7 +669,7 @@ export async function regenerateSection(
   const sectionLabel = sectionLabels[section]
   const visitLabel = visitType === 'initial_visit'
     ? 'INITIAL VISIT (no prior imaging, no prior treatment)'
-    : 'PAIN EVALUATION VISIT (imaging available, post-conservative treatment)'
+    : 'PAIN EVALUATION VISIT (current evidence with dated prior care when available)'
 
   let otherSectionsBlock = ''
   let systemSuffix = `You are regenerating ONLY the "${sectionLabel}" section of an existing Initial Visit note. Visit type: ${visitLabel}. Write a fresh version of this section based on the source data. Do not repeat the section title — just provide the content. Follow the exact length targets and conciseness constraints from the section-specific instructions above.`

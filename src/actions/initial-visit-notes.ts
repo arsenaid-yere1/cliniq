@@ -1,5 +1,8 @@
 'use server'
 
+import { loadPriorEpisodeHistory } from '@/lib/clinical/load-prior-episode-history'
+import { historyServiceDate, historyEncounterDate } from '@/lib/clinical/prior-episode-history'
+
 import { resolveEvaluationEpisode } from '@/lib/clinical/evaluation-scope'
 
 import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
@@ -111,6 +114,7 @@ async function gatherSourceData(
   qcTarget?: ReviewFixTarget,
   episodeId?: string,
   episodeNumber = 1,
+  includePriorEpisodeHistory = false,
 ): Promise<{ data: InitialVisitInputData | null; error: string | null }> {
   // Imaging context (case summary, PM extraction) only flows into
   // pain_evaluation_visit generation. Initial visit is scoped to
@@ -173,7 +177,7 @@ async function gatherSourceData(
 
   const intakeQuery = supabase
       .from('initial_visit_notes')
-      .select('provider_intake, visit_date, finalized_at')
+      .select('provider_intake, visit_date, finalized_at, clinical_encounters:clinical_encounters!initial_visit_notes_encounter_id_fkey(encounter_date)')
       .eq('case_id', caseId)
       .eq('visit_type', visitType)
       .eq('episode_id', sourceEpisodeId)
@@ -357,6 +361,15 @@ async function gatherSourceData(
     (intakeRes.data?.visit_date as string | null | undefined) ?? null,
     (intakeRes.data?.finalized_at as string | null | undefined) ?? null,
   )
+  let priorEpisodeHistory: InitialVisitInputData['priorEpisodeHistory']
+  if (includePriorEpisodeHistory && loadImagingContext && episodeNumber > 1) {
+    try {
+      const cutoff = historyServiceDate(visitDateOverride, intakeRes.data?.visit_date, historyEncounterDate(intakeRes.data?.clinical_encounters))
+      priorEpisodeHistory = (await loadPriorEpisodeHistory(supabase, caseId, sourceEpisodeId, cutoff)).history
+    } catch (error) {
+      return { data: null, error: error instanceof Error ? error.message : 'Unable to load previous episode history. Please retry.' }
+    }
+  }
   const age = computeAgeAtDate(patient.date_of_birth, visitAnchor)
 
   return {
@@ -405,6 +418,7 @@ async function gatherSourceData(
         : null,
       providerIntake,
       priorVisitData,
+      ...(priorEpisodeHistory ? { priorEpisodeHistory } : {}),
       hasApprovedDiagnosticExtractions,
       pmExtraction,
       prpTargetEvidence,
@@ -461,6 +475,7 @@ export async function generateInitialVisitNote(
     undefined,
     selectedEpisodeId,
     scope.episode.episode_number,
+    true,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
@@ -1037,6 +1052,7 @@ export async function regenerateNoteSection(
     qcTarget,
     selectedEpisodeId,
     scope.episode.episode_number,
+    true,
   )
   if (gatherError || !inputData) return { error: gatherError || 'Failed to gather source data' }
 
