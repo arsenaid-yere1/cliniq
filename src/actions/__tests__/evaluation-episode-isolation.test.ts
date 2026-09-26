@@ -12,7 +12,7 @@ vi.mock('@/actions/case-status', () => ({ assertCaseNotClosed: async () => ({}),
 vi.mock('@/actions/fee-estimate', () => ({ getFeeEstimateTotals: async () => ({ professional_max: 0, practice_center_max: 0 }) }))
 vi.mock('@/lib/supabase/generation-lock', () => ({ acquireGenerationLock: async () => ({ acquired: true }) }))
 vi.mock('@/lib/claude/generate-initial-visit', () => ({ generateInitialVisitFromData: generation, regenerateSection: vi.fn(), INITIAL_VISIT_SECTIONS_TOTAL: 16 }))
-import { generateInitialVisitNote, getInitialVisitNotes, getInitialVisitVitals, saveProviderIntake, saveInitialVisitVitals } from '../initial-visit-notes'
+import { generateInitialVisitNote, getInitialVisitNotes, getInitialVisitVitals, getProviderIntake, saveProviderIntake, saveInitialVisitVitals } from '../initial-visit-notes'
 import { getClinicalOrders } from '../clinical-orders'
 
 // A small row store executes filters and writes, so accidental case-wide mutations
@@ -112,4 +112,34 @@ describe('return evaluation isolation', () => {
     expect((await saveProviderIntake('case','pain_evaluation_visit',defaultProviderIntake,undefined,'episode-1')).error).toContain('not active')
     expect(tables.initial_visit_notes).toEqual(before)
   })
+  it('prefills and persists the three history sections without copying old findings', async () => {
+    const prior = tables.initial_visit_notes[0]
+    prior.status = 'finalized'
+    prior.clinical_encounters = { ...tables.clinical_encounters[0], status: 'completed', encounter_date: '2026-08-01' }
+    prior.visit_date = '2026-08-01'
+    prior.provider_intake = { ...defaultProviderIntake,
+      accident_details: { ...defaultProviderIntake.accident_details, narrative: 'Earlier accident details' },
+      past_medical_history: { ...defaultProviderIntake.past_medical_history, medical_conditions: 'Prior recorded condition' },
+      social_history: { ...defaultProviderIntake.social_history, occupation: 'Teacher' },
+      exam_findings: { ...defaultProviderIntake.exam_findings, general_appearance: 'Old examination' },
+      chief_complaints: { ...defaultProviderIntake.chief_complaints, additional_notes: 'Old symptoms' },
+    }
+    const current = tables.initial_visit_notes[1]
+    current.provider_intake = {}
+    current.chief_complaint = null
+    const before = structuredClone(prior)
+    const prefill = await getProviderIntake('case', 'pain_evaluation_visit', 'episode-2')
+    expect(prefill.carriedSections).toHaveLength(3)
+    expect(prefill.data).toMatchObject({ social_history: { occupation: 'Teacher' }, exam_findings: defaultProviderIntake.exam_findings })
+    // Saving a different card must retain all three prefills on reload.
+    const submitted = { ...defaultProviderIntake, chief_complaints: { ...defaultProviderIntake.chief_complaints, additional_notes: 'Current symptoms' } }
+    expect((await saveProviderIntake('case', 'pain_evaluation_visit', submitted, 'chief_complaints', 'episode-2')).error).toBeUndefined()
+    const reloaded = await getProviderIntake('case', 'pain_evaluation_visit', 'episode-2')
+    expect(reloaded.carriedSections).toEqual([])
+    expect(reloaded.data).toMatchObject({ accident_details: { narrative: 'Earlier accident details' }, past_medical_history: { medical_conditions: 'Prior recorded condition' }, social_history: { occupation: 'Teacher' }, chief_complaints: { additional_notes: 'Current symptoms' }, exam_findings: defaultProviderIntake.exam_findings })
+    await generateInitialVisitNote('case', 'pain_evaluation_visit', null, null, 'episode-2')
+    expect(generation.mock.calls[0][0].providerIntake).toEqual(reloaded.data)
+    expect(prior).toEqual(before)
+  })
+
 })

@@ -4,6 +4,7 @@ import { ChiefComplaintsCard } from './chief-complaints-card'
 import { ExamFindingsCard } from './exam-findings-card'
 
 import { IntakeDraftProvider, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
+import type { ReturnIntakeSource } from '@/lib/clinical/load-return-intake'
 import { PsychologicalAssessmentCard, psychologicalStatusLabels } from './psychological-assessment-card'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
@@ -160,6 +161,7 @@ interface VitalsData {
 }
 
 interface InitialVisitEditorOuterProps {
+  intakeCarryover?: ReturnIntakeSource[]
   episodeId?: string
   episodeNumber?: number
   episodeWritable?: boolean
@@ -189,6 +191,7 @@ interface InitialVisitEditorOuterProps {
 }
 
 interface InitialVisitEditorInnerProps {
+  intakeCarryover?: ReturnIntakeSource[]
   episodeWritable?: boolean
   caseId: string
   visitType: NoteVisitType
@@ -212,6 +215,7 @@ interface InitialVisitEditorInnerProps {
 // either side.
 export function InitialVisitEditor({
   caseId,
+  intakeCarryover,
   episodeId,
   episodeNumber,
   episodeWritable = true,
@@ -252,10 +256,13 @@ export function InitialVisitEditor({
         </TabsList>
         {visitTypes.map((vt) => {
           const note = (notesByVisitType[vt.value] ?? null) as NoteRow | null
+          const carryover = episodeWritable && vt.value === 'pain_evaluation_visit'
+            && (!note || (note.status === 'draft' && !note.introduction && !note.chief_complaint))
+            ? intakeCarryover : undefined
           const showPainEvalBadge = vt.value === 'pain_evaluation_visit' && painEvalMissingPriorVitals
           return (
             <TabsContent key={vt.value} value={vt.value} hidden={activeVisitType !== vt.value} forceMount className="mt-4 data-[state=inactive]:hidden">
-              <IntakeDraftProvider episodeId={episodeId}>
+              <IntakeDraftProvider episodeId={episodeId} carriedSections={carryover?.map(source => source.section)}>
               {showPainEvalBadge && (
                 <div className="mb-4 flex items-start gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-sm text-amber-900 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -269,6 +276,7 @@ export function InitialVisitEditor({
               )}
               <InitialVisitEditorInner
                 caseId={caseId}
+                intakeCarryover={carryover}
                 episodeWritable={episodeWritable}
                 visitType={vt.value}
                 note={note}
@@ -326,6 +334,7 @@ const sectionRows: Record<InitialVisitSection, number> = {
 
 function InitialVisitEditorInner({
   caseId,
+  intakeCarryover,
   episodeWritable = true,
   visitType,
   note,
@@ -427,6 +436,21 @@ function InitialVisitEditorInner({
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
+
+        {intakeCarryover && intakeCarryover.length > 0 && (
+          <div role="status" className="rounded-lg border p-4 text-sm space-y-2">
+            <p className="font-medium">History carried over from earlier care</p>
+            <p>Review and update these details for this visit. They will be saved when you save each section or generate the note.</p>
+            <ul className="list-disc pl-5">
+              {intakeCarryover.map(source => (
+                <li key={source.section}>
+                  {source.section === 'accident_details' ? 'Accident Details' : source.section === 'past_medical_history' ? 'Past Medical History' : 'Social History'}
+                  {' · '}Episode {source.episodeNumber}{' · '}{format(new Date(`${source.visitDate}T00:00:00`), 'MM/dd/yyyy')}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <Tabs value={intakeTab} onValueChange={setIntakeTab}>
           <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto gap-1 p-1">

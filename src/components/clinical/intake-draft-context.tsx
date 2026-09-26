@@ -10,6 +10,7 @@ import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 type Draft = { dirty: boolean; saving: boolean; save: () => Promise<boolean>; read?: () => unknown }
 type DraftContext = {
   episodeId?: string
+  carriedSections: readonly (keyof ProviderIntakeValues)[]
   dirty: boolean
   busy: boolean
   flush: (onFailure?: (section: string) => void) => Promise<boolean>
@@ -17,8 +18,13 @@ type DraftContext = {
   readSection: (key: keyof ProviderIntakeValues) => unknown
 }
 const IntakeDraftContext = createContext<DraftContext | null>(null)
+const noCarriedSections: readonly (keyof ProviderIntakeValues)[] = []
 
-export function IntakeDraftProvider({ children, episodeId }: { children: ReactNode; episodeId?: string }) {
+export function IntakeDraftProvider({ children, episodeId, carriedSections = noCarriedSections }: {
+  children: ReactNode
+  episodeId?: string
+  carriedSections?: readonly (keyof ProviderIntakeValues)[]
+}) {
   const drafts = useRef(new Map<string, Draft>())
   const [revision, setRevision] = useState(0)
   const [flushing, setFlushing] = useState(false)
@@ -44,11 +50,11 @@ export function IntakeDraftProvider({ children, episodeId }: { children: ReactNo
   const value = useMemo(() => {
     void revision
     return {
-      register, flush, readSection, episodeId,
+      register, flush, readSection, episodeId, carriedSections,
       dirty: [...drafts.current.values()].some(d => d.dirty),
       busy: flushing || [...drafts.current.values()].some(d => d.saving),
     }
-  }, [revision, flushing, register, flush, readSection, episodeId])
+  }, [revision, flushing, register, flush, readSection, episodeId, carriedSections])
 
   useEffect(() => {
     if (!value.dirty && !value.busy) return
@@ -84,11 +90,13 @@ export function useIntakeSectionSave<T extends FieldValues>(
   form: UseFormReturn<T>, caseId: string, visitType: NoteVisitType,
   section: keyof ProviderIntakeValues, initialIntake: ProviderIntakeValues | null,
 ) {
-  const { register, episodeId } = useIntakeDrafts()
-  const { isDirty } = form.formState
+  const { register, episodeId, carriedSections } = useIntakeDrafts()
   const [isSaving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSaved, setHasSaved] = useState(false)
+  // Form defaults are not dirty, but carried history must be persisted before
+  // generation even when the clinician keeps the prefilled values unchanged.
+  const isDirty = form.formState.isDirty || (carriedSections.includes(section) && !hasSaved)
   const inFlight = useRef<Promise<boolean> | null>(null)
   const save = useCallback((): Promise<boolean> => {
     if (inFlight.current) return inFlight.current

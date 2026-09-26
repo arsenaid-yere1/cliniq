@@ -58,7 +58,7 @@ export default async function InitialVisitPage({ params, searchParams }: { param
     assignedProviderId ? getProviderProfileById(assignedProviderId) : Promise.resolve({ data: null }),
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
-    painEvaluationOnly ? Promise.resolve({ data: null }) : getProviderIntake(caseId, 'initial_visit', episodeId),
+    painEvaluationOnly ? Promise.resolve({ data: null, error: undefined }) : getProviderIntake(caseId, 'initial_visit', episodeId),
     getProviderIntake(caseId, 'pain_evaluation_visit', episodeId),
   ])
 
@@ -70,6 +70,13 @@ export default async function InitialVisitPage({ params, searchParams }: { param
         Vital signs could not be loaded. Reload this page to try again. Saved measurements have not been changed.
       </div>
     )
+  }
+
+  const intakeError = initialIntakeResult.error || painEvalIntakeResult.error
+  if (intakeError) {
+    return <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">
+      Intake could not be loaded. Reload this page to try again. Saved information has not been changed.
+    </div>
   }
 
   const caseData = caseRes.data
@@ -165,6 +172,7 @@ export default async function InitialVisitPage({ params, searchParams }: { param
       painEvaluationOnly={painEvaluationOnly}
       notesByVisitType={notesByVisitType}
       intakesByVisitType={intakesByVisitType}
+      intakeCarryover={painEvalIntakeResult.carriedSections ?? []}
       documentFilePathByVisitType={documentFilePathByVisitType}
       defaultVisitType={painEvaluationOnly || query.visitType === 'pain_evaluation_visit' ? 'pain_evaluation_visit' : 'initial_visit'}
       canGenerate={prereqResult.data?.canGenerate ?? false}

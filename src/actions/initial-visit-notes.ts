@@ -1,5 +1,6 @@
 'use server'
 
+import { loadReturnIntake, type ReturnIntakeSource } from '@/lib/clinical/load-return-intake'
 import { loadPriorEpisodeHistory } from '@/lib/clinical/load-prior-episode-history'
 import { historyServiceDate, historyEncounterDate } from '@/lib/clinical/prior-episode-history'
 
@@ -1300,7 +1301,7 @@ export async function saveInitialVisitVitals(
 
 // --- Get provider intake, scoped per visit type ---
 
-export async function getProviderIntake(caseId: string, visitType: NoteVisitType, episodeId?: string) {
+export async function getProviderIntake(caseId: string, visitType: NoteVisitType, episodeId?: string): Promise<{ data?: unknown; error?: string; carriedSections?: ReturnIntakeSource[] }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1311,15 +1312,22 @@ export async function getProviderIntake(caseId: string, visitType: NoteVisitType
 
   const { data, error } = await supabase
     .from('initial_visit_notes')
-    .select('provider_intake')
+    .select('provider_intake, status, introduction, chief_complaint, visit_date, clinical_encounters:clinical_encounters!initial_visit_notes_encounter_id_fkey(encounter_date)')
     .eq('case_id', caseId)
     .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
   if (error) return { error: 'Failed to fetch provider intake' }
+  if (scope.episode.episode_number <= 1 || visitType !== 'pain_evaluation_visit') {
+    return { data: data?.provider_intake ?? null, carriedSections: [] }
+  }
 
-  return { data: data?.provider_intake ?? null }
+  try {
+    return await loadReturnIntake(supabase, caseId, scope.episode, data, visitType)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unable to load previous episode intake' }
+  }
 }
 
 // --- Save provider intake, scoped per visit type ---
@@ -1347,7 +1355,7 @@ export async function saveProviderIntake(
 
   const { data: existing, error: readError } = await supabase
     .from('initial_visit_notes')
-    .select('id, status, updated_at, provider_intake, introduction, chief_complaint')
+    .select('id, status, updated_at, provider_intake, introduction, chief_complaint, visit_date, clinical_encounters:clinical_encounters!initial_visit_notes_encounter_id_fkey(encounter_date)')
     .eq('case_id', caseId)
     .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
@@ -1358,8 +1366,17 @@ export async function saveProviderIntake(
     return { error: 'Intake cannot be changed while the note is generating or finalized.' }
   }
   const stored = (existing?.provider_intake ?? {}) as Partial<ProviderIntakeValues>
+  let seeded: Partial<ProviderIntakeValues> = {}
+  if (section && scope.episode.episode_number > 1 && visitType === 'pain_evaluation_visit') {
+    try {
+      const carryover = await loadReturnIntake(supabase, caseId, scope.episode, existing, visitType)
+      seeded = (carryover.data ?? {}) as Partial<ProviderIntakeValues>
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unable to load previous episode intake' }
+    }
+  }
   const merged = section
-    ? { ...defaultProviderIntake, ...stored, [section]: intake?.[section] }
+    ? { ...defaultProviderIntake, ...seeded, ...stored, [section]: intake?.[section] }
     : { ...intake, ...(stored.psychological_assessment ? { psychological_assessment: stored.psychological_assessment } : {}) }
   const validated = providerIntakeSchema.safeParse(merged)
   if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid provider intake data' }
