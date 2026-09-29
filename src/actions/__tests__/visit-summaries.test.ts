@@ -17,8 +17,15 @@ beforeEach(() => {
   }
   client.from.mockImplementation((table: string) => {
     const data = rows[table] ?? []
-    const error = table === failure ? { message: 'database details' } : null
+    let error = table === failure ? { message: 'database details' } : null
     const builder = createMockQueryBuilder({ data: data[0] ?? null, error })
+    // Follow-up dates live on clinical_encounters, never on the note table.
+    builder.select.mockImplementation((fields: string) => {
+      if (table === 'pain_follow_up_notes' && fields.split(',').includes('visit_date')) {
+        error = { message: 'column pain_follow_up_notes.visit_date does not exist' }
+      }
+      return builder
+    })
     let start = 0; let end = 499
     builder.range.mockImplementation((from: number, to: number) => { start = from; end = to; return builder })
     builder.then = (resolve: (result: unknown) => unknown) => Promise.resolve({ data: error ? null : data.slice(start, end + 1), error, count: data.length }).then(resolve)
@@ -47,4 +54,13 @@ it('authenticates before reading case data', async () => {
   client.auth.getUser.mockResolvedValue({ data: { user: null }, error: null })
   expect(await getCaseVisitOverview('case')).toEqual({ error: 'Not authenticated' })
   expect(client.from).not.toHaveBeenCalled()
+})
+
+it('uses the encounter service date for existing follow-ups without a note date column', async () => {
+  rows.clinical_encounters.push({ id: 'follow-up', case_id: 'case', episode_id: 'ep', encounter_type: 'pain_follow_up', status: 'completed', encounter_date: '2026-09-29', modality: 'telehealth', provider_id: null, scheduled_start: '2026-09-28T18:00:00Z' })
+  rows.pain_follow_up_notes = [{ id: 'follow-up-note', case_id: 'case', episode_id: 'ep', encounter_id: 'follow-up', status: 'finalized', subjective: 'PRIVATE FOLLOW-UP', procedure_recommendations: [], document_id: null }]
+  const result = await getCaseVisitOverview('case')
+  expect(result.error).toBeUndefined()
+  expect(result.data?.episodes[0].rows.find(row => row.encounterId === 'follow-up')).toMatchObject({ noteState: 'Finalized', serviceDate: '2026-09-29', scheduledStart: '2026-09-28T18:00:00Z' })
+  expect(JSON.stringify(result)).not.toContain('PRIVATE')
 })
