@@ -17,6 +17,7 @@ vi.mock('@/lib/supabase/generation-lock', () => ({ acquireGenerationLock: async 
 vi.mock('@/lib/claude/generate-initial-visit', () => ({
   generateInitialVisitFromData: state.full, regenerateSection: state.section, INITIAL_VISIT_SECTIONS_TOTAL: 16,
 }))
+import { revalidatePath } from 'next/cache'
 import { generateInitialVisitNote, regenerateNoteSection } from '../initial-visit-notes'
 
 const event: ValidationFailure = {
@@ -70,6 +71,8 @@ describe('private diagnostic capture', () => {
 describe('generation action integration', () => {
   it.each(['initial_visit', 'pain_evaluation_visit'] as const)('wires full %s generation before returning its failure', async (visitType) => {
     state.full.mockImplementation(async (_input, _type, _tone, _progress, options) => {
+      expect(revalidatePath).toHaveBeenCalledWith('/patients/case/visits')
+      expect(revalidatePath).toHaveBeenCalledWith('/patients/case/initial-visit')
       await options.onValidationFailure(event)
       await options.onValidationFailure({ ...event, failureOrdinal: 2, validationAttempt: 2 })
       return { error: 'Rejected', rawResponse: {} }

@@ -6,6 +6,7 @@ import { ExamFindingsCard } from './exam-findings-card'
 import { IntakeDraftProvider, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
 import type { ReturnIntakeSource } from '@/lib/clinical/load-return-intake'
 import { PsychologicalAssessmentCard, psychologicalStatusLabels } from './psychological-assessment-card'
+import { useVisitDraftBaseline } from '@/components/visits/visit-unsaved-changes-context'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
@@ -366,6 +367,8 @@ function InitialVisitEditorInner({
   const isLocked = !episodeWritable || LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
+  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint, preGenVisitDate }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.introduction && !note.chief_complaint)))
+
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     startTransition(async () => {
       if (!await intakeDrafts.flush(section => setIntakeTab(section === 'past_medical_history' ? 'pmh' : section.replaceAll('_', '-')))) {
@@ -377,7 +380,7 @@ function InitialVisitEditorInner({
       try {
         const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg, episodeId)
         if (result.error) toast.error(result.error)
-        else toast.success('Note generated successfully')
+        else { acknowledgePreGeneration({ toneHint, preGenVisitDate }); toast.success('Note generated successfully') }
       } finally {
         setOptimisticGenerating(false)
       }
@@ -1192,12 +1195,17 @@ function DraftEditor({
     },
   })
 
+  const acknowledgeDraft = useVisitDraftBaseline(form.watch(), isPending, !isLocked)
   const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
   const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
   const { acknowledgeSavedNote, acknowledgeMetadataVersion } = useVisitNoteVersion(note, initialVisitSections, setVersion)
   function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
     if (!saved) return
     acknowledgeSavedNote(saved)
+    acknowledgeDraft({
+      ...Object.fromEntries(initialVisitSections.map(section => [section, saved[section] ?? ''])),
+      visit_date: saved.visit_date as string | null, treatment_decision: visitDecisionDraft(saved.visit_treatment_decision),
+    } as InitialVisitNoteEditValues)
     setSavedDecision(saved.visit_treatment_decision)
     form.setValue('expected_updated_at', saved.updated_at as string)
     if (!regeneratedSection || regeneratedSection === 'patient_education') {

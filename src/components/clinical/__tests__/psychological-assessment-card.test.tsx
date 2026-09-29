@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { render } from '@/test-utils/visit-render'
 import { IntakeDraftProvider, useIntakeDrafts } from '../intake-draft-context'
 import { PsychologicalAssessmentCard } from '../psychological-assessment-card'
 import { defaultProviderIntake } from '@/lib/validations/initial-visit-note'

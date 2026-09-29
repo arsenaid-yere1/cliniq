@@ -1109,6 +1109,9 @@ export async function fixFinding(caseId: string, findingHash: string) {
       caseId,
       finding.section_key as DischargeNoteSection,
       findingFix,
+      undefined,
+      undefined,
+      episode.id,
     )
     if ('error' in res && res.error) regenError = res.error
   } else if (finding.step === 'procedure') {

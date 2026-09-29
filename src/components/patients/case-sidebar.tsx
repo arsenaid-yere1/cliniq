@@ -1,5 +1,6 @@
 'use client'
 
+import { isVisitsPath } from '@/lib/clinical/visit-routes'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -28,18 +29,15 @@ const navItems = [
   { label: 'Overview', href: '', enabled: true },
   { label: 'Documents', href: '/documents', enabled: true },
   { label: 'Clinical Data', href: '/clinical', enabled: true },
-  { label: 'Initial Visit', href: '/initial-visit', enabled: true },
   { label: 'Visits', href: '/visits', enabled: true },
   { label: 'Procedures', href: '/procedures', enabled: true },
-  { label: 'Discharge', href: '/discharge', enabled: true },
   { label: 'Quality Review', href: '/qc', enabled: true },
   { label: 'Billing', href: '/billing', enabled: true },
   { label: 'Timeline', href: '/timeline', enabled: true },
 ]
 
-export function CaseSidebar({ caseData, visitsEnabled = false, episodeStatus }: {
+export function CaseSidebar({ caseData, episodeStatus }: {
   caseData: CaseData
-  visitsEnabled?: boolean
   episodeStatus?: { number: number; status: string } | null
 }) {
   const pathname = usePathname()
@@ -53,7 +51,7 @@ export function CaseSidebar({ caseData, visitsEnabled = false, episodeStatus }: 
   }
 
   return (
-    <aside className="w-[280px] shrink-0 border-r bg-muted/30 p-6 space-y-4">
+    <aside className="w-full shrink-0 border-b md:w-[240px] md:border-r md:border-b-0 bg-muted/30 p-6 space-y-4">
       {caseData.patient && (
         <h2 className="text-lg font-bold">
           {caseData.patient.first_name} {caseData.patient.last_name}
@@ -98,11 +96,10 @@ export function CaseSidebar({ caseData, visitsEnabled = false, episodeStatus }: 
 
       <nav className="space-y-1">
         {navItems.map((item) => {
-          if (item.href === '/visits' && !visitsEnabled) return null
           const href = basePath + item.href
           const isActive = item.href === ''
             ? pathname === basePath
-            : pathname.startsWith(href)
+            : item.href === '/visits' ? isVisitsPath(pathname, caseData.id) : pathname === href || pathname.startsWith(`${href}/`)
 
           if (!item.enabled) {
             return (
@@ -121,6 +118,7 @@ export function CaseSidebar({ caseData, visitsEnabled = false, episodeStatus }: 
             <Link
               key={item.label}
               href={href}
+              aria-current={isActive ? 'page' : undefined}
               className={`flex items-center rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent ${
                 isActive ? 'bg-accent font-medium' : ''
               }`}

@@ -5,7 +5,7 @@ let client: MockSupabaseClient
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => client }))
 vi.mock('@/actions/case-status', () => ({ assertCaseNotClosed: async () => ({}), autoAdvanceFromIntake: vi.fn() }))
-vi.mock('@/lib/clinical/episode-context', () => ({ getActiveOrLatestEpisode: async () => ({ id: 'episode' }), getEpisodeById: vi.fn(), ensureEpisodeEncounter: vi.fn() }))
+vi.mock('@/lib/clinical/episode-context', () => ({ getActiveOrLatestEpisode: async () => ({ id: 'episode' }), getEpisodeById: vi.fn(), requireWritableEpisode: vi.fn(), ensureEpisodeEncounter: vi.fn() }))
 import { regenerateNoteSection } from '../initial-visit-notes'
 import { regenerateDischargeNoteSectionAction } from '../discharge-notes'
 beforeEach(() => {

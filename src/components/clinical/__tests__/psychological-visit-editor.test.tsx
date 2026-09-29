@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '@/test-utils/visit-render'
 import userEvent from '@testing-library/user-event'
 import { defaultProviderIntake, initialVisitSections } from '@/lib/validations/initial-visit-note'
 import type { ComponentProps } from 'react'

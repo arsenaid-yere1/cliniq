@@ -1,3 +1,6 @@
+import Link from 'next/link'
+import { loadDischargeBlockers } from '@/lib/clinical/discharge-readiness'
+import { VisitEditorHeader } from '@/components/visits/visit-editor-header'
 import { createClient } from '@/lib/supabase/server'
 import {
   getDischargeNote,
@@ -7,6 +10,7 @@ import {
 import { getClinicSettings, getProviderProfileById, getClinicLogoUrl, getProviderSignatureUrl } from '@/actions/settings'
 import { DischargeNoteEditor } from '@/components/discharge/discharge-note-editor'
 import { getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
+import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 import { notFound } from 'next/navigation'
 
 export default async function DischargePage({
@@ -27,17 +31,22 @@ export default async function DischargePage({
   } catch {
     notFound()
   }
-  const episodeId = episode?.id ?? '00000000-0000-0000-0000-000000000000'
-  const { data: episodeEncounterRows } = await supabase.from('clinical_encounters').select('id').eq('episode_id',episodeId).is('deleted_at',null)
+  if (!episode) notFound()
+  const episodeId = episode.id
+  const { data: episodeEncounterRows, error: encounterError } = await supabase.from('clinical_encounters').select('id').eq('episode_id',episodeId).is('deleted_at',null)
   const episodeEncounterIds = (episodeEncounterRows ?? []).map((row)=>row.id)
 
   // Fetch case first to get assigned_provider_id for signature lookup
   const caseRes = await supabase
     .from('cases')
-    .select('case_number, accident_type, accident_date, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
+    .select('case_status, case_number, accident_type, accident_date, assigned_provider_id, patient:patients!inner(first_name, last_name, date_of_birth, gender)')
     .eq('id', caseId)
     .is('deleted_at', null)
     .single()
+
+  if (caseRes.error || !caseRes.data || encounterError) {
+    return <p role="alert">Unable to load discharge information. Reload to try again.</p>
+  }
 
   const assignedProviderId = caseRes.data?.assigned_provider_id as string | null
 
@@ -56,6 +65,10 @@ export default async function DischargePage({
     getClinicLogoUrl(),
     assignedProviderId ? getProviderSignatureUrl(assignedProviderId) : Promise.resolve({ url: null }),
   ])
+
+  if (noteResult.error || prereqResult.error) {
+    return <p role="alert">Unable to load discharge information. Reload to try again.</p>
+  }
 
   const caseData = caseRes.data
     ? {
@@ -77,6 +90,9 @@ export default async function DischargePage({
   const correctionContextResult = note?.id
     ? await getDischargeCorrectionContext(caseId, episodeId, note.id)
     : { data: null }
+  if ('error' in correctionContextResult && correctionContextResult.error) {
+    return <p role="alert">Unable to load discharge correction information. Reload to try again.</p>
+  }
   const correctionContext = correctionContextResult.data ?? null
   if (note?.document_id) {
     const { data: docRow } = await supabase
@@ -92,7 +108,7 @@ export default async function DischargePage({
   // Used to pre-fill the pre-generation vitals card the first time the
   // provider visits, so the discharge reading carries forward from the
   // final injection instead of starting blank.
-  const { data: latestProcedure } = await supabase
+  const { data: latestProcedure, error: procedureError } = await supabase
     .from('procedures')
     .select('id')
     .eq('case_id', caseId)
@@ -101,6 +117,8 @@ export default async function DischargePage({
     .order('procedure_date', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  if (procedureError) return <p role="alert">Unable to load discharge vitals. Reload to try again.</p>
 
   let defaultVitals: {
     bp_systolic: number | null
@@ -114,19 +132,20 @@ export default async function DischargePage({
   } | null = null
 
   if (latestProcedure) {
-    const { data: latestVitalsRow } = await supabase
+    const { data: latestVitalsRow, error: vitalsError } = await supabase
       .from('vital_signs')
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('procedure_id', latestProcedure.id)
       .is('deleted_at', null)
       .maybeSingle()
+    if (vitalsError) return <p role="alert">Unable to load discharge vitals. Reload to try again.</p>
     defaultVitals = latestVitalsRow ?? null
   }
 
   // Fallback: if the latest procedure had no vitals recorded, try the
   // case-level initial-visit vitals (stored with procedure_id = null).
   if (!defaultVitals) {
-    const { data: ivVitalsRow } = await supabase
+    const { data: ivVitalsRow, error: vitalsError } = await supabase
       .from('vital_signs')
       .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
       .eq('case_id', caseId)
@@ -136,6 +155,7 @@ export default async function DischargePage({
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (vitalsError) return <p role="alert">Unable to load discharge vitals. Reload to try again.</p>
     defaultVitals = ivVitalsRow ?? null
   }
 
@@ -183,8 +203,21 @@ export default async function DischargePage({
           .at(-1) ?? null
       : null
 
+  const readiness = episode.status === 'active' && note?.status !== 'finalized'
+    ? await loadDischargeBlockers(supabase, caseId, episodeId)
+    : { blockers: [], error: null }
+
   return (
+    <div>
+    <VisitEditorHeader caseId={caseId} episodeId={episodeId} episodeNumber={episode.episode_number} />
+    {(readiness.error || readiness.blockers.length > 0) && <div role="status" className="mb-6 space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+      <p>{readiness.error ?? 'Before finalizing discharge, resolve the following work. You can continue editing the draft.'}</p>
+      <ul className="list-inside list-disc">{readiness.blockers.map(blocker => <li key={blocker.id}>{blocker.href ? <Link href={blocker.href} className="underline">{blocker.label}</Link> : blocker.label}</li>)}</ul>
+    </div>}
     <DischargeNoteEditor
+      finalizationBlockedReason={readiness.error ?? (readiness.blockers.length ? 'Resolve the open visits and procedures listed above before finalizing.' : undefined)}
+      key={`${caseId}:${episodeId}`}
+      episodeWritable={episode.status === 'active' && !LOCKED_STATUSES.includes(caseRes.data.case_status as CaseStatus)}
       caseId={caseId}
       episodeId={episodeId}
       note={note ?? null}
@@ -201,5 +234,6 @@ export default async function DischargePage({
       isStale={isStale}
       earliestDate={earliestDischargeDate}
     />
+    </div>
   )
 }

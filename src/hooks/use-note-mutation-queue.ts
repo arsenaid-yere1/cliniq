@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useVisitUnsavedChanges } from '@/components/visits/visit-unsaved-changes-context'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
 interface MutationContext {
   isActive: () => boolean
@@ -55,6 +56,12 @@ export function useDraftNoteMutations(options: {
   onError: (message: string) => void
 }) {
   const { enqueue } = useNoteMutationQueue(options.identity, options.writable)
+  const [savedTone, setSavedTone] = useState({ identity: options.identity, value: normalizeTone(options.initialTone) })
+  if (savedTone.identity !== options.identity) {
+    setSavedTone({ identity: options.identity, value: normalizeTone(options.initialTone) })
+  }
+  const [toneSaving, setToneSaving] = useState(false)
+  useVisitUnsavedChanges(options.writable && normalizeTone(options.toneHint) !== savedTone.value, toneSaving)
   const persistedTone = useRef(normalizeTone(options.initialTone))
   const latestTone = useRef<{ promise: Promise<void | undefined>; settled: boolean } | null>(null)
   useLayoutEffect(() => {
@@ -72,12 +79,16 @@ export function useDraftNoteMutations(options: {
     if (!context.isActive() || tone === persistedTone.current) return
     const expected = options.getVersion()
     if (!expected) throw new Error('Reload the note before saving tone guidance.')
-    const result = await options.saveTone(tone, expected)
+    setToneSaving(true)
+    let result: ToneResult
+    try { result = await options.saveTone(tone, expected) }
+    finally { setToneSaving(false) }
     if (!context.isActive()) return
     if (result.error) throw new Error(result.error)
     if (!result.data?.updated_at) throw new Error('Unable to confirm the saved tone version. Reload the note.')
     options.acknowledgeVersion(expected, result.data.updated_at)
     persistedTone.current = result.data.tone_hint
+    setSavedTone({ identity: options.identity, value: result.data.tone_hint })
   }
 
   function saveTone() {

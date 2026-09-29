@@ -1,4 +1,6 @@
-'use server'
+import 'server-only'
+
+import { resolveDischargeScope } from '@/lib/clinical/discharge-scope'
 
 import { commitReviewFix, type ReviewFixTarget } from '@/lib/qc/review-fix-target'
 
@@ -31,7 +33,8 @@ interface RefreshOptions {
   // Pre-gathered inputData. When omitted, the helper calls gather itself.
   // Generate + regen pass this to avoid a redundant gather; save paths
   // typically let the helper handle it.
-  inputData?: DischargeNoteInputData
+  episodeId?: string
+  source?: { caseId: string; episodeId: string; inputData: DischargeNoteInputData }
   userId?: string
 }
 
@@ -62,15 +65,26 @@ export async function refreshDischargeTrajectory(
     .from('discharge_notes')
     .select('*')
     .eq('id', noteId)
+    .eq('case_id', caseId)
     .is('deleted_at', null)
     .maybeSingle()
   if (fetchErr || !rawNote) return { error: 'Note not found' }
+  if (!rawNote.episode_id || rawNote.case_id !== caseId) return { error: 'Discharge note ownership is unavailable' }
+  const episodeId = rawNote.episode_id
+  if ((opts.episodeId && opts.episodeId !== episodeId)
+    || (opts.source && (opts.source.caseId !== caseId || opts.source.episodeId !== episodeId))
+    || (opts.qcTarget && (opts.qcTarget.episodeId !== episodeId || opts.qcTarget.noteId !== noteId || opts.qcTarget.encounterId !== rawNote.encounter_id))) {
+    return { error: 'Discharge source does not match the selected note' }
+  }
+  if (rawNote.status !== 'draft') return { error: 'Discharge note is no longer editable' }
+  const scope = await resolveDischargeScope(supabase, caseId, episodeId, true)
+  if (scope.error) return { error: scope.error }
   const note = rawNote as Record<string, unknown>
   if (opts.expectedUpdatedAt && rawNote.updated_at !== opts.expectedUpdatedAt) {
     return { error: 'Note changed. Refresh and try again.' }
   }
 
-  let inputData = opts.inputData
+  let inputData = opts.source?.inputData
   if (!inputData) {
     const visitDate = (note.visit_date as string | null) ?? new Date().toISOString().slice(0, 10)
     const preservedVitals: DischargeNoteInputData['dischargeVitals'] = {
@@ -83,7 +97,7 @@ export async function refreshDischargeTrajectory(
       pain_score_min: note.pain_score_min as number | null,
       pain_score_max: note.pain_score_max as number | null,
     }
-    const gathered = await gatherDischargeNoteSourceData(supabase, caseId, visitDate, preservedVitals)
+    const gathered = await gatherDischargeNoteSourceData(supabase, caseId, visitDate, preservedVitals, episodeId, opts.qcTarget)
     if (gathered.error || !gathered.data) {
       return { error: gathered.error ?? 'Failed to gather source data' }
     }
@@ -140,10 +154,13 @@ export async function refreshDischargeTrajectory(
   }
   if (opts.userId) update.updated_by_user_id = opts.userId
 
+  const stillWritable = await resolveDischargeScope(supabase, caseId, episodeId, true)
+  if (stillWritable.error) return { error: stillWritable.error }
   const { data: updated, error: updErr } = opts.qcTarget ? await commitReviewFix(supabase,'discharge_notes',opts.qcTarget,{...update,...opts.mergedSections,updated_by_user_id:undefined}) : await supabase
     .from('discharge_notes')
     .update(update)
-    .eq('id', noteId)
+    .eq('id', noteId).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'draft')
+    .is('deleted_at', null)
     .eq('updated_at', rawNote.updated_at)
     .select('updated_at').single()
   if (updErr || !updated) return { error: 'Failed to refresh trajectory' }

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { VisitTestProvider } from '@/test-utils/visit-render'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useDraftNoteMutations, useNoteMutationQueue } from '../use-note-mutation-queue'
@@ -48,7 +49,7 @@ function setup() {
     getVersion: () => version,
     acknowledgeVersion: (_expected, saved) => { version = saved },
     saveTone, onError: error,
-  }), { initialProps: { toneHint: 'Concise' } })
+  }), { initialProps: { toneHint: 'Concise' }, wrapper: VisitTestProvider })
   return { ...hook, saveTone, error, version: () => version, setVersion: (next: string) => { version = next } }
 }
 

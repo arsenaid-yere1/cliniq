@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { render } from '@/test-utils/visit-render'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tables } from '@/types/database'
 import { painFollowUpNoteSections } from '@/lib/validations/pain-follow-up-note'

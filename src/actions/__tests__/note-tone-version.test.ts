@@ -22,7 +22,11 @@ beforeEach(() => {
   client = createMockSupabase()
   note = createMockQueryBuilder({ data: { updated_at: 'v2', tone_hint: 'Concise' }, error: null })
   corrections = createMockQueryBuilder({ data: [], error: null })
-  client.from.mockImplementation((table: string) => table === 'discharge_note_corrections' ? corrections : note)
+  client.from.mockImplementation((table: string) => {
+    if (table === 'care_episodes') return createMockQueryBuilder({ data: { id: 'episode', case_id: 'case', status: 'active' }, error: null })
+    if (table === 'cases') return createMockQueryBuilder({ data: { case_status: 'active' }, error: null })
+    return table === 'discharge_note_corrections' ? corrections : note
+  })
   state.closed.mockResolvedValue({ error: null })
   state.episode.mockResolvedValue({ id: 'episode' })
 })

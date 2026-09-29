@@ -25,7 +25,12 @@ beforeEach(() => {
     ? { id: 'episode-2', episode_number: 2, status: 'active' }
     : table === 'discharge_note_corrections' ? [] : { case_number: 'C', patient: {} }, error: null }))
 })
-const renderPage = async () => await InitialVisitPage({ params: Promise.resolve({ caseId: 'case' }), searchParams: Promise.resolve({ episode: 'episode-2' }) }) as ReactElement<{ role?: string; initialVitals?: unknown; canGenerate?: boolean; intakeCarryover?: unknown }>
+const renderPageResult = async () => await InitialVisitPage({ params: Promise.resolve({ caseId: 'case' }), searchParams: Promise.resolve({ episode: 'episode-2' }) }) as ReactElement<{ role?: string; initialVitals?: unknown; canGenerate?: boolean; intakeCarryover?: unknown }>
+const renderPage = async () => {
+  const page = await renderPageResult()
+  const children = (page.props as { children?: ReactElement[] }).children
+  return Array.isArray(children) ? children[1] as Awaited<ReturnType<typeof renderPageResult>> : page
+}
 describe('evaluation page vitals loading', () => {
   it('passes loaded measurements to the form', async () => {
     const measurements = { heart_rate: 72, pain_score_max: 6 }

@@ -3,7 +3,8 @@ import { getPatientCase } from '@/actions/patients'
 import { CaseSidebar } from '@/components/patients/case-sidebar'
 import { CaseStatusProvider } from '@/components/patients/case-status-context'
 import { getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
-import { RETURN_TELE_VISITS_ENABLED } from '@/lib/features/return-tele-visits'
+import { VisitUnsavedChangesProvider } from '@/components/visits/visit-unsaved-changes-context'
+import { VisitNavigationProvider } from '@/components/visits/visit-navigation-context'
 
 export default async function CaseDashboardLayout({
   children,
@@ -23,17 +24,20 @@ export default async function CaseDashboardLayout({
 
   return (
     <CaseStatusProvider status={data.case_status}>
-      <div className="flex h-full -m-6">
+      <VisitNavigationProvider key={caseId}>
+      <VisitUnsavedChangesProvider>
+      <div className="flex min-h-full flex-col -m-6 md:flex-row">
         <CaseSidebar
           caseData={data}
-          visitsEnabled={RETURN_TELE_VISITS_ENABLED}
           episodeStatus={episode ? {
             number: episode.episode_number,
             status: episode.status,
           } : null}
         />
-        <div className="flex-1 p-6">{children}</div>
+        <div className="min-w-0 flex-1 p-4 sm:p-6">{children}</div>
       </div>
+      </VisitUnsavedChangesProvider>
+      </VisitNavigationProvider>
     </CaseStatusProvider>
   )
 }

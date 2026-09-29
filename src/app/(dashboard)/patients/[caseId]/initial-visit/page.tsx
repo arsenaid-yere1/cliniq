@@ -1,3 +1,4 @@
+import { VisitEditorHeader } from '@/components/visits/visit-editor-header'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -163,6 +164,8 @@ export default async function InitialVisitPage({ params, searchParams }: { param
   }
 
   return (
+    <div>
+    <VisitEditorHeader caseId={caseId} episodeId={episodeId} episodeNumber={episode.episode_number} />
     <InitialVisitEditor
       key={episodeId}
       caseId={caseId}
@@ -186,5 +189,6 @@ export default async function InitialVisitPage({ params, searchParams }: { param
       painEvalMissingPriorVitals={painEvalMissingPriorVitals}
       siblingDatesByVisitType={siblingDatesByVisitType}
     />
+    </div>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useVisitDraftBaseline, useVisitUnsavedChanges } from '@/components/visits/visit-unsaved-changes-context'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
@@ -178,6 +179,8 @@ interface DischargeCorrectionContext {
 }
 
 interface DischargeNoteEditorProps {
+  finalizationBlockedReason?: string
+  episodeWritable?: boolean
   caseId: string
   episodeId: string
   note: NoteRow | null
@@ -230,6 +233,8 @@ const sectionRows: Record<DischargeNoteSection, number> = {
 }
 
 export function DischargeNoteEditor({
+  finalizationBlockedReason,
+  episodeWritable = true,
   caseId,
   episodeId,
   note,
@@ -256,16 +261,18 @@ export function DischargeNoteEditor({
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
-  const isLocked = LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+  const isLocked = !episodeWritable || LOCKED_STATUSES.includes(caseStatus as CaseStatus)
+
+  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint, preGenVisitDate }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.subjective && !note.assessment)))
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     setOptimisticStartedAt(new Date().toISOString())
     setOptimisticGenerating(true)
     startTransition(async () => {
       try {
-        const result = await generateDischargeNote(caseId, toneHintArg, visitDateArg)
+        const result = await generateDischargeNote(caseId, toneHintArg, visitDateArg, episodeId)
         if (result.error) toast.error(result.error)
-        else toast.success('Discharge summary generated successfully')
+        else { acknowledgePreGeneration({ toneHint, preGenVisitDate }); toast.success('Discharge summary generated successfully') }
       } finally {
         setOptimisticGenerating(false)
       }
@@ -313,7 +320,7 @@ export function DischargeNoteEditor({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Discharge Summary</h1>
 
-        <DischargeVitalsCard caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
+        <DischargeVitalsCard episodeId={episodeId} caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
 
         <VisitDateCard
           value={preGenVisitDate}
@@ -426,6 +433,7 @@ export function DischargeNoteEditor({
   // Draft state
   return (
     <DraftEditor
+      finalizationBlockedReason={finalizationBlockedReason}
       caseId={caseId}
       episodeId={episodeId}
       note={note}
@@ -433,7 +441,7 @@ export function DischargeNoteEditor({
       startTransition={startTransition}
       regeneratingSection={regeneratingSection}
       setRegeneratingSection={setRegeneratingSection}
-      isLocked={isLocked}
+      isLocked={correctionContext?.openCorrection ? !correctionContext.canCorrect : isLocked}
       isStale={isStale}
       correction={correctionContext?.openCorrection ?? null}
     />
@@ -443,6 +451,7 @@ export function DischargeNoteEditor({
 // --- Draft Editor ---
 
 function DraftEditor({
+  finalizationBlockedReason,
   caseId,
   episodeId,
   note,
@@ -454,6 +463,7 @@ function DraftEditor({
   isStale,
   correction,
 }: {
+  finalizationBlockedReason?: string
   caseId: string
   episodeId: string
   note: NoteRow
@@ -476,12 +486,17 @@ function DraftEditor({
       ) as Omit<DischargeNoteEditValues, 'visit_date' | 'treatment_decision' | 'expected_updated_at'>),
     },
   })
+  const acknowledgeDraft = useVisitDraftBaseline(form.watch(), isPending, !isLocked)
   const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
   const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
   const { acknowledgeSavedNote, acknowledgeMetadataVersion } = useVisitNoteVersion(note, dischargeNoteSections, setVersion)
   function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
     if (!saved) return
     acknowledgeSavedNote(saved)
+    acknowledgeDraft({
+      ...Object.fromEntries(dischargeNoteSections.map(section => [section, saved[section] ?? ''])),
+      visit_date: saved.visit_date as string | null, treatment_decision: visitDecisionDraft(saved.visit_treatment_decision),
+    } as DischargeNoteEditValues)
     setSavedDecision(saved.visit_treatment_decision)
     form.setValue('expected_updated_at', saved.updated_at as string)
     if (!regeneratedSection || regeneratedSection === 'patient_education') {
@@ -503,7 +518,7 @@ function DraftEditor({
     initialTone: note.tone_hint,
     getVersion: () => form.getValues('expected_updated_at'),
     acknowledgeVersion: acknowledgeMetadataVersion,
-    saveTone: (tone, expected) => saveDischargeNoteToneHint(caseId, tone, { noteId: note.id, expectedUpdatedAt: expected }),
+    saveTone: (tone, expected) => saveDischargeNoteToneHint(caseId, tone, { noteId: note.id, expectedUpdatedAt: expected }, episodeId),
     onError: (message) => toast.error(message),
   })
   const [timeline, setTimeline] = useState<{
@@ -512,14 +527,14 @@ function DraftEditor({
     dischargeEstimated: boolean
   } | null>(null)
   const isCorrection = Boolean(correction)
-  const editingDisabled = isPending || (isLocked && !isCorrection)
+  const editingDisabled = isPending || isLocked
 
   // Load the read-only trajectory payload used by the Pain Timeline widget.
   // Runs on mount and whenever the note id changes (e.g. after reset).
   // The server action re-runs the same gather + trajectory builder that
   // the generator uses, so this always matches what the LLM would see.
   const refreshTimeline = async () => {
-    const res = await getDischargePainTimeline(caseId)
+    const res = await getDischargePainTimeline(caseId, episodeId)
     if (res.error) {
       setTimeline(null)
       return
@@ -537,7 +552,7 @@ function DraftEditor({
     if (isCorrection) return
     let cancelled = false
     async function load() {
-      const res = await getDischargePainTimeline(caseId)
+      const res = await getDischargePainTimeline(caseId, episodeId)
       if (cancelled) return
       if (res.error) {
         setTimeline(null)
@@ -555,7 +570,7 @@ function DraftEditor({
     return () => {
       cancelled = true
     }
-  }, [caseId, note.id, isCorrection])
+  }, [caseId, episodeId, note.id, isCorrection])
 
   function handleSave() {
     startTransition(async () => {
@@ -565,11 +580,11 @@ function DraftEditor({
         delete values.expected_updated_at
         const result = await saveDischargeCorrection(caseId, episodeId, note.id, correction.id, values)
         if (result.error) toast.error(result.error)
-        else toast.success('Correction saved')
+        else { acknowledgeDraft(form.getValues()); toast.success('Correction saved') }
         return
       }
       await mutations.run(async () => {
-        const result = await saveDischargeNote(caseId, form.getValues())
+        const result = await saveDischargeNote(caseId, form.getValues(), episodeId)
         if (result.error) toast.error(result.error)
         else {
           acceptSavedNote(result.data?.savedNote)
@@ -585,7 +600,7 @@ function DraftEditor({
     startTransition(async () => {
       try {
         await mutations.run(async () => {
-          const result = await regenerateDischargeNoteSectionAction(caseId, section, undefined, form.getValues('expected_updated_at'))
+          const result = await regenerateDischargeNoteSectionAction(caseId, section, undefined, form.getValues('expected_updated_at'), undefined, episodeId)
           if (result.error) {
             toast.error(result.error)
           } else if (result.data?.content) {
@@ -644,9 +659,9 @@ function DraftEditor({
           {!isCorrection && <ClinicalResetDialog caseId={caseId} target={{ kind: "discharge_notes", id: note.id }} disabled={isPending} />}
           {!isCorrection && <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isLocked || isPending || note.pain_score_max == null} title={note.pain_score_max == null ? 'Enter the discharge-visit pain score before finalizing.' : undefined}>
+              <Button disabled={isLocked || isPending || !!finalizationBlockedReason || note.pain_score_max == null} title={finalizationBlockedReason ?? (note.pain_score_max == null ? 'Enter the discharge-visit pain score before finalizing.' : undefined)}>
                 <Lock className="h-4 w-4 mr-2" />
-                Finalize
+                Finalize discharge &amp; end episode
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -663,21 +678,21 @@ function DraftEditor({
                     startTransition(async () => {
                       await mutations.run(async ({ isActive, finish }) => {
                         const values = form.getValues()
-                        const saveResult = await saveDischargeNote(caseId, values)
+                        const saveResult = await saveDischargeNote(caseId, values, episodeId)
                         if (saveResult.error) {
                           toast.error(saveResult.error)
                           return
                         }
                         if (!isActive()) return
                         acceptSavedNote(saveResult.data?.savedNote)
-                        const result = await finalizeDischargeNote(caseId, saveResult.data?.savedNote?.updated_at as string)
+                        const result = await finalizeDischargeNote(caseId, saveResult.data?.savedNote?.updated_at as string, episodeId)
                         if (result.error) toast.error(result.error)
                         else { finish(); toast.success('Discharge summary finalized') }
                       })
                     })
                   }}
                 >
-                  Finalize
+                  Finalize discharge &amp; end episode
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -703,7 +718,7 @@ function DraftEditor({
           )}
           {correction && <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={isPending}>Cancel Correction</Button>
+              <Button variant="outline" disabled={editingDisabled}>Cancel Correction</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -730,7 +745,7 @@ function DraftEditor({
           </AlertDialog>}
           {correction && <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button disabled={isPending || note.pain_score_max == null}>
+              <Button disabled={editingDisabled || note.pain_score_max == null}>
                 <Lock className="h-4 w-4 mr-2" />
                 Finalize Corrected Discharge
               </Button>
@@ -894,6 +909,7 @@ function FinalizedView({
   startTransition: (callback: () => Promise<void>) => void
 }) {
   const [correctionReason, setCorrectionReason] = useState('')
+  useVisitUnsavedChanges(Boolean(correctionReason.trim()), isPending)
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
     : null
@@ -1159,11 +1175,13 @@ function FinalizedView({
 // --- Discharge Vitals Card (pre-generation) ---
 
 function DischargeVitalsCard({
+  episodeId,
   caseId,
   note,
   isLocked,
   defaultVitals,
 }: {
+  episodeId: string
   caseId: string
   note: NoteRow | null
   isLocked: boolean
@@ -1186,12 +1204,14 @@ function DischargeVitalsCard({
     },
   })
 
+  const acknowledgeVitals = useVisitDraftBaseline(vitalsForm.watch(), isSaving, !isLocked)
+
   function handleSaveVitals() {
     startSaving(async () => {
       const values = vitalsForm.getValues()
-      const result = await saveDischargeVitals(caseId, values)
+      const result = await saveDischargeVitals(caseId, values, episodeId)
       if (result.error) toast.error(result.error)
-      else toast.success('Vitals saved')
+      else { acknowledgeVitals(values); toast.success('Vitals saved') }
     })
   }
 
@@ -1205,7 +1225,7 @@ function DischargeVitalsCard({
       </CardHeader>
       <CardContent>
         <Form {...vitalsForm}>
-          <div className="grid grid-cols-3 gap-4">
+          <fieldset disabled={isLocked || isSaving} className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             <FormField
               control={vitalsForm.control}
               name="pain_score_min"
@@ -1365,7 +1385,7 @@ function DischargeVitalsCard({
                 </FormItem>
               )}
             />
-          </div>
+          </fieldset>
           <div className="mt-4 flex justify-end">
             <Button type="button" variant="outline" onClick={handleSaveVitals} disabled={isLocked || isSaving}>
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}

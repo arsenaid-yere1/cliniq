@@ -8,6 +8,7 @@ import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-doc
 
 import { createHash } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
+import { revalidateVisitViews } from '@/lib/clinical/revalidate-visit-views'
 import { createClient } from '@/lib/supabase/server'
 import { requireWritableEpisode, selectLatestCompletedEncounter } from '@/lib/clinical/episode-context'
 import { requireReturnTeleVisitsMutation } from '@/lib/features/return-tele-visits'
@@ -110,6 +111,7 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
       encounter_id: encounterId, created_by_user_id: user.id,
     }).select('id,updated_at').single()
   if (acquired.error || !acquired.data) return { error: 'Note changed or generation could not be started. Refresh and try again.' }
+  revalidateVisitViews(caseId, 'follow_up', { encounterId })
   const { id: noteId, updated_at: generationVersion } = acquired.data
   let generated: Awaited<ReturnType<typeof generatePainFollowUp>>
   try {
@@ -131,7 +133,7 @@ export async function generatePainFollowUpNote(caseId: string, encounterId: stri
     .eq('status', 'generating').eq('updated_at', generationVersion).is('deleted_at', null)
     .select('id').maybeSingle()
   if (error || !committed) return { error: 'Note changed or generation could not be saved. Refresh and try again.' }
-  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  revalidateVisitViews(caseId, 'follow_up', { encounterId })
   return generated.data ? { data: { noteId } } : { error: generated.error ?? 'Unable to generate follow-up note' }
 }
 
@@ -183,7 +185,7 @@ export async function savePainFollowUpNote(caseId: string, values: PainFollowUpN
     const { encounter_id, ...patch } = parsed.data
     const result = await saveVisitDecision(supabase, 'pain_follow_up_notes', caseId, { column: 'encounter_id', value: encounter_id }, patch)
     if (result.error) return { error: result.error }
-    revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
+    revalidateVisitViews(caseId, 'follow_up', { encounterId: encounter_id })
     return { data: { success: true, savedNote: result.savedNote } }
   }
   const { encounter_id, reviewed_visit_date: _date, treatment_decision: _decision, expected_updated_at: _version, ...note } = parsed.data
@@ -191,7 +193,7 @@ export async function savePainFollowUpNote(caseId: string, values: PainFollowUpN
   const { error } = await supabase.from('pain_follow_up_notes').update({ ...note, updated_by_user_id: user.id })
     .eq('case_id', caseId).eq('encounter_id', encounter_id).eq('status', 'draft').is('deleted_at', null)
   if (error) return { error: 'Unable to save note' }
-  revalidatePath(`/patients/${caseId}/visits/${encounter_id}`)
+  revalidateVisitViews(caseId, 'follow_up', { encounterId: encounter_id })
   return { data: { success: true } }
 }
 
@@ -230,7 +232,7 @@ export async function regeneratePainFollowUpSectionAction(
   }).eq('id', note.id).eq('case_id', caseId).eq('encounter_id', encounterId).is('deleted_at', null)
     .eq('status', 'draft').eq('updated_at', note.updated_at).select('*').single()
   if (error || !savedNote) return { error: 'Note changed or could not be saved. Refresh and try again.' }
-  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  revalidateVisitViews(caseId, 'follow_up', { encounterId })
   return { data: { success: true, savedNote } }
 }
 
@@ -275,8 +277,7 @@ export async function finalizePainFollowUpNote(caseId: string, encounterId: stri
     }
     return { error: error.message.includes('not writable') ? 'This visit is no longer writable' : 'Unable to finalize follow-up note' }
   }
-  revalidatePath(`/patients/${caseId}/visits`)
-  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  revalidateVisitViews(caseId, 'follow_up', { encounterId })
   revalidatePath(`/patients/${caseId}/documents`)
   revalidatePath(`/patients/${caseId}/timeline`)
   return { data: { success: true } }
@@ -306,7 +307,7 @@ export async function resetPainFollowUpNote(caseId: string, encounterId: string)
     return { error: 'Unable to reset follow-up note' }
   }
 
-  revalidatePath(`/patients/${caseId}/visits/${encounterId}`)
+  revalidateVisitViews(caseId, 'follow_up', { encounterId })
   return { data: { success: true, noteId } }
 }
 

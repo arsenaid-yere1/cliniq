@@ -1,5 +1,6 @@
 'use client'
 
+import { useVisitDraftBaseline } from '@/components/visits/visit-unsaved-changes-context'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
 import { visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
 import { useCaseStatus } from '@/components/patients/case-status-context'
@@ -78,6 +79,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
   const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const writable = encounter.status === 'in_progress' && !caseLocked && episodeWritable
   const state = getPainFollowUpEditorState(initialNote)
+  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint }, generating, writable && (state === 'empty' || state === 'failed'))
 
   async function generate() {
     if (running.current || !writable) return
@@ -88,7 +90,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
       const result = await generatePainFollowUpNote(caseId, encounter.id, toneHint.trim() || null)
       if (!mounted.current) return
       if ('error' in result) toast.error(result.error)
-      else toast.success('Follow-up note generated successfully')
+      else { acknowledgePreGeneration({ toneHint }); toast.success('Follow-up note generated successfully') }
       router.refresh()
     } catch {
       if (mounted.current) toast.error('Something went wrong. Please try again.')
@@ -268,6 +270,14 @@ function NoteEditor({
     procedure_recommendations: recommendations,
   }
 
+  const acknowledgeDraft = useVisitDraftBaseline({ note, decision, recommendations }, pending, visitWritable && !finalized)
+  function acknowledgePersistedDraft(row: Tables<'pain_follow_up_notes'>) {
+    acknowledgeDraft({
+      note: Object.fromEntries(painFollowUpNoteSections.map(section => [section, row[section] ?? ''])) as Record<PainFollowUpSection, string>,
+      decision: visitDecisionDraft(row.visit_treatment_decision), recommendations: (row.procedure_recommendations ?? []) as unknown as ProcedureRecommendation[],
+    })
+  }
+
   async function saveDraft(isActive: () => boolean) {
     const result = await savePainFollowUpNote(caseId, {
       ...editValues,
@@ -279,6 +289,7 @@ function NoteEditor({
     const row = confirmedRow(saved)
     if (!row) return { error: 'Unable to confirm the saved note version. Reload before finalizing.' }
     versions.acknowledgeSavedNote(row)
+    acknowledgePersistedDraft(row)
     setSavedNote(row)
     setNote(Object.fromEntries(painFollowUpNoteSections.map((section) => [section, row[section] ?? ''])) as Record<PainFollowUpSection, string>)
     setDecision(visitDecisionDraft(row.visit_treatment_decision))
@@ -369,6 +380,7 @@ function NoteEditor({
                       const row = confirmedRow(result.data?.savedNote)
                       if (!row) return { error: 'Unable to confirm the regenerated note version. Reload the note.' }
                       versions.acknowledgeSavedNote(row)
+                      acknowledgePersistedDraft(row)
                       setSavedNote(row)
                       setNote((current) => ({ ...current, [section]: row[section] ?? '' }))
                       return { data: { success: true } }

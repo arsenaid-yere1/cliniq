@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { render } from '@/test-utils/visit-render'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tables } from '@/types/database'
 import { buildIntakeHistory } from '@/lib/clinical/follow-up-intake-prefill'

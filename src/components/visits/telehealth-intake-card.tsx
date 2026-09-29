@@ -1,5 +1,6 @@
 'use client'
 
+import { useVisitDraftBaseline } from '@/components/visits/visit-unsaved-changes-context'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -59,12 +60,16 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
   const visitDate = encounterDateFromLocalDateTime(scheduledStart) ?? encounter.encounter_date
   const invalidHistoryDate = sources.length > 0 && (!visitDate || sources.some((source) => source.date >= visitDate))
 
-  async function run(action: () => Promise<unknown>, message: string) {
+  const draft = { intake, sources, reviewed, painMin, painMax, consent, patientState, providerLocation, connection, scheduledStart }
+  const acknowledgeDraft = useVisitDraftBaseline(draft, pending, !locked, initial.applied)
+
+  async function run(action: () => Promise<unknown>, message: string, saved?: () => void) {
     if (disabled) return
     setPending(true)
     try {
       const result = await action() as { error?: string }
       if (result.error) { toast.error(result.error); return }
+      saved?.()
       toast.success(message)
       router.refresh()
     } catch {
@@ -124,7 +129,7 @@ export function TelehealthIntakeCard({ caseId, encounter, history, episodeWritab
       patient_location_state: patientState || null,
       provider_location: providerLocation || null,
       connection_method: connection || null,
-    }), 'Visit intake saved')
+    }), 'Visit intake saved', () => acknowledgeDraft(draft))
   }
 
   async function changeStatus(status: 'in_progress' | 'cancelled' | 'no_show') {

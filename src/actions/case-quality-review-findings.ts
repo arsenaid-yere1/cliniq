@@ -107,7 +107,7 @@ export async function actOnQualityFinding(caseId: string,reviewId: string,key: s
         result = await regenerateProcedureNoteSectionAction(note.procedure_id!,caseId,section as ProcedureNoteSection,instruction,target)
       } else if (note.step === 'discharge') {
         const {regenerateDischargeNoteSectionAction} = await import('./discharge-notes')
-        result = await regenerateDischargeNoteSectionAction(caseId,section as DischargeNoteSection,instruction,version,target)
+        result = await regenerateDischargeNoteSectionAction(caseId,section as DischargeNoteSection,instruction,version,target,target.episodeId)
       } else {
         const {regeneratePainFollowUpSectionAction} = await import('./pain-follow-up-notes')
         result = await regeneratePainFollowUpSectionAction(caseId,note.encounter_id,section as PainFollowUpSection,instruction,version,target)

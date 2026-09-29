@@ -20,6 +20,7 @@ import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-doc
 import { createClient } from '@/lib/supabase/server'
 import { acquireGenerationLock } from '@/lib/supabase/generation-lock'
 import { revalidatePath } from 'next/cache'
+import { revalidateVisitViews } from '@/lib/clinical/revalidate-visit-views'
 import { createHash } from 'node:crypto'
 import { psychologicalFinalizationError } from '@/lib/validations/psychological-assessment'
 import { z } from 'zod'
@@ -534,6 +535,7 @@ export async function generateInitialVisitNote(
       .eq('id', existingNote.id)
 
     if (updateError) {
+      revalidateVisitViews(caseId, 'evaluation')
       revalidatePath(`/patients/${caseId}`)
       return { error: mapVisitDateOrderError(updateError) ?? 'Failed to start note generation' }
     }
@@ -576,6 +578,7 @@ export async function generateInitialVisitNote(
       .single()
 
     if (insertError || !record) {
+      revalidateVisitViews(caseId, 'evaluation')
       revalidatePath(`/patients/${caseId}`)
       if (insertError?.code === '23505') {
         return { error: 'Generation already in progress — please wait a moment and try again.' }
@@ -585,6 +588,8 @@ export async function generateInitialVisitNote(
 
     recordId = record.id
   }
+
+  revalidateVisitViews(caseId, 'evaluation')
 
   // Throttled progress writer. The Anthropic SDK fires inputJson events
   // many times per second; we coalesce to at most one UPDATE per 500ms so
@@ -627,6 +632,7 @@ export async function generateInitialVisitNote(
       })
       .eq('id', recordId)
 
+    revalidateVisitViews(caseId, 'evaluation')
     revalidatePath(`/patients/${caseId}`)
     return { error: result.error || 'Note generation failed' }
   }
@@ -640,6 +646,7 @@ export async function generateInitialVisitNote(
         status: 'failed', generation_error: validated.error ?? 'Invalid PRP target selection',
         raw_ai_response: result.rawResponse || null, updated_by_user_id: user.id,
       }).eq('id', recordId)
+      revalidateVisitViews(caseId, 'evaluation')
       revalidatePath(`/patients/${caseId}`)
       return { error: validated.error ?? 'Invalid PRP target selection' }
     }
@@ -721,6 +728,7 @@ export async function generateInitialVisitNote(
     })
     .eq('id', recordId)
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: { id: recordId } }
 }
@@ -850,6 +858,7 @@ export async function saveInitialVisitNote(
     if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save note' }
   }
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true, savedNote } }
 }
@@ -966,6 +975,7 @@ export async function finalizeInitialVisitNote(caseId: string, visitType: NoteVi
     return { error: updateError.message.includes('changed') ? 'Note changed. Review it and finalize again.' : 'Failed to finalize note' }
   }
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
@@ -1090,6 +1100,7 @@ export async function regenerateNoteSection(
       updated_by_user_id: user.id,
     }).eq('id', note.id).eq('status', 'draft').eq('updated_at', note.updated_at).select('*').single()
     if (updateError) return { error: 'Failed to update Treatment Plan' }
+    revalidateVisitViews(caseId, 'evaluation')
     revalidatePath(`/patients/${caseId}`)
     return { data: { content, savedNote: persisted as Record<string, unknown> } }
   }
@@ -1155,6 +1166,7 @@ export async function regenerateNoteSection(
 
   if (updateError) return { error: 'Note changed or could not be saved. Refresh and try again.' }
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: { content: persisted?.[section] as string ?? result.data, savedNote: persisted as Record<string, unknown> } }
 }
@@ -1295,6 +1307,7 @@ export async function saveInitialVisitVitals(
     if (error) return { error: 'Failed to save vitals' }
   }
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
 }
@@ -1435,6 +1448,7 @@ export async function saveProviderIntake(
     if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save provider intake' }
   }
 
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: { success: true } }
 }
@@ -1461,6 +1475,7 @@ export async function acknowledgePsychologicalReview(caseId: string, expectedUpd
     .eq('id', note.id).eq('status', 'draft').eq('updated_at', expectedUpdatedAt).is('deleted_at', null)
     .select('updated_at').single()
   if (saveError || !saved) return { error: 'The note changed. Review it again before acknowledging.' }
+  revalidateVisitViews(caseId, 'evaluation')
   revalidatePath(`/patients/${caseId}`)
   return { data: saved }
 }

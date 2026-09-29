@@ -71,7 +71,8 @@ describe('specific Quality Review actions', () => {
     setup(step)
     const result=await actOnQualityFinding('case','review',finding.key!,'fix')
     expect(result.data?.outcome).toBe('applied_and_not_detected')
-    expect(mocks.regen.mock.calls[0].at(-1)).toMatchObject({noteId,episodeId:'episode',encounterId,runId,updatedAt:'2026-01-01T00:00:00Z'})
+    if (step === 'discharge') expect(mocks.regen.mock.calls[0].at(-1)).toBe('episode')
+    expect(mocks.regen.mock.calls[0].at(step === 'discharge' ? -2 : -1)).toMatchObject({noteId,episodeId:'episode',encounterId,runId,updatedAt:'2026-01-01T00:00:00Z'})
     expect(mocks.publish).toHaveBeenCalledTimes(1)
   })
   it('reports a surviving issue instead of claiming resolution',async () => {

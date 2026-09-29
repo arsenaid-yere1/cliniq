@@ -1,5 +1,6 @@
 'use client'
 
+import { useVisitUnsavedChanges } from '@/components/visits/visit-unsaved-changes-context'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { FieldValues, UseFormReturn } from 'react-hook-form'
 import { toast } from 'sonner'
@@ -56,24 +57,7 @@ export function IntakeDraftProvider({ children, episodeId, carriedSections = noC
     }
   }, [revision, flushing, register, flush, readSection, episodeId, carriedSections])
 
-  useEffect(() => {
-    if (!value.dirty && !value.busy) return
-    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    const beforeNavigate = (event: MouseEvent) => {
-      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
-      if (!anchor || anchor.getAttribute('href')?.startsWith('#')) return
-      if (!window.confirm('Unsaved intake changes will be lost. Leave this page?')) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-    }
-    window.addEventListener('beforeunload', beforeUnload)
-    document.addEventListener('click', beforeNavigate, true)
-    return () => {
-      window.removeEventListener('beforeunload', beforeUnload)
-      document.removeEventListener('click', beforeNavigate, true)
-    }
-  }, [value.dirty, value.busy])
+  useVisitUnsavedChanges(value.dirty, value.busy)
 
   return <IntakeDraftContext.Provider value={value}>
     <fieldset disabled={value.busy} className="min-w-0 border-0 p-0 m-0" aria-busy={value.busy}>{children}</fieldset>

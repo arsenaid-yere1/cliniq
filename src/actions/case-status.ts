@@ -139,7 +139,7 @@ export async function updateCaseStatus(
     notes: historyNotes,
   })
 
-  revalidatePath(`/patients/${caseId}`)
+  revalidatePath(`/patients/${caseId}`, 'layout')
   revalidatePath('/patients')
   return { data: { success: true } }
 }
@@ -246,7 +246,7 @@ export async function startReturnCareEpisode(
     return { error: 'Failed to start the return visit' }
   }
 
-  revalidatePath(`/patients/${caseId}`)
+  revalidatePath(`/patients/${caseId}`, 'layout')
   revalidatePath(`/patients/${caseId}/visits`)
   revalidatePath('/patients')
 

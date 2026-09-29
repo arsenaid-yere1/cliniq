@@ -10,6 +10,7 @@ import { removeUnreferencedGeneratedDocument } from '@/lib/supabase/finalize-doc
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { revalidateVisitViews } from '@/lib/clinical/revalidate-visit-views'
 import { createHash } from 'node:crypto'
 import {
   generateDischargeNoteFromData,
@@ -43,7 +44,8 @@ import {
   type DiagnosisItem,
 } from '@/lib/icd10/diagnosis-rewrite'
 import { parseIvnDiagnoses } from '@/lib/icd10/parse-ivn-diagnoses'
-import { ensureEpisodeEncounter, getActiveOrLatestEpisode, getEpisodeById } from '@/lib/clinical/episode-context'
+import { ensureEpisodeEncounter, getActiveOrLatestEpisode } from '@/lib/clinical/episode-context'
+import { resolveDischargeScope } from '@/lib/clinical/discharge-scope'
 import type { Json } from '@/types/database'
 
 const CORRECTION_LOCKED_CASE_STATUSES = ['pending_settlement', 'closed', 'archived']
@@ -75,18 +77,6 @@ async function getDischargeCorrectionAuthorization(
   }
 }
 
-async function assertNoOpenDischargeCorrection(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  caseId: string,
-  episodeId: string,
-): Promise<{ error: string | null }> {
-  const { data } = await supabase.from('discharge_note_corrections').select('id')
-    .eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'open').limit(1)
-  return data?.length
-    ? { error: 'A discharge correction is in progress. Use the correction controls to save, cancel, or finalize it.' }
-    : { error: null }
-}
-
 function dischargeCorrectionRpcError(message: string | undefined, fallback: string) {
   if (!message) return fallback
   const expectedFragments = [
@@ -102,16 +92,6 @@ function dischargeCorrectionRpcError(message: string | undefined, fallback: stri
     'Corrected discharge',
   ]
   return expectedFragments.some((fragment) => message.includes(fragment)) ? message : fallback
-}
-
-async function resolveDischargeEpisodeId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  caseId: string,
-  explicitEpisodeId?: string,
-) {
-  if (explicitEpisodeId) return (await getEpisodeById(caseId, explicitEpisodeId, supabase)).id
-  const episode = await getActiveOrLatestEpisode(caseId, supabase)
-  return episode?.id ?? null
 }
 
 // --- Helper: assemble discharge diagnosis pool ---
@@ -705,9 +685,10 @@ export async function checkDischargeNotePrerequisites(caseId: string, explicitEp
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId, explicitEpisodeId)
-  if (!episodeId) return { data: { canGenerate: false, reason: 'A care episode is required before discharge.' } }
-  const { data: completedVisits } = await supabase
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, false)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
+  const { data: completedVisits, error: completedError } = await supabase
     .from('clinical_encounters')
     .select('id')
     .eq('case_id', caseId)
@@ -717,6 +698,7 @@ export async function checkDischargeNotePrerequisites(caseId: string, explicitEp
     .is('deleted_at', null)
     .limit(1)
 
+  if (completedError) return { error: 'Unable to check completed visits' }
   if (!completedVisits?.length) {
     return { data: { canGenerate: false, reason: 'A completed clinical visit is required before generating a discharge summary.' } }
   }
@@ -730,6 +712,7 @@ export async function generateDischargeNote(
   caseId: string,
   toneHint?: string | null,
   visitDate?: string | null,
+  explicitEpisodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -738,15 +721,15 @@ export async function generateDischargeNote(
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
 
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
+
   await autoAdvanceFromIntake(supabase, caseId, user.id)
 
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
-
   // Check prerequisite
-  const prereq = await checkDischargeNotePrerequisites(caseId)
+  const prereq = await checkDischargeNotePrerequisites(caseId, episodeId)
+  if (prereq.error) return { error: prereq.error }
   if (prereq.data && !prereq.data.canGenerate) {
     return { error: prereq.data.reason }
   }
@@ -754,13 +737,15 @@ export async function generateDischargeNote(
   // Look up existing active discharge note to preserve visit_date, provider-entered
   // vitals, and the tone hint across regeneration. Also read status + updated_at
   // to guard against concurrent generations.
-  const { data: existingNote } = await supabase
+  const { data: existingNote, error: existingError } = await supabase
     .from('discharge_notes')
     .select('id, status, updated_at, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
     .eq('case_id', caseId)
     .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
+
+  if (existingError) return { error: 'Unable to load the discharge note' }
 
   // Keep the same visit row and its server-owned reviewed decision.
   if (existingNote?.status === 'finalized') return { error: 'Reset the finalized note before regenerating.' }
@@ -858,18 +843,20 @@ export async function generateDischargeNote(
   } as const
   const claim = existingNote
     ? supabase.from('discharge_notes').update(generationPatch)
-        .eq('id', existingNote.id).eq('updated_at', existingNote.updated_at)
+        .eq('id', existingNote.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('updated_at', existingNote.updated_at)
         .eq('status', existingNote.status).is('deleted_at', null)
     : supabase.from('discharge_notes').insert({ ...generationPatch, created_by_user_id: user.id })
   const { data: record, error: insertError } = await claim.select('id').single()
 
   if (insertError || !record) {
-    revalidatePath(`/patients/${caseId}/discharge`)
+    revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
     if (insertError?.code === '23505') {
       return { error: 'Generation already in progress — please wait a moment and try again.' }
     }
     return { error: existingNote ? 'The note changed. Reload before regenerating.' : 'Failed to create note record' }
   }
+
+  revalidateVisitViews(caseId, 'discharge')
 
   // Throttled progress writer — coalesce Anthropic SDK inputJson events to
   // at most one DB UPDATE per 500ms so realtime subscribers get visible
@@ -882,10 +869,12 @@ export async function generateDischargeNote(
     if (now - lastProgressWriteAt < 500) return
     lastProgressWriteAt = now
     lastWrittenCount = count
+    const writable = await resolveDischargeScope(supabase, caseId, episodeId, true)
+    if (writable.error) return
     await supabase
       .from('discharge_notes')
       .update({ sections_done: count })
-      .eq('id', record.id)
+      .eq('id', record.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'generating')
   }
 
   // Call Claude
@@ -894,6 +883,9 @@ export async function generateDischargeNote(
     effectiveToneHint,
     (completedKeys) => writeProgress(completedKeys.length),
   )
+
+  const stillWritable = await resolveDischargeScope(supabase, caseId, episodeId, true)
+  if (stillWritable.error) return { error: stillWritable.error }
 
   if (result.error || !result.data) {
     await supabase
@@ -905,9 +897,9 @@ export async function generateDischargeNote(
         raw_ai_response: result.rawResponse || null,
         updated_by_user_id: user.id,
       })
-      .eq('id', record.id)
+      .eq('id', record.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'generating')
 
-    revalidatePath(`/patients/${caseId}/discharge`)
+    revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
     return { error: result.error || 'Note generation failed' }
   }
 
@@ -940,21 +932,21 @@ export async function generateDischargeNote(
       source_data_hash: sourceHash,
       updated_by_user_id: user.id,
     })
-    .eq('id', record.id)
+    .eq('id', record.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', 'generating')
 
   const refreshRes = await refreshDischargeTrajectory(caseId, record.id, {
-    inputData,
+    source: { caseId, episodeId, inputData },
     rawSectionsToMerge: result.rawResponse
       ? (result.rawResponse as Record<string, unknown>)
       : undefined,
     userId: user.id,
   })
   if (refreshRes.error) {
-    revalidatePath(`/patients/${caseId}/discharge`)
+    revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
     return { error: refreshRes.error }
   }
 
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   return { data: { id: record.id } }
 }
 
@@ -965,8 +957,9 @@ export async function getDischargeNote(caseId: string, explicitEpisodeId?: strin
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId, explicitEpisodeId)
-  if (!episodeId) return { data: null }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, false)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
   const { data, error } = await supabase
     .from('discharge_notes')
     .select('*')
@@ -975,7 +968,7 @@ export async function getDischargeNote(caseId: string, explicitEpisodeId?: strin
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     return { error: 'Failed to fetch note' }
   }
 
@@ -984,7 +977,7 @@ export async function getDischargeNote(caseId: string, explicitEpisodeId?: strin
 
 // --- Save draft edits ---
 
-export async function saveDischargeNote(caseId: string, values: DischargeNoteEditValues) {
+export async function saveDischargeNote(caseId: string, values: DischargeNoteEditValues, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -995,10 +988,9 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   const validated = dischargeNoteEditSchema.safeParse(values)
   if (!validated.success) return { error: validated.error.issues[0]?.message ?? 'Invalid form data' }
 
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
   let savedNote: Record<string, unknown> | undefined
   if (validated.data.treatment_decision) {
     const result = await saveVisitDecision(supabase, 'discharge_notes', caseId, { column: 'episode_id', value: episodeId }, validated.data)
@@ -1037,7 +1029,7 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
   if (!row && savedNote) return { error: 'Draft saved, but the note is no longer editable. Reload before signing.' }
   if (row) {
     const refresh = await refreshDischargeTrajectory(caseId, row.id, {
-      userId: user.id,
+      episodeId, userId: user.id,
       ...(savedNote ? { expectedUpdatedAt: savedNote.updated_at as string } : {}),
     })
     if (savedNote) {
@@ -1047,23 +1039,22 @@ export async function saveDischargeNote(caseId: string, values: DischargeNoteEdi
       savedNote = refreshed as unknown as Record<string, unknown>
     }
   }
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   return { data: { success: true, savedNote } }
 }
 
 // --- Finalize note ---
 
-export async function finalizeDischargeNote(caseId: string, expectedSavedVersion?: string) {
+export async function finalizeDischargeNote(caseId: string, expectedSavedVersion?: string, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, false)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   // Fetch the draft note
   const { data: note, error: fetchError } = await supabase
@@ -1078,6 +1069,9 @@ export async function finalizeDischargeNote(caseId: string, expectedSavedVersion
   if (expectedSavedVersion && note.updated_at !== expectedSavedVersion) return { error: 'The note changed after saving. Review it before finalizing.' }
   if (note.status === 'finalized') return { data: { success: true, replayed: true } }
   if (note.status !== 'draft') return { error: 'No draft note found to finalize' }
+
+  const writable = await resolveDischargeScope(supabase, caseId, episodeId, true)
+  if (writable.error) return { error: writable.error }
 
   // Defensibility guard: finalizing a discharge note requires provider-entered
   // discharge-visit vitals, at minimum pain_score_max. Without them, the note's
@@ -1148,7 +1142,7 @@ export async function finalizeDischargeNote(caseId: string, expectedSavedVersion
     return { error: (updateError.message.includes('Resolve open') || updateError.message.includes('changed')) ? updateError.message : 'Failed to finalize note' }
   }
 
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true, episodeTransition: true })
   revalidatePath(`/patients/${caseId}/documents`)
   return { data: { success: true } }
 }
@@ -1156,9 +1150,8 @@ export async function finalizeDischargeNote(caseId: string, expectedSavedVersion
 // --- Audited correction workflow ---
 
 function revalidateDischargeCorrectionPaths(caseId: string) {
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   revalidatePath(`/patients/${caseId}/documents`)
-  revalidatePath(`/patients/${caseId}/visits`)
   revalidatePath(`/patients/${caseId}/timeline`)
   revalidatePath(`/patients/${caseId}/billing`)
 }
@@ -1175,7 +1168,7 @@ export async function getDischargeCorrectionContext(
   const identity = dischargeCorrectionIdentitySchema.safeParse({ caseId, episodeId, noteId })
   if (!identity.success) return { error: 'Invalid discharge correction identifiers' }
 
-  const [{ data: note }, authorization, { data: corrections }, { data: episode }] = await Promise.all([
+  const [{ data: note, error: noteError }, authorization, { data: corrections, error: correctionsError }, { data: episode, error: episodeError }] = await Promise.all([
     supabase.from('discharge_notes').select('id,encounter_id,status')
       .eq('id', noteId).eq('case_id', caseId).eq('episode_id', episodeId)
       .is('deleted_at', null).maybeSingle(),
@@ -1187,19 +1180,21 @@ export async function getDischargeCorrectionContext(
     supabase.from('care_episodes').select('status').eq('id', episodeId).eq('case_id', caseId).is('deleted_at', null).maybeSingle(),
   ])
 
+  if (noteError || correctionsError || episodeError) return { error: 'Unable to load discharge correction information' }
   if (!note) return { error: 'Discharge note not found' }
 
   const documentIds = [...new Set((corrections ?? []).flatMap((correction) => [
     correction.original_document_id,
     correction.replacement_document_id,
   ]).filter((id): id is string => Boolean(id)))]
-  const { data: documents } = documentIds.length
+  const { data: documents, error: documentsError } = documentIds.length
     ? await supabase.from('documents').select('id,file_path').in('id', documentIds).is('deleted_at', null)
-    : { data: [] as Array<{ id: string; file_path: string }> }
+    : { data: [] as Array<{ id: string; file_path: string }>, error: null }
   const filePathById = new Map((documents ?? []).map((document) => [document.id, document.file_path]))
 
-  const { data: claims } = await supabase.from('billing_source_claims').select('id')
+  const { data: claims, error: claimsError } = await supabase.from('billing_source_claims').select('id')
     .eq('encounter_id', note.encounter_id).eq('claim_kind', 'visit').is('released_at', null).limit(1)
+  if (documentsError || claimsError) return { error: 'Unable to load discharge correction documents or billing status' }
   const history = (corrections ?? []).map((correction) => ({
     ...correction,
     original_document_path: filePathById.get(correction.original_document_id) ?? null,
@@ -1280,7 +1275,7 @@ export async function saveDischargeCorrection(
   })
   if (error) return { error: dischargeCorrectionRpcError(error.message, 'Unable to save discharge correction') }
 
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   return { data: { success: true } }
 }
 
@@ -1398,6 +1393,7 @@ export async function regenerateDischargeNoteSectionAction(
   findingFix?: { message: string; rationale: string | null },
   expectedUpdatedAt?: string | null,
   qcTarget?: ReviewFixTarget,
+  explicitEpisodeId?: string,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -1405,10 +1401,10 @@ export async function regenerateDischargeNoteSectionAction(
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  if (explicitEpisodeId && qcTarget && explicitEpisodeId !== qcTarget.episodeId) return { error: 'Quality Review episode does not match the selected episode' }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId ?? qcTarget?.episodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   // Fetch current note
   const { data: note, error: fetchError } = await supabase
@@ -1464,13 +1460,16 @@ export async function regenerateDischargeNoteSectionAction(
     return { error: result.error || 'Section regeneration failed' }
   }
 
+  const stillWritable = await resolveDischargeScope(supabase, caseId, episodeId, true)
+  if (stillWritable.error) return { error: stillWritable.error }
+
   if (qcTarget) {
     const saved = await refreshDischargeTrajectory(caseId,note.id,{
-      expectedUpdatedAt:note.updated_at,inputData,mergedSections:{[section]:result.data},
+      expectedUpdatedAt:note.updated_at,source:{caseId,episodeId,inputData},mergedSections:{[section]:result.data},
       rawSectionsToMerge:{[section]:result.data},userId:user.id,qcTarget,
     })
     if (saved.error) return {error:saved.error}
-    revalidatePath(`/patients/${caseId}/discharge`)
+    revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
     return {data:{content:result.data}}
   }
 
@@ -1488,14 +1487,14 @@ export async function regenerateDischargeNoteSectionAction(
 
   const refreshRes = await refreshDischargeTrajectory(caseId, note.id, {
     expectedUpdatedAt: savedSection.updated_at,
-    inputData,
+    source: { caseId, episodeId, inputData },
     mergedSections: { [section]: result.data },
     rawSectionsToMerge: { [section]: result.data },
     userId: user.id,
   })
   if (refreshRes.error) return { error: refreshRes.error }
 
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   const { data: persisted } = await supabase.from('discharge_notes').select('*').eq('id', note.id).eq('updated_at', refreshRes.data!.updatedAt).single()
   if (!persisted) return { error: 'Note changed after regeneration. Reload before saving.' }
   return { data: { content: persisted[section] as string ?? result.data, savedNote: persisted as Record<string, unknown> } }
@@ -1503,17 +1502,16 @@ export async function regenerateDischargeNoteSectionAction(
 
 // --- Reset ---
 
-export async function resetDischargeNote(caseId: string) {
+export async function resetDischargeNote(caseId: string, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
   const closedCheck = await assertCaseNotClosed(supabase, caseId)
   if (closedCheck.error) return { error: closedCheck.error }
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   const { data: note } = await supabase
     .from('discharge_notes')
@@ -1533,7 +1531,7 @@ export async function resetDischargeNote(caseId: string) {
 
 // --- Discharge-visit vital signs ---
 
-export async function getDischargeVitals(caseId: string): Promise<{
+export async function getDischargeVitals(caseId: string, explicitEpisodeId?: string): Promise<{
   data?: DischargeNoteVitalsValues | null
   error?: string
 }> {
@@ -1541,8 +1539,9 @@ export async function getDischargeVitals(caseId: string): Promise<{
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { data: null }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, false)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
   const { data, error } = await supabase
     .from('discharge_notes')
     .select('bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max')
@@ -1555,7 +1554,7 @@ export async function getDischargeVitals(caseId: string): Promise<{
   return { data: data ?? null }
 }
 
-export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteVitalsValues) {
+export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteVitalsValues, explicitEpisodeId?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -1565,14 +1564,13 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
 
   const validated = dischargeNoteVitalsSchema.safeParse(vitals)
   if (!validated.success) return { error: 'Invalid vitals data' }
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   // Upsert pattern: update the active discharge_notes row if one exists,
   // otherwise create a pre-generation draft row holding only these vitals.
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('discharge_notes')
     .select('id, status')
     .eq('case_id', caseId)
@@ -1580,9 +1578,10 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
     .is('deleted_at', null)
     .maybeSingle()
 
+  if (existingError) return { error: 'Unable to load discharge vitals' }
   if (existing) {
-    if (existing.status === 'finalized') {
-      return { error: 'Cannot edit vitals on a finalized note' }
+    if (!['draft', 'failed'].includes(existing.status)) {
+      return { error: 'Cannot edit vitals while the note is finalized or generating' }
     }
     const { error } = await supabase
       .from('discharge_notes')
@@ -1590,14 +1589,17 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
         ...validated.data,
         updated_by_user_id: user.id,
       })
-      .eq('id', existing.id)
+      .eq('id', existing.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', existing.status)
     if (error) return { error: 'Failed to save vitals' }
     // Vitals change feeds the trajectory builder as dischargeVitals →
     // pain_trajectory_text + discharge_pain_estimate_min/max + the validator
     // wrapper need to be rebuilt so the row is internally consistent. The
     // validator surfaces any narrative section still citing the old endpoint
     // as a non-fatal warning; provider chooses whether to section-regen.
-    await refreshDischargeTrajectory(caseId, existing.id, { userId: user.id })
+    if (existing.status === 'draft') {
+      const refreshed = await refreshDischargeTrajectory(caseId, existing.id, { episodeId, userId: user.id })
+      if (refreshed.error) return { error: refreshed.error }
+    }
   } else {
     const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
       .eq('id', caseId).is('deleted_at', null).single()
@@ -1620,7 +1622,7 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
     // the validator to scan. Trajectory state is rebuilt at first generate.
   }
 
-  revalidatePath(`/patients/${caseId}/discharge`)
+  revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })
   return { data: { success: true } }
 }
 
@@ -1630,6 +1632,7 @@ export async function saveDischargeNoteToneHint(
   caseId: string,
   toneHint: string | null,
   version: { noteId: string; expectedUpdatedAt: string },
+  explicitEpisodeId?: string,
 ): Promise<{ data?: { updated_at: string; tone_hint: string | null }; error?: string }> {
   if (!version?.noteId || !version.expectedUpdatedAt) {
     return { error: 'Reload the note before saving tone guidance.' }
@@ -1642,10 +1645,9 @@ export async function saveDischargeNoteToneHint(
   if (closedCheck.error) return { error: closedCheck.error }
 
   const normalized = toneHint?.trim() ? toneHint.trim() : null
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
-  const correctionCheck = await assertNoOpenDischargeCorrection(supabase, caseId, episodeId)
-  if (correctionCheck.error) return { error: correctionCheck.error }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, true)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   const { data, error } = await supabase
     .from('discharge_notes')
@@ -1669,7 +1671,7 @@ export async function saveDischargeNoteToneHint(
 import type { DischargePainTrajectory } from '@/lib/claude/pain-trajectory'
 import type { PainObservation } from '@/lib/claude/pain-observations'
 
-export async function getDischargePainTimeline(caseId: string): Promise<{
+export async function getDischargePainTimeline(caseId: string, explicitEpisodeId?: string): Promise<{
   data?: {
     trajectory: DischargePainTrajectory
     painObservations: PainObservation[]
@@ -1683,8 +1685,9 @@ export async function getDischargePainTimeline(caseId: string): Promise<{
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
-  const episodeId = await resolveDischargeEpisodeId(supabase, caseId)
-  if (!episodeId) return { error: 'Care episode not found' }
+  const scope = await resolveDischargeScope(supabase, caseId, explicitEpisodeId, false)
+  if (!scope.episodeId) return { error: scope.error }
+  const episodeId = scope.episodeId
 
   // Preserve provider-entered discharge vitals so the trajectory returned
   // here matches what generation would see. Match the same precedence
@@ -1717,6 +1720,7 @@ export async function getDischargePainTimeline(caseId: string): Promise<{
     caseId,
     visitDate,
     preservedVitals,
+    episodeId,
   )
   if (error || !inputData) return { error: error || 'Failed to gather source data' }
 

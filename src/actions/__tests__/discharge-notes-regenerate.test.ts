@@ -65,7 +65,7 @@ describe('regenerateDischargeNoteSectionAction — dischargeVitals wiring', () =
     // Procedures are configured separately so the -2 fallback would yield 4 if
     // the wiring were broken — making the assertion strict.
     const noteRow = {
-      id: 'note-id',
+      id: 'note-id', case_id: TEST_CASE_ID, episode_id: '22222222-2222-4222-8222-222222222222', status: 'draft',
       visit_date: '2026-04-27',
       bp_systolic: 120,
       bp_diastolic: 80,

@@ -91,7 +91,7 @@ describe('follow-up generation guidance', () => {
       .mockResolvedValueOnce({ data: { id: 'note', updated_at: 'v2' }, error: null })
       .mockResolvedValueOnce({ data: null, error: null })
     expect(await generatePainFollowUpNote('case', 'visit')).toHaveProperty('error')
-    expect(revalidatePath).not.toHaveBeenCalled()
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([['/patients/case/visits'], ['/patients/case/visits/visit']])
   })
 })
 
