@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, FormProvider } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -29,7 +29,7 @@ const STEPS = [
 
 const STEP_FIELDS: (keyof CreatePatientCaseValues)[][] = [
   ['first_name', 'last_name', 'middle_name', 'date_of_birth', 'gender'],
-  ['phone_primary', 'email', 'address_line1', 'address_line2', 'city', 'state', 'zip_code', 'accident_date', 'accident_type', 'accident_description', 'attorney_id', 'lien_on_file'],
+  ['phone_primary', 'email', 'address_line1', 'address_line2', 'city', 'state', 'zip_code', 'accident_date', 'accident_type', 'accident_description', 'attorney_id', 'assigned_provider_id', 'case_status', 'lien_on_file'],
   [],
 ]
 
@@ -73,22 +73,47 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
     mode: 'onBlur',
   })
 
+  const inFlight = useRef(false)
+  const terminal = useRef(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const pendingFocus = useRef<keyof CreatePatientCaseValues | null>(null)
+  const [reviewReady, setReviewReady] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  useEffect(() => {
+    if (pendingFocus.current) {
+      form.setFocus(pendingFocus.current)
+      pendingFocus.current = null
+    } else heading.current?.focus()
+  }, [currentStep, form])
+
+  function focusInvalid(fields: (keyof CreatePatientCaseValues)[]) {
+    const invalid = fields.find(field => form.getFieldState(field).invalid)
+    if (!invalid) return
+    const step = STEP_FIELDS.findIndex(group => group.includes(invalid))
+    if (step === currentStep) form.setFocus(invalid)
+    else { pendingFocus.current = invalid; setReviewReady(false); setCurrentStep(step) }
+  }
+
   const identityLocked = existingPatientId !== null
 
   async function handleNext() {
-    const fields = STEP_FIELDS[currentStep]
-    const valid = await form.trigger(fields)
-    if (!valid) return
-    setCurrentStep((s) => s + 1)
-  }
-
-  function handleBack() {
-    setCurrentStep((s) => s - 1)
+    if (inFlight.current) return
+    inFlight.current = true
+    setIsSubmitting(true)
+    try {
+      const fields = STEP_FIELDS[currentStep]
+      if (!await form.trigger(fields)) { focusInvalid(fields); return }
+      setReviewReady(false)
+      setCurrentStep(s => s + 1)
+    } finally { inFlight.current = false; setIsSubmitting(false) }
   }
 
   function goToStep(step: number) {
+    if (inFlight.current) return
+    setReviewReady(false)
     setCurrentStep(step)
   }
+  function handleBack() { goToStep(currentStep - 1) }
 
   function handleUseExistingPatient(patient: {
     id: string
@@ -96,6 +121,8 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
     last_name: string
     date_of_birth: string
   }) {
+    if (inFlight.current) return
+    setReviewReady(false)
     setExistingPatientId(patient.id)
     form.setValue('first_name', patient.first_name)
     form.setValue('last_name', patient.last_name)
@@ -104,24 +131,29 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
   }
 
   async function handleSubmit() {
-    const values = form.getValues()
+    if (inFlight.current || !reviewReady) return
+    inFlight.current = true
     setIsSubmitting(true)
-
-    const result = await createPatientCase(
-      existingPatientId
+    setSubmitError('')
+    try {
+      if (!await form.trigger()) { focusInvalid(STEP_FIELDS.flat()); return }
+      const values = structuredClone(form.getValues())
+      const result = await createPatientCase(existingPatientId
         ? { mode: 'existing_patient', patient_id: existingPatientId, ...values }
-        : { mode: 'new_patient', ...values }
-    )
-
-    if ('error' in result && result.error) {
-      toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
-      setIsSubmitting(false)
-      return
-    }
-
-    if ('data' in result && result.data) {
+        : { mode: 'new_patient', ...values })
+      if ('error' in result && result.error) {
+        throw new Error(typeof result.error === 'string' ? result.error : 'Validation failed')
+      }
+      if (!('data' in result) || !result.data) throw new Error('Creation could not be confirmed. Please try again.')
+      terminal.current = true
       toast.success(`Case ${result.data.case_number} created`)
       router.push(`/patients/${result.data.id}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create this case. Please try again.'
+      setSubmitError(message)
+      toast.error(message)
+    } finally {
+      if (!terminal.current) { inFlight.current = false; setIsSubmitting(false) }
     }
   }
 
@@ -142,7 +174,7 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
       <nav aria-label="Wizard progress">
         <ol className="flex items-center gap-2">
           {STEPS.map((step, i) => (
-            <li key={step.label} className="flex items-center gap-2 flex-1">
+            <li aria-current={i === currentStep ? 'step' : undefined} key={step.label} className="flex items-center gap-2 flex-1">
               <div className="flex items-center gap-2 flex-1">
                 <div
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium ${
@@ -175,17 +207,24 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
         </ol>
       </nav>
 
+      <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold">Step {currentStep + 1} of 3 — {STEPS[currentStep].label}</h2>
+      {submitError && <p role="alert" className="text-sm text-destructive">{submitError}</p>}
       {/* Step Content */}
       <FormProvider {...form}>
+        <fieldset disabled={isSubmitting} className="min-w-0">
+        <Suspense fallback={<p role="status">Loading step…</p>}>
         {currentStep === 0 && (
           <WizardStepIdentity
             goToStep={goToStep}
             identityLocked={identityLocked}
+            disabled={isSubmitting}
             onUseExistingPatient={handleUseExistingPatient}
           />
         )}
-        {currentStep === 1 && <WizardStepDetails goToStep={goToStep} isAdmin={isAdmin} />}
-        {currentStep === 2 && <WizardStepReview goToStep={goToStep} />}
+        {currentStep === 1 && <WizardStepDetails goToStep={goToStep} isAdmin={isAdmin} disabled={isSubmitting} />}
+        {currentStep === 2 && <WizardStepReview goToStep={goToStep} disabled={isSubmitting} onReadinessChange={setReviewReady} />}
+        </Suspense>
+        </fieldset>
       </FormProvider>
 
       {/* Navigation */}
@@ -194,16 +233,16 @@ export function PatientWizard({ existingPatient, isAdmin = false }: { existingPa
           type="button"
           variant="outline"
           onClick={handleBack}
-          disabled={currentStep === 0}
+          disabled={currentStep === 0 || isSubmitting}
         >
           Back
         </Button>
         {currentStep < STEPS.length - 1 ? (
-          <Button type="button" onClick={handleNext}>
+          <Button type="button" onClick={handleNext} disabled={isSubmitting}>
             Next
           </Button>
         ) : (
-          <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+          <Button type="button" onClick={handleSubmit} disabled={isSubmitting || !reviewReady}>
             {isSubmitting ? 'Creating...' : 'Create Patient Case'}
           </Button>
         )}

@@ -16,30 +16,30 @@ function formatCurrency(value: number) {
 export function BillingSummaryCard({ summary }: BillingSummaryCardProps) {
   return (
     <Card>
-      <CardContent className="grid grid-cols-3 gap-6 p-6">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-muted p-2">
+      <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 rounded-lg bg-muted p-2">
             <DollarSign className="h-5 w-5 text-muted-foreground" />
           </div>
-          <div>
+          <div className="min-w-0 break-words">
             <p className="text-sm text-muted-foreground">Total Billed</p>
             <p className="text-xl font-bold">{formatCurrency(summary.total_billed)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-muted p-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 rounded-lg bg-muted p-2">
             <DollarSign className="h-5 w-5 text-green-600" />
           </div>
-          <div>
+          <div className="min-w-0 break-words">
             <p className="text-sm text-muted-foreground">Total Paid</p>
             <p className="text-xl font-bold">{formatCurrency(summary.total_paid)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-muted p-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0 rounded-lg bg-muted p-2">
             <DollarSign className="h-5 w-5 text-red-600" />
           </div>
-          <div>
+          <div className="min-w-0 break-words">
             <p className="text-sm text-muted-foreground">Balance Due</p>
             <p className={`text-xl font-bold ${Number(summary.balance_due) > 0 ? 'text-red-600' : ''}`}>
               {formatCurrency(summary.balance_due)}

@@ -52,10 +52,15 @@ function fingerprint(value: unknown): string {
   return JSON.stringify(value, (key, item) => key === 'expected_updated_at' ? undefined : item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item)
 }
 /** Save acknowledgements change only the baseline, never the clinician's current values. */
-export function useVisitDraftBaseline<T>(current: T, busy = false, enabled = true, initiallyDirty = false) {
+export function useVisitDraftState<T>(current: T, busy = false, enabled = true, initiallyDirty = false) {
   const [baseline, setBaseline] = useState(() => fingerprint(current))
   const [acknowledged, setAcknowledged] = useState(false)
-  useVisitUnsavedChanges(enabled && (fingerprint(current) !== baseline || (initiallyDirty && !acknowledged)), busy)
+  const dirty = enabled && (fingerprint(current) !== baseline || (initiallyDirty && !acknowledged))
+  useVisitUnsavedChanges(dirty, enabled && busy)
   const acknowledge = useCallback((saved: T) => { setBaseline(fingerprint(saved)); setAcknowledged(true) }, [])
-  return acknowledge
+  return { acknowledge, dirty, busy: enabled && busy, hasSaved: acknowledged }
+}
+
+export function useVisitDraftBaseline<T>(current: T, busy = false, enabled = true, initiallyDirty = false) {
+  return useVisitDraftState(current, busy, enabled, initiallyDirty).acknowledge
 }

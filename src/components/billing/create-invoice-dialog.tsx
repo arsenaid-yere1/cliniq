@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog'
 import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
@@ -26,6 +26,7 @@ import {
 } from '@/lib/validations/invoice'
 import { createInvoice, updateInvoice } from '@/actions/billing'
 import { CptCodeCombobox } from './cpt-code-combobox'
+import { invoiceFormErrors } from './invoice-form-errors'
 
 interface InvoiceFormData {
   caseData: {
@@ -107,6 +108,10 @@ interface CreateInvoiceDialogProps {
   existingInvoice?: ExistingInvoice | null
 }
 
+function emptyLine(): InvoiceLineItemFormValues {
+  return { service_date: '', cpt_code: '', description: '', quantity: 1, unit_price: 0, total_price: 0 }
+}
+
 function buildClinicAddress(clinic: InvoiceFormData['clinic']) {
   if (!clinic) return ''
   const lines: string[] = []
@@ -117,7 +122,12 @@ function buildClinicAddress(clinic: InvoiceFormData['clinic']) {
   return lines.join(', ')
 }
 
-export function CreateInvoiceDialog({
+export function CreateInvoiceDialog(props: CreateInvoiceDialogProps) {
+  // Each opening/identity owns a fresh form. Rerenders within a session preserve edits.
+  return props.open ? <InvoiceDialogSession key={`${props.caseId}:${props.existingInvoice?.id ?? 'new'}`} {...props} /> : null
+}
+
+function InvoiceDialogSession({
   open,
   onOpenChange,
   caseId,
@@ -125,6 +135,10 @@ export function CreateInvoiceDialog({
   existingInvoice,
 }: CreateInvoiceDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const inFlight = useRef(false)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const serverFields = useRef<Parameters<typeof form.clearErrors>[0][]>([])
+  const focusSummary = useRef(false)
   const isEditing = !!existingInvoice
 
   const defaultValues: CreateInvoiceFormValues = isEditing
@@ -165,7 +179,8 @@ export function CreateInvoiceDialog({
 
   const form = useForm({
     resolver: zodResolver(createInvoiceSchema),
-    defaultValues,
+    defaultValues: structuredClone(defaultValues),
+    shouldFocusError: false,
   })
 
   const lineItemFields = useFieldArray({ control: form.control, name: 'line_items' })
@@ -175,38 +190,95 @@ export function CreateInvoiceDialog({
   const watchedLineItems = form.watch('line_items')
   const runningTotal = watchedLineItems.reduce((sum, item) => sum + (Number(item.total_price) || 0), 0)
 
-  // Swap line items when invoice type changes (create mode only)
+  const lineDrafts = useRef({
+    visit: structuredClone(defaultValues.line_items),
+    facility: structuredClone(formData.facilityLineItems.length ? formData.facilityLineItems : [emptyLine()]),
+  })
+  const errors = invoiceFormErrors(form.formState.errors)
   useEffect(() => {
-    if (isEditing) return
-    const items = watchedInvoiceType === 'facility'
-      ? formData.facilityLineItems
-      : formData.prePopulatedLineItems
-    const newItems = items.length > 0
-      ? items
-      : [{ service_date: '', cpt_code: '', description: '', quantity: 1, unit_price: 0, total_price: 0 }]
-    lineItemFields.replace(newItems)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchedInvoiceType])
+    if (!isSubmitting && focusSummary.current && errors.length) {
+      focusSummary.current = false
+      summaryRef.current?.focus()
+    }
+  }, [isSubmitting, errors])
+
+  function clearServerErrors() {
+    for (const field of serverFields.current) form.clearErrors(field)
+    serverFields.current = []
+    form.clearErrors('root')
+  }
+
+  function editRows(change: () => void) {
+    if (inFlight.current) return
+    clearServerErrors()
+    change()
+  }
+
+  function changeType(type: 'visit' | 'facility') {
+    if (inFlight.current || type === form.getValues('invoice_type')) return
+    clearServerErrors()
+    if (!isEditing) {
+      // getValues retains source/persisted IDs; field-array IDs are rendering keys only.
+      lineDrafts.current[form.getValues('invoice_type')] = structuredClone(form.getValues('line_items')) as InvoiceLineItemFormValues[]
+      lineItemFields.replace(structuredClone(lineDrafts.current[type]))
+      form.clearErrors('line_items')
+    }
+    form.setValue('invoice_type', type, { shouldDirty: true })
+    if (form.formState.isSubmitted) void form.trigger()
+  }
 
   function handleQuantityOrPriceChange(index: number) {
+    if (inFlight.current) return
     const qty = Number(form.getValues(`line_items.${index}.quantity`)) || 0
     const price = Number(form.getValues(`line_items.${index}.unit_price`)) || 0
     form.setValue(`line_items.${index}.total_price`, qty * price)
   }
 
-  async function handleSave(values: Record<string, unknown>) {
-    const typedValues = values as CreateInvoiceFormValues
+  async function handleSave(values: CreateInvoiceFormValues) {
+    const snapshot = structuredClone(values)
     setIsSubmitting(true)
     const result = isEditing
-      ? await updateInvoice(existingInvoice!.id, caseId, typedValues)
-      : await createInvoice(caseId, typedValues)
-    setIsSubmitting(false)
-
+      ? await updateInvoice(existingInvoice!.id, caseId, snapshot)
+      : await createInvoice(caseId, snapshot)
     if (result.error) {
-      toast.error(typeof result.error === 'string' ? result.error : 'Validation failed')
-    } else {
-      toast.success(isEditing ? 'Invoice updated' : 'Invoice created')
-      onOpenChange(false)
+      if (typeof result.error === 'string') {
+        form.setError('root.server', { message: result.error })
+      } else {
+        for (const [key, messages] of Object.entries(result.error)) {
+          if (!messages?.length) continue
+          const field = key as keyof CreateInvoiceFormValues
+          form.setError(field, { type: 'server', message: messages.join('. ') })
+          serverFields.current.push(field)
+        }
+      }
+      focusSummary.current = true
+      toast.error('Invoice was not saved. Review the errors and retry.')
+      return false
+    }
+    toast.success(isEditing ? 'Invoice updated' : 'Invoice created')
+    onOpenChange(false)
+    return true
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (inFlight.current) return
+    inFlight.current = true
+    clearServerErrors()
+    let succeeded = false
+    try {
+      await form.handleSubmit(async values => { succeeded = await handleSave(values) }, invalid => {
+        const first = invoiceFormErrors(invalid).find(error => error.field)
+        if (first?.field) form.setFocus(first.field)
+        else focusSummary.current = true
+      })(event)
+    } catch {
+      form.setError('root.server', { message: 'Unable to save the invoice. Your entries are retained; please retry.' })
+      focusSummary.current = true
+      toast.error('Unable to save the invoice. Please retry.')
+    } finally {
+      inFlight.current = succeeded
+      setIsSubmitting(false)
     }
   }
 
@@ -215,16 +287,26 @@ export function CreateInvoiceDialog({
   const provider = formData.providerProfile
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl max-h-[85vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={value => { if (!inFlight.current) onOpenChange(value) }}>
+      <DialogContent showCloseButton={!isSubmitting} className="w-[calc(100vw-2rem)] sm:max-w-3xl max-h-[85vh] overflow-y-auto p-4 sm:p-6 [overflow-wrap:anywhere]">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit' : 'Create'} {watchedInvoiceType === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}
           </DialogTitle>
+          <DialogDescription>Review the invoice details and line items before saving.</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6 min-w-0">
+          <form noValidate onSubmit={submit} onChangeCapture={event => { if (inFlight.current) { event.preventDefault(); event.stopPropagation() } else clearServerErrors() }} className="min-w-0">
+            {errors.length > 0 && <div ref={summaryRef} tabIndex={-1} role="alert" aria-label="Invoice errors" className="mb-6 rounded-md border border-destructive p-3 text-sm scroll-m-4">
+              <p className="font-medium">Review these invoice errors</p>
+              <ul className="mt-2 space-y-1">
+                {errors.map(error => <li key={error.key}>
+                  {error.field ? <button type="button" className="text-left underline" disabled={isSubmitting} onClick={() => { if (!inFlight.current) form.setFocus(error.field!) }}>{error.label}: {error.message}</button> : <span>{error.label}: {error.message}</span>}
+                </li>)}
+              </ul>
+            </div>}
+            <fieldset disabled={isSubmitting} className="min-w-0 space-y-6" aria-busy={isSubmitting}>
             {/* Invoice Type & Date */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
@@ -233,8 +315,8 @@ export function CreateInvoiceDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Invoice Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <Select disabled={isSubmitting} value={field.value} onValueChange={value => changeType(value as 'visit' | 'facility')}>
+                      <FormControl><SelectTrigger ref={field.ref} onBlur={field.onBlur}><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="visit">Medical Invoice</SelectItem>
                         <SelectItem value="facility">Medical Facility Invoice</SelectItem>
@@ -343,12 +425,12 @@ export function CreateInvoiceDialog({
             {/* Diagnoses */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <FormLabel>Diagnoses</FormLabel>
+                <h3 className="text-sm font-medium">Diagnoses</h3>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => diagnosesFields.append({ icd10_code: '', description: '' })}
+                  onClick={() => editRows(() => diagnosesFields.append({ icd10_code: '', description: '' }))}
                 >
                   <Plus className="h-3 w-3 mr-1" />
                   Add Diagnosis
@@ -362,15 +444,15 @@ export function CreateInvoiceDialog({
               )}
 
               {diagnosesFields.fields.map((field, index) => (
-                <div key={field.id} className="flex items-start gap-2">
+                <div key={field.id} className="flex flex-wrap sm:flex-nowrap items-start gap-2">
                   <FormField
                     control={form.control}
                     name={`diagnoses_snapshot.${index}.icd10_code`}
                     render={({ field }) => (
-                      <FormItem className="w-32">
+                      <FormItem className="w-full min-w-0 sm:w-32">
                         <FormControl>
                           <Input
-                            placeholder="ICD-10"
+                            aria-label={`Diagnosis ${index + 1} ICD-10`} placeholder="ICD-10"
                             {...field}
                             value={field.value ?? ''}
                             onChange={(e) => field.onChange(e.target.value || null)}
@@ -383,13 +465,13 @@ export function CreateInvoiceDialog({
                     control={form.control}
                     name={`diagnoses_snapshot.${index}.description`}
                     render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormControl><Input placeholder="Description" {...field} /></FormControl>
+                      <FormItem className="min-w-0 flex-1">
+                        <FormControl><Input aria-label={`Diagnosis ${index + 1} description`} placeholder="Description" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => diagnosesFields.remove(index)}>
+                  <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label={`Remove diagnosis ${index + 1}`} onClick={() => editRows(() => diagnosesFields.remove(index))}>
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
@@ -401,12 +483,12 @@ export function CreateInvoiceDialog({
             {/* Line Items */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <FormLabel>Line Items</FormLabel>
+                <h3 className="text-sm font-medium">Line Items</h3>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => lineItemFields.append({
+                  onClick={() => editRows(() => lineItemFields.append({
                     procedure_id: '',
                     encounter_id: '',
                     service_date: '',
@@ -415,7 +497,7 @@ export function CreateInvoiceDialog({
                     quantity: 1,
                     unit_price: 0,
                     total_price: 0,
-                  })}
+                  }))}
                 >
                   <Plus className="h-3 w-3 mr-1" />
                   Add Line Item
@@ -432,9 +514,9 @@ export function CreateInvoiceDialog({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => lineItemFields.move(index, index - 1)}
+                        onClick={() => editRows(() => lineItemFields.move(index, index - 1))}
                         disabled={index === 0}
-                        aria-label="Move item up"
+                        aria-label={`Move item ${index + 1} up`}
                       >
                         <ArrowUp className="h-3 w-3" />
                       </Button>
@@ -443,9 +525,9 @@ export function CreateInvoiceDialog({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => lineItemFields.move(index, index + 1)}
+                        onClick={() => editRows(() => lineItemFields.move(index, index + 1))}
                         disabled={index === lineItemFields.fields.length - 1}
-                        aria-label="Move item down"
+                        aria-label={`Move item ${index + 1} down`}
                       >
                         <ArrowDown className="h-3 w-3" />
                       </Button>
@@ -454,22 +536,23 @@ export function CreateInvoiceDialog({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => lineItemFields.remove(index)}
+                        onClick={() => editRows(() => lineItemFields.remove(index))}
                         disabled={lineItemFields.fields.length <= 1}
-                        aria-label="Remove item"
+                        aria-label={`Remove item ${index + 1}`}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <FormField
                       control={form.control}
                       name={`line_items.${index}.service_date`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">Date</FormLabel>
+                          <FormLabel className="text-xs"><span className="sr-only">Item {index + 1} </span>Date</FormLabel>
                           <FormControl><Input type="date" className="text-xs" {...field} /></FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -478,21 +561,28 @@ export function CreateInvoiceDialog({
                       name={`line_items.${index}.cpt_code`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">CPT</FormLabel>
+                          <FormLabel className="text-xs"><span className="sr-only">Item {index + 1} </span>CPT</FormLabel>
                           <FormControl>
                             <CptCodeCombobox
+                              ref={field.ref}
+                              name={field.name}
+                              onBlur={field.onBlur}
+                              disabled={isSubmitting}
                               value={field.value}
-                              onChange={field.onChange}
+                              onChange={value => { if (!inFlight.current) field.onChange(value) }}
                               catalogItems={formData.catalogItems}
                               className="text-xs"
                               onSelect={(item) => {
+                                if (inFlight.current) return
+                                clearServerErrors()
                                 field.onChange(item.cpt_code)
-                                form.setValue(`line_items.${index}.description`, item.description)
-                                form.setValue(`line_items.${index}.unit_price`, item.default_price)
-                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                                form.setValue(`line_items.${index}.description`, item.description, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
+                                form.setValue(`line_items.${index}.unit_price`, item.default_price, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
+                                handleQuantityOrPriceChange(index)
                               }}
                             />
                           </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -502,18 +592,19 @@ export function CreateInvoiceDialog({
                     name={`line_items.${index}.description`}
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs">Description</FormLabel>
+                        <FormLabel className="text-xs"><span className="sr-only">Item {index + 1} </span>Description</FormLabel>
                         <FormControl><Input className="text-xs" placeholder="Description" {...field} /></FormControl>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <FormField
                       control={form.control}
                       name={`line_items.${index}.quantity`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">QTY</FormLabel>
+                          <FormLabel className="text-xs"><span className="sr-only">Item {index + 1} </span>QTY</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
@@ -522,11 +613,13 @@ export function CreateInvoiceDialog({
                               {...field}
                               value={field.value as number}
                               onChange={(e) => {
+                                if (inFlight.current) return
                                 field.onChange(e)
-                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                                handleQuantityOrPriceChange(index)
                               }}
                             />
                           </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -535,7 +628,7 @@ export function CreateInvoiceDialog({
                       name={`line_items.${index}.unit_price`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">Unit Price</FormLabel>
+                          <FormLabel className="text-xs"><span className="sr-only">Item {index + 1} </span>Unit Price</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
@@ -545,11 +638,13 @@ export function CreateInvoiceDialog({
                               {...field}
                               value={field.value as number}
                               onChange={(e) => {
+                                if (inFlight.current) return
                                 field.onChange(e)
-                                setTimeout(() => handleQuantityOrPriceChange(index), 0)
+                                handleQuantityOrPriceChange(index)
                               }}
                             />
                           </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />
@@ -615,7 +710,7 @@ export function CreateInvoiceDialog({
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => { if (!inFlight.current) onOpenChange(false) }}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
@@ -623,6 +718,7 @@ export function CreateInvoiceDialog({
                 {isEditing ? 'Update Invoice' : 'Create Invoice'}
               </Button>
             </DialogFooter>
+            </fieldset>
           </form>
         </Form>
       </DialogContent>

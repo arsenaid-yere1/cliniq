@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PROCESSING_WINDOW_MS, type ExtractionSummary } from '@/lib/documents/extraction-summary'
 import { useDebouncedCallback } from 'use-debounce'
 import { Search, X, Upload } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,7 @@ const statusOptions = [
 ]
 
 interface Document {
+  extraction_summary?: ExtractionSummary
   id: string
   case_id: string
   file_name: string
@@ -61,9 +63,14 @@ interface DocumentListProps {
   caseId: string
   patientLastName: string | null
   isAdmin?: boolean
+  initialError?: string
 }
 
-export function DocumentList({ documents: initialDocuments, caseId, patientLastName, isAdmin = false }: DocumentListProps) {
+export function DocumentList(props: DocumentListProps) {
+  return <DocumentListSession key={props.caseId} {...props} />
+}
+
+function DocumentListSession({ documents: initialDocuments, caseId, patientLastName, isAdmin = false, initialError }: DocumentListProps) {
   const [documents, setDocuments] = useState(initialDocuments)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -75,10 +82,46 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
   // Admins can upload to a locked case (the server re-checks the role).
   const uploadDisabled = isLocked && !isAdmin
 
-  const refreshDocuments = useCallback(async () => {
-    const { data } = await listDocuments(caseId)
-    if (data) setDocuments(data)
+  const [loadError, setLoadError] = useState(initialError ?? '')
+  const [refreshing, setRefreshing] = useState(false)
+  const fetching = useRef(false)
+  const generation = useRef(0)
+  const deadline = useRef(Date.now() + PROCESSING_WINDOW_MS)
+  useEffect(() => () => { generation.current++ }, [])
+
+  const refreshDocuments = useCallback(async (restart = true) => {
+    if (restart) deadline.current = Date.now() + PROCESSING_WINDOW_MS
+    if (fetching.current) return
+    fetching.current = true
+    const currentGeneration = generation.current
+    setRefreshing(true)
+    try {
+      const result = await listDocuments(caseId)
+      if (generation.current !== currentGeneration) return
+      if (result.error) setLoadError('Unable to refresh documents. Previously loaded documents are still shown.')
+      else { setDocuments(result.data); setLoadError('') }
+    } catch {
+      if (generation.current === currentGeneration) setLoadError('Unable to refresh documents. Previously loaded documents are still shown.')
+    } finally {
+      fetching.current = false
+      if (generation.current === currentGeneration) setRefreshing(false)
+    }
   }, [caseId])
+
+  const processing = documents.some(doc => doc.extraction_summary?.kind === 'processing')
+  useEffect(() => {
+    const onFocus = () => { if (document.visibilityState !== 'hidden') void refreshDocuments() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = processing ? window.setInterval(() => {
+      if (document.visibilityState !== 'hidden' && Date.now() < deadline.current) void refreshDocuments(false)
+    }, 5000) : undefined
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [processing, refreshDocuments])
 
   const debouncedSetSearch = useDebouncedCallback((value: string) => {
     setDebouncedSearch(value)
@@ -111,10 +154,11 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            aria-label="Search documents"
             placeholder="Search documents..."
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
@@ -127,9 +171,12 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
         </Button>
       </div>
 
-      <div className="flex items-center gap-3">
+      {loadError && <p role="alert" className="text-sm text-destructive">{loadError} <Button variant="link" onClick={() => refreshDocuments()} disabled={refreshing}>Retry loading documents</Button></p>}
+      <Button variant="outline" size="sm" onClick={() => refreshDocuments()} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh status'}</Button>
+
+      <div className="flex flex-wrap items-center gap-3">
         <Select value={docType} onValueChange={setDocType}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger aria-label="Document type filter" className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -153,12 +200,12 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
       </div>
 
       {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">Active filters:</span>
           {activeFilters.map((f) => (
             <Badge key={f.key} variant="secondary" className="gap-1">
               {f.label}
-              <button
+              <button aria-label={`Remove ${f.label} filter`}
                 onClick={() => {
                   if (f.key === 'docType') setDocType('all')
                   if (f.key === 'status') setStatus('all')
@@ -182,7 +229,7 @@ export function DocumentList({ documents: initialDocuments, caseId, patientLastN
       ) : (
         <div className="grid gap-3">
           {filtered.map((doc) => (
-            <DocumentCard key={doc.id} document={doc} patientLastName={patientLastName} isLocked={isLocked} onRemoved={refreshDocuments} />
+            <DocumentCard key={doc.id} document={doc} patientLastName={patientLastName} isLocked={isLocked} onRemoved={refreshDocuments} onRefresh={refreshDocuments} refreshing={refreshing} />
           ))}
         </div>
       )}

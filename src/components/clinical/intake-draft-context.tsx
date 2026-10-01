@@ -8,10 +8,11 @@ import { saveProviderIntake } from '@/actions/initial-visit-notes'
 import { defaultProviderIntake, type ProviderIntakeValues } from '@/lib/validations/initial-visit-note'
 import type { NoteVisitType } from '@/lib/claude/generate-initial-visit'
 
-type Draft = { dirty: boolean; saving: boolean; save: () => Promise<boolean>; read?: () => unknown }
+type Draft = { dirty: boolean; saving: boolean; error?: string | null; hasSaved?: boolean; save: () => Promise<boolean>; read?: () => unknown }
 type DraftContext = {
   episodeId?: string
   carriedSections: readonly (keyof ProviderIntakeValues)[]
+  sections: Readonly<Record<string, Readonly<{ dirty: boolean; saving: boolean; error?: string | null; hasSaved?: boolean }>>>
   dirty: boolean
   busy: boolean
   flush: (onFailure?: (section: string) => void) => Promise<boolean>
@@ -52,6 +53,7 @@ export function IntakeDraftProvider({ children, episodeId, carriedSections = noC
     void revision
     return {
       register, flush, readSection, episodeId, carriedSections,
+      sections: Object.fromEntries([...drafts.current].map(([key, { dirty, saving, error, hasSaved }]) => [key, { dirty, saving, error, hasSaved }])),
       dirty: [...drafts.current.values()].some(d => d.dirty),
       busy: flushing || [...drafts.current.values()].some(d => d.saving),
     }
@@ -88,7 +90,7 @@ export function useIntakeSectionSave<T extends FieldValues>(
       setSaving(true)
       setError(null)
       try {
-        if (!await form.trigger()) return false
+        if (!await form.trigger()) { setError('Review the highlighted fields.'); return false }
         const values = form.getValues()
         const full = { ...defaultProviderIntake, ...initialIntake, [section]: values[section] }
         const result = await saveProviderIntake(caseId, visitType, full, section, episodeId)
@@ -108,6 +110,13 @@ export function useIntakeSectionSave<T extends FieldValues>(
     return inFlight.current
   }, [form, caseId, visitType, section, initialIntake, episodeId])
   const read = useCallback(() => form.getValues()[section], [form, section])
-  useEffect(() => register(section, { dirty: isDirty, saving: isSaving, save, read }), [register, section, isDirty, isSaving, save, read])
+  useEffect(() => register(section, { dirty: isDirty, saving: isSaving, error, hasSaved, save, read }), [register, section, isDirty, isSaving, error, hasSaved, save, read])
   return { isSaving, error, save, isDirty, hasSaved }
+}
+
+export function IntakeSectionStatus({ section }: { section: string }) {
+  const { sections } = useIntakeDrafts()
+  const state = sections[section]
+  const label = state?.saving ? 'Saving' : state?.error ? 'Needs attention' : state?.dirty ? 'Unsaved' : state?.hasSaved ? 'Saved this session' : null
+  return label ? <span className="ml-1 rounded border px-1 text-xs font-normal">{label}</span> : null
 }

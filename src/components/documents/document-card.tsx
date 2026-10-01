@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import { summarizeExtractions, type ExtractionSummary } from '@/lib/documents/extraction-summary'
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -66,6 +68,7 @@ const docStatusLabels: Record<string, string> = {
 
 interface DocumentCardProps {
   document: {
+    extraction_summary?: ExtractionSummary
     id: string
     case_id: string
     file_name: string
@@ -84,13 +87,18 @@ interface DocumentCardProps {
   }
   patientLastName: string | null
   isLocked?: boolean
+  onRefresh?: () => void
+  refreshing?: boolean
   onRemoved?: () => void
 }
 
-export function DocumentCard({ document, patientLastName, isLocked = false, onRemoved }: DocumentCardProps) {
+export function DocumentCard({ document, patientLastName, isLocked = false, onRemoved, onRefresh, refreshing }: DocumentCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState('')
   const [isRemoving, setIsRemoving] = useState(false)
+
+  const summary = document.extraction_summary ?? summarizeExtractions(document.document_type, null, 0)
+  const unconfirmed = ['unconfirmed','stale','unavailable'].includes(summary.kind)
 
   const isPdf = document.mime_type === 'application/pdf'
   const isImage = document.mime_type?.startsWith('image/')
@@ -131,11 +139,11 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
   return (
     <>
       <Card>
-        <CardContent className="flex items-start gap-4 p-4">
-          <div className="rounded-lg bg-muted p-2">
+        <CardContent className="flex flex-wrap items-start gap-3 p-4">
+          <div className="hidden sm:block rounded-lg bg-muted p-2">
             <FileText className="h-6 w-6 text-muted-foreground" />
           </div>
-          <div className="flex-1 min-w-0 space-y-1">
+          <div className="w-full sm:w-auto sm:flex-1 min-w-0 space-y-2">
             <p className="font-medium truncate" title={document.file_name}>
               {document.file_name}
             </p>
@@ -144,7 +152,7 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
                 {docTypeLabels[document.document_type] ?? document.document_type}
               </Badge>
               <Badge variant="outline" className={docStatusColors[document.status] ?? ''}>
-                {docStatusLabels[document.status] ?? document.status}
+                Document review: {docStatusLabels[document.status] ?? document.status}
               </Badge>
               {document.revision_status === 'reset_pending' && <Badge variant="outline">Reset — replacement pending</Badge>}
               {document.revision_status === 'superseded_note' && <Badge variant="outline">Superseded note</Badge>}
@@ -158,6 +166,26 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
                   Current corrected discharge v{document.revision_number}
                 </Badge>
               )}
+            </div>
+            <div className="space-y-1 text-sm" aria-label="Upload and extraction status">
+              <p className="font-medium">{summary.label}</p>
+              {summary.total > 0 && <p className="text-muted-foreground">
+                {summary.processing > 0 && `${summary.processing} processing · `}
+                {summary.failed > 0 && `${summary.failed} failed · `}
+                {summary.awaitingReview > 0 && `${summary.awaitingReview} awaiting review · `}
+                {summary.rejected > 0 && `${summary.rejected} rejected · `}
+                {summary.reviewed} reviewed of {summary.total} existing findings
+              </p>}
+              {summary.processingSince && <p className="text-muted-foreground">Processing started {format(new Date(summary.processingSince), 'MM/dd/yyyy h:mm a')}</p>}
+              {(['unconfirmed','stale'].includes(summary.kind) || (summary.kind === 'processing' && !summary.canOpen)) && (
+                <p className="text-muted-foreground">Refresh to check persisted status. Automatic recovery is unavailable here.</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {summary.canOpen && summary.tab && <Button asChild variant="link" size="sm" className="h-auto p-0">
+                  <Link href={`/patients/${document.case_id}/clinical?tab=${summary.tab}`}>Open clinical data</Link>
+                </Button>}
+                {(unconfirmed || summary.processing > 0) && onRefresh && <Button variant="link" size="sm" className="h-auto p-0" disabled={refreshing} onClick={onRefresh}>Refresh status</Button>}
+              </div>
             </div>
             {document.revision_history && <p className="text-xs text-muted-foreground">{document.revision_history}</p>}
             <p className="text-xs text-muted-foreground">

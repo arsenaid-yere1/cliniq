@@ -165,7 +165,7 @@ export default async function InitialVisitPage({ params, searchParams }: { param
 
   return (
     <div>
-    <VisitEditorHeader caseId={caseId} episodeId={episodeId} episodeNumber={episode.episode_number} />
+    <VisitEditorHeader caseId={caseId} episodeId={episodeId} episodeNumber={episode.episode_number} readOnly={!episodeWritable} />
     <InitialVisitEditor
       key={episodeId}
       caseId={caseId}

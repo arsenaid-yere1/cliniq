@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState, use, type ComponentPropsWithRef } from 'react'
 import { listAttorneys } from '@/actions/attorneys'
 import { AttorneyForm } from './attorney-form'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,8 @@ interface Attorney {
   firm_name: string | null
 }
 
-interface AttorneySelectProps {
+interface AttorneySelectProps extends Pick<ComponentPropsWithRef<typeof SelectTrigger>, 'ref' | 'id' | 'onBlur' | 'aria-describedby' | 'aria-invalid' | 'aria-labelledby' | 'disabled'> {
+  name?: string
   value: string
   onChange: (value: string) => void
   initialAttorneys?: Attorney[]
@@ -36,7 +37,7 @@ function getInitialAttorneys(): Promise<Attorney[]> {
   return initialLoadPromise
 }
 
-export function AttorneySelect({ value, onChange, initialAttorneys }: AttorneySelectProps) {
+export function AttorneySelect({ value, onChange, initialAttorneys, name, disabled, ref, ...triggerProps }: AttorneySelectProps) {
   const loaded = initialAttorneys ?? use(getInitialAttorneys())
   const [attorneys, setAttorneys] = useState<Attorney[]>(loaded)
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -62,8 +63,8 @@ export function AttorneySelect({ value, onChange, initialAttorneys }: AttorneySe
 
   return (
     <div className="flex gap-2">
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="flex-1">
+      <Select name={name} disabled={disabled} value={value} onValueChange={onChange}>
+        <SelectTrigger {...triggerProps} ref={ref} className="min-w-0 flex-1">
           <SelectValue placeholder="Select attorney" />
         </SelectTrigger>
         <SelectContent>
@@ -75,11 +76,11 @@ export function AttorneySelect({ value, onChange, initialAttorneys }: AttorneySe
           ))}
         </SelectContent>
       </Select>
-      <Button type="button" variant="outline" size="icon" onClick={() => setShowAddDialog(true)}>
+      <Button type="button" aria-label="Add attorney" disabled={disabled} variant="outline" size="icon" onClick={() => setShowAddDialog(true)}>
         <Plus className="h-4 w-4" />
       </Button>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog && !disabled} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Attorney</DialogTitle>

@@ -1,3 +1,4 @@
+import { clinicalTab } from '@/lib/documents/extraction-summary'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { listMriExtractions } from '@/actions/mri-extractions'
 import { listChiroExtractions } from '@/actions/chiro-extractions'
@@ -16,10 +17,13 @@ import { XRayExtractionList } from '@/components/clinical/x-ray-extraction-list'
 
 export default async function ClinicalDataPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ caseId: string }>
+  searchParams?: Promise<{ tab?: string | string[] }>
 }) {
   const { caseId } = await params
+  const tab = clinicalTab((await searchParams)?.tab)
   const [
     { data: mriExtractions },
     { data: chiroExtractions },
@@ -41,8 +45,8 @@ export default async function ClinicalDataPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Clinical Data</h1>
-      <Tabs defaultValue="mri">
-        <TabsList>
+      <Tabs key={tab} defaultValue={tab}>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="mri">MRI Reports</TabsTrigger>
           <TabsTrigger value="chiro">Chiro Reports</TabsTrigger>
           <TabsTrigger value="pain-management">Pain Management</TabsTrigger>

@@ -54,7 +54,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s regen
     regenerate.mockResolvedValue({ data: { content: 'Changed plan', savedNote: { ...note, [key]: 'Changed plan', updated_at: 'v2', patient_education: 'Saved education.' } } })
     await regenerateSection(family === 'discharge' ? 'Plan and Discharge Recommendations' : 'Treatment Plan')
     expect((screen.getByRole('textbox', { name: 'Patient Education' }) as HTMLTextAreaElement).value).toBe('Unsaved counseling.')
-    expect(screen.getByRole('combobox').getAttribute('value') ?? (screen.getByRole('combobox') as HTMLSelectElement).value).toBe('declined')
+    expect(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }).getAttribute('value') ?? (screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }) as HTMLSelectElement).value).toBe('declined')
   })
   it('replaces education when education itself is explicitly regenerated', async () => {
     const note = mount(family)

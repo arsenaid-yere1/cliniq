@@ -20,6 +20,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      register_uploaded_document: {
+        Args: {
+          p_allow_locked?: boolean
+          p_case_id: string
+          p_document_type: string
+          p_file_name: string
+          p_file_path: string
+          p_file_size_bytes: number
+          p_legacy_path?: boolean
+          p_mime_type: string
+          p_upload_id: string
+        }
+        Returns: {
+          created: boolean
+          document_id: string
+        }[]
+      }
       graphql: {
         Args: {
           extensions?: Json

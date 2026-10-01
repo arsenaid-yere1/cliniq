@@ -1,6 +1,10 @@
 'use client'
 
-import { useVisitDraftBaseline } from '@/components/visits/visit-unsaved-changes-context'
+import { VisitDraftActionBar, VisitSaveStatus } from './visit-draft-action-bar'
+import { VisitSectionJump } from './visit-section-jump'
+import { VisitFinalizationReview } from './visit-finalization-review'
+import { useVisitSaveFeedback } from '@/hooks/use-visit-save-feedback'
+import { useVisitDraftState } from '@/components/visits/visit-unsaved-changes-context'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
 import { visitDecisionDraft } from '@/lib/validations/visit-treatment-decision'
 import { useCaseStatus } from '@/components/patients/case-status-context'
@@ -8,7 +12,7 @@ import { LOCKED_STATUSES, type CaseStatus } from '@/lib/constants/case-status'
 
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, useId } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Sparkles, RefreshCw, Save, Lock } from 'lucide-react'
@@ -79,7 +83,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
   const caseLocked = LOCKED_STATUSES.includes(useCaseStatus() as CaseStatus)
   const writable = encounter.status === 'in_progress' && !caseLocked && episodeWritable
   const state = getPainFollowUpEditorState(initialNote)
-  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint }, generating, writable && (state === 'empty' || state === 'failed'))
+  const preGeneration = useVisitDraftState({ toneHint }, generating, writable && (state === 'empty' || state === 'failed'))
 
   async function generate() {
     if (running.current || !writable) return
@@ -90,7 +94,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
       const result = await generatePainFollowUpNote(caseId, encounter.id, toneHint.trim() || null)
       if (!mounted.current) return
       if ('error' in result) toast.error(result.error)
-      else { acknowledgePreGeneration({ toneHint }); toast.success('Follow-up note generated successfully') }
+      else { preGeneration.acknowledge({ toneHint }); toast.success('Follow-up note generated successfully') }
       router.refresh()
     } catch {
       if (mounted.current) toast.error('Something went wrong. Please try again.')
@@ -103,7 +107,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
   if (generating || state === 'generating') {
     return <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">Telehealth follow-up note</h2>
+        <h2 className="text-xl font-semibold">Visit note</h2>
         <Badge variant="outline">Generating...</Badge>
       </div>
       <GeneratingProgress
@@ -125,7 +129,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
     const failed = state === 'failed'
     return <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">Telehealth follow-up note</h2>
+        <h2 className="text-xl font-semibold">Visit note</h2>
         {failed && <Badge variant="destructive">Failed</Badge>}
       </div>
       {failed && <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
@@ -133,6 +137,7 @@ export function PainFollowUpEditor(props: PainFollowUpEditorProps) {
         {initialNote?.generation_error || 'The follow-up note could not be generated.'}
       </div>}
       <ToneDirectionCard value={toneHint} onChange={setToneHint} disabled={!writable} />
+      {writable && <VisitSaveStatus {...preGeneration} />}
       <div className="flex flex-col items-center justify-center space-y-4 rounded-lg border bg-muted/30 px-4 py-16">
         <p className="max-w-md text-center text-sm text-muted-foreground">
           Generate a draft from this visit and the current episode&apos;s clinical history.
@@ -158,6 +163,8 @@ function NoteEditor({
   relationshipLoadError = false, episodeWritable = true,
 }: PainFollowUpEditorProps & { initialNote: Tables<'pain_follow_up_notes'> }) {
   const router = useRouter()
+  const scopeId = useId()
+  const feedback = useVisitSaveFeedback()
   const [pending, setPending] = useState(false)
   const [tonePending, setTonePending] = useState(false)
   const [regeneratingSection, setRegeneratingSection] = useState<PainFollowUpSection | null>(null)
@@ -203,7 +210,8 @@ function NoteEditor({
     toneHint, initialTone: initialNote.tone_hint,
     getVersion: () => expectedVersion.current,
     acknowledgeVersion: versions.acknowledgeMetadataVersion,
-    onError: (message) => toast.error(message),
+    onError: feedback.fail,
+    onStart: feedback.start,
     saveTone: async (tone, expected) => {
       setTonePending(true)
       try {
@@ -270,9 +278,9 @@ function NoteEditor({
     procedure_recommendations: recommendations,
   }
 
-  const acknowledgeDraft = useVisitDraftBaseline({ note, decision, recommendations }, pending, visitWritable && !finalized)
+  const draftState = useVisitDraftState({ note, decision, recommendations }, pending, visitWritable && !finalized)
   function acknowledgePersistedDraft(row: Tables<'pain_follow_up_notes'>) {
-    acknowledgeDraft({
+    draftState.acknowledge({
       note: Object.fromEntries(painFollowUpNoteSections.map(section => [section, row[section] ?? ''])) as Record<PainFollowUpSection, string>,
       decision: visitDecisionDraft(row.visit_treatment_decision), recommendations: (row.procedure_recommendations ?? []) as unknown as ProcedureRecommendation[],
     })
@@ -298,9 +306,12 @@ function NoteEditor({
 
   return (
     <div className="space-y-6">
+      <VisitDraftActionBar readOnly={finalized || !visitWritable} dirty={draftState.dirty || mutations.toneDirty}
+        busy={pending || mutations.toneSaving} hasSaved={draftState.hasSaved}
+        error={feedback.failure?.message} finalizationError={feedback.failure?.finalization}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-xl font-semibold">Telehealth follow-up note</h2>
+          <h2 className="text-xl font-semibold">Visit note</h2>
           <Badge variant="outline">{finalized ? 'Finalized' : 'Draft'}</Badge>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
@@ -324,25 +335,38 @@ function NoteEditor({
               >
                 <Save className="mr-2 h-4 w-4" />Save Draft
               </Button>
-              <Button
-                disabled={actionDisabled}
-                onClick={() => void run(
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={actionDisabled}><Lock className="mr-2 h-4 w-4" />Finalize &amp; Complete Visit</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader><AlertDialogTitle>Finalize Follow-Up Note</AlertDialogTitle>
+                    <AlertDialogDescription>Review the visit before signing.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <VisitFinalizationReview label="Follow-up note" date={encounter.encounter_date} decision={decision}
+                    consequence="The note will be signed and this visit marked completed. The care episode remains open." />
+                  <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction disabled={actionDisabled} onClick={() => void run(
                   async (isActive) => {
                     const saved = await saveDraft(isActive)
                     if ('error' in saved) return saved
                     if (!isActive()) return { error: 'The note is no longer editable.' }
+                    feedback.finalizing()
                     return finalizePainFollowUpNote(caseId, encounter.id, saved.data.updated_at)
                   },
                   'Follow-up note finalized successfully',
                   undefined, true,
-                )}
-              >
-                <Lock className="mr-2 h-4 w-4" />Finalize &amp; Complete Visit
-              </Button>
+                )}>Finalize &amp; Complete Visit</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
         </div>
       </div>
+
+      {!finalized && visitWritable && <VisitSectionJump scopeId={scopeId} sections={painFollowUpNoteSections.map(key => ({ key, label: painFollowUpNoteSectionLabels[key] }))} />}
+      </VisitDraftActionBar>
 
       {!finalized && <ToneDirectionCard value={toneHint} onChange={setToneHint}
         onBlur={mutations.saveTone} disabled={actionDisabled}
@@ -354,9 +378,9 @@ function NoteEditor({
       <div className="space-y-6">
         {painFollowUpNoteSections.map((section) => {
           const label = painFollowUpNoteSectionLabels[section]
-          return <div key={section} className="space-y-2">
+          return <div key={section} id={`${scopeId}-${section}`} style={{ scrollMarginTop: 'var(--visit-action-height, 12rem)' }} className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <Label className="text-base font-semibold" htmlFor={section}>{label}</Label>
+              <Label className="text-base font-semibold" htmlFor={`${scopeId}-${section}-input`}>{label}</Label>
               {!finalized && <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button type="button" size="sm" variant="ghost" disabled={actionDisabled}>
@@ -391,7 +415,7 @@ function NoteEditor({
                 </AlertDialogContent>
               </AlertDialog>}
             </div>
-            <Textarea id={section} value={note[section]} disabled={actionDisabled}
+            <Textarea id={`${scopeId}-${section}-input`} value={note[section]} disabled={actionDisabled}
               rows={sectionRows[section]} className="resize-y"
               onChange={(event) => setNote((current) => ({ ...current, [section]: event.target.value }))} />
           </div>
@@ -405,7 +429,7 @@ function NoteEditor({
             {recommendations.map((recommendation) => (
               <div
                 key={recommendation.recommendation_id}
-                className="flex items-start justify-between gap-4 rounded-md border p-3"
+                className="flex flex-wrap items-start justify-between gap-4 rounded-md border p-3"
               >
                 <div>
                   <p className="font-medium uppercase">{recommendation.procedure_type}</p>

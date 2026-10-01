@@ -68,10 +68,10 @@ const genderLabels: Record<string, string> = {
 }
 
 const quickActions = [
-  { label: 'Upload Document', icon: FileUp, href: 'documents' },
-  { label: 'View Clinical Data', icon: Activity, href: 'clinical' },
-  { label: 'Record Procedure', icon: ClipboardList, href: 'procedures' },
-  { label: 'Create Invoice', icon: Receipt, href: 'billing' },
+  { label: 'Open Documents', icon: FileUp, href: 'documents' },
+  { label: 'Open Clinical Data', icon: Activity, href: 'clinical' },
+  { label: 'Open Procedures', icon: ClipboardList, href: 'procedures' },
+  { label: 'Open Billing', icon: Receipt, href: 'billing' },
 ]
 
 export function CaseOverview({ caseData, isAdmin = false, reopenedEpisodeNumber }: CaseOverviewProps) {
@@ -165,27 +165,22 @@ export function CaseOverview({ caseData, isAdmin = false, reopenedEpisodeNumber 
           {isLocked && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-muted border rounded-lg text-sm text-muted-foreground">
               <Lock className="h-4 w-4 shrink-0" />
-              This case is locked ({CASE_STATUS_CONFIG[caseData.case_status as CaseStatus].label}). Move it back to Active to make changes.
+              This case is locked ({CASE_STATUS_CONFIG[caseData.case_status as CaseStatus].label}). Records remain available to view; editing is unavailable for this status.
             </div>
           )}
-          <div className="flex gap-3 flex-wrap">
-            {quickActions.map((action) => {
-              return isLocked ? (
-                <Button key={action.label} variant="outline" disabled>
-                  <action.icon className="h-4 w-4 mr-2" />
-                  {action.label}
-                </Button>
-              ) : (
-                <Button key={action.label} variant="outline" asChild>
-                  <Link href={`/patients/${caseData.id}/${action.href}`}>
-                    <action.icon className="h-4 w-4 mr-2" />
-                    {action.label}
-                  </Link>
-                </Button>
-              )
-            })}
-            {isAdmin && <ClinicalResetDialog caseId={caseData.id} />}
-            <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} isAdmin={isAdmin} />
+          <section className="space-y-3 mb-6" aria-label="Clinical work and records">
+            <h3 className="font-medium">Clinical work and records</h3>
+            <div className="flex flex-wrap gap-3">
+              <Button asChild><Link href={`/patients/${caseData.id}/visits`}>Open Visits</Link></Button>
+              {quickActions.map(action => <Button key={action.label} variant="outline" asChild>
+                <Link href={`/patients/${caseData.id}/${action.href}`}><action.icon className="size-4" />{action.label}</Link>
+              </Button>)}
+            </div>
+          </section>
+          <section className="space-y-3 mb-6" aria-label="Generate forms">
+            <h3 className="font-medium">Generate forms</h3>
+            {!caseData.attorney_id && <p className="text-sm text-muted-foreground">Assign an attorney before generating a lien agreement.</p>}
+            <div className="flex flex-wrap gap-3 [&>button]:h-auto [&>button]:whitespace-normal">
             <Button
               variant="outline"
               onClick={handleGenerateLien}
@@ -210,6 +205,13 @@ export function CaseOverview({ caseData, isAdmin = false, reopenedEpisodeNumber 
               )}
               Generate Procedure Consent Form
             </Button>
+            </div>
+          </section>
+          <section className="space-y-3" aria-label="Case administration">
+            <h3 className="font-medium">Case administration</h3>
+            <div className="flex flex-wrap gap-3">
+              {isAdmin && <ClinicalResetDialog caseId={caseData.id} />}
+              <StatusChangeDropdown caseId={caseData.id} currentStatus={caseData.case_status as CaseStatus} isAdmin={isAdmin} />
             {patient && (
               <Button variant="outline" asChild>
                 <Link href={`/patients/new?patientId=${patient.id}`}>
@@ -218,7 +220,8 @@ export function CaseOverview({ caseData, isAdmin = false, reopenedEpisodeNumber 
                 </Link>
               </Button>
             )}
-          </div>
+            </div>
+          </section>
         </CardContent>
       </Card>
 

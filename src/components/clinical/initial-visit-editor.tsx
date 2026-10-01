@@ -1,14 +1,18 @@
 'use client'
 
+import { VisitDraftActionBar, VisitSaveStatus } from '@/components/visits/visit-draft-action-bar'
+import { VisitSectionJump } from '@/components/visits/visit-section-jump'
+import { VisitFinalizationReview } from '@/components/visits/visit-finalization-review'
+import { useVisitSaveFeedback } from '@/hooks/use-visit-save-feedback'
 import { usePreGenerationVisitDate } from '@/hooks/use-pre-generation-visit-date'
 
 import { ChiefComplaintsCard } from './chief-complaints-card'
 import { ExamFindingsCard } from './exam-findings-card'
 
-import { IntakeDraftProvider, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
+import { IntakeDraftProvider, IntakeSectionStatus, useIntakeDrafts, useIntakeSectionSave } from './intake-draft-context'
 import type { ReturnIntakeSource } from '@/lib/clinical/load-return-intake'
 import { PsychologicalAssessmentCard, psychologicalStatusLabels } from './psychological-assessment-card'
-import { useVisitDraftBaseline } from '@/components/visits/visit-unsaved-changes-context'
+import { useVisitDraftState } from '@/components/visits/visit-unsaved-changes-context'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
 import { VisitTreatmentDecisionFields } from '@/components/clinical/visit-treatment-decision-fields'
@@ -16,7 +20,7 @@ import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDeci
 
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useState, useTransition, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useTransition, useEffect, useCallback, useMemo, useRef, useId } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -220,7 +224,6 @@ export function InitialVisitEditor({
   caseId,
   intakeCarryover,
   episodeId,
-  episodeNumber,
   episodeWritable = true,
   painEvaluationOnly = false,
   notesByVisitType,
@@ -247,7 +250,6 @@ export function InitialVisitEditor({
 
   return (
     <div className="space-y-6">
-      {episodeNumber && <p className="text-sm text-muted-foreground">Episode {episodeNumber}{!episodeWritable && ' · Read only'}</p>}
       <Tabs value={activeVisitType} onValueChange={(v) => setActiveVisitType(v as NoteVisitType)}>
         <TabsList>
           {visitTypes.map((vt) => (
@@ -372,7 +374,7 @@ function InitialVisitEditorInner({
     min: visitType === 'pain_evaluation_visit' ? siblingDate : null, max: visitType === 'initial_visit' ? siblingDate : null,
   })
   const preGenVisitDate = visitDateSave.value
-  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.introduction && !note.chief_complaint)))
+  const preGeneration = useVisitDraftState({ toneHint }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.introduction && !note.chief_complaint)))
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     startTransition(async () => {
@@ -387,7 +389,7 @@ function InitialVisitEditorInner({
       try {
         const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, savedDate?.data?.visitDate ?? null, episodeId, savedDate?.data)
         if (result.error) toast.error(result.error)
-        else { acknowledgePreGeneration({ toneHint }); toast.success('Note generated successfully') }
+        else { preGeneration.acknowledge({ toneHint }); toast.success('Note generated successfully') }
       } finally {
         setOptimisticGenerating(false)
       }
@@ -415,7 +417,7 @@ function InitialVisitEditorInner({
   if (optimisticGenerating && note?.status !== 'generating') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
@@ -464,31 +466,31 @@ function InitialVisitEditorInner({
 
         <Tabs value={intakeTab} onValueChange={setIntakeTab}>
           <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto gap-1 p-1">
-            <TabsTrigger value="chief-complaints">
+            <TabsTrigger value="chief-complaints" aria-label="Chief Complaints">
               <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
               Chief Complaints
-            </TabsTrigger>
-            {visitType === 'initial_visit' && <TabsTrigger value="psychological-assessment">Psychological Assessment</TabsTrigger>}
-            <TabsTrigger value="accident-details">
+            <IntakeSectionStatus section="chief_complaints" /></TabsTrigger>
+            {visitType === 'initial_visit' && <TabsTrigger value="psychological-assessment" aria-label="Psychological Assessment">Psychological Assessment<IntakeSectionStatus section="psychological_assessment" /></TabsTrigger>}
+            <TabsTrigger value="accident-details" aria-label="Accident Details">
               <Car className="h-3.5 w-3.5 mr-1.5" />
               Accident Details
-            </TabsTrigger>
-            <TabsTrigger value="pmh">
+            <IntakeSectionStatus section="accident_details" /></TabsTrigger>
+            <TabsTrigger value="pmh" aria-label="Past Medical Hx">
               <History className="h-3.5 w-3.5 mr-1.5" />
               Past Medical Hx
-            </TabsTrigger>
-            <TabsTrigger value="social-history">
+            <IntakeSectionStatus section="past_medical_history" /></TabsTrigger>
+            <TabsTrigger value="social-history" aria-label="Social History">
               <UserRound className="h-3.5 w-3.5 mr-1.5" />
               Social History
-            </TabsTrigger>
-            <TabsTrigger value="exam-findings">
+            <IntakeSectionStatus section="social_history" /></TabsTrigger>
+            <TabsTrigger value="exam-findings" aria-label="Exam Findings">
               <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
               Exam Findings
-            </TabsTrigger>
-            <TabsTrigger value="vitals">
+            <IntakeSectionStatus section="exam_findings" /></TabsTrigger>
+            <TabsTrigger value="vitals" aria-label="Vital Signs">
               <Heart className="h-3.5 w-3.5 mr-1.5" />
               Vital Signs
-            </TabsTrigger>
+            <IntakeSectionStatus section="vitals" /></TabsTrigger>
           </TabsList>
           <TabsContent value="chief-complaints" hidden={intakeTab !== 'chief-complaints'} forceMount className="mt-4 data-[state=inactive]:hidden">
             {visitType === 'initial_visit' && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm">
@@ -519,6 +521,11 @@ function InitialVisitEditorInner({
             <VitalSignsCard caseId={caseId} visitType={visitType} initialVitals={initialVitals} isLocked={isLocked} />
           </TabsContent>
         </Tabs>
+
+        {!isLocked && <VisitSaveStatus dirty={preGeneration.dirty || visitDateSave.dirty || intakeDrafts.dirty}
+          busy={preGeneration.busy || visitDateSave.saving || intakeDrafts.busy}
+          error={visitDateSave.error || Object.values(intakeDrafts.sections).find(section => section.error)?.error}
+          hasSaved={preGeneration.hasSaved || Object.values(intakeDrafts.sections).some(section => section.hasSaved)} />}
 
         <VisitDateCard
           id={`visit-date-pre-gen-${visitType}`}
@@ -565,7 +572,7 @@ function InitialVisitEditorInner({
   if (note.status === 'generating') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Generating...</Badge>
         </div>
@@ -595,15 +602,15 @@ function InitialVisitEditorInner({
   if (note.status === 'failed') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="destructive">Failed</Badge>
         </div>
-        <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {note.generation_error || 'Note generation failed.'}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             onClick={() => runGenerate(null, null)}
@@ -687,7 +694,7 @@ function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: Int
       <CardContent>
         <Form {...form}>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField control={form.control} name="accident_details.vehicle_position" render={({ field: f }) => (
                 <FormItem>
                   <FormLabel>Vehicle Position</FormLabel>
@@ -716,7 +723,7 @@ function AccidentDetailsCard({ caseId, visitType, initialIntake, isLocked }: Int
               )} />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {([
                 ['accident_details.seatbelt_worn', 'Seatbelt Worn'],
                 ['accident_details.airbag_deployed', 'Airbag Deployed'],
@@ -850,7 +857,7 @@ function SocialHistoryCard({ caseId, visitType, initialIntake, isLocked }: Intak
       <CardContent>
         <Form {...form}>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <FormField control={form.control} name="social_history.smoking_status" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Smoking Status</FormLabel>
@@ -926,6 +933,8 @@ function VitalSignsCard({
 }) {
   const { register, episodeId } = useIntakeDrafts()
   const [isSaving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hasSaved, setHasSaved] = useState(false)
   const inFlight = useRef<Promise<boolean> | null>(null)
   const vitalsForm = useForm<InitialVisitVitalsValues>({
     resolver: zodResolver(initialVisitVitalsSchema),
@@ -945,15 +954,18 @@ function VitalSignsCard({
     if (inFlight.current) return inFlight.current
     const save = async () => {
       setSaving(true)
+      setError(null)
       try {
-        if (!await vitalsForm.trigger()) return false
+        if (!await vitalsForm.trigger()) { setError('Review the highlighted vital signs.'); return false }
         const values = vitalsForm.getValues()
         const result = await saveInitialVisitVitals(caseId, visitType, values, episodeId)
-        if (result.error) { toast.error(result.error); return false }
+        if (result.error) { setError(result.error); toast.error(result.error); return false }
         vitalsForm.reset(values)
+        setHasSaved(true)
         toast.success('Vitals saved')
         return true
       } catch {
+        setError('Unable to save vitals. Your input is retained; please retry.')
         toast.error('Unable to save vitals. Your input is retained; please retry.')
         return false
       } finally { setSaving(false); inFlight.current = null }
@@ -962,7 +974,7 @@ function VitalSignsCard({
     return inFlight.current
   }, [vitalsForm, caseId, visitType, episodeId])
   const { isDirty } = vitalsForm.formState
-  useEffect(() => register('vitals', { dirty: isDirty, saving: isSaving, save: handleSaveVitals }), [register, isDirty, isSaving, handleSaveVitals])
+  useEffect(() => register('vitals', { dirty: isDirty, saving: isSaving, error, hasSaved, save: handleSaveVitals }), [register, isDirty, isSaving, error, hasSaved, handleSaveVitals])
 
   return (
     <Card>
@@ -973,7 +985,7 @@ function VitalSignsCard({
       </CardHeader>
       <CardContent>
         <Form {...vitalsForm}>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <FormField
               control={vitalsForm.control}
               name="bp_systolic"
@@ -1177,6 +1189,9 @@ function DraftEditor({
   setRegeneratingSection: (s: InitialVisitSection | null) => void
   isLocked: boolean
 }) {
+  const feedback = useVisitSaveFeedback()
+  const finalizing = useRef(false)
+  const scopeId = useId()
   const intakeDrafts = useIntakeDrafts()
   const { episodeId } = intakeDrafts
   const [draftTab, setDraftTab] = useState('note')
@@ -1210,14 +1225,14 @@ function DraftEditor({
     },
   })
 
-  const acknowledgeDraft = useVisitDraftBaseline(form.watch(), isPending, !isLocked)
+  const draftState = useVisitDraftState(form.watch(), isPending, !isLocked)
   const [savedDecision, setSavedDecision] = useState<unknown>(note.visit_treatment_decision)
   const setVersion = useCallback((version: string) => form.setValue('expected_updated_at', version), [form])
   const { acknowledgeSavedNote, acknowledgeMetadataVersion } = useVisitNoteVersion(note, initialVisitSections, setVersion)
   function acceptSavedNote(saved: Record<string, unknown> | undefined, regeneratedSection?: string) {
     if (!saved) return
     acknowledgeSavedNote(saved)
-    acknowledgeDraft({
+    draftState.acknowledge({
       ...Object.fromEntries(initialVisitSections.map(section => [section, saved[section] ?? ''])),
       visit_date: saved.visit_date as string | null, treatment_decision: visitDecisionDraft(saved.visit_treatment_decision),
     } as InitialVisitNoteEditValues)
@@ -1243,28 +1258,29 @@ function DraftEditor({
     getVersion: () => form.getValues('expected_updated_at'),
     acknowledgeVersion: acknowledgeMetadataVersion,
     saveTone: (tone, expected) => saveInitialVisitNoteToneHint(caseId, visitType, tone, { noteId: note.id, expectedUpdatedAt: expected }, episodeId),
-    onError: (message) => toast.error(message),
+    onError: feedback.fail,
+    onStart: feedback.start,
   })
 
   function handleSave() {
     startTransition(async () => {
       await mutations.run(async () => {
         const result = await saveInitialVisitNote(caseId, visitType, form.getValues(), episodeId)
-        if (result.error) toast.error(result.error)
+        if (result.error) feedback.fail(result.error)
         else { acceptSavedNote(result.data?.savedNote); toast.success('Draft saved') }
       })
     })
   }
 
   function handleRegenerate(section: InitialVisitSection) {
-    if (intakeDrafts.dirty || intakeDrafts.busy) { toast.error('Save intake changes before regenerating.'); return }
+    if (intakeDrafts.dirty || intakeDrafts.busy) { feedback.fail('Save intake changes before regenerating.'); return }
     setRegeneratingSection(section)
     startTransition(async () => {
       try {
         await mutations.run(async () => {
           const result = await regenerateNoteSection(caseId, visitType, section, undefined, form.getValues('expected_updated_at'), undefined, episodeId)
           if (result.error) {
-            toast.error(result.error)
+            feedback.fail(result.error)
           } else if (result.data?.content) {
             form.setValue(section, result.data.content)
             acceptSavedNote(result.data.savedNote ?? undefined, section)
@@ -1282,33 +1298,58 @@ function DraftEditor({
     startTransition(async () => {
       await mutations.run(async () => {
         const saved = await saveInitialVisitNote(caseId, visitType, form.getValues(), episodeId)
-        if (saved.error) { toast.error(saved.error); return }
+        if (saved.error) { feedback.fail(saved.error); return }
         acceptSavedNote(saved.data?.savedNote)
         const expected = form.getValues('expected_updated_at')
         if (!expected) return
         const reviewed = await acknowledgePsychologicalReview(caseId, expected, episodeId)
-        if (reviewed.error) toast.error(reviewed.error)
+        if (reviewed.error) feedback.fail(reviewed.error)
         else if (reviewed.data) { acknowledgeMetadataVersion(expected, reviewed.data.updated_at); toast.success('Psychological note review recorded') }
       })
     })
   }
 
+  function handleFinalize() {
+    if (finalizing.current || isLocked || isPending || intakeDrafts.dirty || intakeDrafts.busy || needsPsychReview) return
+    finalizing.current = true
+    startTransition(async () => {
+      try {
+        await mutations.run(async ({ isActive, finish }) => {
+          const saveResult = await saveInitialVisitNote(caseId, visitType, form.getValues(), episodeId)
+          if (saveResult.error) { feedback.fail(saveResult.error); return }
+          if (!isActive()) return
+          const savedNote = saveResult.data?.savedNote
+          if (!savedNote?.updated_at) { feedback.fail('Unable to confirm the saved note version. Reload before finalizing.'); return }
+          acceptSavedNote(savedNote)
+          feedback.finalizing()
+          const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string, episodeId)
+          if (result.error) feedback.fail(result.error)
+          else { finish(); toast.success('Note finalized') }
+        })
+      } finally { finalizing.current = false }
+    })
+  }
+
   return (
     <div className="space-y-6">
+      <VisitDraftActionBar readOnly={isLocked} dirty={!isLocked && (draftState.dirty || mutations.toneDirty || intakeDrafts.dirty)}
+        busy={isPending || mutations.toneSaving || intakeDrafts.busy}
+        error={feedback.failure?.message || Object.values(intakeDrafts.sections).find(section => section.error)?.error}
+        finalizationError={feedback.failure?.finalization} hasSaved={draftState.hasSaved}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline">Draft</Badge>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label htmlFor={`visit-date-input-${visitType}`} className="text-sm font-medium whitespace-nowrap">
               Date of Visit
             </label>
             <Input
               id={`visit-date-input-${visitType}`}
               type="date"
-              className="w-[160px]"
+              className="w-full sm:w-[160px]"
               disabled={isLocked || isPending}
               {...form.register('visit_date', {
                 setValueAs: (v) => (v === '' ? null : v),
@@ -1334,27 +1375,13 @@ function DraftEditor({
                   Finalizing will lock this note and create a document record. You can unfinalize later to make edits. Continue?
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              <VisitFinalizationReview label={visitTypeLabel} date={form.watch('visit_date')} decision={form.watch('treatment_decision') ?? visitDecisionDraft(savedDecision)}
+                consequence="The note will be locked and a signed document created. This does not end the care episode." />
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => {
-                    startTransition(async () => {
-                      await mutations.run(async ({ isActive, finish }) => {
-                        if (intakeDrafts.dirty || intakeDrafts.busy) { toast.error('Save intake changes first.'); return }
-                        const values = form.getValues()
-                        const saveResult = await saveInitialVisitNote(caseId, visitType, values, episodeId)
-                        if (saveResult.error) {
-                          toast.error(saveResult.error)
-                          return
-                        }
-                        if (!isActive()) return
-                        acceptSavedNote(saveResult.data?.savedNote)
-                        const result = await finalizeInitialVisitNote(caseId, visitType, saveResult.data?.savedNote?.updated_at as string, episodeId)
-                        if (result.error) toast.error(result.error)
-                        else { finish(); toast.success('Note finalized') }
-                      })
-                    })
-                  }}
+                  disabled={isLocked || isPending || intakeDrafts.dirty || intakeDrafts.busy || needsPsychReview}
+                  onClick={handleFinalize}
                 >
                   Finalize
                 </AlertDialogAction>
@@ -1364,12 +1391,18 @@ function DraftEditor({
         </div>
       </div>
 
+      {draftTab === 'note' && !isLocked && <VisitSectionJump scopeId={scopeId} sections={initialVisitSections.map(key => ({ key, label: sectionLabels[key] }))} />}
+      </VisitDraftActionBar>
+
       {needsPsychReview && <div className="space-y-2 rounded-lg border border-amber-500/50 bg-amber-500/5 p-4" role="status">
         <p className="font-medium">Assessment updated; note needs review</p>
         <p className="text-sm">Review symptoms/history, the psychiatric examination, diagnoses, medical necessity, treatment plan and education. Edit or regenerate affected sections before acknowledging.</p>
         <Button type="button" variant="outline" disabled={isLocked || isPending || intakeDrafts.dirty || intakeDrafts.busy} onClick={handlePsychReview}>I reviewed the affected note sections</Button>
       </div>}
-      {intakeDrafts.dirty && <p role="status" className="text-sm">Save intake changes before regenerating or finalizing this note.</p>}
+      {(intakeDrafts.dirty || Object.values(intakeDrafts.sections).some(section => section.error)) && <div className="space-y-2 text-sm">
+        <p>Save intake changes before regenerating or finalizing this note.</p>
+        {Object.entries(intakeDrafts.sections).filter(([,state]) => state.dirty || state.error).map(([section]) => <Button key={section} variant="outline" size="sm" onClick={() => setDraftTab(section.replaceAll('_', '-'))}>Open {section.replaceAll('_', ' ')}</Button>)}
+      </div>}
       <Tabs value={draftTab} onValueChange={setDraftTab}>
         <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto gap-1">
           <TabsTrigger value="note">
@@ -1377,13 +1410,13 @@ function DraftEditor({
             Note Sections
           </TabsTrigger>
           {visitType === 'initial_visit' && <>
-            <TabsTrigger value="chief-complaints">Chief Complaints</TabsTrigger>
-            <TabsTrigger value="psychological-assessment">Psychological Assessment</TabsTrigger>
+            <TabsTrigger value="chief-complaints" aria-label="Chief Complaints">Chief Complaints<IntakeSectionStatus section="chief_complaints" /></TabsTrigger>
+            <TabsTrigger value="psychological-assessment" aria-label="Psychological Assessment">Psychological Assessment<IntakeSectionStatus section="psychological_assessment" /></TabsTrigger>
           </>}
-          <TabsTrigger value="vitals">
+          <TabsTrigger value="vitals" aria-label="Vital Signs">
             <Heart className="h-3.5 w-3.5 mr-1.5" />
             Vital Signs
-          </TabsTrigger>
+          <IntakeSectionStatus section="vitals" /></TabsTrigger>
         </TabsList>
 
         <TabsContent value="note" hidden={draftTab !== 'note'} forceMount className="mt-4 data-[state=inactive]:hidden">
@@ -1408,7 +1441,7 @@ function DraftEditor({
                   control={form.control}
                   name={section}
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem id={`${scopeId}-${section}`} style={{ scrollMarginTop: 'var(--visit-action-height, 12rem)' }}>
                       <div className="flex items-center justify-between">
                         <FormLabel className="text-base font-semibold">
                           {sectionLabels[section]}
@@ -1509,6 +1542,7 @@ function FinalizedView({
   isLocked: boolean
   initialVitals: VitalsData | null
 }) {
+  const { episodeId } = useIntakeDrafts()
   void initialVitals
   const patientName = caseData
     ? `${caseData.patient.first_name} ${caseData.patient.last_name}`
@@ -1528,11 +1562,11 @@ function FinalizedView({
     <div className="space-y-6">
       {/* Action bar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">{visitTypeLabel}</h1>
           <Badge variant="outline" className="border-green-600 bg-green-500/10 text-green-700 dark:text-green-400">Finalized</Badge>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {documentFilePath && (
             <Button
               variant="outline"
@@ -1674,7 +1708,7 @@ function FinalizedView({
         </TabsContent>
 
         <TabsContent value="orders" className="mt-4">
-          <CompanionDocumentsSection caseId={caseId} visitType={visitType} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} patientLastName={caseData?.patient.last_name ?? null} />
+          <CompanionDocumentsSection key={`${caseId}:${episodeId}:${visitType}`} caseId={caseId} visitType={visitType} isPending={isPending} startTransition={startTransition} isLocked={isLocked} noteFinalized={true} patientLastName={caseData?.patient.last_name ?? null} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1714,27 +1748,37 @@ function CompanionDocumentsSection({
     created_at: string
   }>>([])
   const [loadingType, setLoadingType] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const request = useRef(0)
 
-  // Load orders on mount and whenever visitType changes
   useEffect(() => {
-    loadOrders()
+    void loadOrders()
+    // This is a request epoch, not a DOM ref; cleanup invalidates every pending request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { request.current++ }
+  // Identity is keyed by the parent; invalidate late responses on unmount.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId, visitType, episodeId])
 
   async function loadOrders() {
-    const { getClinicalOrders } = await import('@/actions/clinical-orders')
-    const result = await getClinicalOrders(caseId, visitType, episodeId)
-    if (result.data) {
+    const token = ++request.current
+    setLoadState('loading')
+    try {
+      const { getClinicalOrders } = await import('@/actions/clinical-orders')
+      const result = await getClinicalOrders(caseId, visitType, episodeId)
+      if (token !== request.current) return
+      if (result.error || !result.data) { setLoadState('error'); return }
       setOrders(result.data.map((o: Record<string, unknown>) => ({
-        ...o,
-        document: Array.isArray(o.document) ? (o.document[0] ?? null) : o.document ?? null,
+        ...o, document: Array.isArray(o.document) ? (o.document[0] ?? null) : o.document ?? null,
       })) as typeof orders)
-      setLoaded(true)
+      setLoadState('ready')
+    } catch {
+      if (token === request.current) setLoadState('error')
     }
   }
 
   async function handleGenerate(orderType: 'imaging' | 'chiropractic_therapy') {
+    if (loadState !== 'ready' || loadingType || isPending || isLocked || !noteFinalized) return
     setLoadingType(orderType)
     try {
       const { generateClinicalOrder } = await import('@/actions/clinical-orders')
@@ -1785,7 +1829,7 @@ function CompanionDocumentsSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex flex-wrap items-center gap-2">
           <ClipboardList className="h-5 w-5" />
           Companion Documents
         </CardTitle>
@@ -1796,18 +1840,23 @@ function CompanionDocumentsSection({
       <CardContent className="space-y-4">
         {/* Finalization notice */}
         {!noteFinalized && (
-          <div className="flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-300">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-300">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             Finalize the Initial Visit note before generating orders.
           </div>
         )}
 
+        {loadState === 'loading' && <p role="status" className="text-sm text-muted-foreground">Loading companion documents…</p>}
+        {loadState === 'error' && <div role="alert" className="space-y-2 text-sm text-destructive">
+          <p>Unable to {orders.length ? 'refresh' : 'load'} companion documents.{orders.length > 0 && ' Previously loaded documents are still shown.'}</p>
+          <Button variant="outline" size="sm" onClick={() => void loadOrders()}>Retry loading companion documents</Button>
+        </div>}
         {/* Generation buttons */}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={hasImaging || loadingType !== null || isPending || isLocked || !noteFinalized}
+            disabled={loadState !== 'ready' || hasImaging || loadingType !== null || isPending || isLocked || !noteFinalized}
             onClick={() => handleGenerate('imaging')}
           >
             {loadingType === 'imaging' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileImage className="mr-2 h-4 w-4" />}
@@ -1816,7 +1865,7 @@ function CompanionDocumentsSection({
           <Button
             variant="outline"
             size="sm"
-            disabled={hasChiro || loadingType !== null || isPending || isLocked || !noteFinalized}
+            disabled={loadState !== 'ready' || hasChiro || loadingType !== null || isPending || isLocked || !noteFinalized}
             onClick={() => handleGenerate('chiropractic_therapy')}
           >
             {loadingType === 'chiropractic_therapy' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bone className="mr-2 h-4 w-4" />}
@@ -1825,14 +1874,14 @@ function CompanionDocumentsSection({
         </div>
 
         {/* Generated orders list */}
-        {loaded && orders.length > 0 && (
+        {orders.length > 0 && (
           <div className="space-y-3">
             {orders.map((order) => (
               <div
                 key={order.id}
-                className="flex items-center justify-between rounded-lg border p-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   {orderTypeIcon(order.order_type)}
                   <div>
                     <p className="text-sm font-medium">{orderTypeLabel(order.order_type)}</p>
@@ -1843,7 +1892,7 @@ function CompanionDocumentsSection({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {order.status === 'completed' && order.document?.file_path && (
                     <Button
                       variant="outline"
@@ -1858,6 +1907,7 @@ function CompanionDocumentsSection({
                     variant="ghost"
                     size="sm"
                     disabled={isLocked}
+                    aria-label={`Delete ${orderTypeLabel(order.order_type)}`}
                     onClick={() => handleDelete(order.id)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1868,7 +1918,7 @@ function CompanionDocumentsSection({
           </div>
         )}
 
-        {loaded && orders.length === 0 && (
+        {loadState === 'ready' && orders.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No companion documents generated yet. Use the buttons above to create imaging or chiropractic referral orders.
           </p>

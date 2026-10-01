@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, use } from 'react'
+import { useState, use, type ComponentPropsWithRef } from 'react'
 import { listProviderProfiles, createProviderProfile } from '@/actions/settings'
 import { providerInfoSchema, type ProviderInfoFormValues } from '@/lib/validations/settings'
 import { useForm } from 'react-hook-form'
@@ -31,7 +31,8 @@ interface Provider {
   credentials: string | null
 }
 
-interface ProviderSelectProps {
+interface ProviderSelectProps extends Pick<ComponentPropsWithRef<typeof SelectTrigger>, 'ref' | 'id' | 'onBlur' | 'aria-describedby' | 'aria-invalid' | 'aria-labelledby' | 'disabled'> {
+  name?: string
   value: string
   onChange: (value: string) => void
   initialProviders?: Provider[]
@@ -47,7 +48,7 @@ function getInitialProviders(): Promise<Provider[]> {
   return initialLoadPromise
 }
 
-export function ProviderSelect({ value, onChange, initialProviders }: ProviderSelectProps) {
+export function ProviderSelect({ value, onChange, initialProviders, name, disabled, ref, ...triggerProps }: ProviderSelectProps) {
   const loaded = initialProviders ?? use(getInitialProviders())
   const [providers, setProviders] = useState<Provider[]>(loaded)
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -86,8 +87,8 @@ export function ProviderSelect({ value, onChange, initialProviders }: ProviderSe
 
   return (
     <div className="flex gap-2">
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="flex-1">
+      <Select name={name} disabled={disabled} value={value} onValueChange={onChange}>
+        <SelectTrigger {...triggerProps} ref={ref} className="min-w-0 flex-1">
           <SelectValue placeholder="Select provider" />
         </SelectTrigger>
         <SelectContent>
@@ -98,11 +99,11 @@ export function ProviderSelect({ value, onChange, initialProviders }: ProviderSe
           ))}
         </SelectContent>
       </Select>
-      <Button type="button" variant="outline" size="icon" onClick={() => setShowAddDialog(true)}>
+      <Button type="button" aria-label="Add provider" disabled={disabled} variant="outline" size="icon" onClick={() => setShowAddDialog(true)}>
         <Plus className="h-4 w-4" />
       </Button>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog && !disabled} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Provider</DialogTitle>

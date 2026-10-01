@@ -11,7 +11,7 @@ export default async function DocumentsPage({
   const { caseId } = await params
   const supabase = await createClient()
 
-  const [{ data: documents }, caseRes, me] = await Promise.all([
+  const [{ data: documents, error: documentsError }, caseRes, me] = await Promise.all([
     listDocuments(caseId),
     supabase
       .from('cases')
@@ -29,7 +29,7 @@ export default async function DocumentsPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Documents</h1>
-      <DocumentList documents={documents} caseId={caseId} patientLastName={patientLastName} isAdmin={isAdmin} />
+      <DocumentList initialError={documentsError} documents={documents} caseId={caseId} patientLastName={patientLastName} isAdmin={isAdmin} />
     </div>
   )
 }

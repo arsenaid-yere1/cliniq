@@ -280,16 +280,16 @@ export function InvoiceDetailClient({
   const clinicAddress = clinicAddressParts.join(', ')
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* Top bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:flex-nowrap print:gap-0">
         <Button variant="ghost" size="sm" asChild>
           <Link href={`/patients/${caseId}/billing`}>
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to Billing
           </Link>
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 print:flex-nowrap">
           <Button
             variant="outline"
             size="sm"
@@ -412,22 +412,22 @@ export function InvoiceDetailClient({
       </div>
 
       {/* Invoice Document */}
-      <div className="bg-background border rounded-lg p-8 space-y-6 print:border-none print:p-0">
+      <div className="min-w-0 break-words bg-background border rounded-lg p-4 sm:p-8 space-y-6 print:border-none print:p-0 print:break-normal">
         {/* Clinic Header */}
-        <div className="flex items-start justify-between border-b pb-4">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4 print:flex-nowrap print:gap-0">
+          <div className="flex min-w-0 flex-wrap items-start gap-4 print:flex-nowrap">
             {clinicLogoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 object-contain" />
+              <img src={clinicLogoUrl} alt="Clinic logo" className="h-16 max-w-full object-contain" />
             )}
-            <div>
+            <div className="min-w-0 flex-1">
               {clinic?.clinic_name && <p className="font-bold text-lg">{clinic.clinic_name}</p>}
               {clinicAddress && <p className="text-sm text-muted-foreground">{clinicAddress}</p>}
               {clinic?.phone && <p className="text-sm text-muted-foreground">Phone: {clinic.phone}</p>}
               {clinic?.fax && <p className="text-sm text-muted-foreground">Fax: {clinic.fax}</p>}
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right print:text-right">
             <Badge variant="outline" className={INVOICE_STATUS_COLORS[invoice.status as InvoiceStatus] ?? ''}>
               {INVOICE_STATUS_LABELS[invoice.status as InvoiceStatus] ?? invoice.status}
             </Badge>
@@ -442,34 +442,34 @@ export function InvoiceDetailClient({
         </h2>
 
         {/* Patient / Case Info Table */}
-        <div className="rounded-md border">
+        <div className="min-w-0 rounded-md border">
           <Table>
             <TableBody>
               <TableRow>
                 <TableCell className="font-medium w-[140px]">Patient</TableCell>
-                <TableCell>{patient ? `${patient.first_name} ${patient.last_name}` : 'N/A'}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{patient ? `${patient.first_name} ${patient.last_name}` : 'N/A'}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">DOB</TableCell>
-                <TableCell>{patient?.date_of_birth ? formatDate(patient.date_of_birth) : 'N/A'}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{patient?.date_of_birth ? formatDate(patient.date_of_birth) : 'N/A'}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">Date of Injury</TableCell>
-                <TableCell>{invoice.case?.accident_date ? formatDate(invoice.case.accident_date) : 'N/A'}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{invoice.case?.accident_date ? formatDate(invoice.case.accident_date) : 'N/A'}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">Claim Type</TableCell>
-                <TableCell>{invoice.claim_type}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{invoice.claim_type}</TableCell>
               </TableRow>
               {invoice.indication && (
                 <TableRow>
                   <TableCell className="font-medium">Indication</TableCell>
-                  <TableCell>{invoice.indication}</TableCell>
+                  <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{invoice.indication}</TableCell>
                 </TableRow>
               )}
               <TableRow>
                 <TableCell className="font-medium">Provider</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">
                   {providerProfile
                     ? `${providerProfile.display_name}${providerProfile.credentials ? `, ${providerProfile.credentials}` : ''}`
                     : 'N/A'}
@@ -477,14 +477,14 @@ export function InvoiceDetailClient({
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">Facility</TableCell>
-                <TableCell>{clinic?.clinic_name ?? 'N/A'}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{clinic?.clinic_name ?? 'N/A'}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </div>
 
         {/* Diagnoses Table */}
-        <div className="rounded-md border">
+        <div className="min-w-0 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -497,7 +497,7 @@ export function InvoiceDetailClient({
                 invoice.diagnoses_snapshot.map((dx, i) => (
                   <TableRow key={i}>
                     <TableCell className="font-mono text-xs">{dx.icd10_code ?? '—'}</TableCell>
-                    <TableCell>{dx.description}</TableCell>
+                    <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{dx.description}</TableCell>
                   </TableRow>
                 ))
               ) : (
@@ -510,16 +510,16 @@ export function InvoiceDetailClient({
         </div>
 
         {/* Attorney Table */}
-        <div className="rounded-md border">
+        <div className="min-w-0 rounded-md border">
           <Table>
             <TableBody>
               <TableRow>
                 <TableCell className="font-medium w-[140px]">Firm</TableCell>
-                <TableCell>{attorney?.firm_name ?? 'N/A'}</TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{attorney?.firm_name ?? 'N/A'}</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">Address</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">
                   {attorney
                     ? [attorney.address_line1, attorney.address_line2, attorney.city, attorney.state, attorney.zip_code].filter(Boolean).join(', ') || 'N/A'
                     : 'N/A'}
@@ -528,13 +528,13 @@ export function InvoiceDetailClient({
               {attorney?.phone && (
                 <TableRow>
                   <TableCell className="font-medium">Phone</TableCell>
-                  <TableCell>{attorney.phone}</TableCell>
+                  <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{attorney.phone}</TableCell>
                 </TableRow>
               )}
               {attorney?.fax && (
                 <TableRow>
                   <TableCell className="font-medium">Fax</TableCell>
-                  <TableCell>{attorney.fax}</TableCell>
+                  <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{attorney.fax}</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -542,7 +542,7 @@ export function InvoiceDetailClient({
         </div>
 
         {/* Line Items Table */}
-        <div className="rounded-md border">
+        <div className="min-w-0 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -556,9 +556,9 @@ export function InvoiceDetailClient({
             <TableBody>
               {invoice.line_items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{formatDate(item.service_date)}</TableCell>
+                  <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{formatDate(item.service_date)}</TableCell>
                   <TableCell className="font-mono text-xs">{item.cpt_code}</TableCell>
-                  <TableCell>{item.description}</TableCell>
+                  <TableCell className="whitespace-normal break-words print:whitespace-nowrap print:break-normal">{item.description}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">{formatInvoiceQuantity(item.quantity, item.cpt_code, item.description, invoice.invoice_type)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
                 </TableRow>

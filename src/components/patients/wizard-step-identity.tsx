@@ -37,12 +37,14 @@ interface DuplicatePatient {
 
 interface WizardStepIdentityProps {
   goToStep: (step: number) => void
+  disabled?: boolean
   identityLocked?: boolean
   onUseExistingPatient?: (patient: DuplicatePatient) => void
 }
 
 export function WizardStepIdentity({
   identityLocked = false,
+  disabled = false,
   onUseExistingPatient,
 }: WizardStepIdentityProps) {
   const form = useFormContext<CreatePatientCaseValues>()
@@ -52,7 +54,7 @@ export function WizardStepIdentity({
   // This is called by the parent wizard's handleNext via form.trigger
   // We also expose a way to check duplicates after Step 1 validation
   async function onStepComplete() {
-    if (identityLocked) return
+    if (identityLocked || disabled) return
     const firstName = form.getValues('first_name')
     const lastName = form.getValues('last_name')
     const dob = form.getValues('date_of_birth')
@@ -68,7 +70,7 @@ export function WizardStepIdentity({
 
   // Trigger duplicate check on blur of the last required field
   function handleDobBlur() {
-    if (identityLocked) return
+    if (identityLocked || disabled) return
     const firstName = form.getValues('first_name')
     const lastName = form.getValues('last_name')
     const dob = form.getValues('date_of_birth')
@@ -78,6 +80,7 @@ export function WizardStepIdentity({
   }
 
   function handleUseExisting(dup: DuplicatePatient) {
+    if (disabled) return
     setShowDuplicateDialog(false)
     onUseExistingPatient?.(dup)
   }
@@ -92,7 +95,7 @@ export function WizardStepIdentity({
             <FormItem>
               <FormLabel>First Name</FormLabel>
               <FormControl>
-                <Input {...field} disabled={identityLocked} />
+                <Input {...field} disabled={identityLocked || disabled} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -105,7 +108,7 @@ export function WizardStepIdentity({
             <FormItem>
               <FormLabel>Last Name</FormLabel>
               <FormControl>
-                <Input {...field} disabled={identityLocked} />
+                <Input {...field} disabled={identityLocked || disabled} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -120,7 +123,7 @@ export function WizardStepIdentity({
           <FormItem>
             <FormLabel>Middle Name (optional)</FormLabel>
             <FormControl>
-              <Input {...field} disabled={identityLocked} />
+              <Input {...field} disabled={identityLocked || disabled} />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -138,7 +141,7 @@ export function WizardStepIdentity({
                 <Input
                   type="date"
                   {...field}
-                  disabled={identityLocked}
+                  disabled={identityLocked || disabled}
                   onBlur={() => {
                     field.onBlur()
                     handleDobBlur()
@@ -152,7 +155,7 @@ export function WizardStepIdentity({
                     size="icon"
                     className={cn(!field.value && 'text-muted-foreground')}
                     type="button"
-                    disabled={identityLocked}
+                    disabled={identityLocked || disabled}
                   >
                     <CalendarIcon className="h-4 w-4" />
                   </Button>
@@ -186,7 +189,7 @@ export function WizardStepIdentity({
         render={({ field }) => (
           <FormItem>
             <FormLabel>Gender (optional)</FormLabel>
-            <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={identityLocked}>
+            <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={identityLocked || disabled}>
               <FormControl>
                 <SelectTrigger>
                   <SelectValue placeholder="Select gender" />
@@ -205,7 +208,7 @@ export function WizardStepIdentity({
       />
 
       {/* Duplicate Detection Dialog */}
-      <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+      <Dialog open={showDuplicateDialog && !disabled} onOpenChange={setShowDuplicateDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Possible Duplicate Patient</DialogTitle>

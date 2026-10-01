@@ -1,9 +1,11 @@
 'use server'
 
+import { loadExtractionSummaries } from '@/lib/documents/load-extraction-summaries'
+import { randomUUID } from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
-import { documentUploadMetaSchema, type DocumentUploadMeta } from '@/lib/validations/document'
+import { documentUploadMetaSchema, documentRegistrationSchema, documentReconciliationSchema, uploadStoragePath, type DocumentUploadMeta } from '@/lib/validations/document'
 import { revalidatePath } from 'next/cache'
-import { assertCaseNotClosed, assertCaseWritable, autoAdvanceFromIntake } from '@/actions/case-status'
+import { assertCaseNotClosed, assertCaseWritable } from '@/actions/case-status'
 import { deriveClinicalRevisionStates } from '@/lib/documents/clinical-revision-state'
 import { deriveDischargeDocumentRevisionStates } from '@/lib/documents/discharge-revision-state'
 
@@ -37,7 +39,8 @@ export async function listDocuments(caseId: string, filters?: {
 
   if (error) return { error: error.message, data: [] }
 
-  const rows = data ?? []
+  const summaries = await loadExtractionSummaries(supabase, caseId, data ?? [])
+  const rows = (data ?? []).map(row => ({ ...row, extraction_summary: summaries.get(row.id)! }))
   const generatedIds = rows
     .filter((r) => r.document_type === 'generated')
     .map((r) => r.id)
@@ -139,90 +142,99 @@ export async function getDocumentCount(caseId: string) {
   return { count: count ?? 0 }
 }
 
-export async function getUploadSession(data: DocumentUploadMeta, options?: { allowLocked?: boolean }) {
-  const parsed = documentUploadMetaSchema.safeParse(data)
-  if (!parsed.success) {
-    return { error: parsed.error.flatten().fieldErrors }
-  }
-
-  const supabase = await createClient()
+async function checkUploadAccess(
+  supabase: Awaited<ReturnType<typeof createClient>>, caseId: string, allowLocked?: boolean,
+) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+  const { data: actor } = await supabase.from('users').select('is_active').eq('id', user.id).single()
+  if (!actor?.is_active) return { error: 'Active user required' }
+  const { data: caseData, error } = await supabase.from('cases').select('id')
+    .eq('id', caseId).is('deleted_at', null).single()
+  if (error || !caseData) return { error: 'Case not found' }
+  const writable = await assertCaseWritable(supabase, caseId, { allowLockedForAdmin: allowLocked })
+  return writable.error ? { error: writable.error } : { userId: user.id }
+}
 
-  const { data: caseData, error: caseError } = await supabase
-    .from('cases')
-    .select('id')
-    .eq('id', parsed.data.caseId)
-    .is('deleted_at', null)
-    .single()
+export async function getUploadSession(data: DocumentUploadMeta, options?: { allowLocked?: boolean }) {
+  const parsed = documentUploadMetaSchema.safeParse(data)
+  if (!parsed.success) return { error: 'Invalid document metadata' }
+  const supabase = await createClient()
+  const access = await checkUploadAccess(supabase, parsed.data.caseId, options?.allowLocked)
+  if (access.error) return { error: access.error }
+  const { caseId, uploadId, fileName } = parsed.data
+  return { data: {
+    storagePath: uploadStoragePath(caseId, uploadId ?? String(Date.now()), fileName),
+    userId: access.userId,
+  } }
+}
 
-  if (caseError || !caseData) return { error: 'Case not found' }
-
-  const closedCheck = await assertCaseWritable(supabase, parsed.data.caseId, {
-    allowLockedForAdmin: options?.allowLocked,
-  })
-  if (closedCheck.error) return { error: closedCheck.error }
-
-  const sanitized = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
-  const storagePath = `cases/${parsed.data.caseId}/${Date.now()}-${sanitized}`
-
-  return {
-    data: {
-      storagePath,
-      userId: user.id,
-    },
+export async function reconcileDocumentUpload(
+  input: DocumentUploadMeta & { uploadId: string; filePath: string },
+  options?: { allowLocked?: boolean },
+) {
+  const parsed = documentReconciliationSchema.safeParse(input)
+  if (!parsed.success) return { error: 'Invalid document metadata or path' }
+  const supabase = await createClient()
+  const access = await checkUploadAccess(supabase, parsed.data.caseId, options?.allowLocked)
+  if (access.error) return { error: access.error }
+  try {
+    const { data, error } = await supabase.storage.from('case-documents').info(parsed.data.filePath)
+    if (error) {
+      const code = 'code' in error ? error.code : undefined
+      const status = 'statusCode' in error ? String(error.statusCode) : undefined
+      if (code === 'NoSuchKey' || (status === '404' && (code === 'not_found' || code === undefined))) {
+        return { data: { state: 'missing' as const } }
+      }
+      return { error: 'Unable to confirm file transfer. Retry to check again.' }
+    }
+    if (data?.size === undefined || !data.contentType) {
+      return { error: 'File details are unavailable. Retry to check again.' }
+    }
+    if (data.size !== parsed.data.fileSize || data.contentType !== parsed.data.mimeType) {
+      return { error: 'Upload identity conflict: stored file details do not match.' }
+    }
+    return { data: { state: 'present' as const } }
+  } catch {
+    return { error: 'Unable to confirm file transfer. Retry to check again.' }
   }
 }
 
 export async function saveDocumentMetadata(input: {
   caseId: string
+  uploadId?: string
   documentType: string
   fileName: string
   filePath: string
   fileSizeBytes: number
   mimeType: string
 }, options?: { allowLocked?: boolean }) {
+  const parsed = documentRegistrationSchema.safeParse({ ...input, fileSize: input.fileSizeBytes })
+  if (!parsed.success) return { error: 'Invalid document metadata or path' }
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const closedCheck = await assertCaseWritable(supabase, input.caseId, {
-    allowLockedForAdmin: options?.allowLocked,
+  const access = await checkUploadAccess(supabase, parsed.data.caseId, options?.allowLocked)
+  if (access.error) return { error: access.error }
+  const value = parsed.data
+  const { data, error } = await supabase.rpc('register_uploaded_document', {
+    p_upload_id: value.uploadId ?? randomUUID(),
+    p_case_id: value.caseId,
+    p_document_type: value.documentType,
+    p_file_name: value.fileName,
+    p_file_path: value.filePath,
+    p_file_size_bytes: value.fileSize,
+    p_mime_type: value.mimeType,
+    p_allow_locked: options?.allowLocked === true,
+    p_legacy_path: !value.uploadId,
   })
-  if (closedCheck.error) return { error: closedCheck.error }
-
-  await autoAdvanceFromIntake(supabase, input.caseId, user.id)
-
-  const { data, error } = await supabase
-    .from('documents')
-    .insert({
-      case_id: input.caseId,
-      document_type: input.documentType,
-      file_name: input.fileName,
-      file_path: input.filePath,
-      file_size_bytes: input.fileSizeBytes,
-      mime_type: input.mimeType,
-      status: 'pending_review',
-      uploaded_by_user_id: user.id,
-      created_by_user_id: user.id,
-      updated_by_user_id: user.id,
-    })
-    .select()
-    .single()
-
-  if (error) return { error: error.message }
-
-  // Auto-set lien_on_file when a signed lien agreement is uploaded
-  if (input.documentType === 'lien_agreement') {
-    await supabase
-      .from('cases')
-      .update({ lien_on_file: true, updated_by_user_id: user.id })
-      .eq('id', input.caseId)
-    revalidatePath(`/patients/${input.caseId}`)
+  if (error) {
+    const known = ['Upload identity conflict', 'This case is locked', 'Case not found', 'Active user required', 'Not authenticated']
+    return { error: known.find((message) => error.message.includes(message)) ?? 'Unable to save document. Retry saving with the same upload.' }
   }
-
-  revalidatePath(`/patients/${input.caseId}/documents`)
-  return { data }
+  const result = data?.[0]
+  if (!result?.document_id) return { error: 'Document registration was not confirmed. Retry saving document.' }
+  revalidatePath(`/patients/${value.caseId}`, 'layout')
+  revalidatePath('/patients')
+  return { data: { id: result.document_id, created: result.created } }
 }
 
 export async function getDocumentDownloadUrl(filePath: string, downloadName?: string) {

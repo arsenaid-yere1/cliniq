@@ -54,6 +54,7 @@ export function useDraftNoteMutations(options: {
   acknowledgeVersion: (expected: string, saved: string) => void
   saveTone: (tone: string | null, expected: string) => Promise<ToneResult>
   onError: (message: string) => void
+  onStart?: () => void
 }) {
   const { enqueue } = useNoteMutationQueue(options.identity, options.writable)
   const [savedTone, setSavedTone] = useState({ identity: options.identity, value: normalizeTone(options.initialTone) })
@@ -77,6 +78,7 @@ export function useDraftNoteMutations(options: {
 
   async function flushTone(tone: string | null, context: MutationContext) {
     if (!context.isActive() || tone === persistedTone.current) return
+    options.onStart?.()
     const expected = options.getVersion()
     if (!expected) throw new Error('Reload the note before saving tone guidance.')
     setToneSaving(true)
@@ -102,6 +104,7 @@ export function useDraftNoteMutations(options: {
   }
 
   function run(task: (context: MutationContext) => Promise<void>) {
+    options.onStart?.()
     // A click already waiting for a blur must observe its failure, not retry it.
     // A later user action may retry the still-dirty tone after that failure settles.
     const dependency = latestTone.current
@@ -114,5 +117,5 @@ export function useDraftNoteMutations(options: {
     }).catch(report)
   }
 
-  return { saveTone, run }
+  return { saveTone, run, toneDirty: options.writable && normalizeTone(options.toneHint) !== savedTone.value, toneSaving }
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '@/test-utils/visit-render'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tables } from '@/types/database'
@@ -26,8 +26,9 @@ describe('follow-up explicit decision workflow', () => {
   })
   it('saves the selected response before signing that saved version', async () => {
     render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'not_documented' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }), { target: { value: 'not_documented' } })
     fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
     await waitFor(() => expect(finalize).toHaveBeenCalledWith('case', 'encounter', 'v2'))
     expect(save).toHaveBeenCalledWith('case', expect.objectContaining({ treatment_decision: { decision: 'not_documented', details: null } }))
     expect(save.mock.invocationCallOrder[0]).toBeLessThan(finalize.mock.invocationCallOrder[0])
@@ -35,13 +36,14 @@ describe('follow-up explicit decision workflow', () => {
   it('retains the draft selection and details after failed Save and does not sign', async () => {
     save.mockResolvedValue({ error: 'Note changed. Reload before saving' })
     render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partially_accepted' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }), { target: { value: 'partially_accepted' } })
     fireEvent.change(screen.getByLabelText('Accepted treatments and limitations (required)'), { target: { value: 'Home exercise only; injection deferred.' } })
     fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
     await waitFor(() => expect(error).toHaveBeenCalledWith('Note changed. Reload before saving'))
     expect(finalize).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
-    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('partially_accepted')
+    expect((screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }) as HTMLSelectElement).value).toBe('partially_accepted')
     expect((screen.getByLabelText('Accepted treatments and limitations (required)') as HTMLTextAreaElement).value).toContain('Home exercise only')
   })
   it.each([
@@ -50,14 +52,14 @@ describe('follow-up explicit decision workflow', () => {
   ])('saves the reviewed education unchanged, independently of agreement: %s', async (education) => {
     render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={{ ...initialNote, patient_education: 'The patient verbalized understanding.' }} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Patient Education' }), { target: { value: education } })
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'not_documented' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }), { target: { value: 'not_documented' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
     await waitFor(() => expect(save).toHaveBeenCalledWith('case', expect.objectContaining({ patient_education: education, treatment_decision: { decision: 'not_documented', details: null } })))
   })
   it('locks the decision during an inactive episode or correction', () => {
     render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} episodeWritable={false} />)
     expect((screen.getByRole('button', { name: 'Save Draft' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByRole('combobox').closest('fieldset')?.disabled).toBe(true)
+    expect(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }).closest('fieldset')?.disabled).toBe(true)
   })
 })
 
@@ -68,6 +70,7 @@ it('saves and finalizes the acknowledged version without refreshed props', async
   fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
   await waitFor(() => expect((screen.getByRole('textbox', { name: 'Patient Education' }) as HTMLTextAreaElement).value).toBe('Canonical education'))
   fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
   await waitFor(() => expect(finalize).toHaveBeenCalledWith('case', 'encounter', 'v3'))
   expect(save.mock.calls[1][1]).toMatchObject({ expected_updated_at: 'v2', patient_education: 'Canonical education' })
 })
@@ -76,8 +79,10 @@ it('retains a successful save version when signing fails and is retried', async 
   finalize.mockResolvedValueOnce({ error: 'Upload failed' })
   render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
   fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
   await waitFor(() => expect(error).toHaveBeenCalledWith('Upload failed'))
   fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
   await waitFor(() => expect(finalize).toHaveBeenCalledTimes(2))
   expect(save.mock.calls[1][1].expected_updated_at).toBe('v2')
 })
@@ -86,6 +91,7 @@ it.each([undefined, {}, { updated_at: '' }])('does not sign without a valid save
   save.mockResolvedValue({ data: { savedNote } })
   render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
   fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Finalize & Complete Visit' }))
   await waitFor(() => expect(error).toHaveBeenCalledWith('Unable to confirm the saved note version. Reload before finalizing.'))
   expect(finalize).not.toHaveBeenCalled()
 })
@@ -99,4 +105,14 @@ it('chains consecutive saves and displays the confirmed decision', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }))
   await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
   expect(save.mock.calls[1][1].expected_updated_at).toBe('v2')
+})
+
+it('cancels finalization without saving or signing and hides save state when read only', () => {
+  const view = render(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Finalize & Complete Visit' }))
+  expect(screen.getByRole('alertdialog').textContent).toContain('2026-09-10')
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+  expect(save).not.toHaveBeenCalled(); expect(finalize).not.toHaveBeenCalled()
+  view.rerender(<PainFollowUpEditor caseId="case" encounter={encounter} initialNote={initialNote} episodeWritable={false} />)
+  expect(screen.queryByText('Unsaved changes')).toBeNull(); expect(screen.queryByText('No unsaved changes')).toBeNull()
 })

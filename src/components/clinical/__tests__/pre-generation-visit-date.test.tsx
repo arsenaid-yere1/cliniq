@@ -60,7 +60,7 @@ it('a failed blur blocks generation and leaves a visible retry', async () => {
   render(editor('discharge'))
   fireEvent.change(input('discharge'), { target: { value: '2026-09-05' } })
   fireEvent.blur(input('discharge'))
-  await screen.findByText('Offline')
+  await screen.findAllByText('Offline')
   fireEvent.click(screen.getByRole('button', { name: /Generate Discharge/ }))
   await waitFor(() => expect((screen.getByRole('button', { name: /Generate Discharge/ }) as HTMLButtonElement).disabled).toBe(false))
   expect(save).toHaveBeenCalledOnce()

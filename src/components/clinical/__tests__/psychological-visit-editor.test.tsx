@@ -43,7 +43,7 @@ describe('psychological intake in the visit editor', () => {
     const user = userEvent.setup()
     mount({ episodeId: 'return-episode', episodeNumber: 2, painEvaluationOnly: true, defaultVisitType: 'pain_evaluation_visit' })
     expect(screen.queryByRole('tab', { name: 'Initial Visit' })).toBeNull()
-    expect(screen.getByText('Episode 2')).toBeTruthy()
+    expect(screen.queryByText('Episode 2')).toBeNull() // Context is owned by VisitEditorHeader.
     fireEvent.change(screen.getByRole('combobox', { name: 'Body Region' }), { target: { value: 'Neck' } })
     await user.click(screen.getByRole('tab', { name: 'Vital Signs' }))
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Heart Rate' }), { target: { value: '72' } })
@@ -57,7 +57,7 @@ describe('psychological intake in the visit editor', () => {
   it('locks historical episode intake and generation', () => {
     mount({ episodeId: 'ended-episode', episodeNumber: 2, episodeWritable: false, painEvaluationOnly: true, defaultVisitType: 'pain_evaluation_visit' })
     expect((screen.getByRole('button', { name: 'Generate Pain Evaluation Visit Note' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText('Episode 2 · Read only')).toBeTruthy()
+    expect(screen.queryByText('Episode 2 · Read only')).toBeNull() // Header owns read-only context.
     expect((screen.getByRole('button', { name: 'Save Chief Complaints' }) as HTMLButtonElement).disabled).toBe(true)
     expect(saveProviderIntake).not.toHaveBeenCalled()
   })

@@ -81,7 +81,7 @@ describe.each(['initial_visit', 'pain_evaluation_visit', 'discharge'])('%s save/
   it('keeps unsaved prose and decision details after a tone-only save', async () => {
     mount(family)
     fireEvent.change(screen.getByRole('textbox', { name: 'Patient Education' }), { target: { value: 'Unsaved counseling' } })
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'partially_accepted' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Patient.s decision regarding the treatment plan/ }), { target: { value: 'partially_accepted' } })
     fireEvent.change(screen.getByLabelText('Accepted treatments and limitations (required)'), { target: { value: 'Exercise only' } })
     fireEvent.change(toneInput(), { target: { value: 'Concise' } })
     fireEvent.blur(toneInput())

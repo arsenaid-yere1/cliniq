@@ -18,8 +18,7 @@ import { AttorneySelect } from '@/components/attorneys/attorney-select'
 import { ProviderSelect } from '@/components/providers/provider-select'
 import { CASE_STATUSES, CASE_STATUS_CONFIG } from '@/lib/constants/case-status'
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (step: number) => void; isAdmin?: boolean }) {
+export function WizardStepDetails({ isAdmin = false, disabled = false }: { goToStep: (step: number) => void; isAdmin?: boolean; disabled?: boolean }) {
   const form = useFormContext<CreatePatientCaseValues>()
 
   return (
@@ -139,7 +138,7 @@ export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (st
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Case Status (admin)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value ?? 'intake'}>
+                  <Select disabled={disabled} onValueChange={field.onChange} value={field.value ?? 'intake'}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select status" />
@@ -179,7 +178,7 @@ export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (st
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Accident Type (optional)</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                <Select disabled={disabled} onValueChange={field.onChange} value={field.value ?? ''}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
@@ -226,6 +225,10 @@ export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (st
                 <FormLabel>Attorney</FormLabel>
                 <FormControl>
                   <AttorneySelect
+                    ref={field.ref}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    disabled={disabled}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                   />
@@ -241,7 +244,7 @@ export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (st
             render={({ field }) => (
               <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                 <FormControl>
-                  <Checkbox
+                  <Checkbox disabled={disabled}
                     checked={field.value}
                     onCheckedChange={field.onChange}
                   />
@@ -268,6 +271,10 @@ export function WizardStepDetails({ goToStep, isAdmin = false }: { goToStep: (st
                 <FormLabel>Assigned Provider</FormLabel>
                 <FormControl>
                   <ProviderSelect
+                    ref={field.ref}
+                    name={field.name}
+                    onBlur={field.onBlur}
+                    disabled={disabled}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                   />
