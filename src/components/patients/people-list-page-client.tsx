@@ -15,6 +15,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -47,9 +48,9 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
       accessorFn: (row) => `${row.last_name}, ${row.first_name}`,
       header: 'Name',
       cell: ({ row }) => (
-        <span className="font-medium">
+        <Link href={`/people/${row.original.id}`} className="font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring rounded-sm">
           {row.original.last_name}, {row.original.first_name}
-        </span>
+        </Link>
       ),
     },
     {
@@ -119,8 +120,8 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
   })
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="min-w-0 space-y-6">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Patients</h1>
         <Button asChild>
           <Link href="/patients/new">
@@ -130,8 +131,10 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="w-full max-w-sm space-y-2">
+        <Label htmlFor="people-search">Search patients</Label>
         <Input
+          id="people-search"
           placeholder="Search by name or phone..."
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
@@ -139,8 +142,17 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
         />
       </div>
 
-      <div className="rounded-md border">
-        <Table>
+      <div className="min-w-0 rounded-md border">
+        {table.getRowModel().rows.length === 0 ? (
+          <div className="p-6 text-center">
+            {patients.length === 0 ? 'No patients yet. Create one to get started.' : (
+              <div className="space-y-2 whitespace-normal">
+                <p>No patients match your search.</p>
+                <Button variant="outline" onClick={() => setGlobalFilter('')}>Clear search</Button>
+              </div>
+            )}
+          </div>
+        ) : <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id}>
@@ -153,29 +165,26 @@ export function PeopleListPageClient({ patients }: { patients: PatientRow[] }) {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/people/${row.original.id}`)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No patients yet. Create one to get started.
-                </TableCell>
+            {table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                className="cursor-pointer"
+                onClick={(event) => {
+                  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                    || window.getSelection()?.toString()
+                    || (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"], [role="link"]'))) return
+                  router.push(`/people/${row.original.id}`)
+                }}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
               </TableRow>
-            )}
+            ))}
           </TableBody>
-        </Table>
+        </Table>}
       </div>
     </div>
   )

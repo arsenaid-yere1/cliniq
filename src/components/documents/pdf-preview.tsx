@@ -64,12 +64,14 @@ export function PdfPreview({ url, fileName, open, onOpenChange }: PdfPreviewProp
         {numPages > 1 && (
           <div className="flex items-center justify-center gap-4 mt-2">
             <Button variant="outline" size="icon"
+              aria-label="Previous page"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm">{currentPage} / {numPages}</span>
+            <span role="status" className="text-sm">Page {currentPage} of {numPages}</span>
             <Button variant="outline" size="icon"
+              aria-label="Next page"
               onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
               disabled={currentPage >= numPages}>
               <ChevronRight className="h-4 w-4" />

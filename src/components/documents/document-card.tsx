@@ -184,7 +184,7 @@ export function DocumentCard({ document, patientLastName, isLocked = false, onRe
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" disabled={isLocked || !!document.revision_status} className="text-destructive hover:text-destructive">
+                <Button aria-label={`Remove document: ${document.file_name}`} variant="ghost" size="sm" disabled={isLocked || !!document.revision_status} className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>

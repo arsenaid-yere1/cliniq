@@ -42,12 +42,19 @@ export function CaseSidebar({ caseData, episodeStatus }: {
 }) {
   const pathname = usePathname()
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState('')
   const basePath = `/patients/${caseData.id}`
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(caseData.case_number)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopied(false)
+    setCopyError('')
+    try {
+      await navigator.clipboard.writeText(caseData.case_number)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopyError('Unable to copy. Select the case number and copy it manually.')
+    }
   }
 
   return (
@@ -60,7 +67,7 @@ export function CaseSidebar({ caseData, episodeStatus }: {
 
       <div className="flex items-center gap-2">
         <span className="font-mono text-sm">{caseData.case_number}</span>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopy}>
+        <Button variant="ghost" size="icon" className="h-6 w-6" aria-label={copied ? 'Copied case number' : 'Copy case number'} onClick={handleCopy}>
           {copied ? (
             <Check className="h-3 w-3 text-green-600" />
           ) : (
@@ -68,6 +75,8 @@ export function CaseSidebar({ caseData, episodeStatus }: {
           )}
         </Button>
       </div>
+
+      <p role="status" className={copyError ? "text-xs text-destructive" : "sr-only"}>{copyError || (copied ? 'Case number copied' : '')}</p>
 
       {caseData.patient && (
         <div className="text-sm text-muted-foreground">

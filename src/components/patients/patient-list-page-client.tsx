@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
@@ -75,32 +76,51 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
   ).sort((a, b) => attorneyLabel(a).localeCompare(attorneyLabel(b)))
 
   const filteredCases = cases.filter((c) => {
-    // "All Statuses" excludes archived; pick the Archived option explicitly to see them.
+    // The default excludes archived; pick the Archived option explicitly to see them.
     const statusOk = statusFilter === 'all' ? c.case_status !== 'archived' : c.case_status === statusFilter
     const attorneyOk = attorneyFilter === 'all' || c.attorney_id === attorneyFilter
     return statusOk && attorneyOk
   })
 
+  const hasFilters = globalFilter !== '' || statusFilter !== 'all' || attorneyFilter !== 'all'
+  const archivedOnly = !hasFilters && cases.length > 0 && cases.every(c => c.case_status === 'archived')
+  function clearFilters() {
+    setGlobalFilter('')
+    setStatusFilter('all')
+    setAttorneyFilter('all')
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Patient Cases</h1>
+        <Button asChild>
+          <Link href="/patients/new">
+            <Plus className="h-4 w-4 mr-2" />
+            New Patient Case
+          </Link>
+        </Button>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="w-full min-w-0 space-y-2 sm:w-72 sm:flex-1">
+          <Label htmlFor="case-search">Search cases</Label>
           <Input
+            id="case-search"
             placeholder="Search by name or case number..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="max-w-sm"
+            className="w-full"
           />
+        </div>
+        <div className="w-full min-w-0 space-y-2 sm:w-60">
+          <Label htmlFor="case-status-filter">Status</Label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger id="case-status-filter" className="w-full min-w-0">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="all">All non-archived statuses</SelectItem>
               {(Object.entries(CASE_STATUS_CONFIG) as [CaseStatus, typeof CASE_STATUS_CONFIG[CaseStatus]][]).map(
                 ([key, config]) => (
                   <SelectItem key={key} value={key}>{config.label}</SelectItem>
@@ -108,8 +128,11 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
               )}
             </SelectContent>
           </Select>
+        </div>
+        <div className="w-full min-w-0 space-y-2 sm:w-60">
+          <Label htmlFor="case-attorney-filter">Attorney</Label>
           <Select value={attorneyFilter} onValueChange={setAttorneyFilter}>
-            <SelectTrigger className="w-[240px]">
+            <SelectTrigger id="case-attorney-filter" className="w-full min-w-0">
               <SelectValue placeholder="Filter by attorney" />
             </SelectTrigger>
             <SelectContent>
@@ -120,16 +143,16 @@ export function PatientListPageClient({ cases }: { cases: PatientCase[] }) {
             </SelectContent>
           </Select>
         </div>
-        <Button asChild>
-          <Link href="/patients/new">
-            <Plus className="h-4 w-4 mr-2" />
-            New Patient Case
-          </Link>
-        </Button>
+
+        {hasFilters && <Button variant="outline" onClick={clearFilters}>Clear filters</Button>}
       </div>
 
       <PatientListTable
         cases={filteredCases}
+        totalCaseCount={cases.length}
+        onClearFilters={clearFilters}
+        archivedOnly={archivedOnly}
+        onViewArchived={() => setStatusFilter('archived')}
         globalFilter={globalFilter}
         onGlobalFilterChange={setGlobalFilter}
       />

@@ -91,7 +91,7 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
     {
       accessorKey: 'case_number',
       header: 'Case Number',
-      cell: ({ getValue }) => <span className="font-mono text-sm">{getValue() as string}</span>,
+      cell: ({ getValue, row }) => <Link href={`/patients/${row.original.id}`} className="font-mono text-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring rounded-sm">{getValue() as string}</Link>,
     },
     {
       accessorKey: 'case_status',
@@ -143,12 +143,12 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
     .join(', ')
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
+    <div className="min-w-0 space-y-6">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <h1 className="min-w-0 break-words text-2xl font-bold">
           {patient.first_name} {patient.middle_name ? `${patient.middle_name} ` : ''}{patient.last_name}
         </h1>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" />
             Edit
@@ -176,7 +176,7 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
           <CardTitle>Patient Demographics</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm break-words">
             <div>
               <dt className="text-muted-foreground">Date of Birth</dt>
               <dd>{format(new Date(patient.date_of_birth + 'T00:00:00'), 'MM/dd/yyyy')}</dd>
@@ -200,7 +200,7 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
               </div>
             )}
             {address && (
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <dt className="text-muted-foreground">Address</dt>
                 <dd>{address}</dd>
               </div>
@@ -214,7 +214,7 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
           <CardTitle>Cases ({cases.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="min-w-0 rounded-md border">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((hg) => (
@@ -233,7 +233,12 @@ export function PatientDetail({ patient, cases }: { patient: Patient; cases: Cas
                     <TableRow
                       key={row.id}
                       className="cursor-pointer"
-                      onClick={() => router.push(`/patients/${row.original.id}`)}
+                      onClick={(event) => {
+                        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                          || window.getSelection()?.toString()
+                          || (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"], [role="link"]'))) return
+                        router.push(`/patients/${row.original.id}`)
+                      }}
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>

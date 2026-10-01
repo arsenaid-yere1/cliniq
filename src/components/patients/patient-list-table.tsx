@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   useReactTable,
@@ -8,6 +9,7 @@ import {
   flexRender,
   type ColumnDef,
 } from '@tanstack/react-table'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CASE_STATUS_CONFIG, type CaseStatus } from '@/lib/constants/case-status'
 import { computeDocumentDueDate, DUE_STATUS_CONFIG } from '@/lib/cases/document-due-date'
@@ -40,8 +42,13 @@ export function PatientListTable({
   cases,
   globalFilter,
   onGlobalFilterChange,
+  totalCaseCount, onClearFilters, archivedOnly = false, onViewArchived,
 }: {
   cases: PatientCase[]
+  totalCaseCount: number
+  onClearFilters: () => void
+  archivedOnly?: boolean
+  onViewArchived?: () => void
   globalFilter: string
   onGlobalFilterChange: (value: string) => void
 }) {
@@ -51,8 +58,8 @@ export function PatientListTable({
     {
       accessorKey: 'case_number',
       header: 'Case Number',
-      cell: ({ getValue }) => (
-        <span className="font-mono text-sm">{getValue() as string}</span>
+      cell: ({ getValue, row }) => (
+        <Link href={`/patients/${row.original.id}`} className="font-mono text-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring rounded-sm">{getValue() as string}</Link>
       ),
     },
     {
@@ -125,8 +132,22 @@ export function PatientListTable({
   })
 
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="min-w-0 rounded-md border">
+      {table.getRowModel().rows.length === 0 ? (
+        <div className="p-6 text-center">
+          {totalCaseCount === 0 ? 'No patient cases found. Create your first case.' : archivedOnly ? (
+            <div className="space-y-2 whitespace-normal">
+              <p>No non-archived cases.</p>
+              <Button variant="outline" onClick={onViewArchived}>View archived</Button>
+            </div>
+          ) : (
+            <div className="space-y-2 whitespace-normal">
+              <p>No cases match your filters.</p>
+              <Button variant="outline" onClick={onClearFilters}>Clear filters</Button>
+            </div>
+          )}
+        </div>
+      ) : <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -141,29 +162,26 @@ export function PatientListTable({
           ))}
         </TableHeader>
         <TableBody>
-          {table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                className="cursor-pointer"
-                onClick={() => router.push(`/patients/${row.original.id}`)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No patient cases found. Create your first case.
-              </TableCell>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow
+              key={row.id}
+              className="cursor-pointer"
+              onClick={(event) => {
+                if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                  || window.getSelection()?.toString()
+                  || (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"], [role="link"]'))) return
+                router.push(`/patients/${row.original.id}`)
+              }}
+            >
+              {row.getVisibleCells().map((cell) => (
+                <TableCell key={cell.id}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ))}
             </TableRow>
-          )}
+          ))}
         </TableBody>
-      </Table>
+      </Table>}
     </div>
   )
 }

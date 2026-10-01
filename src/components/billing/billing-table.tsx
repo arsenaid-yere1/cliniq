@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -164,7 +165,14 @@ export function BillingTable({ invoices, caseId, patientLastName, onCreateClick 
         const isDraft = invoice.status === 'draft'
         const isDownloading = downloadingId === invoice.id
         return (
-          <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+            {caseId && (
+              <Link href={`/patients/${caseId}/billing/${invoice.id}`}
+                className="rounded-sm text-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                aria-label={`Open invoice: ${invoice.invoice_type === 'facility' ? 'Medical Facility Invoice' : 'Medical Invoice'}, ${format(new Date(invoice.invoice_date + 'T00:00:00'), 'MM/dd/yyyy')}`}>
+                Open invoice
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -208,7 +216,7 @@ export function BillingTable({ invoices, caseId, patientLastName, onCreateClick 
         <Button onClick={onCreateClick}>Create Invoice</Button>
       </div>
 
-      <div className="rounded-md border">
+      <div className="min-w-0 rounded-md border">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -229,7 +237,10 @@ export function BillingTable({ invoices, caseId, patientLastName, onCreateClick 
                 <TableRow
                   key={row.id}
                   className={caseId ? 'cursor-pointer' : ''}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+                      || window.getSelection()?.toString()
+                      || (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"], [role="link"]'))) return
                     if (caseId) {
                       router.push(`/patients/${caseId}/billing/${row.original.id}`)
                     }
