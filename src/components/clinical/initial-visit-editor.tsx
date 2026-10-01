@@ -1,5 +1,7 @@
 'use client'
 
+import { usePreGenerationVisitDate } from '@/hooks/use-pre-generation-visit-date'
+
 import { ChiefComplaintsCard } from './chief-complaints-card'
 import { ExamFindingsCard } from './exam-findings-card'
 
@@ -357,17 +359,20 @@ function InitialVisitEditorInner({
   const { episodeId } = intakeDrafts
   const [intakeTab, setIntakeTab] = useState('chief-complaints')
   const [toneHint, setToneHint] = useState('')
-  const today = new Date().toISOString().slice(0, 10)
-  const [preGenVisitDate, setPreGenVisitDate] = useState<string>(
-    (note?.visit_date as string | null | undefined) ?? today,
-  )
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = !episodeWritable || LOCKED_STATUSES.includes(caseStatus as CaseStatus)
   const visitTypeLabel = visitType === 'initial_visit' ? 'Initial Visit Note' : 'Pain Evaluation Visit Note'
 
-  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint, preGenVisitDate }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.introduction && !note.chief_complaint)))
+  const visitDateSave = usePreGenerationVisitDate({
+    caseId, episodeId, kind: visitType,
+    noteId: note?.id, visitDate: note?.visit_date, updatedAt: note?.updated_at,
+    enabled: !isLocked && (!note || (note.status === 'draft' && !note.introduction && !note.chief_complaint)),
+    min: visitType === 'pain_evaluation_visit' ? siblingDate : null, max: visitType === 'initial_visit' ? siblingDate : null,
+  })
+  const preGenVisitDate = visitDateSave.value
+  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.introduction && !note.chief_complaint)))
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
     startTransition(async () => {
@@ -375,12 +380,14 @@ function InitialVisitEditorInner({
         toast.error('Save the highlighted intake fields before generating.')
         return
       }
+      const savedDate = visitDateArg !== null ? await visitDateSave.flush() : undefined
+      if (savedDate?.error) { toast.error(savedDate.error); return }
       setOptimisticStartedAt(new Date().toISOString())
       setOptimisticGenerating(true)
       try {
-        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, visitDateArg, episodeId)
+        const result = await generateInitialVisitNote(caseId, visitType, toneHintArg, savedDate?.data?.visitDate ?? null, episodeId, savedDate?.data)
         if (result.error) toast.error(result.error)
-        else { acknowledgePreGeneration({ toneHint, preGenVisitDate }); toast.success('Note generated successfully') }
+        else { acknowledgePreGeneration({ toneHint }); toast.success('Note generated successfully') }
       } finally {
         setOptimisticGenerating(false)
       }
@@ -516,7 +523,15 @@ function InitialVisitEditorInner({
         <VisitDateCard
           id={`visit-date-pre-gen-${visitType}`}
           value={preGenVisitDate}
-          onChange={setPreGenVisitDate}
+          onChange={visitDateSave.change}
+          onBlur={() => { void visitDateSave.blur() }}
+          saveStatus={visitDateSave.status}
+          error={visitDateSave.error}
+          saving={visitDateSave.saving}
+          savedConflictDate={visitDateSave.conflict?.visitDate}
+          onRetry={() => { void visitDateSave.save() }}
+          onUseSaved={visitDateSave.useSaved}
+          onKeepMine={() => { void visitDateSave.keepMine() }}
           min={visitType === 'pain_evaluation_visit' ? siblingDate ?? undefined : undefined}
           max={visitType === 'initial_visit' ? siblingDate ?? undefined : undefined}
           disabled={isLocked || isPending}
@@ -535,7 +550,7 @@ function InitialVisitEditorInner({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => runGenerate(toneHint || null, preGenVisitDate || null)}
+            onClick={() => runGenerate(toneHint || null, preGenVisitDate)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}

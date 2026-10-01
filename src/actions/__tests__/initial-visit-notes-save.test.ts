@@ -46,31 +46,20 @@ describe('saveProviderIntake', () => {
     vi.clearAllMocks()
   })
 
-  it('returns a readable error when Episode 1 is missing', async () => {
-    mockEnsureEpisodeEncounter.mockRejectedValueOnce(
-      new EpisodeContextError('EPISODE_NOT_FOUND', 'Episode 1 is required for the legacy visit'),
-    )
-
-    const result = await saveProviderIntake(
-      TEST_CASE_ID,
-      'pain_evaluation_visit',
-      defaultProviderIntake,
-    )
-
-    expect(result).toEqual({ error: 'Episode 1 is required for the legacy visit' })
+  it('does not insert when atomic preparation rejects the visit', async () => {
+    mockSupabase.rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'Visit locked' } })
+    const result = await saveProviderIntake(TEST_CASE_ID, 'pain_evaluation_visit', defaultProviderIntake)
+    expect(result.error).toBe('Unable to prepare the visit record. Please try again.')
+    expect(mockSupabase.rpc).toHaveBeenCalledWith('prepare_pre_generation_visit_note', expect.objectContaining({ p_episode_id: 'episode', p_kind: 'pain_evaluation_visit' }))
+    expect(mockEnsureEpisodeEncounter).not.toHaveBeenCalled()
   })
 
   it('does not expose unexpected exception details', async () => {
-    mockEnsureEpisodeEncounter.mockRejectedValueOnce(new Error('database internals'))
-
-    const result = await saveProviderIntake(
-      TEST_CASE_ID,
-      'pain_evaluation_visit',
-      defaultProviderIntake,
-    )
-
+    mockSupabase.rpc.mockRejectedValue(new Error('database internals'))
+    const result = await saveProviderIntake(TEST_CASE_ID, 'pain_evaluation_visit', defaultProviderIntake)
     expect(result).toEqual({ error: 'Unable to prepare the visit record. Please try again.' })
   })
+
 })
 
 describe('saveInitialVisitVitals', () => {

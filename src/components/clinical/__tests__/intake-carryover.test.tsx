@@ -11,6 +11,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/components/patients/case-status-context', () => ({ useCaseStatus: () => 'active' }))
 vi.mock('@/components/clinical/clinical-reset-dialog', () => ({ ClinicalResetDialog: () => null }))
 vi.mock('@/components/clinical/generating-progress', () => ({ GeneratingProgress: () => <p>Generating note...</p> }))
+vi.mock('@/actions/visit-date', () => ({ savePreGenerationVisitDate: vi.fn(async (input) => ({ data: { noteId: 'note', visitDate: input.visitDate, updatedAt: 'v1' } })) }))
 vi.mock('@/actions/documents', () => ({ getDocumentDownloadUrl: vi.fn() }))
 vi.mock('@/actions/clinical-orders', () => ({ getClinicalOrders: vi.fn(async () => ({ data: [] })) }))
 vi.mock('@/actions/initial-visit-notes', () => ({

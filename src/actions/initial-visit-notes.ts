@@ -1,5 +1,8 @@
 'use server'
 
+import { preparePreGenerationVisit } from '@/lib/clinical/pre-generation-visit'
+import type { VisitDateToken } from '@/lib/validations/visit-date'
+
 import { loadReturnIntake, type ReturnIntakeSource } from '@/lib/clinical/load-return-intake'
 import { loadPriorEpisodeHistory } from '@/lib/clinical/load-prior-episode-history'
 import { historyServiceDate, historyEncounterDate } from '@/lib/clinical/prior-episode-history'
@@ -437,6 +440,7 @@ export async function generateInitialVisitNote(
   toneHint?: string | null,
   visitDate?: string | null,
   episodeId?: string,
+  dateToken?: VisitDateToken,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -454,9 +458,9 @@ export async function generateInitialVisitNote(
   // Find or create the note row for this (case, visit_type).
   // The unique partial index on (episode_id, visit_type) guarantees at most one
   // live row per pair, so the other visit type's row is never touched.
-  const { data: existingNote, error: existingError } = await supabase
+  const { data: loadedNote, error: existingError } = await supabase
     .from('initial_visit_notes')
-    .select('id, provider_intake, visit_date, tone_hint')
+    .select('id, provider_intake, visit_date, tone_hint, updated_at')
     .eq('case_id', caseId)
     .eq('visit_type', visitType).eq('episode_id', selectedEpisodeId)
     .is('deleted_at', null)
@@ -464,9 +468,18 @@ export async function generateInitialVisitNote(
 
   if (existingError) return { error: 'Unable to load the current evaluation note' }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const normalizedVisitDate = visitDate?.trim() ? visitDate.trim() : null
-  const effectiveVisitDate = normalizedVisitDate ?? existingNote?.visit_date ?? today
+  let existingNote = loadedNote
+  if (!existingNote) {
+    if (dateToken) return { error: 'The visit changed. Reload before generating.' }
+    try {
+      existingNote = (await preparePreGenerationVisit(supabase, caseId, selectedEpisodeId, visitType)).note
+    } catch { return { error: 'Unable to prepare the visit record. Please try again.' } }
+  }
+  if ((visitDate && visitDate !== existingNote.visit_date)
+    || (dateToken && (dateToken.noteId !== existingNote.id || dateToken.visitDate !== existingNote.visit_date))) {
+    return { error: 'Save the selected visit date before generating.' }
+  }
+  const effectiveVisitDate = existingNote.visit_date ?? new Date().toISOString().slice(0, 10)
 
   // Gather source data
   const { data: inputData, error: gatherError } = await gatherSourceData(
@@ -488,12 +501,12 @@ export async function generateInitialVisitNote(
   const effectiveToneHint =
     normalizedToneHint !== null ? normalizedToneHint : (existingNote?.tone_hint ?? null)
 
-  let recordId: string
+  const recordId = existingNote.id
 
   if (existingNote) {
     // Acquire the generation lock first. Prevents concurrent invocations from
     // re-entering an in-flight generation; recovers stale locks after 5 min.
-    const lock = await acquireGenerationLock(supabase, 'initial_visit_notes', existingNote.id, user.id)
+    const lock = await acquireGenerationLock(supabase, 'initial_visit_notes', existingNote.id, user.id, existingNote.updated_at)
     if (!lock.acquired) {
       return { error: lock.reason }
     }
@@ -540,53 +553,6 @@ export async function generateInitialVisitNote(
       return { error: mapVisitDateOrderError(updateError) ?? 'Failed to start note generation' }
     }
 
-    recordId = existingNote.id
-  } else {
-    // No existing row for this visit type — create one. The unique partial
-    // index on (episode_id, visit_type) protects against concurrent inserts:
-    // a second racer gets a unique-violation error (code 23505).
-    let ownership: Awaited<ReturnType<typeof ensureEpisodeEncounter>>
-    try {
-      ownership = await ensureEpisodeEncounter(
-        caseId,
-        selectedEpisodeId,
-        visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
-        { encounterDate: effectiveVisitDate, providerId: null, userId: user.id },
-        supabase,
-      )
-    } catch (error) {
-      return { error: mapEpisodeOwnershipError(error) }
-    }
-    const { data: record, error: insertError } = await supabase
-      .from('initial_visit_notes')
-      .insert({
-        case_id: caseId,
-        episode_id: ownership.episodeId,
-        encounter_id: ownership.encounterId,
-        visit_type: visitType,
-        status: 'generating',
-        generation_attempts: 1,
-        source_data_hash: sourceHash,
-        visit_date: effectiveVisitDate,
-        sections_done: 0,
-        sections_total: INITIAL_VISIT_SECTIONS_TOTAL,
-        tone_hint: effectiveToneHint,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-      .select('id')
-      .single()
-
-    if (insertError || !record) {
-      revalidateVisitViews(caseId, 'evaluation')
-      revalidatePath(`/patients/${caseId}`)
-      if (insertError?.code === '23505') {
-        return { error: 'Generation already in progress — please wait a moment and try again.' }
-      }
-      return { error: mapVisitDateOrderError(insertError) ?? 'Failed to create note record' }
-    }
-
-    recordId = record.id
   }
 
   revalidateVisitViews(caseId, 'evaluation')
@@ -1260,6 +1226,7 @@ export async function saveInitialVisitVitals(
         encounterDate: new Date().toISOString().slice(0, 10),
         providerId: clinicalCase?.assigned_provider_id,
         userId: user.id,
+        atomicPreGeneration: true,
       },
       supabase,
     )
@@ -1366,7 +1333,7 @@ export async function saveProviderIntake(
   if (section && !Object.prototype.hasOwnProperty.call(providerIntakeSchema.shape, section)) return { error: 'Invalid intake section' }
   if (section === 'psychological_assessment' && visitType !== 'initial_visit') return { error: 'Psychological intake is available for Initial Visit only.' }
 
-  const { data: existing, error: readError } = await supabase
+  const { data: loaded, error: readError } = await supabase
     .from('initial_visit_notes')
     .select('id, status, updated_at, provider_intake, introduction, chief_complaint, visit_date, clinical_encounters:clinical_encounters!initial_visit_notes_encounter_id_fkey(encounter_date)')
     .eq('case_id', caseId)
@@ -1375,6 +1342,13 @@ export async function saveProviderIntake(
     .maybeSingle()
 
   if (readError) return { error: 'Unable to load the current intake. Please retry.' }
+  let existing = loaded
+  if (!existing) {
+    try {
+      const prepared = await preparePreGenerationVisit(supabase, caseId, selectedEpisodeId, visitType)
+      existing = { ...prepared.note, clinical_encounters: [] }
+    } catch { return { error: 'Unable to prepare the visit record. Please try again.' } }
+  }
   if (existing && existing.status !== 'draft' && existing.status !== 'failed') {
     return { error: 'Intake cannot be changed while the note is generating or finalized.' }
   }
@@ -1416,36 +1390,6 @@ export async function saveProviderIntake(
 
     if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to update provider intake' }
     if (!saved) return { error: 'The note changed while saving. Your input is retained; retry saving.' }
-  } else {
-    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
-      .eq('id', caseId).is('deleted_at', null).single()
-    let ownership: Awaited<ReturnType<typeof ensureEpisodeEncounter>>
-    try {
-      ownership = await ensureEpisodeEncounter(
-        caseId,
-        selectedEpisodeId,
-        visitType === 'pain_evaluation_visit' ? 'pain_evaluation' : 'initial_evaluation',
-        { encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, providerIntake: validated.data, userId: user.id },
-        supabase,
-      )
-    } catch (error) {
-      return { error: mapEpisodeOwnershipError(error) }
-    }
-    const { error } = await supabase
-      .from('initial_visit_notes')
-      .insert({
-        case_id: caseId,
-        episode_id: ownership.episodeId,
-        encounter_id: ownership.encounterId,
-        visit_type: visitType,
-        status: 'draft',
-        provider_intake: validated.data as unknown as Record<string, unknown>,
-        visit_date: new Date().toISOString().slice(0, 10),
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-
-    if (error) return { error: mapVisitDateOrderError(error) ?? 'Failed to save provider intake' }
   }
 
   revalidateVisitViews(caseId, 'evaluation')

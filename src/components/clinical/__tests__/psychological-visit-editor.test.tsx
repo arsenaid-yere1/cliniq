@@ -10,6 +10,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/components/patients/case-status-context', () => ({ useCaseStatus: () => 'active' }))
 vi.mock('@/components/clinical/clinical-reset-dialog', () => ({ ClinicalResetDialog: ({ disabled }: { disabled?: boolean }) => <button disabled={disabled}>Reset note</button> }))
 vi.mock('@/components/clinical/generating-progress', () => ({ GeneratingProgress: () => <p>Generating note...</p> }))
+vi.mock('@/actions/visit-date', () => ({ savePreGenerationVisitDate: vi.fn(async (input) => ({ data: { noteId: 'note', visitDate: input.visitDate, updatedAt: 'v1' } })) }))
 vi.mock('@/actions/documents', () => ({ getDocumentDownloadUrl: vi.fn() }))
 vi.mock('@/actions/clinical-orders', () => ({ getClinicalOrders: vi.fn(async () => ({ data: [] })) }))
 vi.mock('@/actions/initial-visit-notes', () => ({
@@ -21,7 +22,7 @@ import { generateInitialVisitNote, saveProviderIntake, saveInitialVisitVitals, r
 import { InitialVisitEditor } from '../initial-visit-editor'
 
 function mount(overrides: Partial<ComponentProps<typeof InitialVisitEditor>> = {}) {
-  return render(<InitialVisitEditor caseId="case" notesByVisitType={{ initial_visit: null, pain_evaluation_visit: null }}
+  return render(<InitialVisitEditor caseId="case" episodeId="episode" notesByVisitType={{ initial_visit: null, pain_evaluation_visit: null }}
     intakesByVisitType={{ initial_visit: defaultProviderIntake, pain_evaluation_visit: null }}
     documentFilePathByVisitType={{ initial_visit: null, pain_evaluation_visit: null }} defaultVisitType="initial_visit"
     canGenerate initialVitals={null} clinicSettings={null} providerProfile={null} clinicLogoUrl={null}
@@ -50,7 +51,7 @@ describe('psychological intake in the visit editor', () => {
     await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalledTimes(1))
     expect(vi.mocked(saveProviderIntake).mock.calls[0].at(-1)).toBe('return-episode')
     expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'pain_evaluation_visit', expect.objectContaining({ heart_rate: 72 }), 'return-episode')
-    expect(generateInitialVisitNote).toHaveBeenCalledWith('case', 'pain_evaluation_visit', null, expect.any(String), 'return-episode')
+    expect(generateInitialVisitNote).toHaveBeenCalledWith('case', 'pain_evaluation_visit', null, expect.any(String), 'return-episode', expect.objectContaining({ noteId: 'note' }))
   })
 
   it('locks historical episode intake and generation', () => {
@@ -153,7 +154,7 @@ describe('psychological intake in the visit editor', () => {
     await user.click(screen.getByRole('tab', { name: 'Chief Complaints' }))
     await user.click(screen.getByRole('button', { name: /Save intake and generate Initial Visit Note/ }))
     await waitFor(() => expect(generateInitialVisitNote).toHaveBeenCalled())
-    expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ heart_rate: 72 }), undefined)
+    expect(saveInitialVisitVitals).toHaveBeenCalledWith('case', 'initial_visit', expect.objectContaining({ heart_rate: 72 }), 'episode')
   })
 
   it('keeps selected factors separate by complaint and encounter, and saves only this encounter before generation', async () => {
@@ -240,7 +241,7 @@ describe('psychological intake in the visit editor', () => {
     expect(saveProviderIntake).toHaveBeenCalledTimes(1)
     expect(vi.mocked(saveProviderIntake).mock.calls[0]).toEqual(['case', 'initial_visit', expect.objectContaining({ exam_findings: {
       ...stored.exam_findings, regions: [{ ...stored.exam_findings.regions[0], palpation_findings: 'Initial visit observation' }],
-    } }), 'exam_findings', undefined])
+    } }), 'exam_findings', 'episode'])
     expect(vi.mocked(saveProviderIntake).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateInitialVisitNote).mock.invocationCallOrder[0])
   })
 

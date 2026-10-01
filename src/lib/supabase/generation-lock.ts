@@ -44,16 +44,18 @@ export async function acquireGenerationLock(
   table: GenerationLockTable,
   recordId: string,
   updatedBy: string,
+  expectedUpdatedAt?: string,
 ): Promise<{ acquired: true } | { acquired: false; reason: string }> {
   const staleBoundary = new Date(Date.now() - STALE_GENERATION_MINUTES * 60_000).toISOString()
 
   // First attempt: transition a draft or failed row into 'generating'.
-  const draftOrFailed = await supabase
+  const draftQuery = supabase
     .from(table)
     .update({ status: 'generating', updated_by_user_id: updatedBy })
     .eq('id', recordId)
     .in('status', ['draft', 'failed'])
-    .select('id')
+  if (expectedUpdatedAt) draftQuery.eq('updated_at', expectedUpdatedAt)
+  const draftOrFailed = await draftQuery.select('id')
     .maybeSingle()
 
   if (draftOrFailed.data) return { acquired: true }
@@ -67,13 +69,14 @@ export async function acquireGenerationLock(
   }
 
   // Second attempt: take over a stale `'generating'` row (assumed abandoned).
-  const staleRecovery = await supabase
+  const staleQuery = supabase
     .from(table)
     .update({ status: 'generating', updated_by_user_id: updatedBy })
     .eq('id', recordId)
     .eq('status', 'generating')
     .lt('updated_at', staleBoundary)
-    .select('id')
+  if (expectedUpdatedAt) staleQuery.eq('updated_at', expectedUpdatedAt)
+  const staleRecovery = await staleQuery.select('id')
     .maybeSingle()
 
   if (staleRecovery.data) {
@@ -87,6 +90,8 @@ export async function acquireGenerationLock(
   console.warn('[generation-lock] rejected — another generation in flight', { table, recordId })
   return {
     acquired: false,
-    reason: 'Generation already in progress — please wait a moment and try again.',
+    reason: expectedUpdatedAt
+      ? 'The note changed or generation is already in progress. Reload before generating.'
+      : 'Generation already in progress — please wait a moment and try again.',
   }
 }

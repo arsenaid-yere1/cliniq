@@ -127,3 +127,12 @@ describe('acquireGenerationLock', () => {
     }
   })
 })
+
+it('retains the observed row version on both ordinary and stale generation claims', async () => {
+  const supabase = makeClient([{ data: null, error: null }, { data: null, error: null }])
+  const result = await acquireGenerationLock(supabase as never, 'initial_visit_notes', 'rec1', 'user1', 'version-1')
+  expect(result).toMatchObject({ acquired: false, reason: expect.stringContaining('note changed') })
+  for (const call of supabase.from.mock.results) {
+    expect(call.value.eq).toHaveBeenCalledWith('updated_at', 'version-1')
+  }
+})

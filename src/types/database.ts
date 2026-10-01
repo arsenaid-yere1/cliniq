@@ -4617,6 +4617,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      prepare_pre_generation_visit_note: {
+        Args: {
+          p_case_id: string
+          p_encounter_only?: boolean
+          p_episode_id: string
+          p_kind: string
+        }
+        Returns: Json
+      }
+      save_pre_generation_visit_date: {
+        Args: {
+          p_case_id: string
+          p_date: string
+          p_episode_id: string
+          p_expected_date: string | null
+          p_expected_note_id: string | null
+          p_kind: string
+        }
+        Returns: Json
+      }
       quality_review_save_fix: {
         Args: {
           p_expected_updated_at: string

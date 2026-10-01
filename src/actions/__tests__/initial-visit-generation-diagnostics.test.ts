@@ -34,7 +34,7 @@ beforeEach(() => {
   db = createMockSupabase()
   db.rpc.mockImplementation(() => ({ abortSignal: vi.fn().mockResolvedValue({ data: 'failure-id', error: null }) }))
   db.from.mockImplementation((table: string) => createMockQueryBuilder({ data:
-    table === 'initial_visit_notes' ? { id: 'note', provider_intake: null, visit_date: null, updated_at: 'version', status: 'draft' }
+    table === 'initial_visit_notes' ? { id: 'note', provider_intake: null, visit_date: '2026-01-05', updated_at: 'version', status: 'draft' }
       : table === 'cases' ? { case_number: 'synthetic', patient: { first_name: 'Test', last_name: 'Only', date_of_birth: null, gender: null } }
         : table.endsWith('_extractions') ? [] : null, error: null }))
 })

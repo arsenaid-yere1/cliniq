@@ -56,3 +56,13 @@ describe('visitDateSchema', () => {
     expect(schema.safeParse('9999-01-01').success).toBe(true)
   })
 })
+
+import { persistedVisitDateSchema } from '../visit-date'
+describe('persistedVisitDateSchema', () => {
+  it.each(['2024-02-29', '2026-09-30', '0001-01-01', '9999-12-31'])('accepts %s', value => {
+    expect(persistedVisitDateSchema.safeParse(value).success).toBe(true)
+  })
+  it.each(['2026-02-29', '2026-02-30', '2026-13-01', '2026-9-1', '09/01/2026', '', '0000-01-01', 'infinity'])('rejects %s', value => {
+    expect(persistedVisitDateSchema.safeParse(value).success).toBe(false)
+  })
+})

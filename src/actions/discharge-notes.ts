@@ -1,5 +1,8 @@
 'use server'
 
+import { preparePreGenerationVisit } from '@/lib/clinical/pre-generation-visit'
+import type { VisitDateToken } from '@/lib/validations/visit-date'
+
 import { type ReviewFixTarget } from '@/lib/qc/review-fix-target'
 
 import { saveVisitDecision } from '@/lib/clinical/save-visit-decision'
@@ -713,6 +716,7 @@ export async function generateDischargeNote(
   toneHint?: string | null,
   visitDate?: string | null,
   explicitEpisodeId?: string,
+  dateToken?: VisitDateToken,
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -737,7 +741,7 @@ export async function generateDischargeNote(
   // Look up existing active discharge note to preserve visit_date, provider-entered
   // vitals, and the tone hint across regeneration. Also read status + updated_at
   // to guard against concurrent generations.
-  const { data: existingNote, error: existingError } = await supabase
+  const { data: loadedNote, error: existingError } = await supabase
     .from('discharge_notes')
     .select('id, status, updated_at, visit_date, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature_f, spo2_percent, pain_score_min, pain_score_max, tone_hint')
     .eq('case_id', caseId)
@@ -746,6 +750,17 @@ export async function generateDischargeNote(
     .maybeSingle()
 
   if (existingError) return { error: 'Unable to load the discharge note' }
+
+  let existingNote = loadedNote
+  if (!existingNote) {
+    if (dateToken) return { error: 'The visit changed. Reload before generating.' }
+    try { existingNote = (await preparePreGenerationVisit(supabase, caseId, episodeId, 'discharge')).note }
+    catch { return { error: 'Unable to prepare the visit record. Please try again.' } }
+  }
+  if ((visitDate && visitDate !== existingNote.visit_date)
+    || (dateToken && (dateToken.noteId !== existingNote.id || dateToken.visitDate !== existingNote.visit_date))) {
+    return { error: 'Save the selected visit date before generating.' }
+  }
 
   // Keep the same visit row and its server-owned reviewed decision.
   if (existingNote?.status === 'finalized') return { error: 'Reset the finalized note before regenerating.' }
@@ -841,11 +856,9 @@ export async function generateDischargeNote(
     tone_hint: effectiveToneHint,
     updated_by_user_id: user.id,
   } as const
-  const claim = existingNote
-    ? supabase.from('discharge_notes').update(generationPatch)
-        .eq('id', existingNote.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('updated_at', existingNote.updated_at)
-        .eq('status', existingNote.status).is('deleted_at', null)
-    : supabase.from('discharge_notes').insert({ ...generationPatch, created_by_user_id: user.id })
+  const claim = supabase.from('discharge_notes').update(generationPatch)
+    .eq('id', existingNote.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('updated_at', existingNote.updated_at)
+    .eq('status', existingNote.status).is('deleted_at', null)
   const { data: record, error: insertError } = await claim.select('id').single()
 
   if (insertError || !record) {
@@ -853,7 +866,7 @@ export async function generateDischargeNote(
     if (insertError?.code === '23505') {
       return { error: 'Generation already in progress — please wait a moment and try again.' }
     }
-    return { error: existingNote ? 'The note changed. Reload before regenerating.' : 'Failed to create note record' }
+    return { error: 'The note changed. Reload before regenerating.' }
   }
 
   revalidateVisitViews(caseId, 'discharge')
@@ -1568,58 +1581,43 @@ export async function saveDischargeVitals(caseId: string, vitals: DischargeNoteV
   if (!scope.episodeId) return { error: scope.error }
   const episodeId = scope.episodeId
 
-  // Upsert pattern: update the active discharge_notes row if one exists,
-  // otherwise create a pre-generation draft row holding only these vitals.
-  const { data: existing, error: existingError } = await supabase
+  // Share first-row preparation with date saves, then update the current version.
+  const { data: loaded, error: existingError } = await supabase
     .from('discharge_notes')
-    .select('id, status')
+    .select('id, status, updated_at')
     .eq('case_id', caseId)
     .eq('episode_id', episodeId)
     .is('deleted_at', null)
     .maybeSingle()
 
   if (existingError) return { error: 'Unable to load discharge vitals' }
+  let existing = loaded
+  if (!existing) {
+    try { existing = (await preparePreGenerationVisit(supabase, caseId, episodeId, 'discharge')).note }
+    catch { return { error: 'Unable to prepare the visit record. Please try again.' } }
+  }
   if (existing) {
     if (!['draft', 'failed'].includes(existing.status)) {
       return { error: 'Cannot edit vitals while the note is finalized or generating' }
     }
-    const { error } = await supabase
+    const { data: saved, error } = await supabase
       .from('discharge_notes')
       .update({
         ...validated.data,
         updated_by_user_id: user.id,
       })
-      .eq('id', existing.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', existing.status)
-    if (error) return { error: 'Failed to save vitals' }
+      .eq('id', existing.id).eq('case_id', caseId).eq('episode_id', episodeId).eq('status', existing.status).eq('updated_at', existing.updated_at).is('deleted_at', null)
+      .select('id').maybeSingle()
+    if (!saved || error) return { error: 'Failed to save vitals' }
     // Vitals change feeds the trajectory builder as dischargeVitals →
     // pain_trajectory_text + discharge_pain_estimate_min/max + the validator
     // wrapper need to be rebuilt so the row is internally consistent. The
     // validator surfaces any narrative section still citing the old endpoint
     // as a non-fatal warning; provider chooses whether to section-regen.
-    if (existing.status === 'draft') {
+    if (loaded && existing.status === 'draft') {
       const refreshed = await refreshDischargeTrajectory(caseId, existing.id, { episodeId, userId: user.id })
       if (refreshed.error) return { error: refreshed.error }
     }
-  } else {
-    const { data: clinicalCase } = await supabase.from('cases').select('assigned_provider_id')
-      .eq('id', caseId).is('deleted_at', null).single()
-    const ownership = await ensureEpisodeEncounter(caseId, episodeId, 'discharge', {
-      encounterDate: new Date().toISOString().slice(0, 10), providerId: clinicalCase?.assigned_provider_id, userId: user.id,
-    }, supabase)
-    const { error } = await supabase
-      .from('discharge_notes')
-      .insert({
-        case_id: caseId,
-        episode_id: ownership.episodeId,
-        encounter_id: ownership.encounterId,
-        status: 'draft',
-        ...validated.data,
-        created_by_user_id: user.id,
-        updated_by_user_id: user.id,
-      })
-    if (error) return { error: 'Failed to save vitals' }
-    // No refresh on insert — section text is empty so there is nothing for
-    // the validator to scan. Trajectory state is rebuilt at first generate.
   }
 
   revalidateVisitViews(caseId, 'discharge', { dischargeDateChanged: true })

@@ -35,10 +35,12 @@ describe('exam intake persistence', () => {
     })
     it(`inserts a first ${visit} with nullable findings`, async () => {
       const builder = createMockQueryBuilder()
-      builder.single.mockResolvedValue({ data: { assigned_provider_id: 'provider' }, error: null })
+      builder.maybeSingle.mockResolvedValueOnce({ data: null, error: null }).mockResolvedValue({ data: { id: 'prepared' }, error: null })
+      client.rpc.mockResolvedValue({ data: { note: { id: 'prepared', status: 'draft', updated_at: 'v1', provider_intake: {} }, encounterId: 'encounter', episodeId: 'episode' }, error: null })
       client.from.mockReturnValue(builder)
       expect((await saveProviderIntake('case', visit, intake(null), 'exam_findings')).error).toBeUndefined()
-      expect(builder.insert).toHaveBeenCalledWith(expect.objectContaining({ encounter_id: 'encounter', provider_intake: expect.objectContaining({ exam_findings: intake(null).exam_findings }) }))
+      expect(builder.insert).not.toHaveBeenCalled()
+      expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ provider_intake: expect.objectContaining({ exam_findings: intake(null).exam_findings }) }))
     })
   }
   it('preserves a nullable exam when saving another section', async () => {

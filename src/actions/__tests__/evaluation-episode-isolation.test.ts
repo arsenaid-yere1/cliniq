@@ -62,6 +62,11 @@ beforeEach(() => {
     clinical_orders: [1,2].map(n => ({ id: `order-${n}`, case_id: 'case', episode_id: `episode-${n}`, initial_visit_note_id: `note-${n}` })),
   }
   db.from.mockImplementation(tableQuery)
+  db.rpc.mockImplementation(async (name, args) => {
+    if (name !== 'prepare_pre_generation_visit_note') return { data: null, error: null }
+    const encounter = tables.clinical_encounters.find(e => e.case_id === args.p_case_id && e.episode_id === args.p_episode_id)
+    return { data: { encounterId: encounter?.id, episodeId: args.p_episode_id }, error: null }
+  })
   generation.mockResolvedValue({ error: 'Synthetic generation stopped' })
 })
 describe('return evaluation isolation', () => {

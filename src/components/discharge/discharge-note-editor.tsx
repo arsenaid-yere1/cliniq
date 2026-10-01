@@ -1,5 +1,7 @@
 'use client'
 
+import { usePreGenerationVisitDate } from '@/hooks/use-pre-generation-visit-date'
+
 import { useVisitDraftBaseline, useVisitUnsavedChanges } from '@/components/visits/visit-unsaved-changes-context'
 import { useVisitNoteVersion } from '@/hooks/use-visit-note-version'
 import { useDraftNoteMutations } from '@/hooks/use-note-mutation-queue'
@@ -8,7 +10,7 @@ import { parseVisitDecision, normalizeVisitPlan, visitDecisionClosing, visitDeci
 
 import { ClinicalResetDialog } from '@/components/clinical/clinical-reset-dialog'
 
-import { useEffect, useState, useTransition, useCallback } from 'react'
+import { useEffect, useState, useTransition, useCallback, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -254,25 +256,34 @@ export function DischargeNoteEditor({
   const [isPending, startTransition] = useTransition()
   const [regeneratingSection, setRegeneratingSection] = useState<DischargeNoteSection | null>(null)
   const [toneHint, setToneHint] = useState<string>(note?.tone_hint ?? '')
-  const today = new Date().toISOString().slice(0, 10)
-  const [preGenVisitDate, setPreGenVisitDate] = useState<string>(
-    (note?.visit_date as string | null | undefined) ?? today,
-  )
   const [optimisticGenerating, setOptimisticGenerating] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const caseStatus = useCaseStatus()
   const isLocked = !episodeWritable || LOCKED_STATUSES.includes(caseStatus as CaseStatus)
 
-  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint, preGenVisitDate }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.subjective && !note.assessment)))
+  const visitDateSave = usePreGenerationVisitDate({
+    caseId, episodeId, kind: 'discharge',
+    noteId: note?.id, visitDate: note?.visit_date, updatedAt: note?.updated_at,
+    enabled: !isLocked && (!note || (note.status === 'draft' && !note.subjective && !note.assessment)),
+    min: earliestDate,
+  })
+  const preGenVisitDate = visitDateSave.value
+  const acknowledgePreGeneration = useVisitDraftBaseline({ toneHint }, isPending, !isLocked && (!note || note.status === 'failed' || (note.status === 'draft' && !note.subjective && !note.assessment)))
+
+  const pendingVitals = useRef<Promise<boolean> | null>(null)
 
   const runGenerate = (toneHintArg: string | null, visitDateArg: string | null) => {
-    setOptimisticStartedAt(new Date().toISOString())
-    setOptimisticGenerating(true)
+    const vitalsSave = pendingVitals.current
     startTransition(async () => {
+      if (vitalsSave && !await vitalsSave) { toast.error('Save discharge vitals before generating.'); return }
+      const savedDate = visitDateArg !== null ? await visitDateSave.flush() : undefined
+      if (savedDate?.error) { toast.error(savedDate.error); return }
+      setOptimisticStartedAt(new Date().toISOString())
+      setOptimisticGenerating(true)
       try {
-        const result = await generateDischargeNote(caseId, toneHintArg, visitDateArg, episodeId)
+        const result = await generateDischargeNote(caseId, toneHintArg, savedDate?.data?.visitDate ?? null, episodeId, savedDate?.data)
         if (result.error) toast.error(result.error)
-        else { acknowledgePreGeneration({ toneHint, preGenVisitDate }); toast.success('Discharge summary generated successfully') }
+        else { acknowledgePreGeneration({ toneHint }); toast.success('Discharge summary generated successfully') }
       } finally {
         setOptimisticGenerating(false)
       }
@@ -320,11 +331,19 @@ export function DischargeNoteEditor({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Discharge Summary</h1>
 
-        <DischargeVitalsCard episodeId={episodeId} caseId={caseId} note={note} isLocked={isLocked} defaultVitals={defaultVitals} />
+        <DischargeVitalsCard pendingSave={pendingVitals} episodeId={episodeId} caseId={caseId} note={note} isLocked={isLocked || isPending} defaultVitals={defaultVitals} />
 
         <VisitDateCard
           value={preGenVisitDate}
-          onChange={setPreGenVisitDate}
+          onChange={visitDateSave.change}
+          onBlur={() => { void visitDateSave.blur() }}
+          saveStatus={visitDateSave.status}
+          error={visitDateSave.error}
+          saving={visitDateSave.saving}
+          savedConflictDate={visitDateSave.conflict?.visitDate}
+          onRetry={() => { void visitDateSave.save() }}
+          onUseSaved={visitDateSave.useSaved}
+          onKeepMine={() => { void visitDateSave.keepMine() }}
           min={earliestDate ?? undefined}
           disabled={isLocked || isPending}
         />
@@ -342,7 +361,7 @@ export function DischargeNoteEditor({
               : prerequisiteReason || 'Cannot generate note.'}
           </p>
           <Button
-            onClick={() => runGenerate(toneHint || null, preGenVisitDate || null)}
+            onClick={() => runGenerate(toneHint || null, preGenVisitDate)}
             disabled={isLocked || !canGenerate || isPending}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
@@ -1175,12 +1194,14 @@ function FinalizedView({
 // --- Discharge Vitals Card (pre-generation) ---
 
 function DischargeVitalsCard({
+  pendingSave,
   episodeId,
   caseId,
   note,
   isLocked,
   defaultVitals,
 }: {
+  pendingSave: { current: Promise<boolean> | null }
   episodeId: string
   caseId: string
   note: NoteRow | null
@@ -1207,12 +1228,20 @@ function DischargeVitalsCard({
   const acknowledgeVitals = useVisitDraftBaseline(vitalsForm.watch(), isSaving, !isLocked)
 
   function handleSaveVitals() {
-    startSaving(async () => {
-      const values = vitalsForm.getValues()
-      const result = await saveDischargeVitals(caseId, values, episodeId)
-      if (result.error) toast.error(result.error)
-      else { acknowledgeVitals(values); toast.success('Vitals saved') }
+    if (pendingSave.current) return
+    const operation = Promise.resolve().then(async () => {
+      try {
+        if (!await vitalsForm.trigger()) return false
+        const values = vitalsForm.getValues()
+        const result = await saveDischargeVitals(caseId, values, episodeId)
+        if (result.error) { toast.error(result.error); return false }
+        acknowledgeVitals(values); toast.success('Vitals saved')
+        return true
+      } catch { toast.error('Failed to save vitals. Please retry.'); return false }
+      finally { pendingSave.current = null }
     })
+    pendingSave.current = operation
+    startSaving(async () => { await operation })
   }
 
   return (

@@ -199,10 +199,20 @@ export async function ensureEpisodeEncounter(
     providerId?: string | null
     providerIntake?: Record<string, unknown>
     userId: string
+    atomicPreGeneration?: boolean
   },
   client?: SupabaseClient,
 ): Promise<{ episodeId: string; encounterId: string }> {
   const supabase = await resolveClient(client)
+  if (input.atomicPreGeneration) {
+    const args = { p_case_id: caseId, p_episode_id: episodeId,
+      p_kind: encounterType === 'initial_evaluation' ? 'initial_visit' : encounterType === 'pain_evaluation' ? 'pain_evaluation_visit' : 'discharge',
+      p_encounter_only: true }
+    let result = await supabase.rpc('prepare_pre_generation_visit_note', args)
+    if (result.error && ['40P01', '40001'].includes(result.error.code)) result = await supabase.rpc('prepare_pre_generation_visit_note', args)
+    if (result.error || !result.data) throw new EpisodeContextError('EPISODE_QUERY_FAILED', 'Unable to prepare the visit encounter')
+    return result.data as unknown as { episodeId: string; encounterId: string }
+  }
   await getEpisodeById(caseId, episodeId, supabase)
   const { data: existing, error: existingError } = await supabase.from('clinical_encounters')
     .select('id').eq('case_id', caseId).eq('episode_id', episodeId)
